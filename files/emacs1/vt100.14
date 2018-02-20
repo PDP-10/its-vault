@@ -1,0 +1,174 @@
+!* -*- TECO -*-		Library created and maintained by KMP@MC !
+
+!~Filename~:! !A library for hacking EMACS on VT100's!
+VT100
+
+!& Setup VT100 Library:! !Things to do when this library loads
+Define keypad handler, Redefine ^X), etc... !
+
+0m.V Old_FS^REnter		    !* Create funny temp place !
+0m.V VT100_PF_Def_Flag		    !* Create funny flag !
+0fo..QMM_^R_Start_Kbd_Macro"e	    !* If no kbdmac stuff, ...!
+  m(m.m Load_Library)KBDMAC'	    !*  load it in !
+m.m ^R_Interpret_VT100_Keypadu..O	    !* Put handler on Alt-O !
+m.m ^R_Redefined_End_Kbd_Macrou:.x())    !* Redefine ^X) to win  !
+
+
+!^R Interpret VT100 Keypad:! !Make keypad chars for VT100 do nice things...
+0-9 and minus sign accumulate arg.
+Dot runs ^R documentation
+Arrow keys run up, down, right, and left movement macros.
+Enter followed by one of PF1-4 begins a Keyboard Macro definition.
+PF1-4 Execute predefined Keyboard Macro definitions.
+Comma runs ^R VT100 Comma -- optionally followed by <Control-U><digits>
+ if a post-comma arg is desired as well -- this calls next ^R command
+ with a precomma arg. (Note: for various obscure reasons, keypad digits
+ may not follow a keypad comma, nor may Meta-digit or C-M-digit. Only ^U
+ will work.!
+
+fi[0				    !* Read next char into q0 !
+
+!* Odd key(s) !
+
+q0-n"e			    !* If a dot, !
+   m(m.m ^R_Documentation)	    !*   Run documentation !
+   oExit1'			    !*   Then exit !
+
+!* Arrow keys !
+
+q0-A"e
+ @m(m.m ^R_Up_Real_Line)   '   !* Uparrow really moves up !
+q0-B"e
+ @m(m.m ^R_Down_Real_Line) '   !* Downarrow really moves down !
+q0-D"e
+ @m(2fs ^R Init) '		    !* Leftarrow  really goes back !
+q0-C"e
+ @m(6fs ^R Init) '		    !* Rightarrow really goes forward !
+
+!* Enter ... !
+
+q0-M"e
+ qVT100_PF_Def_Flag"e		    !* If not defining something, !
+   F@:m(m.m &_Begin_PF_Key_Def)' !*  Start definition !
+ "#				    !* Else, !
+   F@:m(m.m &_End_PF_Key_Def)''  !*  Stop definition !
+
+!* PF Keys ... !
+
+q0-P:"l			    !* If not before P !
+ q0-S:"g			    !*  and not after S !
+				    !* then a PF Key (P-S) => (1-4) !
+ q0-37.:i0			    !*  Get PF Key name as string in q0 !
+ 0fo..QMM_PF0_Handler[1	    !* Get macro definition in q0 !
+ q1"n @m1 oExit1'		    !* Macro q0 if we can !
+ "# :i*UPF	Undefined_PF_Key:_<PF0>fserr''' !* Else err out !
+
+q0-l"e oArg-Exec'		    !* Comma   !
+q0-m"e oArg-Exec'		    !* Minus   !
+q0-p:"l q0-y:"g oArg-Exec''    !* Zero...Nine !
+
+!* Not yet defined !
+
+:i*UKO	Undefined_Keypad_Option fs err
+
+!Arg-Exec!
+
+fs ^R Argp"e @ft
+                 ARG:_'	    !* Type prompt in echo area if needed ! 
+
+q0-l"e			    !* If a comma, !
+   @ft,			    !*   display comma arg !
+   f@m(m.m ^R_VT100_Comma)	    !*   Run comma-arg !
+   oExit1'			    !*   and exit !
+
+q0-p:"l q0-y:"g		    !* If a digit, !
+   fs ^R Arg"l			    !* If arg is negative !
+     q.Y-1"e-1*(q0-p) fs ^R Arg' !* If no explicit digits, start them !
+     "# fs ^R Arg*10-q0+p fs ^R Arg''   !* Else add in high digits !
+     "# fs ^R Arg*10+q0-p fs ^R Arg'    !*  (for plus case and minus case)!
+   q.Y+1u.Y			    !* Increment digit count !
+   q0-100.U0			    !* Put corrected digit in q0 !
+   @ft0			    !* Display digit !
+   oExit''			    !* Exit !
+   
+q0-m"e			    !* If a minus was typed !
+   fs ^R Argp"g fg oExit'	    !* and there already was an arg, err out !
+  -1fs ^R Arg			    !* set arg to be negative 1 !
+  @FT-				    !* Type the minus !
+  1U.Y				    !* Say how many chars in fsarg !
+  oExit'			    !* and Exit !
+
+!Exit!
+0fs ^R Last
+3fs ^R Argp
+
+!Exit1!
+
+0fs Echo Active
+
+
+!& Begin PF Key Def:! !Start a Keyboard definition of one of the PF keys
+Reads a PF Key name followed by a Keyboard macro definition followed by
+a "." on the keypad to terminate!
+
+[0				    !* Bind q0 !
+:fi-"n oBadKey'		    !* Check for an Altmode next!
+fi				    !* Read the char !
+:fi-O"n   oBadKey'		    !* Check for an O next!
+fi				    !* Read the char !
+:fi-P"l   oBadKey'		    !* Check for less than P !
+:fi-S"g   oBadKey'		    !* Check for greater than S !
+fi-37.:i0			    !* Get PF Key name !
+q0 M.V PF_Key_being_defined	    !* Save name of key for later !
+0fo..QMM_PF0_Handler"n	    !* Look to see if handler was being !
+   :i*re-'"#:i*'[1		    !*   defined or redefined? !
+:I*[..J				    !* Bind mode line !
+1[VT100_PF_Def_Flag		    !* Say we are defining something !
+fs^R Enter[Old_FS^REnter	    !* Get old fs^renter in q2 !
+  @:i*~ :i..J[Keyboard_Macro_<PF0>_being_1defined.] fr
+        qOld_FS^REnterfs^REnter ~ fs^REnter
+1 f<!PF-Errexit!		    !* Where to come on ^G !
+    1 f<!PF-Normexit!		    !* Where to come on "." !
+        m.m ^R_PF_Def_Quit [.]   !* Make ^] exit this mode !
+	m(m.m ^R_Start_Kbd_Macro)!* Start keyboard macro stuff !
+         >			    !* Enter ^R mode on buffer !
+    qLast_Kbd_Macrom.vMM_PF0_Handler          !* Create a handler macro !
+    :i*C<PF0>_1defined.fs echo display out !* Announce the fact !
+    0fs echo active		    !* Normal exit (success) !
+   >
+:i*C<PF0>_NOT_1defined.fs echo display out !* Announce state !
+0fs echo active		    !* Return (failing) !
+
+!BadKey!
+:i*NPF	Not_a_PF_Key fs err
+
+!& End PF Key Def:! !& End a Keyboard definition of one of the PF keys
+Terminates a Keyboard macro definition begun by an "Enter" on VT100 keyboards!
+
+@m(m.m ^R_End_Kbd_Macro)	    !* End keyboard macro !
+f;PF-Normexit			    !* Throw to caller, normal exit !
+
+
+!^R PF Def Quit:! !^R Abort a Keyboard definition of one of the PF keys
+Terminates a Keyboard macro definition without defining anything!
+
+f;PF-Errexit			    !* Throw to caller, error exit !
+
+
+!^R Redefined End Kbd Macro:! !^R End keyboard macro definition!
+
+qVT100_PF_Def_Flag"e		    !* If not defining something, !
+  :@m(m.m ^R_End_Kbd_Macro)'	    !*  dispatch to normal keyboard macro end !
+"#				    !* Else, !
+  @m(m.m ^R_End_Kbd_Macro)	    !*  Go stop this stuff... !
+  f;PF-Normexit'		    !*  throw to our def stuff !
+
+!^R VT100 Comma:! !^R Run precomma arg!
+
+0fs^RArg 0fs^RArgp			      !* Zero argument !
+,@m(@fif(f(fs^Rlastw)u..0)@fs^RCmacro)@v  !* Call first char specially !
+<fs^RLast:@;				      !* Loop macroing chars !
+,(fs^RArgp"n
+     fs^RArgp&2"nfs^RArgp&4"n-1*'(fs^Rarg)'"#1[0fs^RExpt<q0*4u0>q0(]0)'(
+     )')@m(@fif(f(fs^Rlastw)u..0)@fs^RCmacro)@v>
+0

@@ -1,0 +1,232 @@
+
+;Debugging Aids - BS, FS, B-BS  help in looking back the stack - see below.
+;		- HIST prints a histogram of bucket occupancy for hash arrays.
+;		- TIMIT and NTIMIT are little timers.  Say "(TIMIT foo)"
+;		  to get the execution time of "foo" in microseconds; saying
+;		  "(NTIMIT n foo)" will minimize over n trials.
+;		- UNCDR1 and UNCDR*, when given an address as a fixnum, find 
+;		  cons cells whose cdrs point to the given address.  UNCDR1
+;		  finds all which immediately point to arg, and returns a list;
+;		  UNCDR* finds one maximal point in the chain of uncdrs.
+
+
+
+
+;;;Variable "BS" holds a current frame.  One can use it in order to
+;;;  direct EVALFRAME to go back down the PDL, or forward up the PDL.
+;;;  [pdls push upwards, and pop downwards]
+
+;;; Basic two functions are "BS", and "FS", which are acronymic for 
+;;;   "Back-down-the-Stack", AND "Forward-up-the-Stack".  See below
+
+;;; Function "B-BS" will run a break loop in the environment indicated 
+;;;   by the frame in "BS"
+
+
+
+(DECLARE (*FEXPR HIST TIMIT NTIMIT BS FS)
+	 (*EXPR B-BS)
+	 (SPECIAL BS TIMIT)
+	 (FLONUM (TIMIT)))
+
+
+(DEFUN BS FEXPR (L)
+;;;Go back one frame by (BS)
+;;;Go back N frames by (BS <N>)  where <N> is an integer
+;;;Go back to application of function BAR by (BS BAR)
+;;;Go back to nth application back of BAR with (BS BAR <N>)
+;;;Initialize BS to top [current] frame and then go back by
+;;;  saying (BS NIL), (BS NIL <N>), (BS NIL BAR), or (BS NIL BAR <N>)
+    (DECLARE (FIXNUM I N))
+    (SETQ BS (COND ((AND L (NULL (CAR L))) 
+		    (SETQ L (CDR L))
+		    (EVALFRAME NIL))
+		   ((AND BS (FIXP (CADR BS))) (EVALFRAME (CADR BS)))
+		   (T (EVALFRAME NIL))))
+    (COND ((NULL L) BS) 
+	  (T (DO ((Z BS (EVALFRAME (CADR Z)))
+		  (I (COND ((FIXP (CAR L)) (CAR L)) (-1)) (1- I))
+		  (N (COND ((AND (CDR L) (FIXP (CADR L))) (CADR L)) (1))))
+		 ((OR (NULL Z) 
+		      (ZEROP I)
+		      (COND ((> I 0) NIL) 
+			    ((NOT (EQ (CAADDR Z) (CAR L))) NIL)
+			    ((ZEROP (SETQ N (1- N))))))
+		  (SETQ BS Z))))))
+
+(AND (NOT (BOUNDP 'BS)) (SETQ BS NIL))
+
+
+(DEFUN FS FEXPR (TEM)
+;;;Go forward [up] one frame by (FS)
+;;;Go forward N frames by (FS <N>)
+;;;Initialize to bottom of PDL, and go forward by 
+;;;	(FS NIL) OR (FS NIL <N>)
+  (COND ((AND TEM 
+	      (NULL (CAR TEM))
+	      (SETQ BS (EVALFRAME 0))
+	      (NULL (CDR TEM)))
+	   BS)
+	((AND BS 
+	      ((LAMBDA  (Z)
+			(AND Z
+			     (NUMBERP (SETQ Z (CADR Z))) 
+			     (> Z (CADR BS))))
+		(EVALFRAME NIL)))
+	  (DO I (COND (TEM (CAR TEM)) (1)) (1- I) (NOT (> I 0)) 
+	      (DECLARE (FIXNUM I))
+		(SETQ BS (EVALFRAME (- (CADR BS)))))
+	   BS)))
+
+
+(DEFUN B-BS NIL (EVAL '(BREAK B-BS) (CADDDR BS)))
+
+
+;(COMMENT ## HISTOGRAM OF BUKET OCCUPANCY IN ARRAY)
+
+
+
+
+(DEFUN HIST FEXPR (L) 
+  (DECLARE (FLONUM S F)
+	   (FIXNUM TOTAL BKTS OBTSZ N M MAXBL MI W I))
+  ((LAMBDA (*NOPOINT BASE TOTAL BKTS ARY OBTSZ N M MAXBL MI FREQ)
+	(AND (NOT (MEMQ (CAR (SETQ L (ARRAYDIMS ARY))) '(OBARRAY T NIL)))
+	     (ERROR 'INCORRECT/ ARRAY/ TYPE/ -/ HIST ARY))
+	(SETQ OBTSZ (COND ((EQ (CAR L) 'OBARRAY) (- (CADR L) 129.))
+			  ((CADR L))))
+	(SETQ ARY (GET ARY 'ARRAY))
+    	(FILLARRAY FREQ '(0))
+	(DO I 0 (1+ I) (= I OBTSZ) 
+		(COND ((NOT (< (SETQ M (LENGTH (ARRAYCALL T ARY I))) N))
+			(*REARRAY FREQ 'FIXNUM (1+ M))
+			(DO I (PROG2 NIL N (SETQ N (1+ M))) (1+ I) (= I N)
+			    (STORE (ARRAYCALL FIXNUM FREQ I) 0))))
+		(STORE (ARRAYCALL FIXNUM FREQ M) (1+ (ARRAYCALL FIXNUM FREQ M)))
+		(COND ((< MAXBL M) (SETQ MAXBL M) (SETQ MI I)))
+		(SETQ BKTS (1+ BKTS))
+		(SETQ TOTAL (+ TOTAL M)))
+	(TERPRI)
+	(DO I 0 (1+ I) (> I MAXBL)
+		(PRINC '/ / )
+		(AND (< I 10.) (PRINC '/ ))
+		(PRIN1 I)
+		(PRINC '/ ))
+	(TERPRI)
+	(SETQ N 0)	;N WILL ACCUMULATE WEIGHTED INTEGRAL 
+	(DO ((I 0 (1+ I)) (W 0 (+ W I 1))) ((> I MAXBL))
+		(SETQ M (ARRAYCALL FIXNUM FREQ I))
+		(SETQ N (+ N (* W M)))
+		(COND ((< M 10.) (PRINC '/ / / ))
+		      ((< M 100.) (PRINC '/ / ))
+		      ((< M 1000.) (PRINC '/ )))
+		(PRIN1 M) 
+		(PRINC (QUOTE / )))
+	(TERPRI)
+	(DO I 0 (1+ I) (> I MAXBL)
+		(SETQ M (// (* 1000. (ARRAYCALL FIXNUM FREQ I)) BKTS))
+		(AND (< M 100.) (PRINC '/ ))
+		(PRIN1 (*QUO M 10.0))
+		(PRINC (QUOTE / )))
+	(PRINC '/îTOTAL/ ENTRIES/ =/ )
+	(PRIN1 TOTAL)
+	(PRINC '/,/ MAX/ BUCKET/ LENGTH/ =/ )
+	(PRIN1 MAXBL)
+	(PRINC '/ AT/ BKT/#/ )
+	(PRIN1 MI)
+	(PRINC '/îEXPECTED/ NUMBER/ OF/ SAMEPNAMEP/ TRIALS/ ON/ INTERN:/ )
+	(PRIN1 (*QUO (IFIX (*$ (QUOTIENT N 1.0 TOTAL) 1000.0)) 1000.0))
+	(TERPRI)
+	(ASCII 0))
+   T 10. 0 0 (COND (L (CAR L)) ('OBARRAY)) 0 20 0 0 0 (*ARRAY NIL 'FIXNUM 20)))
+
+
+;(COMMENT ## HELPS USE RUNTIMER)
+
+(SETQ TIMIT 0)			;THE OVERHEAD CONSTANT
+
+(DEFUN TIMIT FEXPR (L)		;TO TIME THE COMPUTATION (FOO X), DO (TIMIT (FOO X))
+    ((LAMBDA (N)
+	     (EVAL (CAR L))
+	     (//$ (FLOAT (- (RUNTIME) N TIMIT)) 1.0E6))
+	  (RUNTIME)))
+
+(DEFUN NTIMIT FEXPR (L)
+    (DECLARE (FIXNUM N) (FLONUM F S))
+    (DO ((N (FIX (CAR L)) (1- N)) (S 0.0) (F 1.0E35)) ((ZEROP N) F)
+	(AND (< (SETQ S (APPLY 'TIMIT (CDR L))) F) (SETQ F S))))
+
+ 
+((LAMBDA (NOUUO *RSET) 
+	 (TIMIT NIL)
+	 (SETQ TIMIT (FIX (TIMES 1.0E6 (MIN (TIMIT NIL) (TIMIT NIL) 
+					    (TIMIT NIL) (TIMIT NIL) 
+					    (TIMIT NIL) (TIMIT NIL))))))
+     NIL NIL)
+
+
+
+
+
+(DEFUN UNCDR1 (X) 
+    (DECLARE (FIXNUM VAL SEGSIZE NSEGS))
+    (PROG (NXT VAL SEGSIZE NSEGS LIST-OF-SEGS ANS) 
+	  (SETQ LIST-OF-SEGS (UNCDR-ARGET X) 
+		VAL (CAR LIST-OF-SEGS)
+		NSEGS (CADR LIST-OF-SEGS)
+		SEGSIZE (CADDR LIST-OF-SEGS)
+		LIST-OF-SEGS (CDDDR LIST-OF-SEGS))
+	A (SETQ NXT (UNCDR-IN-RANGE VAL 
+				    (CAR LIST-OF-SEGS) 
+				    (+ (CAR LIST-OF-SEGS) SEGSIZE -1) 
+				    T))
+	  (SETQ ANS (NCONC NXT ANS)
+		LIST-OF-SEGS (CDR LIST-OF-SEGS))
+	  (AND (NULL LIST-OF-SEGS) (RETURN ANS))
+	  (GO A)))
+
+(DEFUN UNCDR* (X) 
+    (DECLARE (FIXNUM VAL SEGSIZE NSEGS))
+    (PROG (NXT VAL L SEGSIZE NSEGS LIST-OF-SEGS) 
+	  (SETQ LIST-OF-SEGS (UNCDR-ARGET X) 
+		VAL (CAR LIST-OF-SEGS)
+		NSEGS (CADR LIST-OF-SEGS)
+		SEGSIZE (CADDR LIST-OF-SEGS)
+		LIST-OF-SEGS (CDDDR LIST-OF-SEGS))
+	BACK-UP-ON-SEG
+	  (SETQ NXT (UNCDR-IN-RANGE VAL 
+				    (BOOLE 4 VAL (1- SEGSIZE)) 
+				    (BOOLE 7 VAL (1- SEGSIZE)) 
+				    NIL))
+	  (COND (NXT (SETQ VAL NXT) (GO BACK-UP-ON-SEG)))
+	  (SETQ L LIST-OF-SEGS)		;VAL is now head-of-chain on  seg
+	WHOLE-WORLD-SCAN
+	  (SETQ NXT (UNCDR-IN-RANGE VAL (CAR L) (+ (CAR L) SEGSIZE -1) NIL))
+	  (COND (NXT (SETQ VAL NXT) (GO BACK-UP-ON-SEG)))
+	  (AND (NULL (SETQ L (CDR L))) (RETURN VAL))
+	  (GO WHOLE-WORLD-SCAN)))
+
+(DEFUN UNCDR-IN-RANGE (VAL LO HI 1P)
+      (DECLARE (FIXNUM I VAL LO HI))
+      (DO ((I HI (1- I)) (ALTERNATIVES)) 
+	  ((< I LO) ALTERNATIVES)
+	(AND (= VAL (BOOLE 1 (EXAMINE I) 262143.))			;= 777777[8]
+	     (COND (1P (SETQ ALTERNATIVES (CONS I ALTERNATIVES)))
+		   ((RETURN I))))))
+
+ 
+(DEFUN UNCDR-ARGET (X)
+    ;Returns "(X NSEGS SEGSIZE a0 a1 . . . an)"  where X has been error
+    ;  checked, and a0 . . . an are first-addresses of LIST type segments.
+    (DECLARE (FIXNUM I NSEGS SEGSIZE))
+    (PROG (I NSEGS SEGSIZE ANS)
+	  (SETQ NSEGS 512. SEGSIZE (LSH 1 (STATUS SEGLOG)))
+	A (COND ((OR (NOT (FIXP X)) (BIGP X) (< X 0) (> X 262143.))
+		 (SETQ X (ERROR '|Bad Address - UNCDR | X 'WRNG-TYPE-ARG))
+		 (GO A)))
+	  (SETQ I (1- NSEGS))
+	B (AND (EQ (TYPEP (MUNKAM (* I SEGSIZE))) 'LIST) 
+	       (SETQ ANS (CONS (* I SEGSIZE) ANS)))
+	  (AND (NOT (MINUSP (SETQ I (1- I)))) (GO B))
+	  (RETURN (CONS X (CONS NSEGS (CONS SEGSIZE ANS))))))
+

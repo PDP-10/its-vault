@@ -1,0 +1,519 @@
+Various midas ideas, set down to avoid loss amidst progressive
+brain rot (although the ideas themselves may well be symptomatic):
+
+
+Selected stuff from MIDAS bugs file:
+
+	* Allow labels in literals, ditto $., for absolute assemblies as well.
+RMS@MIT-AI 07/17/78 23:05:39
+To: KLH at MIT-AI
+By the way, there are several things in my RMAIL file from
+you and other people about MIDAS, if you are in the mood to
+hack it.  One thing that might be doable would be labels
+inside literals, by making them save up some sort of reminder
+to define the symbol later when the location of the literal is
+chosen.  Because it can legitimately happen that literals
+which are distinct on pass1 collapse on pass 2, it would be
+necessary to detect on pass 2 that the literal contained
+a label, and advance the location counter if necessary to
+make the label match up with its pass 1 value.  If you had
+to decrement the location counter, that would be an error,:
+since that shouldn't ever be necessary, and if it were necessary
+it could cause lossage as things are now.
+	[KLH: I don't think I fully understand the business of
+	advancing/decrementing loc counter, probably because I
+	don't yet understand how literals are collapsed.]
+The symbol "." will probably still have to refer to the
+location outside the literal.
+
+MOON@MIT-AI 03/28/76 17:46:36 Re: Feature MIDAS
+To: RMS at MIT-AI
+How about IRPM:  IRPM dummies:calls considers dummies a list of macro
+dummies of various syntaxes and repeatedly scans calls for their values.
+
+Need 2 more macro dummy syntaxes:  SYLLABLE and SINGLE CHARACTER.
+SYLLABLE should re-read its terminator.
+
+
+Small randomnesses:
+
+C-style assignment syntax?
+<sym> <op>= <expr>	same as 	<sym> = <sym> <op> <expr>
+
+Allow spaces between <sym> and operators, as in "FOO = 120"?  Currently
+the op must follow symbol immediately.
+
+Remainder operator: "//"?  Develop hooks for multi-char ops,
+perhaps add floating point ops as in /$ where $ is a REAL escape!!
+
+There are some ASCII chars that MIDAS doesn't use for anything,
+because historically they were unavailable on an uppercase-only teletype.
+These are `, |, and ~.  ({ and } are now used for certain frobs such
+as conditionals).  Could think about what to use these chars for...
+invent new constructs or whatever.  Use for .ESCCHR?  (see below re string
+ops)
+
+.PUSH/.POP
+
+	Two pseudos .PUSH and .POP to hack a stack of values.
+
+Should there be more than one stack?
+	If more than one, how to define and use them?
+	.STACK <sym>?		; Establish stack for this symbol (no value)
+	.PUSH <stk>,<val>	; Push value onto stack (no value)
+	.POP <stk>,		; Pop & return topmost value from stack
+	.STKFLS <stk>,		; Reset/clear a stack (no value)
+	.STKLEN <stk>,		; Return current # objects on stack.
+	.STKV <stk>,<idx>	; Return indexed value from stack. 0, -1, etc.
+	Reference to global stack??
+	.PUSH <val>,<val>,<val> ...	(like SCALAR/VECTOR)
+	.POP <sym>,<sym>...
+
+What sorts of objects can be pushed/popped?
+	Simple 36-bit values? (absolute, relocatable?)
+	Strings?  Macros?  Text?
+	Symbol defs?
+
+STRINGS:
+
+	Introduce a new data type, "strings".  These would not
+be the same as macros because they would not automatically be
+expanded and can be manipulated without regard to contents.
+Various pseudos would exist to perform this string manipulation.
+
+Define a string:
+	Should string values be assignable just like 36-bit words??
+	Or only moved around by means of pseudos?
+
+	foo=="text"		; conflicts with "ch construct.
+	foo==.string /text/	; like 36-bit val
+	.string foo,/text/	; like DEFINE
+
+	If assignable then what happens when operators applied to string?
+	e.g. foo+str2 = ?
+		Would be nice to avoid lots of special purpose pseudos but
+		may have to do lots of special casing otherwise.
+
+Evaluate a string:
+	When symbol defined as string is seen in a place where it
+	wants to be evaluated (like all by itself on a line)
+	treat it like a macro without args/dummies etc?
+	But if so, must figure how to keep this from happening in
+	wrong context, eg inside other pseudos that hack string vals.
+	Perhaps require explicit evaluation (pseudo or syntax) in order
+	to expand string like macro.
+
+Concatenate two strings:
+	.CONC resultstr,str1,str2,"this is literal string",str4, ...
+
+Take substring of string:
+	.SUBSTR <loc>,<len>,resultstr,inputstr
+
+Parse a string: (see FSM)
+
+New macro string arg, noticed by " like [ and \?
+
+EVALUATION ESCAPE
+
+	Specify .ESCCHR, -1 normal (no esc), else val of esc char.
+
+	Evaluate within ASCIZ-style string args
+		e.g. ASCIZ "Foo !BAR zap" will eval/expand BAR.
+
+	Force re-evaluation?
+		  (eg .STOP passed back to a macro)
+
+
+MACRO FSM PARSER
+
+	Idea here is to allow the facility of truly indefinite loops,
+by providing input text directly from the "outside" upper level,
+rather than by pre-digesting it into dummies.  In theory this will
+allow a macro to parse all the rest of the input file, operating as
+a somewhat inefficient Finite-State Machine in a manner similar to MIDAS
+itself.
+
+	Some examples should get the idea across.  The counterpart
+to IRPC (Indefinite repeat on chars) would be (eg) ZIRPC:
+	IRP A,,[This is input for the IRPC]
+	ASCIZ /A/
+	TERMIN
+
+	ZIRPC A
+	IFSE [A][}] .ISTOP
+	ASCIZ /A/
+	TERMIN
+	This is input for the ZIRPC}
+
+	IRP's are a little restrictive though, because they
+require another level of macro-ing and explicit means of stopping.
+More likely, it should be possible to utilize strings for handling
+the input, and pseudos will just return string values.
+
+Stuff needed:
+	Backup facility (one char should be enough)
+	Evaluative components
+		Char
+		Syllable
+		Field
+		Word
+	Macro-arg components
+		Line
+		Strung
+		Balanced
+		Evaluated
+	IRP terminators?
+		Bracket levels?
+		Specified/default break chars?
+
+MACRO ARG HACKING
+
+	The central idea here is to augment flexibility and speed by
+providing mechanisms which will NOT expand the dummies of a macro,
+but rather return various information about them.
+
+	For example, have a pseudo that will return various flags defining
+what manner of macro argument a dummy corresponds to.  This would
+allow a macro to determine for example if an argument was possessed
+of brackets, or was a quoted string, or suchlike.
+
+	Another example would be a variant of IRPNC that would slurp
+stuff out of the argument without requiring that it be completely
+expanded at the start.  In fact the same string parsing hooks proposed
+for STRINGS and FSM could be used here on macro dummies.
+
+MORE MACRO ARG-TYPES etc.
+
+	Invent more macro call and argument syntax features,
+to handle strings better, etc. etc. blah blah
+
+	A lot of this is oriented to:
+
+* making it easier to simulate simple higher-level language
+	procedure calls.  Or does this really want more explicit
+	support in the vein of .I, .F?  Such as IF, THEN, ELSE
+	and FOR/WHILE constructs?
+
+* Avoiding more screw cases where the "non-intuitive" behavior
+	of MIDAS macro parsing screws up the erstwhile coder.
+	Much of this is confusion between IRP and MACRO syntax,
+	particularly w.r.t. commas.
+
+* Adding more debugging stuff for list output to help puzzle out
+	more of said non-intuitive behavior.
+
+PARENTHESIZED MACRO CALL CHANGE:
+
+	Suggest change in the way parenthesized calls are handled,
+such that if a parenthesized call is about to be terminated before all
+dummies are accounted for, and this termination is NOT due to a close-char
+as could be the case for balanced args -- that is, if termination happens
+due to EOL (with or without comment) then under the new regime the macro
+call would NOT end, but would ignore the EOL (plus comment), plus any
+following whitespace, in its search for the next argument.
+	This allows macro calls to extend over several lines, without
+needing an explicit continuation or interfering with the syntax of any
+macro argument.  For example:
+	FOO(A,B,C,	; This is an example of new-style parenthesized
+		D,E,F,	; call, which can extend over
+		G,H)	; several lines.
+
+
+MACRO ARG: "QUOTESTRING"
+
+	Introduce a new option for macro arguments called "quotestring",
+as an attribute which can apply to either normal or balanced arguments.
+Specified by " in DEFINE line:
+	"   -	Turns quotestring ability on and off.
+		When this attribute is present for a macro arg, parsing is
+		exactly as usual except that if the first character is a
+		double-quote (") then the argument is parsed like a "strung"
+		arg.  Whether keepstrung or simple strung is defined by
+		whether keepstrung syntax was in effect at the time the
+		macro dummy was defined; if not, default is simple strung.
+
+E.G.
+	DEFINE FOO ?BAR,"GLUB
+		Defines macro FOO with two balanced dummies, the latter
+		of which has the quotestring option specified.  If a (")
+		is seen as the first char of the dummy, it will be parsed
+		as a simple strung argument.
+	DEFINE FOO &"&?BAR,GLUB
+		Just as before, except both dummies have the quotestring
+		option, which if invoked will act like "keepstrung".
+
+	Quotemarks can be included in the string by doubling them.
+This matches popular convention and is the same syntax .QMTCH==1 uses.
+
+Proposal is to make this globally useful by making it a convention for
+ALL string hacking pseudos (ASCII, SIXBIT, etc) that whenever the delimiter
+is doubled, that means to include one instance of that delimiter.
+
+A further extension is to have the quotestring syntax-option enable a
+check for EMBEDDED quotemarks anywhere in the text of the macro
+argument.  If the quotemark is prefixed by a squoze symbol, however,
+it would be passed as-is.  This is to take care of the block symbol
+construct, such as .U"FOO"BAR.  This could be made conditional on
+.QMTCH, since there would be some screwage anyway if FAIL-style syntax
+wasn't used for the "CH construct (ie use "CH", with exactly the same
+doubling convention to quote).  Note that the construct FOO" isn't
+crucial because one can use the .GLOBAL pseudo to do the same thing,
+just as .SCALAR is better than FOO'.
+
+One screw, it won't work trivially to just slap quotemarks around
+some text that was acquired from a simple-strung type of quotedstring,
+because any quotemarks inside the string will no longer be doubled.
+This can be avoided with keepstrung syntax, but it really sounds as if
+string variables are wanted here.
+
+Some comments about S-1 assembler with interesting sidelights on MIDAS:
+Most from GLS, perhaps initial stuff from JBR:
+------------------------------------------------------------------
+FASM improvements:
+	[KLH: Only those of possible relevance to MIDAS are included here]
+
+Make sure multiple flag bits can't be set for a symbol.
+	[KLH: Hmm, what's this?]
+
+Finish cleaning up FASM documentation.  Think about micros as macros
+that are expanded when defined.  Think about SAIL type loops at assembly time.
+	[KLH: Micros?  SAIL-type loops?]
+
+Think about concatenation character problem in case of self-redefining macro.
+	[KLH: e.g.?]
+
+Local symbols (1$:, etc.)
+	[KLH: Yes, yes, would be nice...]
+
+Arithmetic FOR
+	[KLH: is this really needed, considering that REPEAT has .RPCNT to
+	do clever things with?]
+
+26-Jan-79  1822	GLS  	FASM and `    
+To:   JBR at SU-AI
+CC:   GLS at SU-AI
+The more I think about it, the more I believe that `` ought to
+be replaced by a parenthesizing pair such as {~, so that the
+construct can be nested.  Moreover, there ought to be a quoting
+character for getting { ~ ` \ into places without having them
+take effect.
+As an (admittedly poor) example of why one might want this,
+suppose one wanted to have a number of macros MAC1, MAC2,
+etc. which behaved as gensymmers in the manner of the FOO`MAC`:
+example in the FASM manual, so that one could have independent
+gensymmers for some reason.  Then one might want to write
+	FOO`MAC`X-2``
+butt this wouldn't work because as soon as FOO`MAC` was parsed
+the evaluation of MAC would begin (and FOO`\MAC\`X-2`` doesn't
+work either, as I understand it).
+
+By the way, does the REPEAT pseudo provide no .RPCNT?
+
+16-Mar-78  2119	FTP:GLS at MIT-MC (Guy L. Steele, Jr.) 	Macros    
+Date: 17 MAR 1978 0020-EST
+From: GLS at MIT-MC (Guy L. Steele, Jr.)
+Subject: Macros
+To: JBR at SU-AI
+CC: GLS at MIT-MC
+
+Well, I have been pretty happy with MIDAS.  I would say that relative
+to many other macro processors I have seen, it fits in pretty comfortably
+with the language in which it is embedded.  I do have a list of criticisms,
+though, and I have also considered FAIL, MACRO-10, and MACRO-11 as sources
+of ideas.
+The biggest problem with MIDAS is that macros and IRPs have completely
+different rules; they should be unified.  Macro args surrounded by []
+take no following comma in MIDAS, whereas IRP args do take a comma.
+  [KLH: Yeah! Yeah! ]
+Also, rather than having different IRP names (IRPC, IRPS, ...),
+each IRP variable should be able to have any macro-arg syntax specifying
+how much to gobble.  One advantage is that a single IRP loop can
+IRP over different kinds of things; e.g. one can IRP in parallel
+over both a list of symbols and a string of characters.
+Conversely, anything that is an IRP mode should be a macro-arg syntax;
+thus one could have macro-args which gobbled just one character, etc.
+It would be nice to have a kind of IRP (which MIDAS lacks) which
+would IRP over tokens, where a token is a squoze symbol or an operator
+(IRPS doesn't let you see all the operators, just one after each
+symbol).
+   [KLH: I like those ideas. ]
+FAIL seems to have a neat way to allow continuation lines in macro calls.
+It seems also to have a drawback, if I understand it correctly:
+if you enclose an argument in braces in order to include a comma
+in the argument, does FAIL indeed expect to find another arg on
+the next line?  I.e. how does one omit all the arguments after a braced
+argument?  Line continuation seems a good idea (even more important for
+continuation of IRPs, which would look much better with each loop spec om
+its own line), but some other convention should be used, such as
+a special character used solely to mark this.
+   [KLH: Would my idea for continuation of parenthesized calls fit
+	the bill here?]
+I have found the ability in MIDAS to specify a default value for
+an omitted argument valuable, but I wish that the default value for
+an argument could refer to previous arguments:
+	DEFINE FOO A,B=[A],C=[SON OF A]
+	...TERMIN
+	FOO BARF	;same as FOO BARF,BARF,SON OF BARF
+	FOO BARF,BAZ	;same as FOO BARF,BAZ,SON OF BARF
+  [KLH: I don't think this should be too difficult to do, but making
+	it work right for all the special cases (like keyword args) could
+	be a real pain.]
+One issue regarding handling of text is that there are certain contexts
+(ASCIZ strings, e.g.) where it can be very hard to get something
+substituted in, in MIDAS, because you need to evoke evaluation.
+MIDAS has a \ feature, but it insists on finding a numeric value.
+Evidently the equivalent thing in FAIL does not have this drawback?
+KLH has been thinking about putting a "string variable" feature
+into MIDAS.  I know that IBM 360 Assembler H also has such a feature.
+This can be tricky, though; in particular, if you try to implement
+macros using such string variables rather than substitutions, certain
+embarassing "funarg problems" can arise.
+  [KLH: What about if strings are not really macros, although they can
+	be expanded as necessary, i.e. never take any args and have no
+	dummies?  Would still require some means of forcing evaluation,
+	perhaps similar to the way FASM does it with a special character,
+	perhaps only effective in text-string pseudos like ASCIZ.
+	Would like more comments about that.]
+As far as delimiting macro and IRP bodies does, I marginally prefer
+the TERMIN convention to using {~ or <>, solely because in the common
+case of wanting to generate code-like looking stuff having a { hang
+at the end of the DEFINE line or at the beginning of the first line
+of text looks pretty yechhy.  Also, for various hacks it is useful
+to have the [] of conditionals and the TERMIN guys mutually
+transparent.  (However, TERMIN has proved to be an unfortunate
+syllable, as comments abouts "terminals" and "terminating" have introduced
+many bugs.  A better word should be chosen, preferably not a prefix
+of any English word, if a TERMIN-likee syntax is used.)
+On the other hand, MACRO-11 uses TERMIN-like syntax for just
+about everything, and it gets completely ridiculous.  Also,
+it is harder to control exactly what characters get generated.
+(MIDAS, and FAIL I think, are very good about letting you
+control very precisely what characters are generated and how
+characters get swallowed.)
+  [KLH: MIDAS is a little better now, it will point out funny-looking
+	cases of TERMIN, so it is a lot more obvious when one is being
+	screwed.  It would be possible to have both syntaxes, by checking
+	for an open-brace or open-broket as the last thing (other than
+	comment) on the DEFINE line, and then going into a mode that
+	ends the definition when a balanced close char is seen; otherwise,
+	normal TERMIN is used.  Certainly it would be trivial to just adopt
+	a substitute for TERMIN, by making the new name an option.]
+
+Some assembler issues not directly related to macros:
+I've often wished for a "newio" feature in MIDAS; i.e. the ability to
+ask MIDAS to allocate me an I/O channel and open a file, so
+that at assembly time I can PRINTX information to different files.
+These could be used for several purposes, not the least of which
+re-inserting later in the assembly (lots easier than the remote macro
+hack).
+
+[KLH: Perhaps efficient strings would largely obviate the desire for
+such I/O?  Anyway, providing such an I/O feature wouldn't be difficult
+at all, just have to figure out a reasonable set of pseudos and operations.]
+
+Perhaps more important, I stringly recommend that there not be a 6-character
+limit on symbols.  Systems are getting big enough now that thinking
+up new unique meaningful menmonic names is getting to be a pain.
+In particular, since names of widely-used bits, etc. are being given
+universal symbolic names nowadays, one must be careeful
+not to conflict with them; so when writing MacLISP I cannot name
+my bits the same way ITS does.  Some conventions about this are in order;
+in particular note that regular naming conventions allows the ITS DDT
+"bit typeout mode" (? command).  Anyway, if arbitrary-length names
+are not feasible, I recommend ten to twelve characters.
+
+Well, I guess that'S all I can think of.  Hope this helps.
+
+27-Mar-78  2102	GLS at MIT-MC (Guy L. Steele, Jr.) 	Macro assembler, long names, etc. 
+Date: 28 MAR 1978 0002-EST
+From: GLS at MIT-MC (Guy L. Steele, Jr.)
+Subject: Macro assembler, long names, etc.
+To: jbr at SU-AI
+CC: GLS at MIT-MC
+
+After some consideration, it seems to me that maybe six-character
+names would be enough, if MIDAS-type block structure could
+be used (I say MIDAS-type as opposed to FAIL-type, because the
+former allows one to refer to qualified identifiers such as
+FOO"BAR"BAZ meaning BAZ in block BAR in block FOO - a sort of
+pathname).  If it were legitimate to use the same name
+for both a block and a location, then instead of calling
+  [KLH: True for MIDAS.]
+bits in the TTYSTS word %TSFOO, %TSBAR, etc. it might be
+acceptable to call then TTYSTS"FOO, TTYSTS"BAR; one could also
+introduce the convention that TTYSTS"<FOO+BAR> would work
+(in general, an expression after an incomplete
+pathname would use that prefix for all symbols in the expression).
+Very important, hoowever, is that thhe debugger let you use the
+same notation!  I think MIDAS block structure goes unused largely because
+DDT is very clumsy to use on block structure.  Oh well,
+end of random thought.		-Quux
+  [KLH: There is a note in the MIDAS doc saying not to use block
+structure for anything but .insrt'able libraries.  I'm not sure
+exactly what philosophy is being advocated there, or what might
+mitigate against using block structure for bit flags as suggested above.]
+
+Stuff from Earl Killian...
+------------------------------------------------------------------
+
+A trivial thing I've wanted is a remainder operator (yes, MIDAS
+currently doesn't have one!).
+[KLH: what character or syntax to use?]
+
+Also, I know someone that wanted .RADIX 16,N to work, but I couldn't
+care less.
+[KLH: I think it would be nice, but would require some re-doing of the
+way numbers/symbols are parsed.  This re-do could potentially
+even speed things up, however.  If done, it should be merged in with
+ability to understand the <n>B<m> construct that MACRO is so fond of.
+Syntax would be 0<hex digits> or 0<hex>H.  This could be made general,
+as in <required digits>[<possible hex digits>][<base specifier such as
+".", "B", "D", "H">]
+]
+
+
+Another trivial thing: MIDAS should get its own version number
+with .FVERS these days.
+[KLH: yep.]
+
+String variables would be nice, but...
+[KLH: see other parts of this file.]
+
+There are some ideas on SECTIONs that would be nice to think out
+and implement, but they're as yet still unthought out.
+[KLH: e.g.?]
+
+12 character names would be nicer than 6!
+[KLH: I think main problem is that everything else in the world expects
+6 chars, like DDT, Loaders, etc.  Also would make things somewhat slower,
+SYM2 ac needs to be allocated, etc.  Probably much harder than string
+vars or labels in literals or almost anything else.  You do know that MIDAS
+will accept n-length names but only distinguishes on first 6 chars.  Would
+it be a win if it distinguished more than 6, but continued to only pass
+6 to the outside world? ]
+
+Making it run twice as fast wouldn't bother me at all, though
+it's probably impossible.
+[KLH: You could try writing your code for 1-pass assemblies, like
+FAIL is set up for.]
+
+You could have it produce PDUMP (SSAVE on TNX) files directly.
+  [KLH: Is possible but pain seems out of proportion to benefits.
+(However RMS didn't like .DECSAV either.)  Also, is there any way to
+accomplish equivalent for DEC system?  Probably the easiest way to do
+this is to assemble for absolute using a temporary file, then when all
+done, LOAD/GET that file into an inferior and PDUMP/SAVE it into right
+output filename.  This doesn't let you use cute pseudos that examine
+a location in the output assembled thus far, but seems a lot easier.]
+
+You could make .I and .F generate better code, add IF-THEN-ELSE,
+WHILE-DO, and generally make it into a compiler.
+[KLH: I've thought about this, though mainly in the vein of beefing
+up macro capabilities to the point of doing it reasonably via macros.
+If there are some simple things MIDAS could do to provide a great return
+for the investment...]
+
+Floating point arithmetic.
+[KLH: This can currently be done with .OP, as in <.OP FMPR FOO,BAR>, so
+is not crucial; I don't think about it.  But if some good syntax were
+proposed...]

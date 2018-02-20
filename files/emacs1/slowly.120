@@ -1,0 +1,356 @@
+!* -*- TECO -*-!
+!~Filename~:! !Library of macros for slow displays!
+SLOWLY
+
+!& Slow Draw Line:! !S Print a line of dashes or the pre-comma arg with
+post-comma arg lines from the top of the screen.  If the second arg is
+negative, counting occurs from the bottom of the screen instead of the top.
+If the second arg is 0 explicitly, it re-displays the line it used before.
+Intended for use in FS ^R Display and FS Refresh, it zeros FS ^R Display!
+
+0fs ^R Display			   !* don't call via FS ^R Display again!
+[1 Q1"e qShort_Display_Sizeu1'  !* get where to do it!
+q1"l FS Height+q1-(fs Echo Lines)-2 u1'  !* Line # to hack!
+QDefault_Separator [2 FF&2"n u2'  !* Get line of dashes or first arg!
+q2"e 0'			   !* If we don't have a separator do nothing!
+FF&1"n "e q1,q1+1 @F 0'' !* If zero arg, tell which line to fix!
+fs PJ ATY+1"g			   !* If redisplay is actually needed!
+   q1 f[ Top Line		   !* Start drawing on the indicated line!
+   :FT2			   !* Draw the separator!
+   0u..h'			   !* allow display!
+0
+
+!^R Set Screen Size:! !^R Shorten the part of the screen to use to ARG lines.
+ARG defaults to 3, or whatever was used last time.  A negative argument means
+to use the bottom of the screen rather than the top.  A zero arg means to
+use the whole screen.
+
+A pre-comma arg is the separator to use, and inhibits setting the default.!
+
+"e 0 FS Refreshw 0 FS Linesw 0 FS Top Line  !* if zero, reset the world!
+     0UShort_Display_Mode	   !* note we aren't shortened any more!
+     0m(m.m &_Slow_Draw_Line) 0'  !* clear the line we were on!
+QShort_Display_Size [1 FF&1"n u1'  !* get the window size!
+QShort_Display_Mode"n	   !* If we're shortened already!
+  0m(m.m &_Slow_Draw_Line)'	   !* fix the line we drew before!
+1UShort_Display_Mode		   !* note we're in short display mode!
+Q1 UShort_Display_Size	   !* Change current binding of default size!
+m.m &_Slow_Draw_Line FS ^R Display  !* Draw the separator according to args!
+FS ^R Display FS Refresh	   !* and when the screen gets cleared!
+				   !* If we're hacking at the bottom!
+q1"l 0fs lines			   !* we aren't limiting bottom now!
+     FS Height-(FS Echo Lines)-1+q1 (	 !* calculate where top line is!
+        ) fs Top Line 0'	   !* and set that, and exit!
+
+				   !* otherwise!
+0 FS Top Line			   !* we start at the top!
+q1 FS Lines			   !* and extend for n lines!
+.,.				   !* and that's that!
+
+!^R Slow Display I-Search:! !^R Incremental Search with limited redisplay
+As characters are typed in, the accumulated string is
+searched for.  Characters may be rubbed out.
+^Q quotes special characters.
+^S repeats the search, forward, and ^R repeats it backward.
+If the accumulated string is empty, ^R or ^S either
+reverses the direction of search or gobbles the previous
+search string and searches for it again.
+Altmode or any random control character exits
+(anything but altmode is then executed).
+If the accumulated string fails to be found,
+you will be notified with one bell.  You can then exit,
+rub the bad characters out (or ^G them all away),
+or try searching in the opposite direction.
+Quitting a successful search goes back to the starting
+point of the search;  quitting a failing search rubs out
+enough characters to make it successful again.
+Altmode when the string is empty makes the search
+non-incremental by calling ^R String Search.
+If the display would go off the screen, it narrows the
+screen to QSlow Search Lines Used lines until the search
+exits, to cut down on redisplay!
+
+1fo..qSlow_Search_Lines_Used[.1    !* Q1 gets number of lines to use!
+QDefault_Separator fo..qSlow_Search_Separator[.2
+0[.3				    !* 1=> Screen has shrunk!
+FS Lines+(fs Top Line)[.4	    !* Bottom line before shrinking!
+q.4[.5				    !* Bottom line after any shrinking!
+@FN~ Q.3"N F' ~		    !* If screen has shrunk, need full redisplay.!
+f[ Top Linew f[Lines		   !* don't shrink it permanantly!
+f[ Refresh [Short_Display_Size  !* don't permanently change the screen size!
+[Default_Separator		   !* or the separator!
+[Short_Display_Mode		   !* we're only in the mode temporarily!
+m(m.m &_End_Of_Screen_Address)[.6  !* Calculate where the end of screen is!
+
+    [D			    !* QD is direction and # times to search.!
+    0[L				    !* QL > 0 iff failed to find current search string,!
+    10.[R			    !* QR is state register: !
+				    !* 40. => ^R or ^S repeating search or gobbling default.!
+				    !* 10. => just starting.!
+				    !* 4 => printing char just read.!
+				    !* 2 => rubout just done wants full redisplay.!
+				    !* 1 => rubout just done.!
+
+    [Q @:iQ`			    !* MQ pushes current info:  ., qL, q2, q0, qD.!
+      q4+1*5-fq3"e		    !* We are going to push in q3, so make sure space exists.!
+	q3[..o zj
+	200,0i ]..o'
+      .u:3(%4)			    !* Push point, search string,!
+      qLu:3(%4)
+      q2u:3(%4)
+      q0u:3(%4)			    !* this character, and current direction of search.!
+      qDu:3(%4)
+      `
+
+    [T
+    fs tyi sourc"e
+     @:iT`			    !* MT updates the echo area.!
+      Q9-Q.9"N 2[R' Q9U.9	    !* Q9 holds prompt for echo area.  Redisplay if changed.!
+      fs rgetty"n 2&qR"n	    !* If we need to redisplay the whole thing,!
+	qc fs echo dis		    !* home up and clear line first,!
+	@ft 9:_ q2u8''	    !* then type the prompt and decide to retype whole string.!
+      @ft 8 :i8 	    !* Update displayed search string.!
+      ` '
+     "# :iT'			    !* Don't display if inside a macro.!
+
+    [C :IC TL		    !* QC has string to home up in echo area and clear line.!
+    [0				    !* Q0 holds type-in character being processed.!
+    [2 :i2			    !* Q2 holds accumulated search string.!
+    [8 :i8			    !* Q8 has accumulated stuff to type in echo area.!
+    [9				    !* Q9 has [Failing ][Reverse ]Search for echo area.!
+    0[.9			    !* Q.9 has last value of Q9 actually displayed.!
+    1fo..qSearch_Exit_Option[E	    !* QE nonzero => random control chars exit.!
+    200fs q vector [3		    !* Q3 holds stack for partial search strings.!
+    -1[4			    !* Q4 is stack pointer.!
+    [5				    !* Q5 is random temp.!
+    .[P				    !* QP has old point (to maybe push at end).!
+    [S :IS M.M&_Isearch_RuboutUS :MS    !* QS has & Isearch Rubout (autoloading)!
+    :I* M(M.M&_Isearch_Help) F[Help Mac
+    1f[noquit
+    [6 [7			    !* Q6 and Q7 are the success and failure echo strings.!
+    qD"g :i6I-Search :i7Failing_I-Search'
+    qD"l :i6Reverse_I-Search :i7Failing_Reverse_I-Search'
+    q6u9			    !* Search starts out successful.!
+
+    0[I				    !* QI is nonzero when we are reading input.!
+
+    fs rgetty"e
+       fs tyi sourc"e @ft _S:_'   !* On printing tty, start typing out.!
+       1fstypeo''
+
+  !Restart!
+
+    1:< 1uI -2f[noquit		    !* Set up an errset to catch quits.!
+     < qL"e q6' "# q7'u9 q9-q.9"n mt'	    !* Display direction and status in echo area.!
+      q.3"e			    !* If we still have wide display!
+        (.-(fs Window))*(	    !* If we're before the top, or!
+	  q.6-.)"L		    !* after bottom of the screen!
+          q.2,q.1 m(m.m ^R_Set_Screen_Size)  !* Shrink display temporarily!
+	  fs Top Line + (FS Lines) u.5  !* Bottom line after shrinking!
+	  1u.3''		    !* and flag that we've shrunk already!
+      0@V 
+	  1uI :fiu0 0uI @fiu5
+      q5-"e fq2:@; !<! 0;> 0fsnoquitw qD:m(m.m ^R_String_Search)'
+      q5-8"e  o Funny'
+      q5-176."g  o Funny'
+      q5-î"e FS REREAD'
+
+   !Normal!
+
+      4uR			    !* Handle printing char.!
+      mQ			    !* Push ., qL, q2, q0 and qD into q3, for rubbing out.!
+      :i2 2 0	    !* stick this char at end of search string,!
+      fs tyi source"e		    !* If not inside a keyboard macro,!
+        fq8"n mt'		    !* Update the display.!
+        @ft 0
+	"#
+
+   !Try!  !* Note if fall through we are inside a failing conditional.!
+
+          mt			    !* Update the displayed search string.!
+   	  ''
+      qL"n !<!>'		    !* No point in searching if know it would fail.!
+
+      .u5
+      40.&qR"e			    !* For ^S, ^R suppress the moving back so don't no-op.!
+	qD"g fq2-1r'		    !* Move back, so that from FO/\O we find the FOO.!
+	  "# fsz-qP f[ vz
+	     fq2-1"g fq2:c"e zj''
+	     f]vz''		    !* After finding FO backwd, move fwd 3 so can find FOO.!
+      qD:s2"l !<!>'
+      q5j 1uL fg !<!>		    !* But if search fails, undo that motion back.!
+
+   !Funny!
+
+      q5-177."e  o Rubout'
+  !* Only control characters and backspace get past here.!
+      q5&537.-S"e  o Forward'    !* Check for C-S and C-s (ignore case bit).!
+      q5&537.-R"e  o Backward'   !* Note: mustn't change q5 since Control rereads it.!
+      q5&537.-Q"e  o Quote'
+      qE"e  o normal'
+      o Control
+
+   !Quote!	!* ^Q quotes the next character.!
+
+      fs osteco"n -1f[helpch'
+      fiu0
+      fs osteco"n f]helpch'
+      o normal
+
+   !Forward!      !* ^S means search again forward.!
+
+      qD"l :i6I-Search :i7Failing_I-Search'
+      q4"L qD"g  o Default'	    !* ^S as 1st char going fwd => gobble default string.!
+	     "# 1uD !<!>''	    !* ^S as 1st char, going backward, changed to fwd.!
+      mQ			    !* Push ., qL, q2, q0 and qD into q3.!
+      qD"L 0uL'			    !* If reversing direction, don't assume search will fail.!
+      1uD			    !* String not null:  make sure going fwd,!
+      40.uR			    !* Mark us as a ^S so don't change search string,!
+      o try			    !* just search for it a second time.!
+
+   !Backward!      !* ^R means search again backward.!
+
+      qD"g :i6Reverse_I-Search :i7Failing_Reverse_I-Search'
+      q4"L qD"l  o Default'	    !* ^R as 1st char going backwd => gobble default string.!
+	     "# -1uD !<!>''	    !* ^R as 1st char, going forward, changed to backwd.!
+      mQ			    !* Push ., qL, q2, q0 and qD into q3.!
+      qD"g 0uL'			    !* If reversing direction, don't assume search will fail.!
+      -1uD			    !* String not null:  make sure going backwd,!
+      40.uR			    !* Mark us as a ^R so don't change search string,!
+      o try
+
+   !Default!	!* Come here to use default search string.!
+
+      mQ			    !* Push current state so can rub the default out.!
+      qSearch_Default_Ring[..o    !* Find the default!
+      .fs word u2  ]..o	    !* and gobble it.!
+      fq2"l :i2'
+      q2u8
+      40.uR			    !* Inhibit moving back before starting to search.!
+      o try
+
+   !Rubout!
+ 
+      q4"l fg !<!>'		    !* Rubout when string is empty does nothing.!
+      ms			    !* Call & Isearch Rubout.!
+      qL"e q6' "# q7'u9		    !* Fix displayed direction and status for echo area.!
+      mt !<!>			    !* Redisplay and loop back.!
+
+   !Control!
+
+      q5 fs reread
+      0;
+
+      >>u0 @feqit-q0"e @fg	    !* If we quit, record in journal file.!
+				    !* Record Rubout if quit while searching,!
+				    !* record :^G if failing or waiting for input.!
+	     qL"'gqI"N :i*:' "# :i*_›' fsjrn wr
+	     QL"g <ms -ql;>  mt	    !* If failing, rub out the unfound chars and restart.!
+	          o Restart'
+	     qI"e ms mt o Restart' !* If quit while actually searching, restart.!
+	     QPJ 0fsnoquit
+	        -1fsquit'	    !* If succeeding, restore starting point and quit.!
+	q0f"n fs err'		    !* Error not a quit => pass it on.!
+
+    fq2"g
+      qSearch_Default_Ring [..o   !* New search char, save prev default.!
+      fq(.fsword)-1"G 5c .-z"e j'' !* If previous default is worth saving, push it!
+      q2,.fsword		    !* Store current (new) default!
+      ]..o'
+
+    fs tyi source"e @ft  '	    !* Echo an altmode to show we have exited.!
+    qP mMM_&_Maybe_Push_Point	    !* Maybe leave mark at place search started.!
+    0
+
+!& Slow Minibuffer:! !S Call EMACS's & Minibuffer with FS LINES and
+FS TOP LINE already set up for SLOWLY style top-or-bottome hacking!
+QMinibuffer_Size [1		   !* get the size for our minibuffer!
+QShort_Display_Mode"N		   !* redraw any lines needing redrawing!
+  FS Refresh"n			   !* should be there, but just in case!
+    QShort_Display_Size[2	   !* get the current size of our buffer!
+    Q1,0F  [3  q2,0F  [4	   !* get the absolute values!
+    Q1*Q2"G			   !* if on the same side!
+      Q4-Q3:"G			   !* then if there is overlap!
+        @FN~ M(FS Refresh) w@V~'' !* set up to redisplay our line on exit!
+    "#				   !* but if from opposite sides!
+      FS Height-Q4-Q3-(FS Echo Lines)-1"l  !* the test is for overlap hairy!
+        @FN~ M(FS Refresh) w@V~''''  !* but set up for refresh if overlap!
+
+q1 [Short_Display_Size	   !* size of our screen is as above!
+				   !* use our separator!
+QDefault_Separator FO..Q Minibuffer_Separator [2
+q2 [Default_Separator
+f[ Top Linew f[Lines		   !* don't shrink it permanantly!
+f[ Refresh [Short_Display_Size  !* don't permanently change screen size!
+[Default_Separator		   !* or the separator!
+[Short_Display_Mode		   !* we're only in the mode temporarily!
+@FN~ 0m(m.m &_Slow_Draw_Line)~	   !* fix the line on exit!
+q1 "l @fn ~FS Top Line,(FS Lines) @F~'  !* neg -> must tell ^R ourself!
+q2,q1 m(m.m ^R_Set_Screen_Size)   !* shrink down the display temporarily!
+
+Q..O,-1 m(m.m &_Slow_Old_Minibuffer)   !* Call the old minibuffer!
+  
+
+!^R Quiet Editing:! !^R Edit with no redisplay for a while.
+Enters a recursive ^R mode with redisplay inhibited.
+When you exit the recursive ^R, all pending redisplay will be done.
+Meanwhile, C-L causes one redisplay, and two C-L's in a row
+clear the screen and redisplay.
+
+Exit this mode via C-M-C (^C^C) or Control-altmode.!
+
+    [..J :I..J Quiet_Editing	   !* quiet mode line!
+    1F[ ^R INHIBIT		   !* inhibit re-display!
+    [.L Q.L UQuiet_Edit_Saved_C-L  !* we need to access C-L later!
+    m.m ^R_Quiet_Editing_Redisplay u.L  !* use our version of C-L!
+    0 0			   !* recursively edit the buffer!
+
+!^R Quiet Editing Redisplay:! !^R C-L for ^R Quiet Editing!
+0F[^R INHIBIT			   !* allow display to happen temporarily!
+FF"E			   !* If we had no arg!
+      FS ^R PREV :FC-200.-L"N   !* If we didn't just do a C-L!
+	 0@V 0''		   !* then this is just "let there be display"!
+F@MQuiet_Edit_Saved_C-L	   !* otherwise do a real C-L!
+0@V 0				   !* and be sure the screen really is updated!
+
+!& Setup SLOWLY Library:! !S Stuff to do on loading this lib.
+Places ^R Slow .... on appropriate keys if on slow terminal
+or calls user hook (QSLOWLY Setup Hook).  Default setup is:
+
+& Slow Minibuffer		 -- MM & Minibuffer
+^R Slow Display I-Search	 -- Control-S
+^R Slow Display Reverse I-Search -- Control-R
+^R Set Screen Size		 -- Meta-O
+^R Quiet Editing		 -- C-X Q
+!
+
+0fo..q MM_&_Slow_Old_Minibuffer"n !* If we have already loaded!
+   @FT (Slowly_Being_Loaded_Twice)  !* tell him!
+   0fs echo active w0'	   !* and exit without clearing echo area!
+fsrgetty"e'			   !* Can't help printers!
+3m.c Minibuffer_Size		   !* size of the current minibuffer
+!    *_Number_of_lines_to_use_for_the_minibuffer.__If_negative,_use_the
+bottom_of_the_screen_instead_of_the_top.
+:i*------ m.c Default_Separator*_Default_Separtator_Used_In_Short_Screen_and_incremental_searches.
+Part_of_the_SLOWLY_library	   !* default the separator to "------"!
+3 M.V Short_Display_Size	   !* Default size of Shortened display!
+0 M.V Short_Display_Mode	   !* Initially not in Short Mode!
+M.V Quiet_Edit_Saved_C-L	   !* create a var for ^R Quiet Editing!
+m.m &_Slow_Draw_Line m.v Mini_Re-display  !* use our line-drawer instead!
+m.m &_Minibuffer m.v MM_&_Slow_Old_Minibuffer  !* save prior definition!
+0fo..q SLOWLY_Setup_Hook"e	   !* If we don't have a setup hook!
+  1m.c Slow_Search_Lines_Used	   !* defaultly create the var for user
+!      *_Number_of_lines_to_use_for_display_during_incremental_searches.__If
+negative,_use_the_bottom_of_the_screen_instead_of_the_top.
+  fs o speed-(1200 fo..q SLOWLY_Maximum_Speed+1)"L  !* slow terminal?!
+     m.m ^R_Incremental_Search[1
+     m.m^R_Slow_Display_I-Search [2
+     q2 m.v MM_^R_Incremental_Search !* For the sake of PAGE library!
+				    !* Also, C-R will indirect through it.!
+     q1-q.S"E Q2 u.S'	    !* put on slow stuff!
+     m.m &_Slow_Minibuffer M.V MM_&_Minibuffer    !* activate our definition!
+     m.m ^R_Quiet_Editing u:.x(Q)	    !* Quiet editing on C-X Q!
+     m.m ^R_Set_Screen_Size U..O'	    !* Set screen size by M-O!
+  "# 0fo..qSLOWLY_Setup_Hook[1	    !* else execute his setup hook!
+     q1"n :m1''			    !* if he has one!
+

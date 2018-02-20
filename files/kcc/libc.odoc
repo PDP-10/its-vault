@@ -1,0 +1,264 @@
+		KCC Runtime Library documentation
+
+Guidelines for writing C library modules:
+IMPORTANT FILES:
+UN*X System Call simulation routines: <C.LIB.USYS>
+General well-known C functions: <C.LIB>
+Standard I/O Library functions: <C.LIB.STDIO>
+(Math, Network, ANSI not yet filled out)
+
+Guidelines for writing C library modules:
+
+	ALWAYS #include "c-env.h" before anything else, unless the
+code is truly portable and completely in C.  Note this is "c-env.h",
+not <c-env.h>, so that it is easy to test variations.
+	All source files for KCC and the LIBC routines should refer to
+their header files with "" instead of <>, so that different versions
+of the .H files can be tested easily in the source directory before
+installation in the system-wide standard location.  Normal compilation
+can simply point to the standard include-file location with the -I
+switch.  However, note that user programs, unlike the library sources,
+should always use <>.
+
+	Keep all versions of a function together in the same file,
+rather than having a different file for each version depending on the
+system.  Just conditionalize any system-dependent code appropriately.
+
+	If trying to assemble for an unsupported system or CPU, invoke
+the #error preprocessor command to cause a compilation error with an
+appropriate message.  Alternatively, if it is important that a
+function symbol exist even though it is unsupported, you can code for
+a function that always fails with an error printout to stderr.
+
+	In general each specific library function should have its own
+individual file, although several functions can be collected in the
+same file if they are really tightly bound together.  Any routine that
+needs to use a system call should consider using #asm for efficiency,
+instead of the jsys() or syscal() functions. (This is not normally
+recommended, but since library routines are heavily used and rarely
+modified, it's somewhat more acceptable.)
+
+
+ASSEMBLER HACKERS:
+	.FAI or .MAC source modules should never exist.  Functions which
+require assembly code should use the #asm or asm() feature of KCC.
+See the KCC user documentation for details on this.
+	Use $ or % for runtime-only externals, switches, and macros,
+to avoid possible conflict with C symbols.  Remember "_" in a C symbol is
+equivalent to "." in an assembler symbol.
+	The C runtime support has the following symbol conventions:
+		$$$xxx		Major module entry name.
+		$$xxxx		Global symbol value, internal to runtimes.
+		$xxxxx		Global label, internal to runtimes.
+		%xxxxx		Macro-type instruction.
+		%%xxxx		Miscellaneous macro function.
+
+IMPORTANT FILES:
+
+C-ENV.H	- C Environment defs.  Contains all system/CPU configuration defs.
+	Copy kept in standard include dir.
+
+	Should be included by every LIBC routine which has any system
+or environment dependencies.  Different versions of this file exist
+for different systems/machines/configurations.  Can also be included
+by user programs.  IFNDEFs allow testing temporary changes by using
+the -D switch, although this should be done in conjunction with the
+appropriate -x= switches.
+
+
+CPU.C	- Load-time CPU definitions for target machine, determined by C-ENV.H.
+	Entry point: $$$CPU (a dummy)
+
+	This module is part of the C library and defines the values for
+several symbols which depend on the specific processor that the program
+is being loaded for.  The primary usefulness of this module is that it
+allows the user to defer until load time the decision of whether to build
+a program for extended or non-extended operation.  It also sets the right
+symbols to ensure that all loaded modules are compatible with the CPU type
+being loaded for.
+
+CRT.C	- Standard C Run Time support for KCC.
+	Entry point: $$$CRT (a dummy)
+	Globals: $START			Startup
+		__EXIT			Exit
+		END,ETEXT,EDATA		Hack: Unix simulation (should move)
+		$RET,$RETF,$RETZ,$RETT,$RETP,$RETN	Return points
+		$ZERO,$DFIX,$DFIXS,$DFLTS	(int)<->(double) support
+		$SPUSH,$SPOP			Push/Pop structures
+		$BYTE,$ADJBP,$SUBBP,$BPCNT	Byte ptr (char *) handling
+	All C programs start here.  CRT is responsible for setting up
+the C environment so that C code can execute properly.  It specifically
+does not do anything about setting up a UNIX environment; that is up to
+whatever it is loaded with.  When the C environment is ready, it calls
+the routine _runtm() which should perform any remaining setup and then
+call main().  Normally this routine is found in URT.C, the Unix-simulation
+Run Time module.
+
+
+URT.C	- UNIX-simulation Run Time support (in <C.LIB.USYS>)
+	Entry points: _RUNTM EXIT .EXIT ERRNO
+
+	This module is written in C, and is called by CRT once the C
+environment is set up.  URT then sets up the UNIX simulation
+environment, parsing the command line and setting up stdin, stdout,
+and stderr.  When ready, it calls the user's main() function with the
+parsed command line as a normal "argc,argv" array of char pointers.
+
+*.C	- General functions
+
+	All remaining files are listed below using this format:
+Module.C	Port-status	Functions defined, and comments
+
+	Port-status code:
+		* = fully portable, else names of supported CPUs/systems.
+		E = file #includes "c-env.h" for environment config.
+
+UN*X System Call simulation routines: <C.LIB.USYS>
+
+These need to be checked out against old versions to retain 10X/WAITS stuff.
+
+UIO.H		E T20		Defs shared by Unix I/O simulation routines.
+URT.C		E T20,10X	_runtm,exit,_exit,errno (USYS runtime support)
+
+ACCESS.C	E T20,10X?	access - 10X ver only a partial implem.
+CLOSE.C		E T20,10X	close, _closf, _get_pio, _set_pio
+DUP.C		E *		dup, dup2
+FORK.C		E T20,10X	execl, execle, execlp, execv, execve, execvp
+				fork, vfork
+GETPID.C	E *		getpid	T10/WAITS use job #; T20/10X put job #
+					in high 8 bits of a 16-bit value.
+GETTIM.C	E T20		gettimeofday()
+IOCTL.C		T20		gtty,stty,ioctl	- Unused, routine unfinished.
+LSEEK.C		E T20,10X	lseek
+OPEN.C		E T20,10X	open, creat, _uiofd, _gtjfn, _rljfn
+PIPE.C		E T20		pipe
+READ.C		E T20		read
+RENAME.C	E T20,10X	rename
+SBRK.C		E *		brk, sbrk
+SIGNAL.C	E T20,10X?	signal, sigsys, kill - not sure if 10X works.
+SLEEP.C		E *		sleep, pause
+STAT.C		E T20,10X	stat, fstat, xstat, xfstat, _gtfdb
+TIME.C		E T20,10X	time, ctime, _t2utim, _u2ttim
+				localtime, /* gmtime, asctime */
+UNLINK.C	E T20,10X,ITS	unlink  (TENEX lacks DF%EXP)
+WAIT.C		E T20,10X	wait
+WRITE.C		E T20,10X	write
+
+General well-known C functions: <C.LIB>
+	 (mostly portable)
+ASSERT.H	*		Macro "assert".
+CTYPE.H		*		Implements all CARM macros.  Portable, but
+				set _CT_TABTYPE if char array preferable.
+JSYS.H		T20,10X		Defines popular JSYS nums and JSYS arg values.
+REGEX.H		?		- GNU version.  Not used yet.
+SETJMP.H	* KCC		Defines type "jmp_buf".  Maybe not so portable.
+SIGNAL.H	*?		Looks like BSD4.2 version?
+SYSITS.H	ITS		Defines ITS system-call macro.
+VARARGS.H	* KCC		Defines macros for handling variable # of args.
+
+ABORT.C		PDP-10		abort
+ATOI.C		*		atoi, atol, atof
+CPUTM.C		E T20,10X,WAITS,ITS	_cputm - gets CPU runtime, for KCC only
+CTYPE.C		E *		_ctyp1, _ctyp2 - char flag arrays.
+GETENV.C	E T20		getenv	- note 10X does not have LNMST%.
+GETOPT.C	?		getopt	- not used yet.  Kept in case.
+JSYS.C		E T20,10X	jsys - C runtime support for T20/10X syscalls
+MALLOC.C	*		calloc, cfree, clalloc, free, malloc,
+				mlalloc, realloc, relalloc
+MEMSTR.C	E *		memcpy, memcmp, memchr, memset (ANSI/BSD/S5)
+				bzero, bcopy, bcmp (BSD)
+MKTEMP.C	E T20,10X	mktemp (uses HPTIM% or TIME% instead of GETPID)
+PERROR.C	E T20,10X	perror
+PFORK.C		E T20,10X?	pfork - subfork support (10X support marginal)
+QSORT.C		*		qsort - GNU version
+REGEX.C		*		 - GNU version.  Not used, problems with
+					overly long variable names.  Foo.
+SETJMP.C	E KCC		setjmp, longjmp
+STRING.C	*		strcat, strchr, index, strcmp, strcpy,
+				strcspn, strlen, strncat, strncmp, strncpy,
+				strpbrk, strpos, strrchr, rindex, strrpbrk,
+				strrpos, strspn
+				Portable, but coded to encourage ILDB/IDPB.
+				Opposite of optimal PDP-11 order!
+SYSCAL.C	E ITS		_scall - C runtime support for ITS syscalls
+SYSTEM.C	E T20,10X	system - partial implementation.
+
+Standard I/O Library functions: <C.LIB.STDIO>
+	All functions should be machine independent!
+
+STDIO.H		*	FILE, BUFSIZ, NULL, EOF
+			clearerr, feof, ferror, getc, getchar,
+			putc, putchar, rewind
+			_sios, stdin, stdout, stderr
+CLEANUP.C	*	_cleanup (called by EXIT for STDIO's local cleanup)
+FCLOSE.C	*	fclose
+FFLUSH.C	*	fflush (also works on input streams!)
+FGETC.C		*	fgetc
+FGETS.C		*	fgets
+FILBUF.C	*	_filbuf
+FOPEN.C		*	fopen (new, additional flags for raw-mode, byte-size)
+FPUTC.C		*	fputc
+FPUTS.C		*	fputs
+FREAD.C		*	fread
+FREOPE.C	*	freope
+FSEEK.C		*	fseek
+FTELL.C		*	ftell
+FWRITE.C	*	fwrite
+GETS.C		*	gets
+PRINTF.C	*	printf, fprintf, sprintf
+PUTS.C		*	puts
+SCANF.C		*	scanf, fscanf, sscanf
+SETBUF.C	*	setbuf, _sobuf
+SOPEN.C		*	sopen (KCC: string open, new call)
+UNGETC.C	*	ungetc
+
+Math library functions: <C.LIB.MATH>
+
+BSD network library functions: <C.LIB.NETWORK>
+
+New ANSI draft functions: <C.LIB.ANSI>
+
+STRING HANDLING:
+	memcpy, memcmp, memchr, memset	(ANSI, BSD, S5)
+Things that need to be written:
+	strtok		(ANSI, BSD, S5)
+	memmove		(new in ANSI, not in CARM/BSD/S5)
+	strstr			"
+	strerror		"
+
+Note the mem* routines are declared in <memory.h> in BSD,
+but are in <string.h> in ANSI.
+Note there is a BSD/S5 function not in ANSI:
+	memccpy(to,from,c,n) - copies until copied c (returns ptr to next dest
+		byte) or n counts out (returns null).
+
+ANSI MATH FUNCTIONS:
+
+ANSI and CARM have the same functions.  There are a few
+differences about domain/range error specifications which are
+minor.  The BIG incompatibility is:
+	ANSI modf() is incompatible with CARM and BSD!
+	The 2nd arg is (double *) instead of (int *)!!!
+
+The functions abs, labs, rand, and srand are declared in <stdlib.h> by
+ANSI, in <math.h> by CARM.
+
+BSD appears to have all CARM functions except labs() and fmod().
+BSD has these functions which are not in ANSI or CARM:
+	(all return double unless otherwise indicated)
+	Documented in UPM: gamma, hypot, cabs, j0, h1, jn, y0, y1, yn
+	Undocumented: asinh, acosh, atanh, erf, erfc, expm1, log1p
+		rint, lgamma, copysign, drem, logb, scalb, cbrt
+		finite (returns int), infnan (VAX only)
+
+
+STORAGE ALLOCATION:
+
+The functions clalloc, mlalloc, and relalloc are peculiar to CARM.
+ANSI does not have cfree, although BSD does.
+
+The KCC functions conform to the ANSI descriptions of how they should
+behave, particularly when given strange arguments like NULL pointers.
+
+The BSD functions differ in that a zero size will still return something
+from malloc and realloc (rather than ignoring and freeing).

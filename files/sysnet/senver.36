@@ -1,0 +1,540 @@
+;-*-Midas-*-
+
+	Title SENVER - Chaosnet SENd serVER
+
+  A=1
+  B=2
+  C=3
+  D=4
+  E=5
+  T=6
+ TT=7
+PBP=10
+  H=11		;BP to the ascii message buffer w/header
+ HL=12		;Number of bytes in above buffer
+  N=13		;BP to the chaos-format message text
+ NL=14		;Number of bytes of above
+  K=15		;Kount of #bytes in CLS packet
+  L=16
+  P=17
+
+  Call=<PUSHJ P,>
+Return=<POPJ P,>
+
+ HOSTi==1	;To suck in HOSTS3 with
+  USRi==2	;To test for loginedness of local people
+  OUTo==3	;Outputting the message, either CLI or MAIL:
+CHAOSi==4	;The twisted pair.
+CHAOSo==5
+  ERRi==6	;For sucking in an error message
+
+ PDLen==20
+NW%CHS==:7	;Chaosnet host#
+NW%ARP==:12	;Arpanet host#
+HostsP==100	;Page to map in HOSTS3 at
+Length==2000*10	;Number of bytes to allow for a message
+
+Infinity==377777
+
+
+.INSRT SYSTEM;CHSDEF
+
+Define SYSCAL op,args
+	.Call [Setz ? Sixbit /op/ ? args ((Setz))]
+Termin
+
+Define TYPE &string
+	Movei T,<.Length string>
+	Move TT,[440700,,[Ascii string]]
+	Syscal SIOT,[%Climm,,OUTo ? TT ? T]
+	  Jfcl
+Termin
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;                   Silly Random Crufty Storage		    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+PDList:	-PDLen,,.
+	Block PDLen
+
+Debug:	0		;Non-0 for debugging
+Error:	0		;Gack!  .CALL error code!
+Here:	0		;Our hostname
+
+HostN:	0		;Host number you are sending to
+Host6:	0		;Sixbit abbreviated name of...
+L$Host:	0		;Length of below name.
+pHost:	440700,,Host
+Host:	Block 20	;Host name you're sending to.
+
+From:	Block 20
+
+pFSite:	440700,,FSite
+FSite:	Block 20	;From site.
+MsgLen:	0		;Length of incoming message.
+
+L$Name:	0		;Length of below name...
+Name6:	0		;Sixbit of name, for ITS messages.
+pName:	440700,,Name
+Name:	Block 20	;Who you're sending to.
+
+USR:	Sixbit /USR/
+CLI:	Sixbit /CLI/
+
+Packet:	Block %CPMXW	;One chaotic bundle.
+
+
+TSInt:	Loc 42		;Interrupt handler
+	-TSIntL,,TSInt
+Loc TSInt
+	P			;need a stack
+	%PiIOC ? 0 ? -1 ? -1 ? IOCerr
+TSIntL==:.-TSInt
+
+   $$HST3==1
+   $$ARPA==1
+  $$CHAOS==1
+ $$HSTMAP==1
+ $$HOSTNM==1
+$$SYMLOOK==1
+    $$MIT==1
+ $$HSTSIX==1
+.INSRT SYSENG;NETWRK
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;                              Do It				    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+Begin:	.Close 1,		;Might still be open from loading us.
+	Move P,PDList
+	.Suset [-2,,[.sOPTION,,[(OptInt)]	;We use new-style interrupts.
+		     .sMASK,,[%PiIOC]]]	;Interrupt in IOC errors
+	Syscal CHAOSO,[%Climm,,CHAOSi
+		       %Climm,,CHAOSo	;Get a handle on the net.
+		       %Climm,,5]
+	  Jrst Die
+	Movei T,%coLSN
+	Dpb T,[$CPKOP Packet]		;LiSteN for...
+	Movei T,4
+	Dpb T,[$CPKNB Packet]		;A name with this many bytes,
+	Move T,[.Byte 8 ? "S ? "E ? "N ? "D]
+	Movem T,Packet+%CPKDT		;Namely that.
+	Syscal PKTIOT,[%Climm,,CHAOSo
+		       %Climm,,Packet]
+	  Jrst Die
+	Movei A,5*30.			;Five seconds,
+	Skipe Debug
+	  Hrloi A,Infinity		;or forever if debugging.
+	Syscal NETBLK,[%Climm,,CHAOSi
+		       %CLimm,,%coLSN
+		       A		;Wait this long
+		       %Clout,,T]	;Will be new socket state.
+	  Jrst Die
+	Caie T,%nsRFC			;Was there an RFC?
+	  Jrst Die			;  Then what are we doing here??
+	Syscal PKTIOT,[%Climm,,CHAOSi
+		       %CLimm,,Packet]	;Yes, so suck it in.
+	  Jrst Die
+	Syscal SSTATU,[Repeat 5,%Clout,,T
+		       %Clout,,Here]
+	  Jfcl
+	Movei A,HostsP
+	Movei B,HOSTi
+	Call NETWRK"HSTMAP		;Inhale HOSTS3 binary.
+	  Jrst Die
+	Ldb B,[$CPKSA Packet]
+	Hrli B,NW%CHS_9
+	Call NETWRK"HSTSRC		;Find sender's site.
+	 CAIA
+	  JRST FSITOK
+FSITUK:	MOVE D,PFSITE			;Sender's site is unknown.
+	LDB B,[$CPKSA PACKET]		;Make a fake name.
+	CALL OCTDPB			;Looks like octal Chaos addr.
+	MOVE A,[440700,,[ASCIZ "/CHAOS"]]	;Followed by net name.
+FSITU1:	ILDB T,A
+	IDPB T,D			; * Note that since NETWRK"HSTLOOK
+	SKIPE T				; * can parse addresses like this.
+	 JRST FSITU1			; * (Therefore the SENDER program can
+	JRST BENICE			; *  actually REPLY to these frobs!)
+
+FSITOK:	HRLI A,440700
+	Move B,pFSite
+Weeeee:	Ildb T,A
+	Jumpe T,BeNice
+	Idpb T,B
+	Jrst Weeeee
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;                    We are Alive - Be Sociable		    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+BeNice:	Skipe Debug
+	  Jrst Parse			;No need to be sociable if bizy
+	Ldb T,[$CPKSA Packet]		;Source address.
+	Move A,[Sixbit /000C00/]	;The jname template.
+	Dpb T,[220300,,A]		;Save low byte: 00xS00
+	Lsh T,-3
+	Dpb T,[300300,,A]		;Next highest:  0x0S00
+	Lsh T,-3
+	Dpb T,[360300,,A]		;And the last:  x00S00
+	.Suset [.rUIND,,T]		;Our user index/job#
+	Dpb T,[000300,,A]		;Low byte:      000S0x
+	Lsh T,-3
+	Dpb T,[060300,,A]		;Finally done:  000Sx0
+	Move B,A			;B/ xuname, A/ uname
+	Syscal LOGIN,[A			;uname
+		      [Sixbit /CHAOS/]	;"terminal" name.
+		      B]		;xuname
+	  Aoja A,.-1			;  Loss! Try another uname.
+	Syscal DETACH,[%Clbit,,3
+		       %Climm,,%JSelf]	;Set ourself free.
+	  Jrst Die
+	.Suset [.sJNAME,,['SENVER]]	;Don't be shy...
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;                    See What the Fuck You Want		    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+Parse:	Setz HL,
+	Move H,[440700,,Buffer]
+
+	Ldb L,[$CPKNB Packet]		;Length.
+	Move PBP,[440800,,Packet+%CPKDT]
+	Move N,PBP
+	Setz K,
+
+sChaff:	Sojl L,Hoo
+	Ildb T,PBP
+	Caie T,40
+	  Jrst sChaff
+
+	Move A,[440700,,Name]
+	Setz B,
+USnarf:	Sojl L,GotU
+	Ildb T,PBP
+	Cain T,40
+	  Jrst GotU
+	Cain T,"@
+	  Jrst GotS
+	Idpb T,A
+	Aoja B,USnarf
+
+GotU:	Jumpe B,Hoo			;Be nice about too many blanks.
+	Movem B,L$Name			;Save name length.
+
+GotU1:	Move A,[440700,,Name]
+	Move C,[440600,,Name6]
+	Move TT,L$Name
+	Caile TT,6
+	  Movei TT,6
+guLoop:	Ildb T,A
+	Caige T,"a
+	  Subi T,40
+	Idpb T,C
+	Sojn TT,guLoop
+
+UCheck:	Syscal OPEN,[%Clbit,,.uii
+		     %Climm,,USRi
+		     USR ? Name6 ? ['HACTRN]]
+	  Jrst NoGots
+	.Close USRi,
+	Syscal OPEN,[%Clbit,,.uio
+		     %Climm,,OUTo
+		     CLI ? Name6 ? ['HACTRN]]
+	  Jrst Gagged
+	.Close OUTo,
+
+	Movei A,[Asciz /ÔTY message from chaosnet site /]
+	Call Stuff
+	Movei A,FSite
+	Call Stuff
+	Movei A,[Asciz /:
+/]
+	Call Stuff
+	Call Accept
+	Syscal OPEN,[%Clbit,,.uao
+		     %Climm,,OUTo
+		     CLI
+		     Name6 ? ['HACTRN]]
+	  Jrst NoGots
+	Jrst SendIt
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;           Dolt!  You specified a site!  VERIFICATION!	    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+GotS:	Jumpe B,Hoo
+	Movem B,L$Name
+	Move A,pHost
+	Setz B,
+gsLoop:	Sojl L,SCheck
+	Ildb T,PBP
+	Cain T,40
+	  Jrst SCheck
+	Cail T,"a
+	  Trz T,40
+	Idpb T,A
+	Aoja B,gsLoop
+
+SCheck:	Jumpe B,GotU1			;Not really a site here.
+	Movem B,L$Host
+	Movei A,Host
+	Call NETWRK"HSTLOOK
+	  Jrst BadSite
+	Movem A,HostN
+	Hlrz T,1(B)
+	Add T,NETWRK"HSTADR
+	Hlrz TT,1(T)
+	Add TT,NETWRK"HSTADR
+	Move C,(TT)
+	Camn C,[Ascii /ITS/]
+	  Jrst [Call NETWRK"HSTSIX
+		  Jfcl
+		Lsh A,4*6
+		Camn A,Here
+		  Jrst GotU1
+		Movem A,Host6
+		Move T,USR
+		Lsh T,-6*2
+		Ior T,A
+		Movem T,USR
+		Move TT,CLI
+		Lsh TT,-6*2
+		Ior TT,A
+		Movem TT,CLI
+		Jrst GotU1]
+	Call Accept
+
+	Move A,[440700,,From]
+	Setz B,
+gFrom:	Sojl L,QSend
+	Ildb T,PBP
+	Idpb T,A
+	Aoja B,gFrom
+
+QSend:	Jumpe B,NoFrom
+	Syscal OPEN,[%Clbit,,.uao
+		     %Climm,,OUTo
+		     %Clerr,,Error
+		     [Sixbit /DSK/]
+		     [Sixbit /MAIL/]
+		     [Sixbit />/]
+		     [Sixbit /.MAIL./]]
+	  Jrst Losage
+	Type "FROM-PROGRAM:SENVER
+FROM:"
+	Move A,[440700,,From]
+	Syscal SIOT,[%Climm,,OUTo ? A ? B]
+	  Jrst Losage
+	Type "
+RCPT:("
+	Move T,pName
+	Move TT,L$Name
+	Syscal SIOT,[%Climm,,OUTo ? T ? TT
+		     %Clerr,,Error]
+	  Jrst Losage
+	.Iot OUTo,["@]
+	Move T,pHost
+	Move TT,L$Host
+	Syscal SIOT,[%Climm,,OUTo ? T ? TT
+		     %Clerr,,Error]
+	  Jrst Losage
+	Type " (R-MODE-SEND 0))
+TEXT;-1
+"
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;                Send the Silly Thing and then Quit		    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+SendIt:	Move T,[440700,,Buffer]
+	Move TT,HL
+	Syscal SIOT,[%Climm,,OUTo ? T ? TT
+		     %Clerr,,Error]
+	  Jrst Losage
+
+Done:	.Close OUTo,
+;	Movei A,[Asciz /Message sent successfully./]
+	Jrst Close2
+
+Close:	Call Gargle
+Close1:	Dpb K,[$CPKNB Packet]		;Length
+	Movei T,%coCLS
+	Dpb T,[$CPKOP Packet]		;opcode
+	Syscal PKTIOT,[%Climm,,CHAOSo
+		       %Climm,,Packet]
+	  Jrst Die
+Close2:	.Close CHAOSo,
+	.Close CHAOSi,
+
+IOCerr:				;sigh
+Die:	Skipe Debug
+	  .Value
+	.Logout 1,
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;                  Random and Sundry Subroutines		    ;;
+;;								    ;;
+;;								    ;;
+;;								    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; OCTDPB - Deposit octal number in B down ASCII Bp in D.
+;;; Smashes B,C; Updates D.
+
+OCTDPB:	IDIVI B,8.
+	MOVM B,B
+	MOVM C,C
+OCTDP1:	ADDI C,"0
+	CAILE C,"9
+	 ADDI C,<"A-10.-"0>
+	JUMPE B,OCTDP2
+	HRLM C,(P)
+	IDIVI B,8.
+	CALL OCTDP1
+	HLRZ C,(P)
+OCTDP2:	IDPB C,D
+	RETURN
+
+
+Accept:	Movei T,%coOPN
+	Dpb T,[$CPKOP Packet]
+	Syscal PKTIOT,[%Climm,,CHAOSo
+		       %Climm,,Packet]
+	  Jrst Die
+	Move T,[440800,,NetBuf]
+	Movei TT,Length
+	Syscal SIOT,[%Climm,,CHAOSi ? T ? TT]
+	  Jrst Die
+	Jumpe TT,TooBig
+	Movei NL,Length
+	Sub NL,TT
+
+Transl:	Move A,[440800,,NetBuf]
+
+Send2:	Sojl NL,CPopj
+	Ildb T,A
+	Cain T,200\^M
+	  Jrst [Idpb T,H
+		Movei T,^J
+		Aoja HL,Send3]
+	Trnn T,200
+	  Skipa
+	Caile T,207
+Send3:	Idpb T,H
+	Aoja HL,Send2
+
+
+Stuff:	Hrli A,440700
+SLoop:	Ildb T,A
+	Jumpe T,CPopj
+	Idpb T,H
+	Aoja HL,SLoop
+
+
+Gargle:	Hrli A,440700
+Garg1:	Ildb T,A
+	Jumpe T,CPopj
+	Idpb T,N
+	Aoja K,Garg1
+
+Hoo:	Movei A,[Asciz /You must specify a name in the RFC./]
+	Jrst Close
+
+TooBig:	Movei A,[Asciz /Message is too big - Can't cope./]
+	Jrst Close
+
+NoGots:	Movei A,[Asciz /User "/]
+	Call Gargle
+	Movei A,Name
+	Call Gargle
+	Movei A,[Asciz /" is not logged in./]
+	Jrst Close
+
+Gagged:	Movei A,[Asciz "User is refusing sends"]
+	Jrst Close
+
+BadSit:	Movei A,[Asciz /Invalid site specified: "/]
+	Call Gargle
+	Movei A,Host
+	Call Gargle
+	Movei A,[Asciz /"./]
+	Jrst Close
+
+
+NoFrom:	Movei A,[Asciz /Senders name not specified in C->A forwarding RFC./]
+	Jrst Close
+
+
+Losage:	Movei A,[Asciz /?ITS LOSSAGE - /]
+	Call Gargle
+	Syscal OPEN,[%Clbit,,.uai
+		     %Climm,,ERRI
+		     [Sixbit /ERR/]
+		     %Climm,,4
+		     Error]
+	  Jrst [Movei A,[Asciz /?!Can't get error message/]
+		Jrst Close]
+ELoop:	.Iot ERRI,T
+	Caige T,40
+	  Jrst Close1
+	Idpb T,N
+	Aoja K,ELoop
+
+	
+Popj1:	Aos (P)
+CPopj:	Return
+
+NetBuf:	Block <Length+3>/4
+
+Buffer:	Block <Length+4>/5
+
+
+	End Begin

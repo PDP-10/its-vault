@@ -1,0 +1,334 @@
+;-*- MIDAS -*-
+
+title HOST -- print information on network hosts
+
+x=:0
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+t=:10
+tt=:11
+bp=:12
+hstc=:13
+tyoc=:14
+at=:15	; address table entry
+p=:17
+
+call=:pushj p,
+ret=:popj p,
+
+$$HST3==1			; Use HOSTS3 now.
+$$ARPA==1			;Hack the ARPAnet
+$$CHAOS==1			;Hack the CHAOSnet
+$$ALLNET==1			;Lookup routines will handle any host
+$$HOSTNM==1			;Host name lookup routines
+$$SYMLOOK==1
+$$HSTMAP==1
+hstpag==:50			;Page to put host table on
+hsttab=:hstpag*2000
+
+pat::
+patch:	block 100
+
+.insrt syseng;netwrk >
+
+nw%lcs==:<22_24.>		;LCSnet
+
+popj1:	aos (p)
+cpopj:	ret
+
+define SYSCAL op,args
+       .call [setz ? sixbit /op/ ? args((SETZ))]
+termin
+
+define TYPE &str
+	movei bp,[asciz str]
+	call typstr
+termin
+
+;Type an ASCIZ string
+typstr:	hrli bp,440700
+typst0:	ildb t,bp
+	jumpe t,cpopj
+	.iot tyoc,t
+	jrst typst0
+
+pdl:	-100,,pdl
+	block 100
+
+jclbuf:	block 100
+	-1
+hstbuf:	block 20		;for the host string
+
+
+go:	move p,pdl		; Set up PDL
+	syscal OPEN,[%clbit,,.uao ? %climm,,tyoc ? [sixbit /TTY/]]
+	  .lose %lsfil
+	.break 12,[..rjcl,,jclbuf]	;Read in our JCL
+	move bp,[440700,,jclbuf]
+go0:	ildb t,bp
+	caie t,0		;null?
+	  cain t,^M		;Return
+	    jrst go1
+	caie t,^J
+	  cain t,^C
+	    jrst go1
+	cain t,^_
+	  jrst go1
+	cain t,",
+	  trza t,-1
+	    skipa
+	      dpb t,bp		;set commas to zero
+	jrst go0
+
+go1:	setz t,			;null out the terminating character
+	dpb t,bp		;to make HSTLOOK happy
+	idpb t,bp		;and a second one to indicate the end
+	movei a,hstpag		;Page to put
+	movei b,hstc		;channel to use to load
+	call netwrk"hstmap	;Map in HOSTS3
+	 jrst [	type "Couldn't map in HOSTS3 data file!"
+		jrst die]
+	move a,[440700,,jclbuf]
+go2:	move b,[440700,,hstbuf]
+	ildb t,a
+	jumpe t,die		; If no more JCL to parse, done.
+	idpb t,b
+
+	ildb t,a
+	idpb t,b
+	jumpn t,.-2
+
+	push p,a
+	type /
+/
+	movei a,hstbuf
+	call netwrk"hstlook	;look up the host #
+	 jrst go3
+	move b,a
+	call netwrk"hstsrc	;find the site pointer
+	 jrst go3
+	call shohst		; Show entry for site pointer in D.
+	pop p,a
+	jrst go2
+go3:	pop p,a			; Lost for the entry.
+	type /Lookup failed for "/
+	movei bp,hstbuf
+	call typstr
+	type /"
+/
+	jrst go2
+
+shohst:	hlrz c,netwrk"stlnam(d)	; Get official name
+	movei bp,hsttab(c)
+	call typstr		;type the name
+	type /  /
+
+	; Now type out all nicknames for this site.
+	setz e,				; Clear cnt of nicknames
+	move b,hsttab+netwrk"namptr	; Get addr of NAMES table
+	movn a,hsttab(b)		; Get # entries
+	hrl b,a				; Make AOBJN
+	addi b,hsttab+2			; pointing at 1st entry.
+shoh12:	hlrz a,(b)
+	caie a,-hsttab(d)		; Matches our site entry?
+	 jrst shoh15			; Nope
+	hrrz a,(b)			; Get pointer to name string
+	cain a,(c)			; and not the official name?
+	 jrst shoh15			; Not right site, or is official name.
+	jumpe e,[type "("
+		jrst shoh14]
+	type ", "
+shoh14:	movei bp,hsttab(a)
+	call typstr			; Type out nickname!
+	addi e,1			; bump count of nicknames.
+shoh15:	aobjn b,shoh12
+	jumpn e,[type ")"
+		jrst .+1]
+
+	type "
+  CPU/OS: "
+	hrrz bp,netwrk"strmch(d)	;Get machine name
+	skipn bp
+	  movei bp,[asciz /??/]-hsttab
+	movei bp,hsttab(bp)
+	call typstr
+	type "/"
+	hlrz bp,netwrk"stlsys(d)
+	skipn bp
+	  movei bp,[asciz /??/]-hsttab
+	movei bp,hsttab(bp)
+	call typstr
+	type /  /
+	jumpl a,[ movei bp,[asciz /TIP
+/]
+		  jrst shoh30]
+	movei bp,[asciz /SERVER
+/]
+	skipl netwrk"stlflg(d)
+	  movei bp,[asciz /USER
+/]
+shoh30:	call typstr
+	call shoadr		; type out addresses
+	ret
+	
+shoadr:	hrrz d,netwrk"stradr(d)	;D <= address-table entry
+adrlop:	type /  /		; Space out a couple cols
+	move b,hsttab+netwrk"addadr(d)	;Get address
+	netwrk"getnet c,b	; Get network #
+
+	move t,hsttab+netwrk"netptr	;ptr to NETWORKS table
+	move tt,hsttab(t)	;# of entries
+	move e,hsttab+1(t)	;Size of entries
+	movei t,2(t)		;skip count and size
+netchk:	camn c,hsttab(t)	;Is this the network?
+	  jrst netfnd		;  Yep
+	add t,e			;next entry
+	sojg tt,netchk
+	type /(unknown network)/	;Can't find the network?  Foo!
+	jrst netfn1
+
+netfnd:	hlrz t,hsttab+netwrk"ntlnam(t)	;Get the loc of the network name
+	movei bp,hsttab(t)	;Get core address of network name
+	call typstr
+
+netfn1:	type / = /
+	move a,b
+	call hwdtyp
+	type /  /
+	camn c,[netwrk"nw%arp]	;Is this the arpanet
+	  jrst arptyp
+	camn c,[netwrk"nw%chs]	;Is this the chaosnet?
+	  jrst chatyp
+	camn c,[nw%lcs]		   ;Is this the LCSnet?
+	  jrst lcstyp
+	tlne c,(netwrk"ne%str)	; String type addr?
+	 jrst diltyp
+	call inttyp
+	type /   /
+	move a,b
+	call octtyp
+adrnxt:	type /
+/
+	call shosvc		; show services for address D poins to.
+	hrrz d,hsttab+netwrk"adrcdr(d)	;Next address
+	jumpn d,adrlop
+	ret
+
+shosvc:	type /	/
+	hrrz c,hsttab+netwrk"adrsvc(d)	; Get fileaddr of services list
+	jumpe c,[type /(no services listed)/
+		jrst shosv9]
+shosv2:	hrrz bp,hsttab+netwrk"svrnam(c)
+	addi bp,hsttab
+	call typstr
+	hrrz c,hsttab+netwrk"svrcdr(c)
+	jumpn c,[type /, /
+		jrst shosv2]
+shosv9:	type /
+/
+	ret
+
+die:	.logout 1,
+	.break 16,160000
+	.value
+
+inttyp:	ldb a,[400400,,b]	; get high 4 flag bits
+	jumpn a,[call dectyp
+		type /:/
+		jrst .+1]
+	ldb a,[301000,,b]
+	call dectyp
+	type /./
+	ldb a,[201000,,b]
+	call dectyp
+	type /./
+	ldb a,[101000,,b]
+	call dectyp
+	type /./
+	ldb a,[001000,,b]
+	call dectyp
+	ret
+
+arptyp:	call inttyp
+	type /   /
+	ldb a,[201000,,b]	   ; decimal host
+	call dectyp
+	.iot tyoc,["/]
+	ldb a,[002000,,b]
+	call dectyp		   ; decimal IMP
+	type /  /
+	lsh b,-16.
+	andi b,377
+	dpb a,[112000,,b]		; Make hosts2 style number.
+	trnn b,700374		   ; See if fits in old-style
+	  call [ move x,b	   ; It does, convert it
+		 lsh b,-9
+		 dpb x,[060200,,b]
+		 ret ]
+	move a,b
+	call octtyp		   ; Print right-justified octal
+	jrst adrnxt
+
+chatyp:	move a,b
+	andi a,177777
+	call octtyp
+	type /   /
+	ldb a,[101000,,b]
+	call octtyp
+	type \/\
+	ldb a,[001000,,b]
+	call octtyp
+	jrst adrnxt
+
+lcstyp:	call inttyp
+	type /	/
+	ldb a,[201000,,b]
+	call octtyp
+	type \/\
+	ldb a,[001000,,b]
+	call octtyp
+	type /   /
+	move a,b
+	call octtyp
+	jrst adrnxt
+
+diltyp:	movei bp,hsttab(b)	   ;ptr to ASCIZ string
+	call typstr
+	jrst adrnxt
+
+hwdtyp:	hlrz t,a
+	call octpnt
+	type /,,/
+	hrrz t,a
+	jrst octpnt
+
+octtyp:	move t,a
+octpnt:	setz tt,
+	lshc t,-3		   ;shift instead of IDIVI, don't forget
+	lsh tt,-41		   ;negative! 
+	push p,tt		   ;push remainder
+	skipe t			   ;done?
+	  call octpnt		   ;no compute next one
+
+octpn1:	pop p,tt		   ;yes, take out in opposite order
+	addi tt,60		   ;make ascii
+	.iot tyoc,tt
+	ret			   ;and return for the next one.
+
+; Print a decimal number.  Does not handle negative numbers.
+
+dectyp:	move t,a
+decpnt:	idivi t,10.
+	push p,tt		   ;push remainder
+	skipe t			   ;done?
+	  call decpnt		   ;no compute next one
+
+decpn1:	pop p,tt		   ;yes, take out in opposite order
+	addi tt,60		   ;make ascii
+	.iot tyoc,tt
+	ret			   ;and return for the next one.
+
+end go

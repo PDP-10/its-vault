@@ -1,0 +1,233 @@
+
+
+!Flush Lines:! !Delete Matching Lines:! !C Delete all lines containing specified string.
+Give the TECO search string to search for as a string argument.!
+
+    1,fPattern:_ f[ s string    !* Initialize search default!
+    .( < :s;			    !* Find next line containing string!
+	 0kk>  )j .,z		    !* and kill it.!
+
+
+!^R Widen Bounds:! !^R Widen virtual bounds to display whole buffer.!
+    FSWINDOW+1"G FSWINDOW+B FSWINDOW' !* KEEP WINDOW+B CONSTANT IF WINDOW IS DEFINED!
+    Z[1
+    1FS MODE CH
+    0,FSZ FS BOUNDW 
+    .[0  FN Q0J
+    FSWINDOW+1"G
+       FSWINDOWJ
+       .( 0L .FSWINDOWW	    !* Make sure window starts at real start of line!
+         )-."N .,Z''		    !* If need to change it, say redisplay needed at top!
+!*** NOW, SCREEN HAS CHANGED BEFORE OLD B (MUST BE OFF SCREEN)
+ AND AFTER OLD Z (REPORT THAT)!
+    Q1,Z
+
+
+!What Available Space:! !C How much free address space is left?!
+
+    F[B BIND
+    FS :EJ PAGE-(FS REAL AD+5119/5120)[0
+    FS OSTECO"N Q0+q0u0'
+    Q0:@= @FT_pages_available.
+    0FS ECHO ACT
+    
+
+
+!Write File:! !C Store buffer in specified file.
+This file becomes the one being visited.
+Specify filename as string argument.
+Precomma arguments have hairy meanings; see the code.!
+
+!* "1," says called by ^R Save File;
+inhibits calling & Set Mode Line and auto-save reinitialization.
+Also inhibits setting visited filenames.
+
+"-1," as argument inhibits updating the buffer's file cdate as well.
+
+If not at top level (can't switch files now),
+doesn't update anything about the current buffer except FS MODIFED,
+but does return the written file's creation date so the caller can store it.!
+
+    QBuffer_Index[2
+    0F[VBW 0F[VZW                 !* Write whole bfr regardless of virtual bounds!
+    :F"L Q.F-Q..F"E		    !* If at top level, default to buffer filenames.!
+      Q:.B(Q2+2!*bufvis!)F"N FS D FILE'''
+    5,1FWrite_File[1 ET1	    !* Set default names and open file.!
+    F[D FILE 0FSD VERS EI F]D FILE
+    FS OF CDATE [3		    !* Remember file date.!
+    HPEF			    !* Actually open and write!
+    0FS MODIF			    !* Have written out => can flush without writing it again.!
+    0FS X MODIF
+    +1"E FSRGETTY"E O NoPrint'' !* Don't announce auto saves on printing tty.!
+    FSOFILE[1 FSRGETTY"E :FT'
+    :I*C FS ECHO DIS
+    @FTWritten:_1  FS ECHO LINES-1"N @FT
+'
+    0FSECHO ACT
+  !No Print!
+    Q..F-Q.F"N Q3 '		    !* File written.  If not from EMACS's current buffer, that's all.!
+    FSZ U:.B(Q2+11!*bufsiz!)	    !* Update last saved size even if auto save.!
+    FS ^R MDLY FS ^R MCNT
+    :"L			    !* If precomma arg not -1,!
+      Q3 U:.B(Q2+8!*bufdat!)	    !* update last saved file date and version.!
+      FS OF VERSF"G U:.B(Q2+9!*bufver!)
+		     1FS MODE CH''
+    "N 0'			    !* If doing ^R Save File, return -- filename not changed.!
+    FS D FILEU1
+    M(M.M Set_Visited_Filename) 1
+    0
+
+
+!& Auto Save Setup:! !S Turn on Auto Saving, initializing variables.!
+
+!*
+A nonzero precomma argument means 
+  if we should be saving as auto save file and already are, do nothing.!
+
+    QBuffer_Filenames[3 Q3F"N F[D FILE'
+    4*60*60 FS CLK INTERVAL	    !* Arrange to auto-save after 4-8 mins of idle time.!
+    -1[0			    !* 1 => save as visited names, else later!
+				    !* Q0 is set to filenames to save as.!
+    QBuffer_Index[1
+    [2 [4
+
+!* It is ok to save as the visited filenames if:
+there is a visited file,
+we are visiting the most recent version,
+the file actually has a version number (can fail only on ITS),
+is not read-only,
+the device is one which is fast to write on,
+and the user has said he likes that kind of auto saving.!
+    Q3"N FS D VERS"E
+      Q:.B(Q1+12!*bufnwr!)"E
+        FSDDFAST"N
+	  QAuto_Save_Visited_File"N
+	    1U0			    !* If we should save as visited filenames, put 1 in Q0.!
+	    '''''
+
+!* Figure out names to save as, if not visited names.!
+
+    Q0-1"N
+      qAuto_Save_Filenamesf[d file
+      fsOSTeco"e		    !* ITS.  Use buffer number.!
+        4,6:g(fsDFN1:f6)u2	    !* If Auto Save Filenames fn1 ends with 00!
+	f~2 00"e		    !* then replace with buffer number.!
+	  0,4:g(fsDFN1:f6)u2	    !* 2: First 4 letters from Auto Save Filenames.!
+	  q:.b(q1+7!*bufnum!):\u4   !* 4: Buffer number for this buffer.!
+	  fq4-2,fq4:g4u4	    !* Get at most low 2 digits of buf num as string.!
+	  f624fsDFN1''	    !* Set to autosave filenames.!
+      "#
+        q:.b(Q1+1!*Bufnam!)fs DFN2 !* Twenex: Use buffer name as 2nd component.!
+	0fsDVersion'		    !* Set version separately so!
+				    !* it works for Tenex/Twenex.!
+      fs d fileu0'
+
+    "N Q0-1"N			    !* If saving as auto save file is wanted!
+      Q:.B(Q1+10!*bufsav!)U2	    !* and already happening with same filenames,!
+      FQ2"G F~20"E ''''	    !* then we don't need to do anything.!
+
+    Q0U:.B(Q1+10!*bufsav!)	    !* Now turn on right style of autosaving.!
+    0UAuto_Save_Count		    !* 0 auto saves done since saving was turned on.!
+
+    Q0-1"E			    !* If saving as visited filenames,!
+      '			    !* we are done.!
+
+!* Saving as special auto save filenames, in Q0 and in FS D FILE.!
+    FS D VERSION"E		    !* If multiple saves are possible, find number of lowest!
+      0U2
+      1:< -2 FS D VERSW ER	    !* one that exists.  It will be first one deleted.!
+	  FS IF VERSU2
+	  0 FS D VERSW ER
+	  FS IF VERS+1-Q2U2>	    !* Q2 gets the number versions of the Auto Save file.!
+      EC Q2-QAuto_Save_MaxU2	    !* Compare that with desired number.!
+      -Q2< 0FS D VERSW 1:<E_>"L EIEF'>   !* If too few now, make more.!
+      Q2< -2 FS D VERSW @ED >	    !* If too many, delete some.!
+      '
+    
+
+
+!Tabify:! !C Convert spaces after point to tabs.
+Groups of spaces which could be transparently replaced with a tab are.
+Numeric arg specifies tab stop spacing.  Precomma numeric arg specifies
+minimum number of spaces to change (default 3).!
+
+    [1[2[3[4			    !* save regs *!
+    "N F[ TABWID' FS TABWIDU1 !* Set tab width.!
+    F"E 3',32:I4		    !* minimum number of spaces!
+    0S4			    !* initialize search string *!
+    .[0  fn q0j		    !* Preserve point.!
+    <  :S;			    !* Find next triple of consecutive spaces.!
+       .-FQ4( @F_L		    !* Push where they start.  Search for end of run.!
+            FSSHPOSU2		    !* Q2 gets hpos of end of spaces.!
+	    Q2-(Q2/Q1*Q1)U3	    !* Q3 has where they end, past last tab stop.!
+	    Q3R)-.U2		    !* Q2 has # spaces up to that tab stop.!
+       Q2+1"L Q2D Q1-1-Q2/Q1,9I'    !* Replace all of them except last odd few with tabs.!
+       Q3C>			    !* Move past the excess spaces at the end.!
+    
+
+
+!& Auto Save Setup:! !S Turn on Auto Saving, initializing variables.!
+
+!*
+A nonzero precomma argument means 
+  if we should be saving as auto save file and already are, do nothing.!
+
+    QBuffer_Filenames[3 Q3F"N F[D FILE'
+    4*60*60 FS CLK INTERVAL	    !* Arrange to auto-save after 4-8 mins of idle time.!
+    -1[0			    !* 1 => save as visited names, else later!
+				    !* Q0 is set to filenames to save as.!
+    QBuffer_Index[1
+    [2 [4
+
+!* It is ok to save as the visited filenames if:
+there is a visited file,
+we are visiting the most recent version,
+the file actually has a version number (can fail only on ITS),
+is not read-only,
+the device is one which is fast to write on,
+and the user has said he likes that kind of auto saving.!
+    Q3"N FS D VERS"E
+      Q:.B(Q1+12!*bufnwr!)"E
+        FSDDFAST"N
+	  QAuto_Save_Visited_File"N
+	    1U0			    !* If we should save as visited filenames, put 1 in Q0.!
+	    '''''
+
+!* Figure out names to save as, if not visited names.!
+
+    Q0-1"N
+      qAuto_Save_Filenamesf[d file
+      fsOSTeco"e		    !* ITS.  Use buffer number.!
+        4,6:g(fsDFN1:f6)u2	    !* If Auto Save Filenames fn1 ends with 00!
+	f~2 00"e		    !* then replace with buffer number.!
+	  0,4:g(fsDFN1:f6)u2	    !* 2: First 4 letters from Auto Save Filenames.!
+	  q:.b(q1+7!*bufnum!):\u4   !* 4: Buffer number for this buffer.!
+	  fq4-2,fq4:g4u4	    !* Get at most low 2 digits of buf num as string.!
+	  f624fsDFN1''	    !* Set to autosave filenames.!
+      "#
+        fq(fs d fn2)"e		    !* On Twenex, use buffer name as extension!
+	  q:.b(Q1+1!*Bufnam!)fs DFN2''	    !* unless otherwise specified.!
+      fs d fileu0'
+
+    "N Q0-1"N			    !* If saving as auto save file is wanted!
+      Q:.B(Q1+10!*bufsav!)U2	    !* and already happening with same filenames,!
+      FQ2"G F~20"E ''''	    !* then we don't need to do anything.!
+
+    Q0U:.B(Q1+10!*bufsav!)	    !* Now turn on right style of autosaving.!
+    0UAuto_Save_Count		    !* 0 auto saves done since saving was turned on.!
+
+    Q0-1"E			    !* If saving as visited filenames,!
+      '			    !* we are done.!
+
+!* Saving as special auto save filenames, in Q0 and in FS D FILE.!
+    FS D VERSION"E		    !* If multiple saves are possible, find number of lowest!
+      0U2
+      1:< -2 FS D VERSW ER	    !* one that exists.  It will be first one deleted.!
+	  FS IF VERSU2
+	  0 FS D VERSW ER
+	  FS IF VERS+1-Q2U2>	    !* Q2 gets the number versions of the Auto Save file.!
+      EC Q2-QAuto_Save_MaxU2	    !* Compare that with desired number.!
+      -Q2< 0FS D VERSW 1:<E_>"L EIEF'>   !* If too few now, make more.!
+      Q2< -2 FS D VERSW @ED >	    !* If too many, delete some.!
+      '
+    

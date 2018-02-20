@@ -1,0 +1,180 @@
+; -*- Midas -*-
+
+title UFIND to check for user on all machines
+
+a=1
+b=2
+c=3
+d=4
+e=5
+ee=6
+p=17
+tyoc==1
+usrc==2
+pdllen==10
+
+cpopj:  popj p,
+
+pdl:	block pdllen
+
+; A/ asciz string address
+type7z: hrli a,440700
+	ildb b,a
+	jumpe b,cpopj
+	.iot tyoc,b
+	jrst type7z+1
+
+; A/ sixbit word
+type6z: jumpe a,cpopj
+	setz 0,
+	lshc 0,6
+	addi 0,40
+	.iot tyoc,0
+	jrst type6z
+
+itss:	irps x,,[AI MC MX]
+	sixbit /x/
+	termin
+mnitss==:.-itss
+	block 9
+mxitss==:.-itss
+
+mach6:	0
+device: 0
+uname:	0
+ufound:	0
+err:	0
+its:	0
+jclbuf:	block 2
+
+; MACH6, DEVICE, UNAME set up
+
+try:	.call [	setz
+		sixbit /open/
+		%clbit,,.uii+10  	;image mode, insist foreign
+		%climm,,usrc
+		device
+		uname
+		[sixbit /HACTRN/]
+		setz+<%clerr,,err>]
+	 jrst analyz
+	setom ufound
+	move a,uname
+	pushj p,type6z
+	movei a,[asciz/ at /]
+	pushj p,type7z
+	move a,mach6
+	pushj p,type6z
+	.iot tyoc,[15]
+	.close usrc,
+	popj p,
+
+analyz:	move a,err
+	cain a,4 ; FNF
+	 popj p,
+	cain a,20 ; NXD
+	 popj p,
+	cain a,10 ; DNA
+	 jrst analy1
+	cain a,6
+	 jrst analy1
+	.call [setz
+		sixbit /lose/
+		%climm,,%lsfil
+		setz+<%climm,,try>]
+analy1:	move a,mach6
+	pushj p,type6z
+	movei a,[asciz/ not available
+/]
+	jrst type7z
+
+; A/ sixbit\ML\ or other machine name to try, two chars
+
+mset:	movem a,mach6
+	camn a,its
+	 jrst [	movsi a,'USR
+		movem a,device
+		popj p,]
+	setz 0,
+	lshc 0,12.
+	movsi a,'USR
+	lshc 0,-12.
+	movem a,device
+	popj p,
+
+; No arguments, subroutine.
+
+prsjcl:	skipn jclbuf
+	 .value [ascii /: Use JCL KILL
+/]
+	setzm uname
+	move b,[440700,,jclbuf]
+prsjc1:	ildb a,b
+	cain a,40
+	jrst prsjc1
+
+prsjc2:	move c,[440600,,uname]
+	movei d,6
+prsjc3: sojl d,prsjc4
+	caie a,15
+	 cain a,40
+	  jrst prsjc4
+	cail a,140
+	 subi a,40
+	subi a,40
+	idpb a,c
+	ildb a,b
+	jrst prsjc3
+
+prsjc4: skipe uname
+	popj p,
+	jrst prsjcl+1
+
+; A/ two sixbit chars left justified, machine name
+
+mtry:	pushj p,mset
+	jrst try
+
+tryall:	setzm ufound
+	move e,[-<mxitss+1>,,itss]	; Ask for 1 more than we can take.
+	move ee,[sixbit /ITSNMS/]
+	.getsys e,
+	 hrroi e,itss+mnitss
+	skipl e
+	 .lose			; Wow!  We're up to our ears in ITS machines!
+	hrloi e,-1-itss(e)
+	eqvi e,itss
+tryal1:	move a,(e)
+	pushj p,mtry
+	 aobjn e,tryal1
+	skipe ufound
+	 popj p,
+	move a,uname
+	pushj p,type6z
+	movei a,[asciz/ not found
+/]
+	jrst type7z
+
+go:	move p,[-pdllen,,pdl]
+	.open tyoc,[1,,'TTY]
+	 .lose %lsfil
+	.call [	setz
+		sixbit /sstatu/
+		%clout,,0
+		%clout,,0
+		%clout,,0
+		%clout,,0
+		%clout,,0
+		setz+<%clout,,its>]
+	 .lose %lssys
+
+	.break 12,[5,,jclbuf]
+	pushj p,prsjcl
+	pushj p,tryall
+	.break 16,140000
+
+
+
+end go
+
+

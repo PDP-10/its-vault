@@ -1,0 +1,1662 @@
+;;; -*- Mode:MIDAS -*- 
+
+IMPVRS==.IFNM2	; Version of IMP code
+
+IFN NCPP,.FATAL IMP Code doesn't support NCP any more!
+IFNDEF IMPDBG,IMPDBG==:0	;Random bits of debugging code
+IFN IMPDBG,PRINTX /IMP Debugging code included
+/
+
+IFN KAIMP,[
+$INSRT KAIMP
+];KAIMP
+
+IFN KSIMP,[
+$INSRT LHDH
+IMPLW==400000			;Bit unused by hardware
+];IFN KSIMP
+
+; IMP 1822 PROTOCOL INFORMATION (EXTENDED-LEADER VERSION)
+
+; The IMP leader is 96 bits long, usually organized as 3 words of 32 bits.
+; For further details, these documents are available from the Network
+; Information Center:
+;	IMP-HOST protocol: BBN Report No. 1822
+;	NCP protocol: NIC 8246, Host-to-Host Protocol for the ARPANET
+;	IP, TCP: Internet Protocol Transition Workbook, and
+;		 Internet Protocol Implementor's Guide
+;
+; Here is the leader format used by the IMP code. This format uses
+; no IMP padding, assumes IP only, and expects all IMP<->HOST data
+; transfers in 32-bit mode.
+;
+; Previous versions of this code which supported NCP used a much more
+; complicated leader formatting scheme based on 36 bit transfers and
+; IMP padding. That scheme is dead, see SYSTEM;IMPOLD WTHNCP for details.
+;
+; All data from the IMP interface ends up in the -10 as left-justified
+; 32-bit words. Objects of less than 32 bits length, such as IP octets,
+; are stored in PDP10 ILDB byte order.
+;
+;------------------------------------------------------------------------
+;1:  4.9-4.6 not used (0)
+;    4.5-4.2 all 1's for new format, else old msg type (4=old nop)
+;    4.1-3.3 network number (0)
+;    3.2-2.8 not used (0)
+;        2.7 trace (ignored)
+;    2.6-2.4 leader flags (2.6 is to be ignored, 2.5-2.4 are not used!)
+;    2.3-1.5 message type
+;
+;2:  4.9-4.2 Handling type (7 for big buffers, 4 for small buffers,
+;			    0 for the control link)
+;    4.1-3.3 Host number on IMP
+;    3.2-1.5 IMP number
+;
+;3:  4.9-4.2 Link Number (High 8 bits of Message ID)
+;    4.1-3.7 Low 4 bits of Message ID (0) 
+;    3.6-3.3 Sub-type
+;    3.2-1.5 Message length
+;------------------------------------------------------------------------
+;4:  4.9-1.5 First word of IP datagram
+;    ....
+;------------------------------------------------------------------------
+;
+;In message types 2 and 6, the going-down status 16-bit word is
+;in word 3 bits 4.9-3.3.
+
+;3.6-3.3 of word 3 are the padding count for type 4 (nop) from host.
+;This is currently 0 (none).  Padding is only put on type-0 messages.
+
+IMOTBP:	340400,,IMPILB+0	;BYTE POINTER FOR MESSAGE FORMAT TYPE
+IMTBP:	041000,,IMPILB+0	;BYTE POINTER FOR MESSAGE TYPE FIELD
+IMSABP:	043000,,IMPILB+1	;BYTE POINTER FOR SOURCE ADDR FIELD (HOST+IMP)
+IMSHBP:	241000,,IMPILB+1	;BYTE POINTER FOR SOURCE HOST FIELD
+IMSIBP:	042000,,IMPILB+1	;BYTE POINTER FOR SOURCE IMP FIELD
+IMLNBP:	341000,,IMPILB+2	;BYTE POINTER FOR LINK NUMBER FIELD
+IMSTBP:	240400,,IMPILB+2	;BYTE POINTER FOR SUBTYPE FIELD
+IMMLBP:	042000,,IMPILB+2	;BYTE POINTER FOR MESSAGE LENGTH FIELD
+
+
+
+SUBTTL	ARPANET VARIABLES AND TABLES
+
+EBLK
+
+IMPN::		;IMP DATA AREA CLEARED WHEN IMPUP
+
+%IMXLN==:<<8159.-96.>+31.>/32.	; Max # of 32-bit words in IMP regular msg,
+		; exclusive of leader and leader padding.  = 252.
+IMPIBS:	0	; Saved initial BLKI pointer for IP datagram read
+IMPIDP:	0	; Pointer to IP datagram being input at PI level
+IMPODP:	0	; Pointer to IP datagram being output at PI level
+
+IFN KAIMP,[
+IMPI:	0	;-1 => IMPCHN INPUT INTERRUPT OCCURRED
+IMPO:	0	;-1 => IMPCHN OUTPUT INTERRUPT OCCURRED
+IMPB:	0	;-1 => IMPCHN FLAG INTERRUPT OCCURRED
+IMPIH:	0	;-1 => INPUT WANTS PIA = IMPCHN
+IMPOH:	0	;-1 => OUTPUT WANTS PIA = IMPCHN
+]
+IFN KSIMP,[
+IMPIEC:	0	;Count of input errors while down.
+]
+IMPIS:	0	;INPUT STATE
+ %ISIDN==:-1	; Network shut off
+ %ISIDL==:0	; Normal - idle, not expecting input (i.e. between msgs)
+ %ISIGN==:1	; Ignore input until end of current message (32 bit mode)
+ %ISIML==:2	; Reading IMP initial leader	(32 bit mode)
+ %ISIID==:3	; Reading IP datagram		(32 bit mode)
+
+IMPOS:	0	;OUTPUT STATE
+ %ISODL==:0	; Not expecting output done (i.e. between messages)
+ %ISONP==:1	; Sending NOP
+ %ISOID==:2	; Sending IP Datagram
+ %ISOIL==:3	; Sending IMP leader
+
+; ACTIVE HOST TABLE.  Entries herein are allocated as needed, using garbage
+; collection.  Most "host number" fields are really indices into this table.
+;
+LIMPHT==<XBL+10.>	; TCP conns plus a few extra
+IMPHTN:	BLOCK LIMPHT	; Host number.  1.1-1.8 HOST, 2.1-3.7 IMP
+IMPHTB:	BLOCK LIMPHT	;Bits:
+			;4.9 		UNUSED
+			;4.8 		GC MARK BIT
+			;4.7-4.3 	UNUSED
+			;4.2-4.1 	STATUS OF HOST 0 DOWN, 1 RST SENT, 2 UP
+			;3.9-3.1 	UNUSED
+	.SEE IMPHDS	;RH   Last message from IMP about "host dead status"
+IMPHTC:	BLOCK LIMPHT	; # active messages outstanding for host (8 max)
+IMPHTT:	BLOCK LIMPHT	; Time of last RFNM received
+
+LIMPN==.-1	
+;Last location BLT'ed to zero when initialized
+
+IMNBLK:	0	;Number of times blockage avoided (output held up by ITS)
+IMPHTF:	-1	;Host table free list, threaded through IMPHTB, end with -1
+IMPUP:	-1	;0 => IMP up  ;-1 => down  ;-2 => coming up, PI lvl still off
+		;1 => down for good, until next time IMP ready line changes
+IMPTCU:	0	;0 IMP up/down status not changing
+		;>0 Trying to reinitialize, SYSJOB hasn't done so yet
+		;-1 Has been reinitialized, haven't exchanged NOPs yet
+IMPUCT:	0	;IMP coming up timeout, if 4 NOPs don't go through promptly.
+IMPDWN:	BLOCK 3	;Last message from IMP that it is going down
+		;WD0: "Reason" claimed by IMP (see ch 3 of BBN report 1822)
+		;WD1: Time when expected down
+		;WD2: Time when expected up (SYS time=1/30 sec since up)
+IFN KAIMP,[
+IMPPIA: 0	;Current IMP PIA
+IMPCNI:	0	;CONI into here at slow clock level
+IMPA:	0	;Save A at IMPCHN PI level
+]
+
+IMERCN:	-1	;CONI into here when net goes down
+
+BBLK
+
+
+EBLK
+
+IMPCSH:	-1	;Current source host (IMPHTB index).  -1 when idle.
+IMPCLN:	0	;Current link number
+IMNWSI:	0	;Second BLKI pointer, zero if none
+IMBLKI:	0	;Place to store BLKI pointer
+ IFN KSIMP,[
+IMIFLS:	0	;Flushing output at interrupt handler
+IMPIBP: 0	;Pointer to input buffer data
+ ]
+
+IMPILB:	BLOCK 6	;Input leader buffer
+
+IMNOPC:	0	;< 0 => Send NOPs
+IMPOAC:	0	;> 0 => Output active, don't restart
+IMBLKO:	0	;Place to store BLKO pointer
+IMPBZY: 0	;Software interrupt start flag
+
+; IMP output list.
+;
+; NEGATIVE = BLKO POINTER
+; 0=STOP, 1=SET LAST WORD
+; 2=32-BIT MODE
+; 3=NOP
+;
+IMOPNT:	0	;Index of next "instruction" in IMP output list:
+IMOLST:	0	;BLKO for second and third leader words (first is DATAOed)
+IMOBK1:	0	;First BLKO pointer
+IMOBK2:	0	;Usually 1, set LAST IMP BIT
+IMOBK3:	0	;Second BLKO pointer
+	0	;Stop
+
+IMOLDR:	BLOCK 6	;Build preamble here for data messages
+
+;METERS
+
+;IP meters
+IMNIPI:	0	; # of IP datagrams input (rcvd)
+IMNIPF:	0	; # of IP datagrams flushed (input threw away)
+IMNIPO:	0	; # of IP datagrams output (sent)
+IMNIPR:	0	; # of IP RFNMs received
+IMNIP7:	0	; # of IP Type 7 (Dest Host Dead) messages received
+IMNIP8:	0	; # of IP Type 8 (Error) msgs rcvd
+IMNIP9:	0	; # of IP Type 9 (Incomplete Transmission) msgs rcvd
+IMNWIG:	0	; # words ignored by "Ignore" state (%ISIGN)
+IMNWIF:	0	; # words flushed by IMPRM5
+
+;IMP meters
+IMNSRF:	0	;Number of spurious RFNMs on non-IP links
+
+IMPMSR:	BLOCK 20;Count of IMP messages rcvd
+IMPM1S:	BLOCK 4	; # Type 1 (Error in Leader) subtype msgs
+IMPM9S:	BLOCK 2	; # Type 9 (Incomplete Transmission) subtype msgs
+IMPMSS:	BLOCK 1	;Count of IMP msg sent (we only send regular msgs)
+IMCT1:	0	;# Times at IMPBKZ
+IMCT2:	0	;# Times at IMPIBZ
+IMCT3:	0	;# Times at IMPOBZ
+BBLK
+
+SUBTTL	ARPANET MAIN-PROGRAM LEVEL
+
+;(Re)Start IMP
+;
+IMPINI:
+IFN KAIMP,[
+	CONO IMP,IMI32S		;32-bit data mode
+	DATAI IMP,A		;Clear any cruft
+	CONO IMP,IMPODC		;Clear OUTPUT DONE and PIA
+	CONSZ IMP,IMPOD+7	;Check OUTPUT DONE, PIA, cause HOST READY
+	 BUG HALT,[IMP: Hardware dead]		;CONO didn't clear some bits?
+	CONO IMP,IMPIR+IMPHEC	;Clear HOST ERR, enable int on IMP READY
+]
+IFN KSIMP,[
+IF2,IFN IMPIBF&777,.FATAL IMPIBF not on DEC page boundary
+	MOVEI A,IMPIBF_-9.	;DEC page # of IMP buffer page
+	TRO A,%UQ16B\%UQVAL	;Valid mapping, 16 bit device
+	IOWRI A,UBAPAG+IUIMPG_1	;Set up 1 DEC page of UBA mapping. Note that
+				; the second half of IUIMPG isn't mapped at all
+	MOVEI A,%LHRST
+	IOWRI A,%LHOCS		;Reset output side
+	IOWRI A,%LHICS		;Reset Input side
+]
+	MOVE T,TIME
+	ADDI T,30.
+	CAMLE T,TIME
+	 PUSHJ P,UFLS		;Wait one sec for IMP to notice rdy line drop
+IFN KAIMP,[
+	CONO IMP,0		;Clear "ENA IMP RDY" int (turns off IMP error)
+	MOVEI A,NETCHN		;Set idle PIA
+	MOVEM A,IMPPIA
+	MOVE A,[JSR IMPIBK]	;Set up default interrupt handlers
+	MOVEM A,IMPILC
+	MOVE A,[JSR IMPOBK]
+	MOVEM A,IMPOLC
+]
+;IMP now shut down. Reset variables
+
+IFN KAIMP,[
+	SETZM IMPILC+1		;Clear BLKI, BLKO runout locations (KA\DM)
+	SETZM IMPOLC+1
+]
+IFN KSIMP,[
+	SETZM IMPIBP		;Reset DMA input buffer pointer
+	SETZM IMIFLS		;Not flushing output at PI handler
+]
+	SETOM IMPOAC		;Output not active
+	SETOM IMPBZY		;Don't start interrupts by accident
+	SETOM IMPUP		;Not up yet
+	SETOM IMPTCU		;Note trying to come up
+	MOVNI A,30.		;Allow 15 seconds to come up
+	MOVEM A,IMPUCT
+	SETOM IMPHTF		;Will GC IMPHTB on first reference
+	MOVE A,[IMPN,,IMPN+1]	;This resets IMPIBS,IMPIDP,IMPODP,IMPI,IMPO,
+	SETZM IMPN		; IMPB,IMPIH,IMPOH,IMPI,IMPOS, and host
+	BLT A,LIMPN		; tables.
+	SETOM IMPIS		;Init input state FSM correctly
+	MOVE T,TIME		;Note when we last started IMP
+	MOVEM T,LNETIM
+IFN KAIMP,[
+	CONO IMP,NETCHN		;Enable interrupts on NETCHN, start input
+]
+IFN KSIMP,[
+	CALL IMPHRS		;Set host ready
+	CALL IMPIST		;Start input
+]
+	SETOM IMPDWN+1		;Time for IMP to go down, not known
+	MOVE T,TIME
+	ADDI T,15.		;Wait 1/2 sec before we try to output
+	CAMLE T,TIME
+	 PUSHJ P,UFLS
+	MOVNI A,4
+	MOVEM A,IMNOPC		;Send 4 NOPs to start
+	;Falls through to start output
+
+;Start IMP output, from process level
+;
+IMPOST:	CONO PI,NETOFF		;Kill interrupts
+IFN KAIMP,[
+	MOVE TT,IMPPIA		;Get desired level for output done int
+	AOSN IMPOAC		;Skip if output already active
+	 CONO IMP,IMPODS(TT)	;Generate output done int to start things
+	JRST NETONJ		;Reenable interrupt system
+
+];IFN KAIMP
+IFN KSIMP,[
+	SKIPL IMPOAC		;Skip if output already active
+	 JRST NETONJ		;Yes, nothing to do
+	SETZM IMPBZY		;Tell interrupt handler to run
+	CONO PI,NETRQ		;Request interrupt on net channel
+	JRST NETONJ		;Reenable interrupt system
+]
+
+;Start output, called from PI (NETCHN) level
+;
+IMPIOS:
+IFN KAIMP,[
+	AOSE IMPOAC		;Note output active. If already active,
+	 POPJ P,		; nothing more to do
+	PUSH P,TT
+	CONO PI,400		;Turn PI off, IMP may have PIA = 1
+	MOVE TT,IMPPIA		;Get current PI level
+	CONO IMP,IMPODS(TT)	;Set OUTPUT DONE to cause interrupt
+	CONO PI,200		;Reenable interrupts
+	POP P,TT
+	POPJ P,
+]
+IFN KSIMP,[
+	SKIPL IMPOAC		;Output already active?
+	 POPJ P,		;Yes, do nothing
+	SKIPE IMPOS		;Output state is idle?
+	 BUG HALT,[IMP: Bad IMPOS state, ],DEC,IMPOS
+	SETZM IMPBZY		;Tell interrupt handler to run
+	CONO PI,NETRQ		;Request net interrupt
+	POPJ P,			;all done.
+]
+
+;Check if IMP ready line is set
+; Called from SYSJOB.
+; Return +1 if IMP not ready, +2 if so
+;
+IMPCKR:
+IFN KSIMP,[
+	IORDI A,%LHICS		;Get input CSR
+	TRNN A,%LHINR		;Skip if IMP not ready
+	 AOS (P)		;Return +2 if ready
+	POPJ P,			;That's all
+]
+IFN KAIMP,[
+	CONSZ IMP,IMPR		;Skip if IMP not ready
+	 AOS (P)		;Return +2 if ready
+	POPJ P,
+]
+
+
+SUBTTL	HOST-TABLE MANAGEMENT
+
+; FNDHST - Look up host-table index for a given IMP host address.
+;	Call with NETOFF or NETCHN PI in progress.
+;	T/ IMP host address (maybe someday other nets?)
+; Returns .+1 if failed (no room in table)
+; Returns .+2
+;	H/ host-table index
+; Smashes W.
+
+FNDHST:	MOVEI H,LIMPHT-1	;Search for an entry for this host
+	CAME T,IMPHTN(H)
+	 SOJGE H,.-1
+	JUMPGE H,POPJ1		;Found
+	SKIPGE H,IMPHTF		;Not found, cons one off free list
+	 JRST FNDHS1		;Oops, must garbage collect
+	MOVE W,IMPHTB(H)
+	CAIGE H,LIMPHT		;Make sure H is valid idx
+	 CAIL W,LIMPHT		;ditto W
+	  BUG HALT,[NET: FNDHST idx clobbered!!!]
+	MOVEM W,IMPHTF
+	MOVEM T,IMPHTN(H)
+	SETZM IMPHTB(H)		;Nothing is known about this host
+	SETZM IMPHTC(H)		;Assume no RFNMs outstanding
+	SETZM IMPHTT(H)		;Clear out time of last RFNM.
+	JRST POPJ1
+
+; Host-Table full, attempt to GC it and flush unused entries, by
+; scanning all possible pointers into table.
+;	IMP pointers are IMPCSH and IMPHTC(H)
+;	TCP pointers are XBNADR(I)
+
+; GC mark phase - mark entries in use
+FNDHS1:	PUSH P,I
+	MOVSI W,200000		;Mark bit
+	MOVEI H,LIMPHT-1	;Clear all mark bits
+	ANDCAM W,IMPHTB(H)
+	SOJGE H,.-1
+	SKIPL H,IMPCSH		;Mark from IMPCSH
+	 IORM W,IMPHTB(H)
+IFN TCPP,[
+	MOVEI I,XBL-1
+	SKIPL H,XBNADR(I)	; See if TCP conn has a net addr specified
+	 IORM W,IMPHTB(H)	; Yes, set the mark bit.
+	SOJGE I,.-2
+] ;IFN TCPP
+
+; GC sweep phase - free all unmarked entries
+	SETO I,			;Free pointer
+	MOVEI H,LIMPHT-1
+	MOVSI W,601000		;Protect if RFNM-WAIT, RST-WAIT, or marked
+FNDHS4:
+	SKIPG IMPHTC(H)		;Also protect if any outstanding RFNMs
+	 TDNE W,IMPHTB(H)
+	  SOJGE H,FNDHS4
+	JUMPL H,FNDHS5
+	SETZM IMPHTN(H)		;Don't belong to any host
+	MOVEM I,IMPHTB(H)	;Cons onto free list
+	MOVE I,H
+	SOJGE H,FNDHS4
+FNDHS5:	MOVEM I,IMPHTF		;Free list
+	POP P,I
+	SKIPGE IMPHTF
+	 POPJ P,		;GC-overflow
+	JRST FNDHST		;Try again, should win
+
+SUBTTL	ARPANET INPUT INTERRUPT LEVEL
+
+COMMENT |
+The KA/KL IMP interrupt level structure is fairly complicated and
+deserves some explanation.  Because the IMP interface is not a DMA
+device, all I/O is done "by hand", a word at a time; for this reason
+all I/O is done at PI level IMPCHN=1 (the highest) whenever possible.
+However, to prevent general IMP processing from taking complete
+precedence over everything else, all non-I/O handling is done at
+PI level NETCHN=2, which is the same level as disk devices.
+
+Because the KA/KL interface only has one PI assignment available,
+the software to switch levels is much more complicated.  For either
+case, the code will not make sense unless you understand the channel 1
+multiplexing feature (see interface CONI bit descriptions).
+
+The KS interface avoids all this cruft by being a DMA device and only
+interrupting on NETCHN when it has finished a transfer. The first-level
+KS interrupt handler dispatches to IMPBER on errors, IMPBKZ for "control"
+interrupts (Last Imp Word seen) and IMPIBZ for other Input Done interrupts;
+this is very similar to the DM interface.
+|
+
+; Here when IMP interface is interrupting at PI level 2 (NETCHN)
+; TT has CONI bits.  Can clobber most ACs
+;
+IMPINT:	
+IFN KAIMP,[
+	AOSN IMPB		;Requested by PI 1 control interrupt?
+	 JRST IMPBKZ		; Yes
+	AOSN IMPI		;Requested by PI 1 Input Done interrupt?
+	 JRST IMPIBZ		; Yes
+	AOSN IMPO		;Requested by PI 1 Output Done interrupt?
+	 JRST IMPOBZ		; Yes already
+	TRNE TT,IMPLW+IMPHER+IMPERR	;No PI 1 ints, check status bits
+	 JRST IMPBKZ		;PI 2 Control interrupt (error, Last Imp Word)
+	TRNE TT,IMPID
+	 JRST IMPIBZ		;PI 2 Input Done
+	TRNE TT,IMPOD
+	 JRST IMPOBZ		;PI 2 Output Done
+	BUG HALT,[IMP: Bogus interrupt]
+]
+IFN KSIMP,[
+	SETOM IMPBZY		;Tell MP we are handling request
+	SKIPL IMPOAC		;Output already active?
+	 JRST IMPEX		;Yes, do nothing
+	AOS IMPOAC		;Output is now active
+	JRST IMPOBZ		;No, go try to start output
+]
+
+IFN KAIMP,[
+; IMPIBK - Default PI 1 Input Done routine, called from IMPILC.
+;	We're idling, switch to PI 2 to handle the input
+;	(normally 1st word of new IMP message)
+EBLK
+IMPIBK:	0
+BBLK
+	SETOM IMPI		;Set flag saying PI 1 Input Int seen
+	CONO IMP,NETCHN		;Switch PIA to 2
+	JRST 12,@IMPIBK		;Go re-interrupt, will get to IMPINT->IMPIBK
+
+; IMPBRK - PI 1 Control interrupt, called from PI0LOC+2 (= 42 on KA's)
+;	which is the standard PI 1 vector location.
+;	Again, switch to PI 2 to handle the condition
+;	(typically Last Imp Word seen on input)
+EBLK
+IMPBRK:	0			;This interrupt is to 42, may not be the IMP
+BBLK
+	CONSO IMP,IMPLW+IMPHER+IMPERR	;This really from the IMP?
+IFE NEWDTP,JRST RC1INT
+IFN NEWDTP,JRST IMPBR1
+	SETOM IMPB		;Yes, re-interrupt and handle at NETCHN level
+	CONO IMP,NETCHN		;Switch PIA to 2 (NETCHN)
+	JRST 12,@IMPBRK		;Go re-interrupt, will get to IMPINT->IMPBKZ
+
+IFN NEWDTP,[
+IMPBR1:	CONSZ DTC,70		;Allow for non-IMP interrupt on PI chan 1
+	 JRST 12,@IMPBRK
+]
+
+RC1INT:	MOVEM 17,R1NTAC+17
+	MOVEI 17,R1NTAC
+	BLT 17,R1NTAC+16
+	MOVEI J,1
+	JSP E,SPUR
+	MOVSI 17,R1NTAC
+	BLT 17,17
+	JRST 12,@IMPBRK
+
+; IMPRM4 - PI 1 Input-Done handler during readin of IMP data (not leader)
+;	BLKI has run out but haven't yet gotten Last Imp Word!
+;	Either read more (if 2nd ptr specifed) or ignore following data.
+EBLK
+IMPRM4:	0
+BBLK
+	MOVEM A,IMPA		;Save A
+	SKIPL A,IMNWSI		;Second BLKI pointer exists?
+	 JRST IMPRM6		;Nope, none now
+	MOVEM A,IMBLKI		;Yes, store it!
+	SETZM IMNWSI		;Clear this flag so don't do it again
+	MOVE A,IMPA		;Restore A
+	JRST 12,@IMPRM4		;Return, continuing BLKI.
+
+IMPRM6:	MOVE A,[JSR IMPRM5]	;Ugh!  Ignore additional input
+	MOVEM A,IMPILC		;Set up new vector to "ignore" routine
+	MOVE A,IMPA
+	JRST 12,@IMPRM4
+
+; IMPRM5 - PI 1 Input-Done handler while ignoring IMP data, only
+;	set up by IMPRM6 above.
+;	Just reads a word and ignores it.  This loop is broken
+;	by a control interrupt when Last-Imp-Word is seen.
+EBLK
+IMPRM5:	0			;Hmm? Flush input at PI 1
+BBLK
+	DATAI IMP,IMPA
+	AOS IMNWIF		;See how often we come here.
+	JRST 12,@IMPRM5
+];IFN KAIMP
+
+
+IFN KSIMP,[
+;First level interrupt handling for input side. Here from UBA vector hardware.
+IMPIBK:
+IFN NETCHN-UTCCHN,.ERR You lost at IMPIBK
+
+	EBLK
+IMPIBK:	0
+	BBLK
+	JSR UTCSAV		;Save AC's, get a stack
+	IORDI TT,%LHICS		;Get CS register
+	TRNE TT,%LHERR\%LHNXM
+	 BUG HALT,[IMP: I NXM]
+	TRNE TT,%LHMRE		;Ready line flapped
+	 JRST IMPIER		;Go directly to error routine
+	TRNN TT,%LHRDY		;Device ready for new operation?
+	 BUG HALT,[IMP: Input device not ready]
+	TRNN TT,%LHEOM		;Saw EOM from IMP?
+	 JRST IMPIB1		;No, word count ran out before message
+	SKIPGE IMIFLS		;Flushing output?
+	 JRST [ SETZM IMIFLS	;Not any more!
+		JRST IMPIRT ]	;But flush last piece by queueing new request
+	IORDI A,%LHIWC		;End of message. Get remaining UB word count
+	SKIPE A			;This would be a surprise, really
+	 TDO A,[-1,,600000]	;36bit number of UBA words remaining in bfr
+	IDIVI A,2		;Number of PDP10 words (cleverly rounded)
+	ADDI A,IMPBFS		;Number of PDP10 words of message
+	MOVNS A			;Negative word count
+	HRLZS A			;NWG,,0
+	HRRI A,IMPIBF		;NWG,,Start of buffer
+	MOVEM A,IMPIBP		;Init input buffer pointer for new data
+	MOVE A,[-3,,IMPILB-1]	;Read leader - 3 words to IMPILB
+	CALL IMPGRI		;Do it
+	MOVEI A,%ISIML
+	SKIPN IMPIS		;Already in non-idle state? (shouldn't happen)
+	 MOVEM A,IMPIS		;Was idling, set state to "Saw IMP LEADER"
+	TRNE TT,IMPLW		;Saw last word of message?
+	 JRST IMPBKZ		;EOM, so this is a control interrupt
+	JRST IMPIBZ		;Not EOM, handle differently
+
+;Message didn't fit in input buffer. Shouldn't ever get here, but
+;might if messages concatenated due to ready line randomness
+;
+IMPIB1:	BUG INFO,[IMP: Huge message]
+	SETOM IMIFLS		;Say we are flushing output
+	JRST IMPIRT		;And go queue up another read
+
+;Fake output interrupt - come here when we have read more data from the
+;input buffer and want to re-dispatch.
+;
+IMPIBL:	TRNE TT,IMPLW		;Saw last word of message?
+	 JRST IMPBKZ		;EOM, so this is a control interrupt
+	JRST IMPIBZ		;Not EOM, handle differently
+
+];IFN KSIMP
+
+; IMPIBZ - PI 2 (NETCHN) "Input Done", via IMPINT (KA) or IMPIBK (KS)
+;KA\KL:	Note there is one input word waiting in the IMP interface,
+;	but it is NOT the last IMP word (if it was, we would get a
+;	control interrupt and go to IMPBKZ instead).  This situation
+;	should only happen while reading the IMP leader and there is
+;	more input than just the leader, i.e. it is a NCP or IP message.
+;	This is also where we come after being in idle state.
+;
+;KS:	A bunch of stuff has been DMA'd into the input buffer and the
+;	DMA word count ran out before the IMP sent EOM.
+;
+;	TT/ IMP CONI word or status register
+
+IMPIBZ:	AOS IMCT2
+IFN KAIMP&IMPDBG,[
+	TRNN TT,IMPI32		;Debugging, make sure we reading in 32 bit mode
+	 BUG HALT,[IMP: 36bit mode at IMPIBZ]
+];IFN KAIMP&IMPDBG
+	MOVE B,IMPIS		;Skip hold-up check unless start of msg (idle)
+	CAILE B,%ISIID
+	 BUG HALT,[IMP: Bad IMPIBZ state]	;Unknown input state
+	JRST @.+2(B)		;Dispatch, note data not read yet
+
+		IMPIGN		;-1 Supposed to be shut off, go ignore message.
+	OFFSET -.
+ %ISIDL::	IMSTR1		; 0 Was idle, this is start of a message!
+ %ISIGN::	IMPIGN		; 1 Ignoring this message.
+ %ISIML::	IMPLD2		; 2 Reading IMP leader, see what we got.
+ %ISIID::	[JRST 4,.]	; 3 Was reading IP datagram!  Runout is error.
+	OFFSET 0
+
+IMPIGN:	AOS IMNWIG		;See how often we come here.
+IFN KAIMP,[
+	DATAI IMP,A		;Ignore input (only come here via table above)
+	JRST IMPRET
+]
+IFN KSIMP,JRST IMPIRT
+
+; All routines dispatched to from IMPIBZ and IMPOBZ return via IMPRET.
+IMPRET:
+IFN KAIMP,[
+ IFN IMPDBG,[
+	CONSO IMP,IMPI32	;Make sure input is in 32-bit mode
+	 BUG HALT,[IMP: 36bit mode at IMPRET]
+ ]
+	CONO IMP,@IMPPIA	;Switch to desired exit PIA
+	JRST IMPEX
+]
+IFN KSIMP,JRST IMPEX
+
+; IMPBKZ - PI 2 (NETCHN) Control interrupt, via IMPINT (KA) or IMPIBK (KS)
+;	Error or Last Imp Word on input.
+;	TT/ IMP CONI word or status register
+
+IMPBKZ:	AOS IMCT1		;Bump count of control interrupts
+IFN KAIMP,[
+	TRNE TT,IMPERR+IMPHER	;See if error or last-imp-word.
+	 JRST IMPBER		;Jump if IMP Error or Host Error
+]
+; Not an error, interface has Last Imp Word ready for DATAI'ing!
+; Go handle end of IMP message
+IFN KAIMP,[
+	MOVE A,[JSR IMPIBK]	;Get rid of input BLKI
+	MOVEM A,IMPILC		;Replace with default switch-PIA vector
+	SETZM IMPIH		;Say don't need PI 1 for input any more.
+	MOVEI A,NETCHN		;And change exit PIA to 2
+	SKIPL IMPOH		;Unless output side still needs PI 1.
+	 MOVEM A,IMPPIA		;Set value of PI level desired on exit.
+	DATAI IMP,A		;Get the last input word for processing
+]
+	SKIPGE B,IMPIS		; Unless network has been shut off
+	 JRST IMPIGN		; (in which case ignore input)
+	JRST @IMSDT2(B)		; then go process end of IMP message.
+
+IMSDT2:	OFFSET -.
+ %ISIDL::	IMPBKN	; 0 Was idle - leader only 1 word long??
+ %ISIGN::	IMPIRT	; 1 Ignore input
+ %ISIML::	IMPLD1	; 2 End of IMP leader - can't be regular msg
+ %ISIID::	IMPRMI	; 3 End of IP datagram
+	OFFSET 0
+
+
+IMPBKN:
+IFN KSIMP,BUG HALT,[IMP: Bad state IMPBKN]
+IFN KAIMP,[
+; Here from table above for old-type leader (1 word)
+; IMPBN1 is used by IMPLD2 if long leader has wrong format.
+;
+	MOVEM A,IMPILB		;Store first (and only) word of leader
+				;Falls through
+];IFN KAIMP
+;Here from KA short leader or all long leader with wrong format
+;
+IMPBN1:	LDB A,IMOTBP		; Get message format type
+	CAIN A,4		; Old-type NOP?
+	 JRST IMPIRT		;  Just ignore it.
+	CAIN A,16		; Is it 1822L format?
+	 BUG INFO,[IMP: 1822L leader],OCT,IMPILB
+	CAIE A,17		; Is it not the long-leader format?
+	 BUG INFO,[IMP: Old-type leader],OCT,IMPILB
+	JRST IMPIRT		; Ignore rest of message, if any
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;		IMP LEADER READING/DISPATCH		;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;	Code on this page handles the initial processing of
+;;;	IMP messages and dispatches to the appropriate
+;;;	routines for each message type.  Only Type 0 ("Regular")
+;;;	messages carry Host-Host traffic.
+
+IMSTR1:
+IFN KAIMP,[
+; Here from IMPIBZ only, to handle first word of an IMP message.
+; (It's not the last word or IMPBKZ would complain about it)
+; Set up a BLKI to get the rest of the leader.
+	DATAI IMP,A		;Get 1st word from interface
+; Entry point from IMPOB6 only to restart input from "held-up" state
+; First word already in A
+IMSTRT:	MOVEM A,IMPILB		;Store first word of leader
+	MOVEI C,%ISIML		;Set new state = reading rest of IMP leader
+	MOVE B,[-2,,IMPILB]	;There are two more words in the leader
+	JRST IMPRM9		;Go read the leader.
+];IFN KAIMP
+IFN KSIMP,BUG HALT,[IMP: Bad state IMSTR1]
+
+; Here from IMPBKZ only for a leader not followed by any data.
+; 	KA/KL has last word in A
+;	IMPLW flag in TT.
+;
+IMPLD1:	
+IFN KAIMP,[
+	AOS B,IMBLKI		;Update pointer to buffer
+	MOVEM A,(B)		;and store last word in right place.
+]
+	JRST IMPLDD
+	; Fall through to handle what should be an IMP-Host note.
+	; The IMPLW flag distinguishes this entry point from IMPLD2,
+	; so we know there isn't a data word in the interface.
+
+; Here from IMPIBZ only, for an IMP leader with more data following;
+; almost certainly a "Regular" host-host message.  
+;
+IMPLD2:
+IFN KAIMP,[ +++++	;Missing DATAI of current word first??
+	AOS B,IMBLKI		;Update pointer to buffer
+	MOVEM A,(B)		;and store last word in right place.
+]
+	JRST IMPLDD
+	; Fall through to handle what should be a real message
+	; The IMPLW flag distinguishes this entry point from IMPLD2,
+	; so we know there is a data word in the interface. (KA)
+
+
+	SUBTTL IMP leader dispatch handling
+IMPLDD:	HRRZ B,IMBLKI		;Get address of last word read
+	CAIGE B,IMPILB+2	;Must be at least 3 words to be valid
+	 JRST IMPLD3
+	LDB T,IMOTBP		;Examine new-format flag bits of leader
+	CAIN T,16		;Is it 1822L format?
+	 BUG INFO,[IMP: 1822L leader],OCT,IMPILB
+	CAIE T,17		;Verify that leader is "new" 96-bit fmt.
+	 JRST IMPBN1		;Something else?? Go discard.
+	LDB T,IMLNBP		;Extract link number (high 8 bits of msg-id)
+	MOVEM T,IMPCLN		;Save link message arrived on
+	LDB T,IMSABP		;Get arpanet address (source host+imp)
+IFN 0,[	
+	LDB T,IMSHBP		;Source host
+	LDB A,IMSIBP		;Source imp
+	DPB A,[112000,,T]	;Form host address
+];IFN 0
+	PUSHJ P,FNDHST		;H gets host table index
+	 JRST IMPLD9		;Host table full
+	MOVEM H,IMPCSH		;Save current host
+	LDB A,IMTBP		;Get message type in A
+	CAILE A,10.
+	 JRST IMPUN		;Unknown type?
+	AOS IMPMSR(A)		;Count IMP msgs rcvd
+	JRST @IMTDT(A)		;Dispatch
+
+IMTDT:	IMPRM	; 0 Regular Message
+	IMPBE1	; 1 Error in Leader (no msg-id)
+	IMPGD	; 2 IMP Going Down
+	IMPUN	; 3  -
+	IMPIN	; 4 NOP
+	IMPRFN	; 5 RFNM - Ready For Next Message (transmit succeeded)
+	IMPHDS	; 6 Host Dead Status (general info)
+	IMPDHD	; 7 Destination Host Dead (transmit failed)
+	IMPBE8	; 8 Error in Data (has msg-id)
+	IMPINC	; 9 Incomplete Transmission (transmit failed temporarily)
+	IMPIRS	;10 Interface Reset - IMP dropped its ready line
+
+IMPLD9:	BUG INFO,[IMP: Message discarded due to host table full],OCT,IMPILB,OCT,IMPILB+1,OCT,IMPILB+2
+	JRST IMPIRT
+
+;Here from IMPLDD if leader is too short
+;
+IMPLD3:	SUBI B,IMPILB-1		;Number of words read
+	BUG INFO,[IMP: Short leader, ],DEC,B,[wds. WD1=],OCT,IMPILB,[WD2=],OCT,IMPILB+1
+	JRST IMPIRT		;Flush rest of message
+
+;;; IMP->Host Type X (e.g. 3, 11-255) - bad type
+
+IMPUN:	BUG INFO,[IMP: Unknown msg type ],OCT,A,[ leader ],OCT,IMPILB,OCT,IMPILB+1,OCT,IMPILB+2
+	JRST IMPIRT
+
+
+;;; IMP->Host Type 1 - Error in leader (msg-id not given)
+;;; IMP->Host Type 8 - Error in data  (msg-id given)
+
+IMPBE1:	LDB T,IMSTBP		;Get subtype (4 bits)
+	ANDI T,3		;Only 2 bits should be used
+	AOS IMPM1S(T)		;Increment count of Type 1 subtype messages
+IMPBE8:	MOVE T,TIME
+	SUB T,LNETIM
+	CAIL T,60.		;Ignore error during initial synchronization
+	 BUG INFO,[IMP: Type ],DEC,A,[err msg, leader],OCT,IMPILB,OCT,IMPILB+1,OCT,IMPILB+2
+	MOVE B,IMPCLN		;Get link msg came in on
+	CAIN B,233		;Internet link?
+	 AOS IMNIP8		;Yes, count IP meter
+	CAIN A,8.		;Error identified with a particular message?
+	 JSP T,IMPBLD		;Decrement count of active messages
+	JRST IMPIRT
+
+;;; IMP->Host Type 2 - IMP going down
+
+IMPGD:	LDB B,[420200,,IMPILB+2]	;Reason (see 1822)
+	MOVEM B,IMPDWN
+	LDB B,[360400,,IMPILB+2]	;How soon going down * 5 mins
+	MOVE H,B
+	IMULI B,5*60.*30.	;Ticks in 5 mins
+	ADD B,TIME
+	MOVEM B,IMPDWN+1
+	LDB C,[241200,,IMPILB+2]	;How long to be down * 5 minutes
+	MOVE Q,C
+	IMULI C,5*60.*30.	;Downtime in ticks
+	ADD C,B			;Add to time down
+	MOVEM C,IMPDWN+2	;Store time when will be up
+	IMULI H,5		;Minutes
+	IMULI Q,5
+	BUG INFO,[IMP: Going down in ],DEC,H,[mins for ],DEC,Q,[mins, reason],DEC,IMPDWN
+	JRST IMPIRT
+
+;;; IMP->Host Type 4 - NOP
+
+IMPIN:	JRST IMPIRT		;One more NOP from IMP
+
+;;; IMP->Host Type 5 - RFNM (Ready For Next Message)
+
+IMPRFN:	JSP T,IMPBLD	; Decrement count of active IMP messages for this host
+	MOVE A,IMPCLN		;Get link #
+	CAIE A,233		;IP link number?
+	 JRST IMRFNX		;No, skip IP code
+IFN INETP,.ERR INETP needs handling for RFNM on link 233
+	AOS IMNIPR		;Bump count of IP RFNMs received
+	JRST IMPIRT		; and do nothing else about it, ugh.
+
+IMRFNX:	BUG INFO,[IMP: Spurious RFNM from ],OCT,IMPHTN(H),[link],OCT,IMPCLN
+	AOS IMNSRF
+	JRST IMPIRT
+
+
+;;; IMP->Host Type 6 - Host Down Status
+;	H/ host index
+
+IMPHDS:	LDB A,[301400,,IMPILB+2];Bits 65-76 of leader, 4.9-3.7 3rd word
+	HRRM A,IMPHTB(H)	;Store, hope user read RFC 611
+	JRST IMPIRT
+
+;;; IMP->Host Type 7 - Destination Host Dead
+
+IMPDHD:	MOVEI E,%NCDED
+	JRST IMPHNR
+
+;;; IMP->Host Type 9 - Incomplete Transmission
+
+IMPINC:	LDB T,IMSTBP		;Get subtype field (4 bit reason for failure)
+	AOS IMPM9S(T)		;Bump count of subtypes
+	MOVEI E,%NCINC		;This is an incomplete msg response
+
+IMPHNR:	JSP T,IMPBLD		;Decrement active IMP msg count for this host
+	MOVE A,IMPCLN		;Link for this message?
+	CAIE A,233		;IP Link?
+	 JRST IMPHN1
+	CAIN E,%NCINC		;Yes, count IP meters
+	 AOS IMNIP9
+	CAIN E,%NCDED
+	 AOS IMNIP7
+	JRST IMPIRT
+
+IMPHN1:	BUG INFO,[IMP: DHD or IT msg rcvd on non-IP link]
+	JRST IMPIRT
+
+;;; IMP->Host Type 10 - Interface Reset
+
+IMPIRS:	BUG INFO,[IMP: Interface-reset msg]
+	JRST IMPIRT		;Probably nothing useful to do about it.
+
+
+; Here from all over, to flush rest of this message.
+; All non-regular messages (not type 0) return here, as well as some
+; errors with regular msgs.
+; TT says whether there is any more data to read from this message.
+IFN KAIMP,[
+IMPIRT:	SETZM IMPIS		;Assume end of message, reset to normal state
+	TRNN TT,IMPLW		;But if we haven't yet read the last word,
+	 AOSA IMPIS		;then change state to "Ignore" and flush input.
+				;Note skip over following SETZM.
+
+; Regular messages (type 0) return here, when we already know this message
+; was completely read.  TT isn't valid.
+IMPIR1:	SETZM IMPIS		;Reset to normal idle state
+	SETOM IMPCSH		;Say no current host
+	CONO IMP,IMI32S		;Make sure in 32 bit data mode
+	JRST IMPRET
+]
+IFN KSIMP,[
+;We have already read the whole message from the IMP into the input buffer,
+; so flushing excess input is no work at all.
+IMPIRT:	
+
+;Regular messages (type 0) return here, when we already know this message
+;was completely read.  TT isn't valid.
+IMPIR1:	SETZM IMPIS		;Set idle state
+	CALL IMPIST		;Start listening for new input
+	SETOM IMPCSH		;Say no current host
+	JRST IMPRET
+];IFN KSIMP
+
+
+;;; IMP->Host Type 0 - Regular Host-Host message
+; Unless the source host screwed up and sent a dataless message,
+; there is at least one word waiting to be read from the interface.
+; For IP this is the 4th word and we are in 32-bit mode.
+;	TT/ IMP CONI bits or status register
+;	B/ addr of last wd input (counted-out BLKI pointer)
+
+IMPRM:	TRNE TT,IMPLW
+	 JRST IMPRM3		;Foo, message shouldn't end so soon.  Go barf.
+	MOVE A,IMPCLN		;Is link number the magic cookie for IP?
+	CAIE A,233
+	 JRST IMPIRT		;No, ignore it since we don't have NCP
+
+;This is an Internet Protocol datagram.  Make sure we are
+;in right mode for reading.
+;
+	AOS IMNIPI		;Bump count of IP datagrams received
+IFN KAIMP&IMPDBG,[
+	TRNN TT,IMPI32		;Should already be in 32-bit mode
+	 BUG PAUSE,[IMP: Reading IP dgm in 36-bit mode]
+]
+	MOVEI A,%IMXLN		;Specify max size of IMP message
+				; (we can't trust msg-len leader field)
+	PUSHJ P,IPGIPT		;Call IP module - get input buffer pointer
+	 JRST [	AOS IMNIPF	;Punted, bump cnt of datagrams lost
+		JRST IMPIRT]	;Flush this message (err msg already printed)
+	MOVEM A,IMPIDP		;Save datagram pointer
+	MOVEM B,IMPIBS		;Save input BLKI pointer for later check
+	MOVEI C,%ISIID		;Set state = reading IP datagram
+	;JRST IMPRM9		;Go do it.
+
+; Set up and start multiword data input. This place is jumped to by
+; several things that initiate IMP input, specifically IMSTRT, IMPRMT,
+; and IMPRM.
+;	B/ BLKI pointer
+;	C/ New input FSM state
+;
+IMPRM9:	MOVEM C,IMPIS		;Save current input state
+	MOVEM B,IMBLKI		;Save BLKI pointer
+IFN KSIMP,[
+	MOVE A,B		;Set up BLKI pointer
+	CALL IMPGRI		;Get requested data from input buffer
+	JRST IMPIBL		;Jump back to handle new input data!
+]
+IFN KAIMP,[
+	MOVE B,[BLKI IMP,IMBLKI]
+	MOVEM B,IMPILC
+	MOVE B,IMPBRO(C)	;Get BLKI runout instruction and set vector;
+	MOVEM B,IMPILC+1	; will execute when ptr counts out.
+	SETOM IMPIH		;Say that input wants high pri
+	MOVEI B,IMPCHN		;And set our exit PIA to it (IMP)
+	MOVEM B,IMPPIA
+	JRST IMPRET		;Return from interrupt
+];IFN KAIMP
+
+;Message with no data. Just ignore it, could print a note
+IMPRM3:	JRST IMPIRT
+
+IFN KAIMP,[
+	; This table holds the instruction to execute after the input
+	; BLKI has counted out the ptr and stored the current input word.
+	; Note that if the IMP message ends during the BLKI, a control
+	; interrupt will happen instead and control goes to IMPBKZ
+	; where there is another state dispatch table.
+	; Normally only %ISIML and %ISINL actually use these instructions;
+	; the other states are impossible or expect to read the entire
+	; remaining message.
+IMPBRO:	OFFSET -.
+ %ISIDL::	JRST 4,IMPBRO	; 0 Idle   - shouldn't be BLKI'ing.
+ %ISIGN::	JRST 4,IMPBRO+1	; 1 Ignore - shouldn't be BLKI'ing.
+ %ISIML::	JSR IMPLD5	; 2 Reading IMP leader (4 wds partial msg)
+ %ISIID::	JSR IMPRM4	; 3 Reading IP datagram (get all)
+	OFFSET 0
+
+EBLK		; PI 1 Input Done interrupt (from IMPILC+1, runout)
+IMPLD5:	0	; JSR here on BLKI runout after reading 3rd wd of IMP leader.
+BBLK		; Input Done is not set, because BLKI just turned it off.
+	MOVEM A,IMPILC		;Save A
+	MOVE A,[JSR IMPLD6]	;Make very next input word interrupt to IMPLD6
+	EXCH A,IMPILC		;Do it, restore A
+	JRST 12,@IMPLD5
+
+EBLK		; PI 1 Input Done interrupt (from IMPILC)
+IMPLD6:	0	; JSR here with 4th wd of leader in interface.
+BBLK		; Must decide whether to continue reading leader in
+		; 36-bit mode (NCP) or 32-bit mode (IP).
+	MOVEM A,IMPILC		; Save A
+	MOVE A,IMPILB+1		; Get word with link number in it
+	ANDI A,377		; Mask off
+	CAIN A,233		; Internet Protocol "link"?
+	 JRST IMPLI3		; Yes!  Go handle it.
+
+	; NCP read will immediately store current 36-bit word (4th),
+	; store another 36-bit word (5th), and then run out to IMPLD4.
+	MOVE A,[-2,,IMPILB+2]	; Reading NCP message.
+	MOVEM A,IMBLKI
+	MOVEI A,%ISINL		; Reading NCP leader, set state thereto.
+	MOVEM A,IMPIS
+	MOVE A,[JSR IMPLD4]	; And change dispatch vector.
+	MOVEM A,IMPILC+1
+	MOVE A,[BLKI IMP,IMBLKI]
+	EXCH A,IMPILC		; Set up BLKI and restore A
+	JRST 12,@IMPLD6	; Return.  Note current input word is still waiting.
+
+	; IP read will immediately store current 36-bit word (4th),
+	; then set up so next input-done interrupt (on 5th, 32-bit word)
+	; goes directly to IMPIBZ->IMPLD2 with NETCHN PI.
+	; (For AI-KA/ML-KA/MC-KL, perhaps by way of IMPIBK if output is active)
+IMPLI3:	MOVEI A,%ISIIL		; Say reading IP type leader.
+	MOVEM A,IMPIS
+	CONO IMP,IMI32S+IMPCHN	; Set further input to 32-bit mode
+	DATAI IMP,IMPILB+3	; Store the 4th 36-bit word immediately; this
+				; also starts interface reading the 5th word.
+	MOVE A,IMPLD6		; Now must set up for next interrupt.
+	MOVEM A,IMPLD4		; Fake out the common code below
+	JRST IMPLI4		; Set up for next Input-Done interrupt
+
+EBLK		; PI 1 Input Done interrupt (from IMPILC+1, runout)
+IMPLD4:	0	; JSR here on BLKI runout after reading IMP leader
+BBLK		; There is still one word to go, to be gotten at NETCHN level
+
+	MOVEM A,IMPILC		; Save A
+				; Drop through to common code
+
+IMPLI4:	SETZM IMPIH		; Say input no longer needs PI 1
+	MOVEI A,NETCHN		; Make PI 2 (NETCHN) the exit PIA,
+	SKIPL IMPOH		; unless output side needs PI 1.
+	 MOVEM A,IMPPIA		; Set desired PIA channel on exit
+	CONO IMP,@IMPPIA	; Set PIA to whatever it was!
+	MOVE A,[JSR IMPIBK]	; Reset PI 1 Input-Done vector back to std.
+	EXCH A,IMPILC		; and restore A.
+	JRST 12,@IMPLD4
+
+IMPBCM: BUG INFO,[NCP: CTL MSG BS NOT 8 OR CT>120. HST ],OCT,IMPHTN(H),[BS ],DEC,IMPCBS,[BC ],DEC,IMPCBC
+	JRST IMPIRT
+];IFN KAIMP
+
+; IMPRMI - End of IP datagram, PI in progress on NETCHN, here from IMPBKZ
+;	A/ Last IMP word (32-bit) (KA/KL only)
+;	TT/ CONI bits as of interrupt
+;
+IMPRMI:	AOS B,IMBLKI		;Get address to store last word in
+IFN KAIMP,MOVEM A,(B)		;Store it away
+	SUB B,IMPIBS		;Get # words read into datagram buffer
+	MOVEI B,(B)
+	MOVE A,IMPIDP		;Get pointer to IP datagram buffer we're using
+	SETZ C,			;Say zero offset to IP header.
+	MOVE J,IMPCSH		;Set idx to host-table entry dgm received from.
+	PUSHJ P,IPRDGM		;Hand off rcvd datagram to IP
+	SETZM IMPIDP		;Clear PI level pointer
+	JRST IMPIR1		;Return from PI level, setting up for next msg
+
+IFN KSIMP,[
+;Set HOST READY. From SYS job only, please, loops waiting.
+;
+IMPHRS:	IORDI T,%LHICS
+	TRNN T,%LHRDY		;Can we mung?
+	 BUG
+	IORI T,%LHHRC\%LHSE	;Turn on HR. SE prevents dropping messages
+	IOWRI T,%LHICS
+	MOVEI A,777777		;I don't know why this takes so long.
+IMPHR1:	IORDI T,%LHICS		;Get the bits back
+	TRNE T,%LHHR		;LHDH thinks host ready is ready
+	 RET			;HR line set
+	SOJG A,IMPHR1		;Timed out yet?
+	 BUG CHECK,[IMP: Timed out setting Host Ready]
+	RET
+
+;Start listening for new input from IMP
+;
+IMPIST:	HRREI T,-IMPBFS*2
+	IOWRI T,%LHIWC		;Read up to a buffer full of data
+	MOVEI T,<IUIMPG_12.>+<4*<IMPIBF&777>>
+	IOWRI T,%LHICA		;Read data to here
+	MOVEI T,%LHIE\%LHHRC\%LHSE\%LHGO ;Interrupt, store data, go
+	IOWRI T,%LHICS		;Start read
+	RET
+
+;Move data from IMP DMA buffer to somewhere else, reformatting as we go.
+; IMBLKI/ BLKI ptr -count,,dest-addr-1
+; Updates IMBLKI
+; Bashes A,B,C,D,E
+; Sets IMPLW in TT iff last word we read was last word available.
+
+IMPGRI:	
+IFN IMPDBG,[
+	SKIPL IMPIBP		;Make sure we have something to give
+	 BUG HALT,[IMP: IMPGRI called with no more data]
+]
+	MOVE B,IMPIBP		;Get current count,,location in input bfr.
+IMPGR1:	MOVE C,(B)		;Get data word from message
+	LDB D,[.BP <377_26.>,C] ;Get Byte 2
+	LDB E,[.BP <377_8.>,C]	;Get Byte 4
+	LSH C,10.		;Shift so Byte 1 is correct
+	DPB D,[.BP <377_20.>,C]	;Put Byte 2
+	LDB D,[.BP <377_10.>,C]	;Get Byte 3
+	DPB E,[.BP <377_4.>,C]	;Put Byte 4
+	DPB D,[.BP <377_12.>,C]	;Put Byte 3
+	MOVEM C,1(A)		;Store word. It's a BLKI ptr, remember?
+	AOBJP B,IMPGR2		;Incr source, exit if done
+	AOBJN A,IMPGR1		;Incr dest, maybe loop for more
+
+;Here if ran out of desstination buffer space
+	TRZ TT,IMPLW		;Didn't see last word
+	MOVEM A,IMBLKI
+	MOVEM B,IMPIBP
+	RET
+
+;Here if ran out of source data
+IMPGR2:	IORI TT,IMPLW		;Say we read last word
+	AOBJN A,.+1		;Adjust BLKI ptr for last word read
+	MOVEM A,IMBLKI		;Update IMBLKI for everyone else
+	MOVEM B,IMPIBP
+	RET
+];IFN KSIMP
+
+;Here if error during IMP message transfer
+;
+IFN KAIMP,[
+IMPBER:	SKIPGE IMPUP		;Skip if up, or thought to be broken
+	 JRST IMPBE2		;Already down, let it come up in peace
+	MOVSI J,SCLNET		;Thinks it's up, reset it
+	IORM J,SUPCOR		;By getting system job to run SYSNET
+	CONI IMP,IMERCN		;Record if imp error flip/flop set
+	SETOM IMPUP		;IMP is down
+	SETZM IMPTCU		;And not trying to come up
+IFN INETP,.ERR IP/TCP code needs handling for IMP crashing.
+
+IMPBE2:	SETZM IMPPIA		;No PI expected
+	CONO IMP,0		;Clear IMP
+	BUG INFO,[IMP: Ready line flapped, resetting]
+	JRST IMPEX
+];IFN KAIMP
+IFN KSIMP,[
+;Input side saw ready line flap
+IMPIER:	SKIPE IMPUP		;Is the IMP supposed to be up?
+	 JRST IMPIE1		;No, handle differently
+	IORDI T,%LHICS		;Was up; get status
+	BUG INFO,[IMP: Input RDY error, Status ],OCT,T
+	JRST IMPRST		;And go request a full cycling of IMP
+
+IMPIE1:	AOS T,IMPIEC
+	CAIG T,10.		;Huge number of errors whiile down?
+	 JRST IMPIRT		;No, just ignore this input and start another
+	SETZM IMPIEC		;Reset
+	BUG INFO,[IMP: Excessive input errors while down]
+	JRST IMPIRT
+
+;Output side flapped
+IMPOER:	SKIPN IMPUP		;IMP up?
+	 JRST IMPOE1		;Running, request a full reset
+	MOVE T,IMPOS
+	CAIE T,%ISONP		;Were we sending a NOP?
+	 BUG CHECK,[IMP: Confusing output error]
+	SOS IMNOPC		;Add another NOP to make up for this one
+	SETZM IMPOS
+	JRST IMPOB0		;Go send it
+
+IMPOE1:	IORDI T,%LHOCS
+	BUG INFO,[IMP: Output RDY error, Status ],OCT,T
+;;;	JRST IMPRST
+
+IMPRST:	BUG INFO,[IMP: Ready line flapped, resetting]
+	MOVSI J,SCLNET		;Thinks it's up, reset it
+	IORM J,SUPCOR		;By getting system job to run SYSNET
+	IORDI T,%LHICS
+	HRLZM T,IMERCN
+	IORDI T,%LHOCS
+	HRRM T,IMERCN
+	SETOM IMPUP		;IMP is down
+	MOVEI T,1
+	MOVEM T,IMPTCU		;But trying to come up (sysjob poked)
+IFN INETP,.ERR IP/TCP code needs handling for IMP crashing.
+	JRST IMPEX
+
+];IFN KSIMP
+
+;;; IMP Blockage avoidance
+;	The current IMP software will not accept more than 8 active
+; messages to a single host; attempting to send a 9th message will block
+; ALL output to the interface, until the first message has been ack'd
+; by means of one of the following message types:
+;	Type 5, RFNM - Message delivered OK
+;	Type 7, Host dead - transmit failed ("permanent")
+;	Type 8, Error in data - interface spazzed
+;	Type 9, Incomplete Transmission - temporary failure
+; If for some reason the first message simply becomes lost, the IMP timeout
+; (and blockage) can last for up to 30-45 seconds.
+; More details in BBN Report 1822.
+;	ITS attempts to fix this by keeping a count of active un-ACKed
+; messages for each host it is communicating with.  A timeout is also
+; associated with each host; if output to a given host is blocked by ITS
+; because there are 8 active messages, trying to send a 9th message
+; will check the last-RFNM-received time and if this was more than
+; 30 or so seconds then the IMP is probably not giving us what it should
+; and we should reset things for that host.
+
+%IMPMA==:8.	; # of maximum active IMP messages allowed
+
+; IMPBLI, IMPBLD - routines to hack active-message counts, called via JSP T,
+;	IMPBLD decrements count.
+;	IMPBLI increments count and skips if successful (else failed,
+;		and must NOT output another message to this host!)
+;		Also clobbers Q.
+;
+IMPBLI:	AOS Q,IMPHTC(H)
+	CAIGE Q,%IMPMA		;Trying to send max or more messages?
+	 JRST 1(T)		;No, can return safely.
+	CAIG Q,8.		;Is this the maximum # allowed?
+	 JRST [	MOVE Q,TIME	;Yes, set up blockage timeout
+		ADDI Q,60.*30.	; for one minute.
+		MOVEM Q,IMPHTT(H)
+		JRST 1(T)]	;And allow this one to be sent
+
+	; Trying to send too many messages, block it (check for timeout though)
+	SOS IMPHTC(H)		;Restore original count
+	AOS IMNBLK		;Increment # of times softwarily blocked.
+	MOVE Q,IMPHTT(H)
+	CAML Q,TIME		;See if timeout still in the future
+	 JRST (T)		;Yes, just take failure-return to block.
+	BUG INFO,[IMP: RFNM-wait timeout! Hst=],OCT,IMPHTN(H)
+	SETZM IMPHTC(H)		;This may be dangerous... oh well.
+	SETZM IMPHTT(H)
+	JRST (T)		;Block one last time, next try will win.
+
+;Decrement block count on reciept of any kind of ACK
+;
+IMPBLD:	SOSL Q,IMPHTC(H)
+	 JRST IMPBL2
+	BUG INFO,[IMP: neg RFNM-wait cnt, Hst=],OCT,IMPHTN(H)
+	SETZB Q,IMPHTC(H)
+IMPBL2:	CAIL Q,8.-1		;If we were blocking on this host,
+	 CALL IMPIOS		;Ensure IMP output started up so blocked stuff
+	JRST (T)		; gets sent promptly.
+
+
+
+SUBTTL	ARPANET OUTPUT INTERRUPT LEVEL
+
+IFN KAIMP,[
+
+; See comments at IMPINT for a description of the overall IMP interrupt
+; structure.  Output is simpler than input, however.
+; Each IMP message is output at PI level 1 except for the initial DATAO;
+; the setup and takedown for each message is done at PI level 2.
+; The code on this page is not referenced by anything outside the page
+; except interrupt vector setup at IMPINI (to IMPOBK) and IMOB9 (to IMPCH1).
+
+; IMPCH1 - PI 1 Output-Done interrupt, from IMPOLC.
+;	Comes here when last word DATAO'd has been sent to IMP.
+EBLK
+IMPCH1:	0
+BBLK
+	MOVEM A,IMPOLC		;Save A
+	MOVE A,IMOPNT
+IMCH1A:	SKIPGE A,IMOLST(A)	;Get next "instruction"
+	 JRST IMCH1B		;Jump if it's a BLKO pointer
+	CAILE A,3		;Ensure valid operation
+	 BUG HLT,[IMP: Bad command in output list.]
+	XCT IMCH1I(A)		;Do it
+	AOS A,IMOPNT		;Still here?  Point to next operation
+	JRST IMCH1A		;and loop to do it.
+
+IMCH1I:	JRST IMCH1C		;0 Stop - end of output list
+	CONO IMP,IMPLHW+IMPCHN	;1 Set Last Word
+	CONO IMP,IMO32S+IMPCHN	;2 Set 32-bit mode
+	JFCL			;3 NOP
+
+IMCH1B:	MOVEM A,IMBLKO		;Set up BLKO - store the pointer
+	MOVE A,[JSR IMCH1D]	;Set dispatch for BLKO runout
+	MOVEM A,IMPOLC+1
+	MOVE A,[BLKO IMP,IMBLKO]
+	EXCH A,IMPOLC		;Store the BLKO and restore A
+	AOS IMOPNT		;Increment output list ptr past this op.
+	JRST 12,@IMPCH1		;Will interrupt immediately for first BLKO
+				;word, since Output-Done wasn't cleared.
+
+; PI 1 Output-Done, from IMPOLC+1 (BLKO runout)
+;	Final word of the BLKO pointer is now in interface, being sent
+;	to IMP, and Output-Done flag is off.
+EBLK
+IMCH1D:	0
+BBLK
+	MOVEM A,IMPOLC
+	MOVE A,[JSR IMPCH1]	;Interrupt back when output of final word done
+	EXCH A,IMPOLC
+	JRST 12,@IMCH1D
+
+; Here from IMPCH1, PI 1 Output-Done interrupt
+;	Output list has hit "stop" operation (previous op had better be
+;	1 to set Last-Host-Word!)
+;	This code reverts control back to PI level 2 (IMPOBK).
+;
+IMCH1C:	SETZM IMPOH		;Say output side doesn't need PI 1 anymore
+	MOVEI A,NETCHN		;And set exit PIA to 2,
+	SKIPL IMPIH		;unless input side still needs PI 1
+	 MOVEM A,IMPPIA		;Set it.
+	CONO IMP,@IMPPIA
+	SETOM IMPO		;Tell IMPINT we have output-done interrupt.
+	MOVE A,[JSR IMPOBK]	;Point PI 1 channel at switch-PIA routine,
+	EXCH A,IMPOLC
+	JRST 12,@IMPCH1
+
+; PI 1 Output Done interrupt, when we should really be interrupting
+;	at IMPINT on PI 2.
+EBLK
+IMPOBK:	0
+BBLK
+	SETOM IMPO		;Tell IMPINT what kind of interrupt
+	CONO IMP,NETCHN		;Reset PIA to 2
+	JRST 12,@IMPOBK
+];IFN KAIMP
+
+IFN KSIMP,[
+;First-level interrupt handling, from hardware dispatch.
+IFN NETCHN-UTCCHN,.ERR Interrupt channel mismatch at IMPOBK
+
+	EBLK
+IMPOBK:	0
+	BBLK
+	JSR UTCSAV		;Save AC's, get a stack
+	IORDI TT,%LHOCS		;Get CS register
+	TRNE TT,%LHERR\%LHNXM	;Interface lost?
+	 BUG HALT,[IMP: O NXM]
+	TRNE TT,%LHMRE		;Somebody bounce a ready line?
+	 JRST IMPOER
+	TRNN TT,%LHRDY		;Device ready for new operation?
+	 BUG HALT,[IMP: Output device not ready]
+	TRZ TT,%LHIE\%LHGO	;Is this right?
+	IOWRI TT,%LHOCS
+	AOS IMPOAC		;Output active. Reset when no more output
+	;JRST IMPOBZ		;Falls through
+];IFN KSIMP
+
+; IMPOBZ - PI 2 (NETCHN) "Output Done" interrupt, via IMPINT (or IMPOBK on KS)
+;	KA/KL, come here when we have finished sending stuff out at PI 1,
+;	also when something wants output to start and tickled the "Done"
+;	flag.
+;	TT/ IMP CONI word.
+;
+;	KS, come here from output done interrupt if no errors, or when
+;	someone wants to start output.
+;
+IMPOBZ:	AOS IMCT3
+	SKIPL B,IMPOS
+	 CAIL B,IMPODL
+	  BUG HALT,[IMP: Bad output state]
+	JRST @IMPODT(B)
+
+IMPODT:	OFFSET -.
+%ISODL::	IMPOB0	; 0 Idle, look for something to send
+%ISONP::	IMPOB1	; 1 Finished NOP
+%ISOID::	IMPOB2	; 2 Finished IP datagram messge
+%ISOIL::	IMPOB3	; 3 Finished IP leader (KS10 only)
+IMPODL::OFFSET 0
+
+;Return from all output finished interrupts
+; KA interface, we don't turn off Output Done unless there is no more
+; output to go. Thus if there is more output we will immediately 
+; re-interrupt to look for it.
+;
+; KS, we explicitly look here for more output to send
+;
+IMORET:	SKIPE IMPOS
+	 BUG HALT,[IMP: Bad state at output finish]
+IFN KAIMP,[
+	JRST IMPRET
+]
+IFN KSIMP,[
+	SKIPGE IMPOAC		;Output still active?
+	 JRST IMPRET		;Yes or no, don't look for more output
+	;JRST IMPOB0		;Fall through to try for more
+];IFN KSIMP
+
+; Idle - Look for output to send.  First ensure we can send stuff,
+;	then try things in the order:
+;	(1) Send NOP if net coming up
+;	(2) Check IP datagram queue
+;
+IMPOB0:	HRRZ T,IMPUP
+	CAIE T,-2		;Don't say it's up when it's still going down
+	 CAIN T,1		;or when it is broken
+	  JRST IMPOBN
+
+	; First check to see if NOP needs to be sent.
+	AOSG IMNOPC		;Check to see if sending NOPs
+	 JRST IMONOP		;Output a NOP
+	SETZM IMPUP		;Say IMP is up
+	SETZM IMPTCU		;Say no longer trying to come up
+
+	; Now see if there is any real traffic to send
+
+	PUSHJ P,IPGIOQ		;Check IP. Get IP IMP output queue entry if any
+	 JRST IMPOBN		;Nothing there, we're done.
+	; Returns A/ ptr to IP dgm struct
+	;	  B/ BLKO pointer to 32-bit words
+	;	  C/ Arpanet address
+	;
+	;KA/KL interfaces build an output list which is interpreted
+	;by code running at PI 1. The output list should be set up as:
+	;IMOLST: -2,,IMOLDR	; Send 2nd and 3rd word of IMP leader
+	;IMOBK1: Output BLKO	; Send datagram minus last word
+	;IMOBK2: 1		; Set last IMP bit
+	;IMOBK3: -1,,lstwd-1	; BLKO to last word of datagram
+	;	0		; Stop
+	;
+	;KS interface uses locations in IMOLST to store data for various
+	;output routines, which are dispatched to at PI 2 by the state
+	;machine at IMPOBZ. These locations are:
+	;IMOLST: Unused
+	;IMOBK1: Datagram BLKO
+	;IMOBK2: Unused
+	;IMOBK3: Unused
+IMOB01:
+	MOVEM A,IMPODP		;Save ptr to datagram being output
+	AOS IMNIPO		;# of IP datagrams sent
+IFN KAIMP,[
+	MOVE D,[-2,,IMOLDR]	;IMP leader is always three words output
+	MOVEM D,IMOLST		; from IMOLST (first with DATAO)
+	ADD B,[1,,]		;Reduce BLKO count by one
+	MOVEM B,IMOBK1		;Store in output list
+	HLRO D,B		;Get -<# wds-1>
+	MOVN D,D		;Get <#wds-1>
+	ADDI D,(B)		;Get addr for last-word BLKO
+	HRROM D,IMOBK3		;Store -1,,lastwd-1
+]
+IFN KSIMP,[
+	MOVEM B,IMOBK1		;Save BLKO pointer for IP datagram
+]
+	;Output list set up, now must put together the IMP leader in IMOLDR.
+	MOVE B,[17_10.,,0]	;Regular message
+	MOVEM B,IMOLDR
+	LSH C,4.		;Move net address to correct field
+	MOVEM C,IMOLDR+1	;Set up second word
+	MOVSI B,233_10.		;IP link # in left 8 bits
+	MOVEM B,IMOLDR+2	;Set up third word
+
+	;IMP leader set up, start output
+IFN KAIMP,[
+ 	CONO IMP,IMO32S		;Set 32 bit mode, clear PIA
+	DATAO IMP,IMOLDR	;Start it going!
+	MOVEI C,%ISOID		;State = outputting IP datagram.
+]
+IFN KSIMP,[
+	MOVE A,[-3,,IMOLDR-1]	;IMP leader is three words output from IMOLDR
+	PUSHJ P,IMOST		;Go set up and start output
+	MOVEI C,%ISOIL		;Remember we are outputting IP leader
+]
+;Here after output of any kind started
+;
+IMOB9:	MOVEM C,IMPOS		;Save current output state
+IFN KAIMP,[
+	SETZM IMOPNT		;Initialize output list pointer
+	SETOM IMPOH		;Output side wants IMP to run on channel 1
+	MOVEI A,IMPCHN
+	MOVEM A,IMPPIA
+	MOVE C,[JSR IMPCH1]	;Set up handler for CH1 interrupts
+	MOVEM C,IMPOLC
+]
+	JRST IMPRET
+
+;Couldn't find anything to output
+IMPOBN:	SETOM IMPOAC		;No more output
+IFN KAIMP,[
+	CONO IMP,IMPODC		;Clear Output-Done interrupt bit, so we won't
+]				;immediately re-interrupt to start next output
+	JRST IMORET
+
+
+;IMONOP - Send a NOP, here from IMPOBZ only.
+;
+IMONOP:
+IFN KAIMP,[
+	MOVEI A,IMPNOP		;Get address of NOP leader
+	MOVEI B,1		;No text, but one extra wd (to make BLKO win)
+	CONO IMP,IMO32S		;Put IMP in 32-bit mode, Clear PIA
+	DATAO IMP,(A)		;Output first leader word
+	MOVEI C,(A)		;Set up BLKO pointer for 2nd word of NOP
+	HRLI C,-1		;Including count
+	MOVEM C,IMOLST
+	AOS C			;Now a BLKO ptr for third word
+	MOVEM C,IMOBK2		;Save it in output list
+	MOVEI C,1		;Command to set last IMP bit
+	MOVEM C,IMOBK1		;Set that in list
+	SETZM IMOBK3		;End of output list
+	MOVEI C,%ISONP		;State for control return to NETCHN
+	JRST IMOB9		;Falls through
+];IFN KAIMP
+
+IFN KSIMP,[
+	MOVE A,[-3,,IMPNOP-1]	;Get address of a BLKO word for NOP leader
+	PUSHJ P,IMOSTL		;Start output to IMP
+	MOVEI C,%ISONP		;State for control return to NETCHN
+	JRST IMOB9		;Go finish up interrupt
+]
+
+;Prefabricated NOP Host-IMP leader
+IMPNOP:	17_10.,,4_4		;New format, type 4 = NOP
+	0
+	0			;No padding required on regular messages
+
+;Finished sending NOP, from IMPOBZ
+;
+IMPOB1:	SETZM IMPOS		;Reset state
+	JRST IMORET		;No, was a NOP. Done.
+
+
+;Was sending IP datagram, from IMPOBZ
+;
+IMPOB2:	SETZM IMPOS		;Reset output state
+	MOVE A,IMPODP
+	PUSHJ P,IPIODN		;Tell IP level that datagram was output
+	SETZM IMPODP
+	JRST IMORET		;Go see if there is anything else to do.
+
+IFN KSIMP,[
+;Was sending IP leader, from IMPOBZ. Start actual datagram output
+;
+IMPOB3:	MOVE A,IMOBK1		;Get BLKO word set up before
+	PUSHJ P,IMOSTL		;Go start output
+	MOVEI C,%ISOID		;Remember sending IP datagram
+	JRST IMOB9		;Go clean up and dismiss
+];IFN KSIMP
+
+
+IFN KSIMP,[
+;Output startup routines for KS IMP. Call from NETCHN level or interrupts off.
+; IMOST - start output
+; IMOSTL - start output for last segment of message
+; A/ BLKO word describing output.
+; Bashes A,B,C,D,E,T,TT
+;
+IMOSTL:	TLOA T,-1		;Remember which entry point
+IMOST:	 SETZ T,
+IFN 0,[
+	HLRE TT,A		;Get count
+	MOVN C,TT		;Make positive
+	CAILE C,IMPBFS		;Message fits in output buffer?
+	 JRST IMOSTE
+	HRLZI B,1(A)		;Build BLT arg IO_buffer,,IMPOBF
+	HRRI B,IMPOBF
+	BLTBU B,IMPOBF-1(C)	;Move and reformat data
+]
+IFN 1,[
+	AOS A			;Point to first data address
+	HLRE TT,A		;Get count
+	MOVN C,TT		;Make positive
+	CAILE C,IMPBFS		;Message fits in output buffer?
+	 JRST IMOSTE
+	MOVNI B,-IMPOBF(A)	;B = <IMPOBF - msg_address>
+	HRLI B,A		;B = <IMPOBF - msg_address>(A)
+IMOST1:	MOVE C,(A)		;Get data word from message
+	LDB D,[341000,,C]	;Get Byte 1
+	LDB E,[141000,,C]	;Get Byte 3
+	LSH C,6.		;Shift so Byte 2 is correct
+	DPB D,[221000,,C]	;Put byte 1
+	LDB D,[121000,,C]	;Get Byte 4
+	DPB D,[101000,,C]	;Put Byte 4
+	DPB E,[001000,,C]	;Put Byte 3
+	MOVEM C,@B		;Store reformatted word in temp buffer
+	AOBJN A,IMOST1		;Do more words if there are any
+]
+	ASH TT,1		;Convert PDP10 word count to unibus word count
+	IOWRI TT,%LHOWC		;Tell the IMP interface
+	MOVEI TT,<IUIMPG_12.>+<4*<IMPOBF&777>>
+	IOWRI TT,%LHOCA		;Unibus address of output buffer
+	MOVEI TT,%LHIE\%LHGO	;IMP Interface interrupt enable, GO
+	SKIPE T			;This the last segment in the message?
+	 IORI TT,%LHELB		;Yep, turn on EOM bit in interface
+	IOWRI TT,%LHOCS		;Start DMA transfer
+	POPJ P,			;And forget it.
+
+IMOSTE:	BUG CHECK,[IMP output msg too big],DEC,C
+	POPJ P,			;Ignore overly large msg
+
+];IFN KSIMP
+
+SUBTTL	ARPANET CLOCK LEVEL
+
+OVHMTR IMP	;NETWORK INTERRUPT LEVEL (NOT STYNET STUFF)
+
+IMRSTO:	RET			;Nothing to do any more?
+
+;NETHST (HOST INFO)
+; ARG 1 - HOST => VAL 1 - STATUS, VAL 2 - HOST NUMBER
+; ARG 1 - -1 => VAL 1 - (STATUS), VAL 2 - OUR HOST NUMBER
+;NOT CURRENTLY IMPLEMENTED- ARG 1 - -1, ARG 2 - OUR GOING-DOWN REASON
+;
+ANETHST:HRRE T,A		;Let immediate -1 win (777777 not a valid host)
+	AOJE T,ANETH2		;Jump if want local status and host number
+	MOVE T,A
+	JSP J,STDHST		;Standardize and error-check host number
+	MOVE B,T		;Return new format
+	TLO B,(NW%ARP)
+	MOVEI H,LIMPHT-1
+	CONO PI,NETOFF		;Do we have status for this host?
+	CAME T,IMPHTN(H)	;Scan table
+	 SOJGE H,.-1
+	JUMPGE H,ANETH1		;Yes, return it
+	CONO PI,NETON		;No, have to go get it
+	MOVEM T,SRN3(U)
+	POPJ P,			;Oh, too bad
+
+;Here to return status of foreign ARPAnet host
+ANETH1:	MOVE A,IMPHTB(H)	;Get status
+	CONO PI,NETON
+	EXCH A,B
+	CALL CVH2NA		;Convert to HOSTS2 for compat
+	EXCH A,B
+	JRST LSWCJ1		;Return IMSOC, NETLST if not done already
+
+;Here to return our status, host
+ANETH2:
+REPEAT 0,[
+	CAIL W,2		;(This is a crock)
+	 MOVEM B,NTHDSW		;If 2 args, set our reason for going down.
+]
+	SKIPE IMPUP		;Fake up our status
+	 TDZA A,A		;We're down
+	  MOVSI A,2000		;We are up
+	MOVEI B,IMPUS		;And our host umber
+	JRST POPJ1
+
+
+;NETIMP (REASON,TIMEDOWN,TIMEUP)  READ/SET
+;
+ANETIM:	JUMPLE W,ANETM1		;No args, return current data
+	CAIGE W,3		;Must have 3 args if any
+	 JRST OPNL30
+	MOVEM A,IMPDWN		;Set data
+	MOVEM B,IMPDWN+1
+	MOVEM C,IMPDWN+2
+	JRST POPJ1
+
+ANETM1:	MOVE A,IMPDWN		;Get data to return
+	MOVE B,IMPDWN+1
+	MOVE C,IMPDWN+2
+	SKIPE IMPUP		;Note current condition of IMP, too
+	 TLO A,400000
+	JRST POPJ1

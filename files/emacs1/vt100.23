@@ -1,0 +1,109 @@
+!* -*- TECO -*-		Library originally created by KMP@MC 
+			Converted to use prefix char dispatch table by RMS@AI !
+
+!* 0-9 and minus sign accumulate arg.
+Dot runs ^R documentation
+Arrow keys run up, down, right, and left movement macros.
+Comma runs ^R VT100 Comma -- optionally followed by <Control-U><digits>
+ if a post-comma arg is desired as well -- this calls next ^R command
+ with a precomma arg. (Note: for various obscure reasons, keypad digits
+ may not follow a keypad comma, nor may Meta-digit or C-M-digit. Only ^U
+ will work.
+Enter and PF1-4 are not defined by us.!
+
+!~Filename~:! !Define VT100 function, arrow and numeric keys (ANSI mode only)!
+VT100
+
+!& Setup VT100 Library:! !S Things to do when this library loads.
+Define M-O prefix and its subcommands.!
+
+    [0[1[2[3			    !* Temps				!
+    fs osteco"n		    !* If not on ITS,...		!
+      m(m.aTRMTYP&_Trmtyp_VT100V)-fsrgetty"'e+(
+      m(m.aTRMTYP&_Trmtyp_VT100X)-fsrgetty"'e)"n
+        FT VT100_library_works_with_terminal_in_ANSI_mode_only.
+	   Use_terminal_type_VT100_or_VT100W.''
+    m.v VT100_Dispatch_Table
+    128m(m.m Make_Prefix_Char)VT100_Dispatch_Tableu..O
+    qVT100_Dispatch_Tableu0
+    qPrefix_Char_Listu3
+    :iPrefix_Char_List3 Keypad__qVT100_Dispatch_Table
+
+
+
+    0fo..q Exit_to_Inferior_hooku1 
+    fq1"l :i1'
+    @:i*`1wm(m.m VT100_Normal_Keypad)`m.v Exit_to_Inferior_Hook
+
+    0fo..q Exit_to_Superior_Hooku1 
+    fq1"l :i1'
+    @:i*`1wm(m.m VT100_Normal_Keypad)`m.v Exit_to_superior_hook
+
+    0fo..q Return_From_Superior_hooku1 
+    fq1"l :i1'
+    @:i*`1wm(m.m VT100_Alternate_Keypad)`m.vReturn_From_Superior_hook
+
+    0fo..q Return_From_Inferior_hooku1 
+    fq1"l :i1'
+    @:i*`1wm(m.m VT100_Alternate_Keypad)`m.vReturn_From_Inferior_Hook
+
+    m.m ^R_Up_Real_Lineu:0(A)    !* Uparrow				!
+    m.m ^R_Down_Real_Lineu:0(B)  !* Downarrow			!
+    6fs^R Init u:0(C)	    !* Rightarrow = C-F			!
+    2fs^R Init u:0(D)	    !* Leftarrow  = C-B			!
+    m.m ^R_VT100_Comma u:0(l)    !* Comma				!
+    m.m ^R_VT100_Minus u:0(m)    !* Minus sign on numeric keypad	!
+    m.m ^R_Documentation u:0(n)  !* Dot				!
+    m.m ^R_VT100_Arg_Digitu1
+    p-1u2
+    10< q1u:0(%2) >		    !* Digits on numeric keypad		!
+
+    m(m.m VT100_Alternate_Keypad)  !* Put terminal in alt keypad mode	!
+
+    0fo..q VT100_Setup_Hooku1
+    q1"n m1'
+    
+
+
+!& Kill VT100 Library:! !& Clean up upon killing us !
+
+ m(m.m VT100_Normal_Keypad)	    !* Put terminal in normal keypad mode !
+
+
+!VT100 Alternate Keypad:! !C Sets alternate keypad mode for VT100's
+When this command is executed, the numeric keypad can be used to enter
+arguments for the following function.  Numbers are entered as themselves,
+dot and "enter" key on the pad are also changed.!
+
+ 0[0
+ :I*=[?1h[1     	            !* Put VT100 in application mode !
+ FQ1<215.FS IMAGE OUTW Q0:G1FS IMAGE OUTW %0>
+
+
+!VT100 Normal Keypad:! !C Undos alternate keypad mode for VT100's
+When this command is executed from a VT100, the keys on the keypad become
+functionally identical to the standard digit keys.  See VT100 Alternate Keypad
+for a description of the alternative.!
+
+ 0[0
+ :I*[?1l>[1
+ FQ1<215.FS IMAGE OUTW Q0:G1FS IMAGE OUTW %0>
+
+
+!^R VT100 Minus:! !^R Negate numeric argument.!
+ -u..0 :m(q..0+200.@fs^R Init)
+
+
+!^R VT100 Arg Digit:! !^R Digit of numeric argument.!
+     q..1-p+0u..0 :m(q..0+200.@fs^R Init)
+
+
+!^R VT100 Comma:! !^R Run precomma arg!
+
+0fs^RArg 0fs^RArgp			      !* Zero argument !
+,@m(@fif(f(fs^Rlastw)u..0)@fs^RCmacro)@v  !* Call first char specially !
+<fs^RLast:@;				      !* Loop macroing chars !
+,(fs^RArgp"n
+     fs^RArgp&2"nfs^RArgp&4"n-1*'(fs^Rarg)'"#1[0fs^RExpt<q0*4u0>q0(]0)'(
+     )')@m(@fif(f(fs^Rlastw)u..0)@fs^RCmacro)@v>
+0

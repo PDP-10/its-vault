@@ -1,0 +1,126 @@
+/*								-*-C-*-
+ *	HUMBLE - Functions for hacking inferiors.
+ */
+
+#include <c-env.h>
+#include <errno.h>
+#include <sys/usysio.h>
+#include <sys/usysig.h>
+#include <sys/file.h>
+#include <sysits.h>
+#include "humble.h"
+
+#if !SYS_ITS
+#error This is an ITS specific file!
+#endif
+
+static int gename();		/* Generates sixbit words */
+static void uclose();		/* Kills jobs */
+
+static int _uiojob[OPEN_UFX_MAX+1];	/* non-0 if this is a job UFX */
+
+
+/* Creates an inferior, returns an FD or -1 if failure */
+int j_create()
+{
+    int fd, ufx, jname, val;
+
+    USYS_BEG();
+
+    if ((fd = _uiofd()) == -1 || !(ufx = _uiofx()))
+	USYS_RETERR(EMFILE);
+
+    _uiobsize[ufx] = 9;
+    _uioflgs[ufx] |= _UIO_HANDPACK;	/* Block mode channel */
+
+    do {
+	jname = gename();
+	val = SYSCALL5("open", SC_IMC(_BIO), _uioch[ufx],
+		       SC_SIX("usr"), SC_IMM(0), &jname);
+    } while (val == _EEXFL);
+
+    if (val) USYS_RETERR(ENOENT);
+
+    _openufx(ufx, (O_WRONLY | O_CREAT | O_TRUNC | O_BSIZE_9));
+    _uiojob[ufx] = -1;
+    _uioufx[fd] = ufx;
+    USYS_RET(fd);
+}
+
+static int gename()
+{
+#asm
+    .gensym 1,
+#endasm
+}
+
+/* Kills the specified inferior, always wins except if given
+ * a losing FD, in which case it returns -1, otherwise 0.
+ */
+int j_kill(fd)
+  int fd;
+{
+    int ufx;
+
+    USYS_BEG();
+
+    if (fd < 0 || fd >= OPEN_MAX || !(ufx = _uioufx[fd]) || !_uiojob[ufx])
+	USYS_RETERR(EBADF);
+
+    uclose(_uioch[ufx]);
+    _uiozcnt[ufx] = 0;		/* Channel now closed, so forget these */
+    close(fd);
+
+    USYS_RET(0);
+}
+
+/* Why the hell isn't there a .CALL version of this? */
+static void uclose(ch)
+  int ch;
+{
+#asm
+    hrlz 1,-1(p)
+    lsh 1,5
+    ior 1,[.uclose 0,]
+    xct 1
+#endasm
+}
+
+/* Copies COUNT words from BUF into the inferior starting at ADDR.
+ * Creating memory if it doesn't exist.  Always returns 0 minus the 
+ * number of words left to be written.
+ * Possible errors:
+ *  - Bad FD.
+ *  - System doesn't have enough virtual address space (temporary).
+ *  - Tried to write beyond end of address space.
+ *  - Can't write into a foreign job (currently impossible).
+ */
+int j_write(fd, addr, buf, count)
+    int fd, addr, *buf, count;
+{
+    return 0;
+}
+
+/* Copies COUNT words into BUF from the inferior starting at ADDR.
+ * Always returns 0 minus the number of words left to be read.
+ * Possible errors:
+ *  - Bad FD.
+ *  - Tried to read nonexistent memory.
+ */
+int j_read(fd,  addr, buf, count)
+    int fd, addr, *buf, count;
+{
+    return 0;
+}
+/* Writes a PDUMP file for the job on the freshly opened file.
+ * Returns 0 if we win and -1 if we lose.
+ * Possible errors:
+ *  - Bad FD for job.
+ *  - File FD isn't open to DSK.
+ *  - DSK or directory full, etc.
+ */
+int j_dump(job_fd, file_fd)
+    int job_fd, file_fd;
+{
+    return 0;
+}

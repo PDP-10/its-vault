@@ -1,0 +1,240 @@
+/*								-*-C-*-
+ *	HUMBLE - Functions for hacking inferiors.
+ */
+
+#include "c-env.h"
+#include "errno.h"
+#include "sys/usysio.h"
+#include "sys/usysig.h"
+#include "sys/file.h"
+#include "sysits.h"
+#include "sys/humble.h"
+
+#if !SYS_ITS
+#error This is an ITS specific file!
+#endif
+
+/* Why the hell isn't there a .CALL version of this? */
+static void uclose(ch)
+  int ch;
+{
+#asm
+	HRLZ 1,-1(17)
+	LSH 1,5
+	IOR 1,[.UCLOSE 0,]
+	XCT 1
+#endasm
+}
+
+/* The best source of unique sixbit words */
+static int gensym()
+{
+#asm
+	.GENSYM 1,
+#endasm
+}
+
+/* Creates an inferior, returns an FD or -1 if failure */
+int j_create()
+{
+    int fd, ufx, jname, val;
+
+    USYS_BEG();
+
+    if ((fd = _uiofd()) == -1 || !(ufx = _uiofx()))
+	USYS_RETERR(EMFILE);
+
+    _uiobsize[ufx] = 9;
+    _uioflgs[ufx] |= _UIO_HANDPACK;	/* Block mode channel */
+
+    do {
+	jname = gensym();
+	val = SYSCALL5("open", SC_IMC(_BIO), _uioch[ufx],
+		       SC_SIX("usr"), SC_IMM(0), &jname);
+    } while (val == _ENSMD);	/* Keep trying names until unique */
+
+    if (val) USYS_RETERR(ENOENT);
+
+    _openufx(ufx, (O_WRONLY | O_CREAT | O_TRUNC | O_BSIZE_9));
+    _uioufx[fd] = ufx;
+    USYS_RET(fd);
+}
+
+/* Kills the specified inferior.  Just like close() except it actually
+ * destroys the job.  Can only be applied to the last open FD.
+ */
+int j_kill(fd)
+  int fd;
+{
+    int ufx, val;
+
+    USYS_BEG();
+
+    if (fd < 0 || fd >= OPEN_MAX
+	  || !(ufx = _uioufx[fd])
+	  || _uiotype[ufx] != _DVUSR	/* Better be a job */
+	  || _uionopen[ufx] != 1)	/* This better be the only FD */
+	USYS_RETERR(EBADF);
+
+    uclose(_uioch[ufx]);	/* Kill it */
+    _uiozcnt[ufx] = 0;		/* Channel now closed, so forget these */
+
+    val = close(fd);		/* Shut down rest of I/O system */
+    USYS_RET(val);		/* Pass on any errors from close() */
+}
+
+/* Devour the TTY.  Always returns 0.  Can't possibly fail! */
+/* (I suppose there should be a .CALL version of this, but...) */
+int j_dtty()
+{
+#asm
+	.DTTY
+	SETZI 1,
+#endasm
+}
+
+/* Allow an inferior to make use of the TTY.  Returns 0 if it wins, -1
+ * if failure.
+ * Possible errors:
+ *  - Bad FD.
+ *  - Job isn't an inferior.
+ */
+int j_atty(fd)
+  int fd;
+{
+    int ufx;
+
+    USYS_BEG();
+
+    if (fd < 0 || fd >= OPEN_MAX
+	  || !(ufx = _uioufx[fd])
+	  || _uiotype[ufx] != _DVUSR)
+	USYS_RETERR(EBADF);
+
+    if (SYSCALL1("atty", _uiodnum[ufx]))
+	USYS_RETERR(EBADF);
+
+    USYS_RET(0);
+}
+
+/* Read a user variable.  Returns 0 if it wins, -1 if failure.
+ * VAR is a user variable specifier.  LOC is where to store the result.
+ * Possible errors:
+ *  - Bad FD.
+ *  - No such user variable.
+ */
+int j_vread(fd, var, loc)
+  int fd, var, *loc;
+{
+    int ufx;
+
+    USYS_BEG();
+
+    if (fd < 0 || fd >= OPEN_MAX
+	  || !(ufx = _uioufx[fd])
+	  || _uiotype[ufx] != _DVUSR)
+	USYS_RETERR(EBADF);
+
+    if (SYSCALL3("usrvar", _uiodnum[ufx], &var, SC_VAL(loc)))
+	USYS_RETERR(EINVAL);
+
+    USYS_RET(0);
+}
+
+/* Write a user variable.  Returns 0 if it wins, -1 if failure.
+ * VAR is a user variable specifier.  VAL is the new value.
+ * Possible errors:
+ *  - Bad FD.
+ *  - No such user variable.
+ *  - Can't write into this job.
+ */
+int j_vwrite(fd, var, val)
+  int fd, var, val;
+{
+    int ufx;
+
+    USYS_BEG();
+
+    if (fd < 0 || fd >= OPEN_MAX
+	  || !(ufx = _uioufx[fd])
+	  || _uiotype[ufx] != _DVUSR)
+	USYS_RETERR(EBADF);
+
+    if (SYSCALL3("usrvar", _uiodnum[ufx], &var, &val))
+	USYS_RETERR(EINVAL);
+
+    USYS_RET(0);
+}
+
+/* Recover file position for file UFX after LOAD or PDUMP system call */
+static void correct_pos(ufx)
+  int ufx;
+{
+    int syspos;
+
+    if (SYSCALL2("rfpntr", _uioch[ufx], SC_VAL(&syspos))) return;
+    _uiopos[ufx] = ((_uioflgs[ufx] & _UIO_HANDPACK) ?
+		    (syspos * _uiobword[ufx]) : syspos);
+    _uiozcnt[ufx] = 0;
+    _uiocnt[ufx] = 0;
+    _uioeof[ufx] = 0;
+    return;
+}
+
+/* Writes a PDUMP file for the job on the freshly opened file.
+ * Returns 0 if we win and -1 if we lose.
+ * Possible errors:
+ *  - Bad FD for job.
+ *  - File FD isn't open to DSK.
+ *  - DSK or directory full, etc.
+ */
+int j_dump(job_fd, file_fd)
+  int job_fd, file_fd;
+{
+    int job_ufx, file_ufx, state = 0;
+
+    USYS_BEG();
+
+    if (job_fd < 0 || job_fd >= OPEN_MAX
+	    || !(job_ufx = _uioufx[job_fd])
+	    || _uiotype[job_ufx] != _DVUSR
+	    || file_fd < 0 || file_fd >= OPEN_MAX
+	    || !(file_ufx = _uioufx[file_fd]))
+	USYS_RETERR(EBADF);
+
+    if (SYSCALL3("pdump", _uiodnum[job_ufx], _uioch[file_ufx], &state))
+	USYS_RETERR(EIO);
+
+    correct_pos(file_ufx);
+
+    USYS_RET(0);
+}
+
+/* Loads a PDUMP or SBLK file into the job from the freshly opened file.
+ * Returns 0 if we win and -1 if we lose.
+ * Possible errors:
+ *  - Bad FD for job.
+ *  - File FD isn't open to DSK.
+ *  - File is in the wrong format.
+ */
+int j_load(job_fd, file_fd)
+  int job_fd, file_fd;
+{
+    int job_ufx, file_ufx;
+
+    USYS_BEG();
+
+    if (job_fd < 0 || job_fd >= OPEN_MAX
+	    || !(job_ufx = _uioufx[job_fd])
+	    || _uiotype[job_ufx] != _DVUSR
+	    || file_fd < 0 || file_fd >= OPEN_MAX
+	    || !(file_ufx = _uioufx[file_fd]))
+	USYS_RETERR(EBADF);
+
+    if (SYSCALL2("load", _uiodnum[job_ufx], _uioch[file_ufx]))
+	USYS_RETERR(EIO);
+
+    correct_pos(file_ufx);
+
+    USYS_RET(0);
+}
