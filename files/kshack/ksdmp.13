@@ -1,0 +1,57 @@
+; -*- Midas -*-
+
+title KSDMP - Network boot KS10 using Unibus Chaosnet interface
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+t=:6
+tt=:7
+
+define setf flag
+ifdef flag,.stop
+printc "flag==:"
+.ttymac val
+flag==:val
+termin
+termin
+
+setf debugp
+
+ife debugp, boot=:<1,,0>-100		; Traditional
+ifn debugp, boot==:4000			; Debugging
+lboot==:77				; Last word is for MACCR
+
+loc boot
+
+.insrt dsk:system;ksnet >
+.insrt dsk:system;ksdefs >
+
+.insrt dsk:syseng;chsdef >
+
+define cpkop (op,nb)
+<.dpb <op>,$cpkop,<.dpb <nb>,$cpknb,0>>!termin
+
+boot:	jrst 4,.
+
+out:	movei t,%catdn		;reset transmitter
+	iowri t,caicsr
+	move t,[442000,,outpkt]
+	
+
+in:	jrst 4,.
+
+outpkt::
+outop:	cpkop %corfc,<.length "">
+dest:	0
+source:	0
+outa:	0
+
+constants
+variables
+
+ifg <.-boot>-lboot, .err Too big!
+
+	end boot

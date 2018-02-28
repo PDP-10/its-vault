@@ -1,0 +1,88 @@
+; -*- Midas -*-
+
+title KSDMP - Network boot KS10 using Unibus Chaosnet interface
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+t=:6
+tt=:7
+bp=:10
+wc=:11
+
+define setf text,flag
+ifdef flag,.stop
+printc "text
+flag==:"
+.ttymac val
+flag==:val
+termin
+termin
+
+setf Debugging?,debugp
+
+aibr2==:3120
+reagan==:13065
+setf Gateway? (AIBR2),gate
+setf Server? (REAGAN),server
+
+ife debugp, boot=:<1,,0>-100		; Traditional
+ifn debugp, boot==:4000			; Debugging
+lboot==:77				; Last word is for MACCR
+
+loc boot
+
+.insrt dsk:system;ksnet >
+.insrt dsk:system;ksdefs >
+.insrt dsk:syseng;chsdef >
+
+boot:	iordi t,caimyn
+	hrlm t,outsrc
+	jrst 4,.
+	
+in:	jrst 4,.
+
+; T/<opcode_7,,>, B/bp, C/wc, 16/return
+out:	hrri t,8(c)		; 8 more words in header
+	lsh t,1
+	movem t,outpkt
+	jsp 17,timout
+	movei t,%catdn		; Reset transmitter
+	iowri t,caicsr
+	dmove bp,[442200,,outpkt ? 8]
+	jsp 17,outbp
+	dmove bp,b
+	jsp 17,outbp
+cgate:	movei t,gate
+	iowri t,caiwbf
+	iordi t,caixmt
+	jrst (16)
+
+; 17/return
+timout:	movei t,50000.		; Wait up to 1/2 second for xmt done
+timolp:	iordi tt,caicsr
+	trnn tt,%catdn
+	 sojg t,timolp
+	jrst (17)
+
+; BP/bp, WC/wc, 17/return
+outbp:	ildb t,bp
+	iorwi t,caiwbf
+	sojg wc,outbp
+	jrst (17)
+
+outpkt:	0			; <opcode_8>,,<nbytes>
+outdst:	server,,1		; <destination host>,,<destination index>
+outsrc:	0,,1			; <source host>,,<source index>
+	177777			; <packet number>,,<acknowledge number>
+
+constants
+variables
+
+xboot==:lboot-<.-boot>
+
+ifl xboot, .err Too big!
+
+	end boot
