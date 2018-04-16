@@ -1,0 +1,2401 @@
+;-*-MIDAS-*-
+
+SUBTTL TS Definitions, parameters
+
+	; For convenience in defining isolated variables/tables,
+	; especially when have to know on pass1 where the
+	; table is going to be (.VECTOR etc don't know until end of pass)
+DEFINE LVAR -LINE
+VBLK
+LINE
+PBLK
+TERMIN
+
+DEFINE TMPLOC AT,STUFF
+%%%TLC==. ? LOC AT
+	STUFF
+LOC %%%TLC
+TERMIN
+
+	; Nice macro for minimizing coding.  Doesn't hack indirection tho.
+	; Could conceivably optimize to do MOVE AC,[FROM,,TO] but that
+	; would be overly hairy for something you can do just by writing
+	; 2 instructions.
+DEFINE BLTMAC AC,LEN,FROM,TO
+	MOVSI AC,FROM
+	HRRI AC,TO
+	BLT AC,TO+LEN-1
+TERMIN
+
+	; Also handy for standard zaps (and nice mnemonic)
+	; won't work for indirection either.
+DEFINE BLTZAC AC,LEN,FROM
+	SETZM FROM
+	MOVEI AC,FROM+1
+	HRLI AC,-1(AC)
+	BLT AC,FROM+LEN-1
+TERMIN
+
+	; More convenient when A is clobberable...
+DEFINE BLTM LEN,FROM,TO
+BLTMAC A,LEN,FROM,TO
+TERMIN
+
+DEFINE BLTZ LEN,FROM
+BLTZAC A,LEN,FROM
+TERMIN
+
+	; Following inserts a SYSCAL for JSYS's.  Be warned that it
+	; clobbers T when used!!
+IFN TNXSW,.INSRT XJSYS
+
+IFNDEF PMAPSW,PMAPSW==TNXSW	; 1 to assemble PMAP input, 0 for SIN input.
+IFNDEF ERRSW,ERRSW==1	; 1 for error file output capability.
+
+IFNDEF TYPDLC,TYPDLC==7	; Maximum total depth of .insrt (including tty)
+IFNDEF MX.INS,MX.INS==5	; Maximum depth .insrt files only
+IFNDEF MAXIND,MAXIND==6	; Maximum # @: table entries for .insrt
+
+		; Define sizes of various I/O buffers
+IFN DECSW,[
+IFNDEF DECBFL,DECBFL==203	; Standard DEC buffer size for DSK (200 wds data)
+IFN SAILSW,IFNDEF NINBFS,NINBFS==19.	; For SAIL, hack full disk track of input.
+IFNDEF NINBFS,NINBFS==2		; # standard-size buffers to use for input.
+IFNDEF UTIBFL,UTIBFL==<DECBFL+1>*NINBFS	; Input buffs need 1 wd for EOB hacking
+IFNDEF UTOBFL,UTOBFL==DECBFL	; All output chans have just 1 buffer.
+IFNDEF CRFBSZ,CRFBSZ==DECBFL
+IFNDEF LSTBSZ,LSTBSZ==DECBFL
+IFNDEF ERRBSZ,ERRBSZ==DECBFL
+] ;DECSW
+IFNDEF CMBFL,CMBFL==50		; Length of command buffer.
+IFNDEF UTIBFL,UTIBFL==400	;   "  Input buffer.
+IFNDEF UTOBFL,UTOBFL==200	;   "  BIN output buffer.
+IFNDEF CRFBSZ,CRFBSZ==200	;   "  CREF output buffer.
+IFNDEF LSTBSZ,LSTBSZ==200	;   "  LIST output buffer.
+IFNDEF ERRBSZ,ERRBSZ==1		;   "  ERR output buffer.  Very small to avoid
+				; losing much data if things crash.
+
+
+ERRC==0		; Err device input channel
+TYIC==1		; TTY input channel
+TYOC==2		; TTY output channel
+CREFC==3	; CREF output
+UTYOC==4	; BIN output
+LPTC==5		; LIST output (LPT)
+ERRFC==6	; ERR Assembly error output file.
+UTYIC==7	; 1st input channel, UTYIC+n used for nth .INSRT level in dec version.
+
+SUBTTL File Description Storage (FILBLK's)
+
+VBLK
+	; Definitions for indices into a FILBLK.
+
+	; Scratch block FB is formed while defining indices...
+FB:	OFFSET -.
+		; Lots of crocks depend on the exact order of these 4 items.
+$F6DEV:: 0			; SIXBIT Device name
+$F6FNM:: $F6FN1:: 0		; SIXBIT Filename (on ITS, FN1)
+$F6TYP:: $F6FN2:: $F6EXT:: 0	; SIXBIT Extension (on ITS, FN2)
+$F6DIR:: 0			; SIXBIT Directory (may be numerical PPN)
+	L$F6BLK==.
+IFN TNXSW,[		; Almost all entries here are BP's to ASCIZ strings.
+$FDEV::  0		; Device name
+$FDIR::  0		; Directory name
+$FNAME:: 0		; File name (i.e. main name)
+$FTYPE:: $FEXT:: 0	; File type (or extension)
+$FVERS:: $FGEN:: 0	; File version (or generation).  NUMBER, not string.
+$FTEMP:: 0		; -1 => File is a temporary file.
+$FACCT:: 0		; Account string
+$FPROT:: 0		; Protection string
+$FJFN::  0		; JFN for file (may be <desired JFN>,,<temp JFN>)
+]
+IFN ITSSW\DECSW,[
+$FDEV==:$F6DEV		; These definitions made so some common code can do
+$FDIR==:$F6DIR		; the right things.
+$FNAME==:$F6FNM
+$FTYPE==:$F6TYP
+$FEXT==:$F6TYP
+]
+	L$FBLK==.	; Length of a FILBLK.
+	OFFSET 0	; End of index definitions.
+
+
+	; FILBLK's for various files
+
+ISFB:	BLOCK L$FBLK	; Input file specification as given in command line.
+INFB:	BLOCK L$FBLK	; Actual current input file.
+OUTFB:	BLOCK L$FBLK	; Output file
+
+IFN CREFSW,	CRFFB:	BLOCK L$FBLK	; CREF output file
+IFN LISTSW,	LSTFB:	BLOCK L$FBLK	; Listing output file
+IFN ERRSW,	ERRFB:	BLOCK L$FBLK	; Error output file
+
+INFCNT:	0		; AOS'd each time an input file is opened.
+INFCUR:	0		; What INFCNT was when current file opened.
+INFERR:	0		; What INFCUR held at last err msg.
+
+INDDP:	MAXIND,,TBLOFS		; Pointer into tables below
+TBLOFS:	BLOCK MAXIND*L$FBLK	; Actual filenames corresponding to those in TBLSFS, for opening.
+TBLSFS:	BLOCK MAXIND*L$FBLK	; Source-specified filenames for @: files
+
+
+RFNAM1:	0		; .FNAM1
+RFNAM2:	0
+IFNM1:	0		; .IFNM1
+IFNM2:	0
+INFFN1==:INFB+$F6FN1	; Some crocks seem to reference this.
+OFNM1==:OUTFB+$F6FN1	; Pseudo .OFNM1 needs this.
+OFNM2==:OUTFB+$F6FN2	; ditto, .OFNM2
+RSYSNM:	0		; Initial system name
+PBLK
+
+SUBTTL I/O Buffers
+
+VBLK		; Input buffer and variables
+
+UTIBUF:	BLOCK UTIBFL
+UTIHDR:	0		; Input buffer header (dec version)
+UREDP:	440700,,UTIBUF	; Input byte pointer
+UTICNT:	0		; Input byte count (dec version)
+IUREDP:	440700,,UTIBUF	; Initial UREDP, used for re-initializing.
+UTIBED:	UTIBUF		; EOF comparison with RH(UREDP), 4.9 => EOF on .IOT
+
+IFN DECSW,UTICHN:	UTYIC
+
+		; BIN Output buffer
+
+UTOBUF:	BLOCK UTOBFL	; Output buffer
+UTOHDR:	UTOBFL,,UTOBUF-1
+UTYOP:	444400,,	; Output (36. bit) byte pointer
+UTYOCT:	0		; # words left in utobuf
+IFN ITSSW,OCLOSP: @1(C)	; Turned into bp to unused part of last bffer wd used.
+
+		; CREF output buffer
+IFN CREFSW,[
+CRFBUF:	BLOCK CRFBSZ
+CRFHDR:	CRFBSZ,,CRFBUF-1	; Header, assembled value used only ifn itssw
+CRFPTR:	444400,,	; Bp for filling buffer (full words)
+CRFCNT:	0		; Num. wds. empty in buffer
+]
+
+		; LISTing output buffer
+IFN LISTSW,[
+LSTBUF:	BLOCK LSTBSZ
+LSTHDR:	5*LSTBSZ,,LSTBUF-1
+LSTPTR:	440700,,
+LSTCNT:	0
+]
+
+		; ERRor output buffer
+IFN ERRSW,[
+ERRBUF:	BLOCK ERRBSZ
+ERRHDR:	5*ERRBSZ,,ERRBUF-1
+ERRPTR:	440700,,
+ERRFCT:	0	; Can't call this ERRCNT since that's used for # errors.
+ERRFP:	0	; Non-0 if want error output file.
+ERRFOP:	0	; Non-0 if error file open (ie try outputting to it)
+]
+PBLK
+
+SUBTTL Interrupt Handling
+
+;	Note that only PDL OV is now enabled in general.
+; TTY input interrupts are also handled when possible for
+; ^H, ^W, and ^V.
+
+.SCALAR INTSVP		; Saves P on interrupt for debugging
+
+IFN ITSSW,[
+	TMPLOC 42, JSR TSINT	; Interrupt vector for ITS
+VBLK
+.JBCNI:
+TSINT:	0		; 1st wd interrupts currently considered fatal errors.
+.JBTPC:	0		; Error processor re-enables interrupts
+	.SUSET [.RJPC,,INTJPC]
+	SKIPGE TSINT
+	 JRST TTYINT	; Second-word ints.
+	JRST TSINT1	; Jump into pure coding and process interrupt
+INTJPC:	0		; Saves .JPC at interrupt.
+PBLK
+	; Jrst here from TSINT for 2nd wd interrupts.
+TTYINT:	PUSH P,A
+	MOVEI A,TYIC	; The tty chnl is the only one enabled.
+	.ITYIC A,
+	 JRST TTYINX	; No int. char.
+	CAIN A,^W
+	 AOS TTYFLG	; ^W silences,
+	CAIN A,^V
+	 SOS TTYFLG	; ^V unsilences,
+	CAIN A,^H
+	 SETOM TTYBRF	; ^H says break next time thru ASSEM1 loop.
+TTYINX:	REST A
+	.DISMIS .JBTPC
+] ; IFN ITSSW
+
+IFN DECSW, TMPLOC .JBAPR, TSINT1	; Interrupt vector for DEC
+
+IFN ITSSW\DECSW,[
+	; Amazing but can use almost same basic rtn for both!
+
+TSINT1:	MOVEM P,INTSVP		; Save P for possible debugging
+IFN ITSSW,.SUSET [.SPICL,,[-1]]	; For ITS, re-enable ints.
+	MOVE A,.JBCNI		; Get interrupt request word
+	TRNE A,200000		; PDL overflow?
+	 JRST CONFLP
+	MOVE B,[TYPE "Unknown interrupt - Fatal"]	; anything else.
+	MOVEM B,40
+	MOVE A,.JBTPC	; So error routine will print out properly
+	JSA A,ERROR
+]
+
+IFN TNXSW,[
+	; TENEX Interrupt handler
+; Note that NXP (non-ex page) is enabled, but no provision is
+; currently made for handling it.  This causes process termination and
+; EXEC will print error message.  If NXP wasn't enabled, a page would
+; simply be created without fuss (page is always created, incidentally,
+; whether or not interrupt happens)
+
+LVAR MEMDBG:	0	; For nonce, this gets set when PURIFG does.
+
+LEVTAB:	INTPC1		; Where to store PC for level 1 interrupt.
+	0 ? 0		; Levels 2 and 3 unused.
+CHNTAB:	BLOCK 36.	; Where to go for indicated condition.  Most zero.
+
+.IC.CV==1	; Define user channel 1 for ^V interrupt
+.IC.CW==2	;   "  2 for ^W
+.IC.CH==3	;   "  3 for ^H
+%%LSV==.
+LOC CHNTAB+.ICPOV ? 1,,TSINT1	; Put right word in CHNTAB for PDL OV dispatch.
+LOC CHNTAB+.IC.CV ? 1,,INT.CV	; Ditto for ^V dispatch
+LOC CHNTAB+.IC.CW ? 1,,INT.CW	; "  ^W
+LOC CHNTAB+.IC.CH ? 1,,INT.CH	; "  ^H
+LOC %%LSV
+
+.SCALAR	INTPC1		; Level 1 interrupt PC stored here.
+
+	;  Handle PDL OV interrupt
+TSINT1:	MOVEM P,INTSVP		; Save PDL ptr.
+	MOVEI A,CONFLP		; OK to clobber A in PDLOV.
+	MOVEM A,INTPC1		; Dismiss to CONFLP.
+	DEBRK			; Off we go.
+
+	; Handle ^V interrupt
+INT.CV:	SOS TTYFLG	; Unsilence typeout
+	DEBRK
+
+	; Handle ^W
+INT.CW:	AOS TTYFLG	; Silence typeout
+	DEBRK
+
+	; Handle ^H
+INT.CH:	SETOM TTYBRF	; Set flag to check at main level ASSEM1 loop.
+	DEBRK
+]
+
+SUBTTL MIDAS BEGINS HERE - Program Startup
+
+VBLK
+NVRRUN:	-1	; 0 => MIDAS was run; error to start or purify.
+FATAL:	0	; At end of assembly, not 0 iff fatal error occurred.
+PBLK
+
+BEG:			; Start address!
+IFN DECSW\TNXSW,[
+	TDZA A,A
+	 SETO A,
+	MOVEM A,CCLFLG		; Remember type of start-up
+]
+	SETZ FF,		; Initialize flags
+	MOVE P,[-LPDL,,PDL-1]	; Initialize P
+
+IFN DECSW,[
+	RESET
+	MOVEI A,600000
+	APRENB A,
+]
+	; For TENEX, must determine right away which system we're on.
+IFN TNXSW,[
+	RESET
+;	TLZ FF,FL20X	; Assume 10X until proven otherwise. (done by SETZ above)
+
+IFN 0,[	; One way of determining OS which doesn't work on some places.
+	MOVE A,[112,,11] ; Magic word that will win on 10X,T20 (and maybe T10)
+GETTAB=<047000,,41>	; CALLI 41
+	GETTAB A,	; Returns 10000 T10, 20000 ITS, 30000 10X, 40000 T20
+	 MOVEI A,30000	; Shouldn't ever fail, but if it does, assume 10X.
+	LDB A,[140300,,A] ; Flush other fields too
+	CAIN A,4	; = Tops-20?
+	 TLO FF,FL20X	; Yes, set flag.
+]; IFN 0
+IFN 0,[	; This is a loser too, since there ARE KL Tenices!
+	SETZ A,		; In lieu of above, use hardware hack...
+	BLT A,		; test for KL-ness.
+	CAIE A,
+	 TLO FF,FL20X	; KL will fail to skip, assume that means 20X OS.
+];IFN 0
+IFN 1,[	; Boy I hope DEC never defines LOADTB! -- MRC
+	SYSCAL SYSGT,[['LOADTB]][A ? D]
+	SKIPN D		; If LOADTB is not defined
+	 TLO FF,FL20X	; it must be a Twenex
+]; IFN 1
+
+	SYSCAL SCVEC,[[.FHSLF] ? [-1]]	; and flush compat package,
+			; disabling UUO's 40-77; this is good for debugging.
+
+	; Set up stuff for interrupts
+	SYSCAL SIR,[[.FHSLF]
+			[LEVTAB,,CHNTAB]]	; Specify tables
+	SYSCAL EIR,[[.FHSLF]]			; Enable interrupts
+	SYSCAL AIC,[[.FHSLF]		; Activate PDL OV and ^V, ^W, ^H
+[IRP BIT,,[.ICPOV,.IC.CV,.IC.CW,.IC.CH]
+<1_<35.-BIT>>+!TERMIN ]]
+	SYSCAL ATI,[[.TICCV,,.IC.CV]]	; Make various mappings from
+	SYSCAL ATI,[[.TICCW,,.IC.CW]]	; terminal bits to int. channels.
+	SYSCAL ATI,[[.TICCH,,.IC.CH]]	; What a losing interrupt sys 10X has!
+	SKIPN MEMDBG		; Hacking memory?
+	 JRST BEG20
+	MOVSI A,-2*MINMAC	; If so, must create pages for initially-zero
+	MOVE B,(A)		; core, by referencing them all.
+	ADDI A,777
+	AOBJN A,.-2
+	SYSCAL AIC,[[.FHSLF] ? [1_<35.-.ICNXP>]]	; Then enable ints
+BEG20:					; for Non-eXistent Pages.
+]
+
+IFN ITSSW,[
+	MOVE A,[-5,,[		; Set and read various vars in a chunk.
+		.SMASK,,[%PIPDL]	; 1st-wd Interrupt only on PDL ovfl.
+		.SMSK2,,[1_TYIC]	; 2nd-wd on TTY input channel.
+		.SPICL,,[-1]		; and enable interrupt system.
+		.RSNAM,,RSYSNM		; Get system name (default dir to use)
+		.RXJNAM,,B ]]		; and XJNAME for temp. hacking below.
+	.SUSET A
+	SYSCAL TTYSET,[1000,,TYIC	; Set TTYST wds - PI echo, no act/int
+		[232020,,202020]	; except ctls activate & interrupt
+		[232020,,220220]]	; CR, DEL activate but don't int;
+					; DEL doesn't echo.
+]
+
+	AOSE NVRRUN	; Test for this job's already being run...
+	 JRST [	TYPE "Can't restart MIDAS"
+		JRST TSRETN]
+
+	MOVEI D,SYMDSZ	; Get default symtab size
+IFN ITSSW,[			; Remember that B set to XJNAME above.
+	CAME B,['MMIDAS]	; Set symtab size larger for MMIDAS
+	 CAMN B,[SIXBIT/MM/]	; (random sort of hack now that .SYMTAB exists)
+	  MOVEI D,SYMMSZ
+]
+	SKIPGE ISYMF		; The first time through,
+	 MOVEM D,SYMLEN		; Make that the size to use.
+	CALL SITINI		; Initialize stuff for .SITE.
+	CALL JCLINI		; Now try to fetch JCL; set CMPTR accordingly.
+IFN ITSSW,[
+	SKIPGE ISYMF		; Skip if syms spread; if not,
+	 CALL TSYMGT		; get TS syms from system.
+]
+	SKIPE CMPTR		; If have JCL,
+	 JRST GO2AA		; skip announcing midas's name and version.
+
+IFG PURESW-DECSW,[	; If meaningful,
+	SKIPGE PURIFG		; Check for purity
+	 TYPE "NOTPUR "		; and type little warning if unpurified.
+	]
+	TYPE "MIDAS."		; and announce self.
+	MOVE B,[MIDVRS]
+	PUSHJ P,SIXTYO
+	JRST GO2AA
+
+SUBTTL MIDAS Top-level control path
+
+GO2A:	SETZM CMPTR	; Recycles here, so JCL only hacked once.
+GO2AA:	SETOM FATAL	; Assume fatal errors, unless cleared at GO8 when done.
+	SETZM TTYFLG	; Allow TTY typeout.
+	SETZM ERRCNT	; Initialize error counter (total errors)
+IFN RUNTSW,[	PUSHJ P,RNTTMA	; Get initial run time.
+		MOVEM A,IRUNTM]
+	SETZM LSTTTY	; Tell TYOERR not to try output to LST file (none yet!)
+	PUSHJ P,CMD	; Get typed in command (or scan cmd line if CMPTR ne 0)
+
+	SKIPGE SMSRTF	; What's this for, I wonder?
+	 JRST GO21
+	TYPECR "SYMTAB clobbered"
+	JRST GO2A
+
+	; Filenames and switches all specified, now see if files can be set up.
+GO21:	PUSHJ P,OPNRD	; Open input file
+	 JRST GO2A	; Error, msg was typed, go try again with new cmd line.
+	PUSHJ P,WINIT	; Open output file, cref file.
+IFN DECSW\TNXSW,[
+	SKIPGE CCLFLG
+	 TYPE "MIDAS:	"
+]
+IFN A1PSW,[
+	SETOM PRGC
+	SETOM OUTC
+GO3: ]
+	MOVE A,WSWCNT
+	MOVEM A,TTYFLG	; Turn off typeout if there were (W) switches.
+	SETOM LSTTTY	; Allow TYOERR to output to both TTY and LST.
+	JSP A,$INIT	; Initialize for assembly
+	JSP A,PS1	; Do pass 1
+	TRNN FF,FRNPSS	; If 2 pass assembly,
+	 JRST GO4
+	PUSHJ P,OPNRD	; Then re-open input file
+	 JRST GO2A	; Couldn't re-open???? Do something better here.
+GO4:	JSP A,PLOD	; Maybe punch out SBLK loader in some format
+	JSP A,PS2	; Do pass 2
+	JSP A,PSYMS	; Maybe punch out symbol table
+IFN A1PSW,[
+	TLZ FF,$FLOUT
+	AOS PRGC	; Indicate end statement encountered
+	SETOM OUTC	; " " "
+	TRNN FF,FRNPSS	; If 1 pass assembly,
+	 SKIPGE CONTRL
+	  CAIA	
+	JRST GO3	; Then try to assemble another program
+]
+IFN FASLP,[
+	SKIPGE A,CONTRL
+	TRNN A,FASL
+	 JRST GO8
+	MOVE A,[SIXBIT /*FASL*/]	; "finish" FASL file
+	MOVEI B,17
+	PUSHJ P,FASO	; Ignore end frob, but output FASL end code
+	MOVE A,[ASCIC//]	; pad with ^C's.
+	PUSHJ P,FASO1	; Randomness
+	PUSHJ P,FASBE	; Write out last block
+]
+	; Jump directly here for certain main-input EOF conditions.
+GO8:	SETZM FATAL	; There was no fatal error: output files get renamed.
+
+	; Jump directly here if hit fatal error (incl .FATAL, illegal UUO, etc)
+GO9:	PUSHJ P,.FILE		; Close (and rename if FATAL = 0) output files.
+	SETZM LSTTTY
+IFN RUNTSW, PUSHJ P,RNTTYO	; Type out run time used since GO2A
+	CALL ERRCLS	; File away error file - only thing not closed by .FILE
+	JRST TSRETN	; and die according to system's wishes.
+
+SUBTTL MIDAS Death (TSRETN) - system dependent exit routines
+
+IFN ITSSW,[
+TSRETN:
+IFN PURESW,[
+	SKIPGE PURIFG	; If not yet purified, assume being debugged.
+	 .VALUE
+]
+	.LOGOUT		; Come here to commit suicide.
+	.BREAK 16,160000
+] ;IFN ITSSW
+
+IFN DECSW,[
+
+TSRETN:	SKIPLE A,ERRCNT		; If had any errors,
+	 ADDM A,.JBERR		; let loader know about them. (???) Well,
+				.SEE ERR1 ; for strange comment.
+	SKIPN CCLMOR	; Any more CCL commands?
+	 EXIT		; Nope, all done.
+	JRST RERUN	; More CCL to hack, start up a new MIDAS.
+] ; IFN DECSW
+
+
+IFN TNXSW,[
+TSRETN:	SKIPE CCLMOR	; Need to hack any more CCL?
+	 JRST RERUN	; Yeah.
+TSRET1:	HALTF
+	HRROI 1,[ASCIZ/Can't continue/]
+	PSOUT		; Better than dying randomly
+	JRST TSRET1
+] ; IFN TNXSW
+
+SUBTTL .SITE pseudo & initialization (SITINI)
+
+IFN ITSSW,	LVSITE==1	; ITS only uses 1 word of mach name.
+IFN DECSW\TNXSW,LVSITE==5	; whereas others need 5 words (25 chars max)
+
+LVAR	V.SITE:	BLOCK LVSITE	; .SITE string stored here.
+
+	; .SITE N, returns nth word of sixbit machine name.
+
+A.SITE:	CALL AGETFD	; Get field as argument.
+	JUMPL A,CABPOP	; Ignore negative indices.
+	CAIL A,LVSITE	; Make sure index is within bounds of string.
+	 JRST CABPOP
+	MOVE A,V.SITE(A)	; Win, get indexed word.
+	JRST CLBPOP
+
+
+; SITINI - Initialization routine called only at MIDAS startup, for
+;	setting up .SITE and maybe other things.
+
+SITINI:
+IFN ITSSW,[	; For ITS, use up just 1 word and need 1 call to set V.SITE
+	SYSCAL SSTATU,[REPEAT 5,[ ? MOVEM A] ? MOVEM V.SITE]
+	 .LOSE 1000
+	POPJ P,	]
+
+IFN SAILSW,[	; SAIL needs special kludge, since it doesn't have the
+	MOVE A,[SIXBIT /SAIL/]	; right GETTAB used.
+	MOVEM A,V.SITE
+	POPJ P,	]
+
+	; This code sets TNX .OSMIDAS at runtime as appropriate.
+IFN TNXSW,[
+	MOVE A,[SIXBIT /TENEX/]	; Assume running on 10X
+	TLNE FF,FL20X		; unless proved otherwise
+	 MOVE A,[SIXBIT /TWENEX/]
+	MOVEM A,OSMID		; Store directly as symtab value!
+]
+	; For TENEX and DEC in general, very similar.
+IFN DECSW\TNXSW,[
+	BLTZ LVSITE,V.SITE	; Clear out string location
+IFN TNXSW,[			; Best to get table index dynamically,
+	SYSCAL SYSGT,[['SYSVER]][A ? D]
+	JUMPE D,GINIT5
+	]
+IFN DECSW,MOVEI D,11	; 11 = .GTCNF   But on T10 we can assume this.
+
+	MOVE AA,[440600,,V.SITE]
+	MOVSI C,-5	; Process 5 words of .GTCNF (max possible)
+GINIT1:	HRLZ A,C	; Get subindex we want,
+	HRR A,D		; and produce <subindex>,,<table #>
+IFN DECSW, GETTAB B,	; Get 1 word of table, using appropriate call.
+IFN TNXSW, SYSCAL GETAB,[B][B]
+	 JRST GINIT5	; If call fails, exit loop.
+GINIT2:	LSHC A,7	; Extract the ascii chars and store them.
+	TRCE A,140	; Swap bit 40 with bit 100, thus turning
+	 TRCE A,140	; "A to 'A, "a to 'A, "1 to '1, etc, and ^@ to ' .
+	  TRCE A,140
+	IDPB A,AA	; Store the sixbit into V.SITE
+	JUMPN B,GINIT2	; When nothing left of this word of .GTCNF, get next.
+	AOBJN C,GINIT1
+GINIT5:	POPJ P,
+] ;DECSW\TNXSW
+
+SUBTTL RunTime - .MRUNT and end-of-assembly typeout
+IFN RUNTSW,[
+
+.SCALAR IRUNTM	; Holds initial run time (set at start of assembly)
+
+	; .MRUNT - Returns runtime since start of assembly.
+
+A.MRUN:	PUSHJ P,RNTTMA	; Get current run time
+	SUB A,IRUNTM	; Subtract initial run time
+IFN ITSSW,[MULI A,4069.	; ITS - Convert to nanoseconds,
+	DIV A,[1.^6]	;   then to milliseconds.
+]
+	PJRST CLBPOP
+
+	; RNTTMA - internal routine to return in A the current runtime,
+	; in whatever units the OS furnishes.
+RNTTMA:
+IFN ITSSW, .SUSET [.RRUNT,,A]	; Gets runtime in 4.096 usec units.
+IFN DECSW, SETZ A, ? RUNTIM A,	; Runtime in msec
+IFN TNXSW,[
+	IFN A-1, EXCH R1,A
+	MOVEI R1,.FHSLF
+	RUNTM			; Runtime in msec for self.
+	IFN A-1, EXCH R1,A
+	]
+	POPJ P,
+
+; RNTTYO - Called at end of assembly to type out runtime,
+;	# of errors, and # symbols used.
+
+RNTTYO:
+IFN DECSW,[	; Nobody wants this on ITS, but other people do...sigh...
+	SKIPE A,ERRCNT		; Any assembly errors?
+	 JRST [	TYPE "? "	; Yes, error message for batch controllers
+		CALL DPNT
+		TYPECR " error(s) detected"
+		JRST .+1]
+	SKIPE CCLFLG			; Called via CCL?
+	 RET
+]
+	TYPE "Run time = "
+	CALL A.MRUN	; Get runtime in millisec. in A.
+	IDIVI A,10.
+	IDIVI A,100.	; Get secs and hundredths.
+	HRLM B,(P)	; Save remainder
+	PUSHJ P,HMSTYO	; Type out secs
+	MOVEI A,".
+	CALL TYO
+	HLRZ A,(P)
+	CALL HMSTY3	; Type out hundredths
+	CALL CRR
+	CALL A.SYMC
+	CALL DPNT
+	TYPE " Symbols including initial ones ("
+	CALL A.SYMC
+	IMULI A,100.
+	IDIV A,SYMLEN	; Get % symtab used
+	CALL DPNT
+	TYPECR "% used)"
+	RET
+
+; HMSTYO - Type out H:MM:SS time in A
+;	 Doesn't work for times .ge. 60. hours
+
+HMSTYO:	IDIVI A,60.
+	JUMPE A,[MOVE A,B ? PJRST DPNT]
+	HRLM B,(P)
+	PUSHJ P,HMSTYO
+	MOVEI A,":
+	PUSHJ P,TYO	; Type delimiting char
+	HLRZ A,(P)
+HMSTY3:	IDIVI A,10.
+	PUSHJ P,ADGTYO	; Type out digit in A
+	MOVEI A,"0(B)
+	PJRST TYO
+
+] ; IFN RUNTSW
+
+SUBTTL COMMON Output Routine WINIT - Open all output files.
+
+; WINIT - Called from top-level control to open all necessary output files.
+;
+
+WINIT:
+IFN ERRSW,[
+	SKIPN ERRFP	; If want error output file,
+	 JRST WINIT2
+	CALL OINIT	; Open it, first of all.
+	 0 ERRFC,ERRFB
+	 SIXBIT/ERROUT/
+	 ERRHDR,,ERRBUF
+	SETOM ERRFOP	; Error file now open.
+WINIT2:	]
+	PUSHJ P,OINIT		; Open main output file.
+	 13^9 UTYOC,OUTFB	; <dec-mode> chnl,name-block.
+	 SIXBIT/OUTPUT/
+	 UTOHDR,,UTOBUF
+IFN ITSSW,[
+	TLZ FF,FLPTPF	; Initially assume device not paper tape punch
+	.STATUS UTYOC,A	; Get status of output channel
+	ANDI A,77	; Mask to device code
+	CAIN A,7	; If paper tape punch,
+	 TLO FF,FLPTPF	; Then set FLPTPF.
+]
+IFN LISTSW,[
+	SKIPN LISTP
+	 JRST WINIT1
+	CALL OINIT		; Open listing file if desired.
+	 0 LPTC,LSTFB
+	 SIXBIT/LSTOUT/
+	 LSTHDR,,LSTBUF
+WINIT1:
+]
+IFN CREFSW,[
+	SKIPN CREFP	; If cref requested,
+	 RET
+	PUSHJ P,OINIT		; Open cref file, FN2 = CRFOUT
+	 13^9 CREFC,CRFFB
+	 SIXBIT/CRFOUT/
+	 CRFHDR,,CRFBUF
+	MOVE A,[.BYTE 7 ? 177 ? "B ? ^W]
+	PUSHJ P,CRFOUT		; Output header to indicate image input.
+	PUSHJ P,CRFSSF		; Output set-source-file block.
+]
+	RET
+
+SUBTTL COMMON Output Routines - Output Chars/Words to BIN, TTY, ERR, CREF, LIST
+
+	; PPB - Punch Binary word.
+
+PPB:	JUMPGE FF,CPOPJ		; Don't punch if not punching pass.
+PPBA:			; This entry pt "Always" punches.
+TPPB:	SOSGE UTYOCT		; If no more room in buffer,
+	 JRST [	CALL TPPBF	; Output & re-init buffer.
+		JRST TPPB]
+	IDPB A,UTYOP
+	RET
+
+TPPBF:	PUSH P,[0 UTYOC,UTOHDR]	; Drop thru to COBUFO.
+
+	; Common OBUFO.  Takes <ch>,<header> on stack, clobbers no ACs.
+	; See rtns below for usual calling sequence.
+COBUFO:	EXCH C,(P)	; Get arg off stack, save C.
+	CALL OBUFO	; Output & re-init buffer.
+	REST C
+	RET
+
+	; TYO - Output char in A, outputting also to ERR file if possible.
+TAB:	MOVEI A,^I
+TYO:	SKIPG A.TTYF
+	 CALL TYOX	; Actually output to TTY with OS-dependent routine.
+			; Then fall through for ERR output.
+ERRCHR:
+IFE ERRSW,RET
+IFN ERRSW,[
+	SKIPN ERRFOP	; Output char in A to error file if one is open.
+	 RET
+	SOSGE ERRFCT
+	 JRST [	PUSH P,[ERRCHR]
+		PUSH P,[0 ERRFC,ERRHDR]
+		PJRST COBUFO]
+	IDPB A,ERRPTR
+	RET
+] ;IFN ERRSW
+
+	; CRFOUT -  Output word in A to CREF file.
+
+IFN CREFSW,[
+CRFOUT:	SOSGE CRFCNT
+	 JRST [	PUSH P,[CRFOUT]		; Buffer full, go output it.
+		PUSH P,[0 CREFC,CRFHDR]
+		PJRST COBUFO]
+	IDPB A,CRFPTR
+	POPJ P,
+
+CRFSSF:	SKIPA A,[1]	; Output set-source-file block.
+CRFPSH:	MOVEI A,3	; Output push-source-file block.
+REPEAT L$F6BL,[
+	CALL CRFOUT
+	MOVE A,INFB+$F6DEV+.RPCNT
+	]
+	JRST CRFOUT
+] ; IFN CREFSW
+
+
+	; PILPT -  Output character in A to listing file.
+
+IFN LISTSW,[
+PILPT:	SOSGE LSTCNT
+	 JRST [	PUSH P,[PILPT]		; When buffer full, output it.
+		PUSH P,[0 LPTC,LSTHDR]
+		PJRST COBUFO]
+	IDPB A,LSTPTR
+	RET
+
+LPTCLS=:CPOPJ	; Hmmm, random noop-ness ref'd by AEND.
+
+] ;END IFN LISTSW,
+
+SUBTTL COMMON Output Routine .FILE - Close all output files.
+
+; .FILE - Counterpart to WINIT.
+;	Close input, bin, cref and list files.
+
+.FILE:			; Closing input file is simple enough...
+IFN DECSW, RELEAS UTYIC,
+IFN ITSSW, .CLOSE UTYIC,
+IFN TNXSW,[
+IFN PMAPSW, MOVE A,[NIBFPS,,1STBFP] ? CALL DELPGS	; flush buffer pages
+	MOVE R1,INFB+$FJFN
+	CLOSF
+	 JFCL
+	SETZM INFB+$FJFN
+	SETZM JFNCHS+UTYIC
+]
+	MOVNI A,1
+	SKIPL B,CONTRL	; If relocatable,
+	 PUSHJ P,TPPB	; Output a -1 so stink will see EOF
+	SETZ A,		; In dec fmt, output a 0 at end.
+	TRNE B,DECREL
+	 CALL TPPB
+	SKIPE OUTFB+$FEXT	; Check general name.
+	 JRST .FILE2		; Output fnam2 was explicitly specified
+
+	; Output extension (fn2) wasn't specified, default depends
+	; on the output type - absolute or relocatable.
+IFN ITSSW, MOVSI A,'BIN	; None specified, get default extension for absolute
+IFN DECSW, MOVSI A,'SAV
+IFN TNXSW,[
+	MOVSI A,'SAV	; On Tenex use .SAV,
+	TLNE FF,FL20X	; but on 20X
+	 MOVSI A,'EXE	; use this.
+	]
+
+	SKIPL B,CONTRL	; and use that unless really relocatable,
+IFN ITSSW, MOVSI A,'STK	; in which case use appropriate thing for site.
+IFE ITSSW, MOVSI A,'REL
+	TRNE B,DECREL	; Another thing to check for
+	 MOVSI A,'REL
+IFN FASLP,[
+	TRNE B,FASL	; If output is FASL format,
+IFN ITSSW, MOVE A,[SIXBIT /FASL/]	; obviously smash again.
+IFE ITSSW, MOVSI A,'FAS
+]
+IFE TNXSW, MOVEM A,OUTFB+$F6EXT	; For 6bit systems, store final selection.
+IFN TNXSW, PUSHJ P,TNXODF	; If Tenex, call output default hackery, since
+				; changing stuff is a bit hairier.
+
+.FILE2:	JSP A,OCLOSE
+	 0 UTYOC,UTOHDR	; Write out buffer, rename and close output file.
+	 OUTFB
+IFN LISTSW,[
+	SKIPN LISTP	; Listing file open =>
+	 JRST .FILE3
+	CALL PNTCR	; End with cr and ff.
+	MOVEI A,^L
+	CALL PILPT
+	JSP A,OCLOSE
+	 0 LPTC,LSTHDR	; Output buffer, rename & close it.
+	 LSTFB
+.FILE3:
+] ;IFN LISTSW
+IFN CREFSW,[
+	SKIPN CREFP	; If cref file open,
+	 POPJ P,
+	MOVEI A,0
+	PUSHJ P,CRFOUT	; Output eof block,
+	JSP A,OCLOSE	; Write buffer, close.
+	 0 CREFC,CRFHDR	; 0 chnl,header
+	 CRFFB
+]
+	RET
+
+	; File out error output file.  This isn't done in .FILE so that
+	; error file can include a few more goodies and be closed separately
+	; later on.
+ERRCLS:	SETZM FATAL	; Err file renamed even after fatal error.
+IFN ERRSW,[
+	SKIPN ERRFOP
+	 RET		; There is none.
+	MOVEI A,^M
+	CALL ERRCHR	; Put crlf at ennd.
+	MOVEI A,^J
+	CALL ERRCHR
+	JSP A,OCLOSE	; Rename and close.
+	 0 ERRFC,ERRHDR
+	 ERRFB
+	SETZM ERRFOP
+]
+	RET
+
+SUBTTL ITS - Output file Open, Output, Close/Rename.
+IFN ITSSW,[
+
+;	PUSHJ P,OINIT	; Open output file
+;	 Mode chnl,name-block-addr
+;	Sixbit/desired-temporary-fn2/
+;	Header,,buffer space	;used only in dec version.
+; The mode should be 13^9 for binary, 0 for ascii.
+
+OINIT:	MOVE A,(P)
+	HLRZ B,2(A)	; Get addr of header,
+	SETOM 2(B)	; Set buffer byte count to -1 => not initted.
+	MOVE AA,1(A)	; Get 2nd arg, temp FN2 to use.
+	MOVE F,(A)	; Get 1st arg - <mode> <ch>,<filblk>
+	SYSCAL TRANS,[5000,,.UAO		; For output mode,
+		REPEAT 4,[?       .RPCNT(F) ]		; translate from given names
+		REPEAT 4,[? MOVEM .RPCNT+FB+$F6DEV ]]	; into actual names, in scratch blk.
+	 JRST OINITL	; (too many translations)
+
+	SYSCAL DELETE,[FB+$F6DEV	; Delete old temp name file.
+		TMPFN1 ? AA ? FB+$F6DIR]
+	 JFCL				; If none, it's ok.
+	LDB A,[270400,,F]	; Get channel num.
+	HRLI A,.BAO		; Open mode (default ascii)
+	TLNN F,777000		; But maybe want image mode.
+	 HRLI A,.BIO		; Yep, use that instead, to get <mode>,,<ch>
+	SYSCAL OPEN,[A ? FB+$F6DEV	; Open file,
+		TMPFN1 ? AA		; using these temp filenames.
+		FB+$F6DIR]
+	 JRST OINITL
+	BLTM L$F6BL,FB+$F6DEV,$F6DEV(F)	; Copy translated names into
+				; name-block for file, for eventual rename.
+
+POPJ3:	AOS (P)		; Skip over 3 args.
+POPJ2:	AOS (P)
+	JRST POPJ1
+
+TMPFN1:	SIXBIT /_MIDAS/		; FN1 to use for temp filenames.
+
+
+
+; OINITL - jumped to from OINIT if some lossage
+;	encountered when opening output files.
+
+
+OINITL:	HLLZ A,@(P)	; Get chnl num,
+	TLZ A,777037	; Mask to just ac field (chnl num)
+	IOR A,[.STATUS A]
+	XCT A		; Read its status,
+	PUSHJ P,OPNER	; Type out reason for open failure, and ask
+	TYPE "Use what filename instead? "
+	PUSHJ P,GTYIP	; Get typein, one line.
+	MOVE F,@(P)	; Get <filblk>
+	PUSHJ P,RFD	; Get new file description into filblk spec'd by F
+	JRST OINIT	; and jump back to try again.
+
+VBLK
+ERRDNM:	.UAI,,'ERR ? 3
+ERRCOD:	0
+IFSTS:	0	; .STATUS word stored by OPNRD1 when .OPEN loses
+PBLK
+
+	; Openloss documentation routine
+
+IOPNER:	MOVE A,IFSTS	; Input
+OPNER:	MOVEM A,ERRCOD	; Save .status word
+	PUSHJ P,TYPFB	; Type out file description
+	PUSHJ P,CRRERR	; Now crlf to ensure room for following
+	.OPEN ERRC,ERRDNM	; Now get the system to say what's wrong
+	 .LOSE 1000		; Can't open err device?
+IOPNR2:	.IOT ERRC,A	; Get character from system
+	CAIGE A,40	; Ends with ^L or ^C or other cruft.
+	 PJRST CRRERR	; Return, typing out CRLF.
+	PUSHJ P,TYOERR	; Type out character
+	JRST IOPNR2	; Loop back for next
+
+
+;	JSP A,OCLOSE
+;	0 chnl,header
+;	Nameblockaddr
+; Write out last buffer, rename to names in nameblock and close.
+
+OCLOSE:	MOVE C,(A)		; 1st wd of args is what OBUFO wants.
+	LDB B,[360600,,1(C)]	; Just in case this is ascii file,
+	DPB B,[300600,,OCLOSP]	; Get bp to unused part of last wd of buffer,
+	MOVE B,[ASCIC//]
+	DPB B,OCLOSP		; And pad with ^c's.
+	SOS 2(C)		; Obufo assumes byte count was sos'd.
+	CALL OBUFO		; Write out last partial buffer
+	MOVE F,1(A)		; Get <filblk>
+	LDB C,[270400,,(A)]	; Get chnl num.
+	SKIPE FATAL
+	 JRST OCLOS1		; After fatal error, don't rename outputfiles.
+	SYSCAL RENMWO,[C	; Rename (F has nameblock addr)
+		$F6FN1(F) ? $F6FN2(F)]
+	 HALT
+OCLOS1:	SYSCAL CLOSE,[C]	; Close channel.
+	 HALT
+	JRST 2(A)	; Skip over args on return.
+
+
+; OBUFO - Write out and reinitialize buffer for file.
+;	Assumes byte count (header 3rd wd) was sos'd.
+;	C has <0 chnl,header>
+;	In ITS version, header 1st wd has <size in bytes>,,<buffer addr>-1
+
+OBUFO:	PUSH P,A
+	PUSH P,AA
+	AOSGE 2(C)	; Was count sos'd from -1?
+	 JRST OBUFO1	; Yes, buffer hadn't been initted, don't write it.
+	MOVN A,1(C)
+	ADD A,(C)	; RH(A) has -<# wds used in buffer>.
+	MOVSI A,(A)
+	HRR A,(C)
+	AOS A		; A has aobjn -> used part of buffer.
+	HLLZ AA,C
+	IOR AA,[.IOT A]
+	CAIGE A,
+	 XCT AA		; Write it in file.
+OBUFO1:	MOVE A,1(C)
+	HRR A,(C)	; Position the b.p. before start of buffer,
+	TLZ A,770000	; After last byte in wd (idpb will use 1st buffer wd)
+	MOVEM A,1(C)
+	HLRE A,(C)
+	MOVEM A,2(C)	; Set up byte count.
+	REST AA
+	JRST POPAJ
+
+TFEED:	TLNN FF,FLPTPF	; If output device not PTP,
+	 POPJ P,	; Then do nothing
+	PUSHJ P,TPPBF	; Otherwise output the buffer,
+TFEED1:	.FEED UTYOC,	; Feed a line,
+	TLZA FF,FLPTPF	; If this is executed, utyoc doesn't have ptp after all
+	 SOJG B,TFEED1	; Feed the specified number of lines,
+	POPJ P,		; And return
+
+] ; IFN ITSSW
+
+SUBTTL DEC - Output file Open, Output, Close/Rename
+
+IFN DECSW,[
+
+OINIT:	MOVE AA,(P)
+	MOVE F,(AA)	; Get <mode> <ch>,<filblk>
+	HLLZ TT,F
+	TLZ TT,#(0 17,)	; Mask off AC field in TT
+	HRRZ D,2(AA)	; Get buffer space addr.
+	HLLZ C,2(AA)	; Get header addr.
+	HLRZ A,C
+	SETZM (A)	; Clear out its-version contents of 1st header wd.
+	LDB A,[331100,,F]	; Get mode to open in (will be ascii or image binary)
+	IOR TT,[OPEN A]		; Cons up OPEN instruction for chan,
+	MOVE B,$F6DEV(F)	; and bring in last arg.
+	XCT TT			; Open channel,a
+	 JRST OINITL		; Lost?
+
+	PUSH P,.JBFF	; Now to fake out DEC system into consing up buffer
+	MOVEM D,.JBFF	; at this location.  T10 uses .JBFF as pointer.
+	XOR TT,[<OPEN A>#<OUTBUF 1>]	; Request buffer setup (one of)
+	XCT TT
+	REST .JBFF
+	MOVE A,[SIXBIT /000MD /]
+	PJOB B,		; Get job number, to make sixbit /<nnn>md<e, o, or l>/
+	IDIVI B,10.
+	DPB C,[220400,,A]
+	IDIVI B,10.
+	DPB C,[300400,,A]	; Put the digits of the job number into the sixbit word.
+	DPB B,[360400,,A]
+	MOVE AA,(P)
+	LDB B,[360600,,1(AA)]	; Get 1st char of 'output, 'lstout, 'crfout, 'errout.
+	IOR A,B			; Use it as last char of temp file name.
+	MOVSI B,'TMP		; Set up ext (fn2),
+	SETZ C,			; zap prot/date/time etc to default,
+	MOVE D,$F6DIR(F)	; and PPN.
+	XOR TT,[<OUTBUF 1>#<ENTER A>]
+	XCT TT			; Do ENTER UTYOC,A
+	 JRST OINITL
+POPJ3:	AOS (P)
+POPJ2:	AOS (P)
+	JRST POPJ1
+
+; OINITL - jumped to from OINIT if some lossage
+;	encountered when opening output files.  Jumps back to OINIT
+;	directly.
+
+OINITL:	PUSHJ P,OPNER	; Type out reason for open failure, and ask:
+	TYPE "Use what filename instead? "
+	PUSHJ P,GTYIP	; Get typein, one line.
+	PUSHJ P,RFD	; Get new file description into filblk spec'd by F
+	JRST OINIT	; and jump back to try again.
+
+	; Openloss documentation routine - not much to say.
+
+IOPNER:		; Input
+OPNER:	PUSHJ P,TYPFB		; Type out file description
+	PUSHJ P,CRRERR		; Now crlf to ensure room for following
+	TYPE "OPEN failed"
+	PJRST CRRERR		; Return, typing out another CRLF.
+
+;CLOSE AN OUTPUT FILE, SEE NON-DEC VERSION FOR ARGS.
+
+OCLOSE:	PUSH P,A	; Save return addr
+	MOVE F,1(A)	; Get <filblk>
+	SKIPGE FATAL	; If fatal error happened,
+	 JRST OCLOS2	; don't rename, just close.
+	MOVE C,$F6DEV(F)	; Delete any file with names
+	SETZB B,D	; we want to rename to.
+	OPEN ERRC,B	; Use ERRC as temporary channel.
+	 JRST OCLOS1
+	MOVE A,$F6FN1(F)
+	HLLZ B,$F6EXT(F)
+	SETZ C,
+	MOVE D,$F6DIR(F)
+	LOOKUP ERRC,A
+	 JRST OCLOS1	; There is none, just rename.
+	SETZ A,		; Say to delete this file
+	MOVE D,$F6DIR(F)	; From right UFD
+	RENAME ERRC,A
+	 JFCL
+	RELEAS ERRC,
+OCLOS1:	MOVE A,$F6FN1(F)	; Desired fn1.
+	HLLZ B,$F6EXT(F)	; Desired fn2.
+	SETZ C,			; Bottoms-10 DATE75 lossage must never be forgotten!
+	MOVE D,$F6DIR(F)	; Sname (that is, ppn)
+	HLLZ AA,@(P)		; Get just chnl num.
+	IOR AA,[CLOSE]		; Close it & finalize,
+	XCT AA
+	XOR AA,[CLOSE#<RENAME A>]
+	XCT AA			; Then rename to desired names.
+	 JFCL			; at this point, ignore any lossage, sigh.
+OCLOS2:	HLLZ B,@(P)	; Get chnl in ac field.
+	IOR B,[RELEAS]
+	XCT B		; Finally, release channel.
+	JRST POPJ2	; and skip over args on return.
+
+	; Write out buffer of output file, C has <0 chnl,header>
+OBUFO:	AND C,[0 17,]	; Get just chnl num. (sys remembers where header is for ch)
+	TLO C,(OUT)	; Output current buffer.
+	XCT C
+	 RET		; Normal return!
+	PUSH P,A		; Error return from out uuo.
+	XOR C,[OUT#<GETSTS A>]
+	XCT C		; Read file status.
+	TRZ A,74^4	; Clear error bits.
+	ETR [ASCIZ /Output data error/]
+	XOR C,[<GETSTS A>#<SETSTS (A)>]
+	XCT C
+	JRST POPAJ
+
+	; Paper tape stuff, do nothing.
+TFEED:	RET
+
+] ;END IFN DECSW,
+
+SUBTTL TNX - Output file Open, Output, Close/Rename
+
+IFN TNXSW,[
+
+TFEED:	RET	; Again, null out paper-tape hack.
+
+; OINIT - Open Output file.
+;	P points to first word of args which follow the call:
+;	1: <mode> <ch>,<filblk>		; <mode> is 0 for ascii, 13^9 for bin.
+;	2: sixbit /<desired temp fn2>/
+;	3: <header>,,<buffer-space>
+;	<return to this location>
+;	Clobbers A,B,C
+
+; For Tenex, it is necessary to fudge the fileblock consistency slightly;
+; $FJFN has in RH the actual JFN used to write to the temporary-name
+; file, and in LH the JFN for the final desired filename.  Note that if
+; the $FEXT is null for main output file, it will be defaulted by TNXODF
+; at close time, (to SAV, EXE, or REL) and the
+; "final desired" JFN won't actually be used.
+;	Both JFNS are "active" rather than just a file spec.
+
+OINIT:	MOVE C,(P)	; Get addr of arg block
+	HLRZ A,2(C)	; Get <header>,
+	SETOM 2(A)	; and set buffer byte cnt to -1 to mark for init.
+	MOVE F,(C)	; Get <mode> <ch>,<filblk>
+	PUSHJ P,GETJFO		; Get output JFN for filblk.
+	 JRST OINIT5		; Lost?
+OINIT2:	HRLZS $FJFN(F)		; Won, move JFN over into LH.
+
+	; Aha, successfully grabbed a JFN for desired output filename.
+	; Now must get another one for the temporary filename...
+	MOVSI A,(GJ%FOU+GJ%NEW)
+	PUSHJ P,TFMAP		; Must set up block again, may have changed due to RDJFNO.
+	MOVE A,1(C)		; Get sixbit/tmpfn2/
+	PUSHJ P,CV6STR		; Convert to ASCIZ and return BP to string.
+	MOVEM A,GTJBLK+.GJEXT	; Store in long-form call blk.
+	SYSCAL GTJFN,[[GTJBLK] ? [0]][A]	; Repeat the GTJFN call.
+	 JRST [	MOVEM A,ERRCOD	; Ugh????
+		JRST OINIT5]
+	HRRM A,$FJFN(F)		; Good, got it...
+
+	; Now have both JFN's packed away, can finally open the
+	; temporary filename.
+	HRRZ B,A		; Need JFN in RH with LH clear...
+	LDB A,[331100,,F]	; Get <mode>
+	CAIN A,
+	 MOVSI A,070000		; If 0, use ASCII (7-bit bytes)
+	TRNE A,-1
+	 MOVSI A,440000		; If not 0, use WORD (36-bit bytes)
+	TRO A,OF%WR		; Get write access.
+	SYSCAL OPENF,[B ? A][A]	; Open up the temp file (JFN in RH)
+	 JRST [	MOVEM A,ERRCOD ? JRST OINIT6]	; damn
+
+	; Won, successfully opened output file stuff etc, now wrap up.
+	HRRZ A,$FJFN(F)		; Get JFN used,
+	LDB C,[270400,,F]	; and channel number argument,
+	MOVEM A,JFNCHS(C)	; and store JFN away in channel slot.
+	PUSHJ P,CVFSIX		; Now put right things in $F6 entries.
+	MOVEI A,3
+	ADDM A,(P)
+	POPJ P,
+
+.SCALAR ERRCOD
+
+	; Come here when GTJFN fails trying to get a JFN for GTJBLK long
+	; form argument block.  Must print out bad filename.
+	; OINIT5 should really use names in GTJBLK, and
+	; OINIT6 should really hack GJFNS call to get names, but for now...
+
+OINIT5:	SKIPA A,[[ASCIZ /GTJFN failed for /]]
+OINIT6:	 MOVEI A,[ASCIZ /OPENF failed for /]
+	PUSHJ P,CRRERR
+	TYPR (A)
+	PUSHJ P,OPNER1		; Type out filename and error message.
+	PUSHJ P,RDJFNO		; Read new JFN
+	JRST OINIT2		; try to open it.
+
+IOPNER:	PUSH P,[CRRERR]	; Do following and add CRLF.
+OPNER1:	PUSHJ P,TYPFB
+	TYPE "
+Error - "		; Drop thru to TERSTR.
+
+
+TERSTR:	MOVE A,ERRCOD
+	HRLI A,.FHSLF
+	SYSCAL ERSTR,[[-1,,ERSTRB] ? A ? [-LERSTR,,]][A ? A ? B]
+	 JRST TERST7	; undefined err #?
+	 HALT		; destination bad?
+	TYPR ERSTRB
+	POPJ P,
+TERST7:	TYPE "Unknown error"
+	POPJ P,
+
+	LERSTR==80.
+.VECTOR ERSTRB(<LERSTR+4>/5)
+
+; RDJFNO - Hack to get a new JFN by reading from TTY, using recognition.
+; RDJFNI - Same but for input.  Uses current FB for defaults.
+;	Stashes JFN away in RH of $FJFN(F).
+
+RDJFNO:	SKIPA A,[GJ%FOU+GJ%NEW+GJ%CFM]	; For output
+RDJFNI:	 MOVSI A,(GJ%OLD+GJ%CFM)	; for input
+	PUSHJ P,TFMAP
+	MOVE A,[.PRIIN,,.PRIOU]	; Use primary JFNs (TTY) for I/O
+	MOVEM A,GTJBLK+.GJSRC
+	PUSH P,R1
+	PUSH P,R2
+	PUSH P,R3
+	CAIA
+RDJFN2:	 PUSHJ P,RDJERI		; Come here when get error in GTJFN.
+	MOVEI R1,.PRIIN		; Make sure that
+	CFIBF			; TTY input is reset.
+	HRROI R1,[ASCIZ /
+Use what filename instead? /]
+	PSOUT
+	MOVEI R1,
+	MOVEI R1,GTJBLK
+	SETZ R2,
+	GTJFN
+	 JRST RDJFN2	; Error, report it.
+	POP P,R3
+	POP P,R2
+	HRRM R1,$FJFN(F)
+	POP P,R1
+	PJRST JFNSTB	; Smash FB with names of the JFN we got, and return.
+	
+; RDJERR - Report last error message directly to TTY (primary output).
+;	Useful when doing quick direct user interaction.
+
+RDJERR:	TROA R2,-1	; Here to get last error, whatever it was.
+RDJERI:	 MOVE R2,R1	; Here to use err code in R1.
+	HRLI R2,.FHSLF
+	HRROI R1,ERSTRB
+	MOVSI R3,-LERSTR
+	ERSTR		; Get error string
+	 JRST RDJER6
+	 HALT
+	SKIPA R1,[-1,,ERSTRB]
+RDJER6:	 HRROI R1,[ASCIZ /Unknown error/]
+	ESOUT		; Output to TTY amid other hackery.
+	POPJ P,
+
+
+; TNXODF - Hack to get yet another "desired" JFN so that when no
+;	extension was specified for binary output file, one appropriate to
+;	the type can be selected.
+;	Basically do a GTJFN again for binary output filenames, furnishing
+;	the default extension selected, and use that to replace the one
+;	already in LH of $FJFN.
+
+TNXODF:	PUSHJ P,CV6STR	; Convert sixbit word in A to string, get BP in A
+	MOVEI F,OUTFB		; Point at right filblk,
+	MOVEM A,$FEXT(F)	; Store, and now
+	PUSH P,$FJFN(F)		; Save current set of JFNs before
+	PUSHJ P,GETJFO		; getting another one
+	 JRST POPAJ		; If lossage, stick to old JFN.
+	POP P,A
+	HRLZS $FJFN(F)		; GETJFO puts JFN into RH, we want it in LH.
+	HRRM A,$FJFN(F)		; now restore previous RH.
+	HLRZS A			; and get old "desired" JFN in position for
+	SYSCAL RLJFN,[A]	; releasing.
+	 JFCL
+	POPJ P,
+
+; OCLOSE - Close output file, writing out remainder of buffer and renaming
+;	from temporary to desired filename.
+;	JSP A,OCLOSE
+;	1: 0 <ch>,,<header>
+;	2: <filblk>
+;	Clobbers F,C (and obviously A)
+
+; 10x must do CLOSF, not releasing the JFN, and then a RNAMF from temp
+; JFN to desired JFN, after which both can be released.  The desired and
+; used JFNs are in LH and RH respectively of $FJFN in <filblk>.  <ch>
+; is ignored except to wipe out its JFNCHS entry.
+
+OCLOSE:	PUSH P,A
+	MOVE C,(A)	; Get <ch>,,<header>
+	SOS 2(C)	; OBUFO assumes count was SOS'd before each call
+	PUSHJ P,OBUFO	; Write out anything remaining in buffer.
+	LDB C,[270400,,(A)]	; Get channel number
+	MOVE F,1(A)	; Get <filblk>
+	HRRZ A,$FJFN(F)	; Find JFN being used...
+	CAME A,JFNCHS(C)	; Should be same as JFN for channel.
+	 HALT		; Synch error or something.
+	TLO A,(CO%NRJ)	; Say don't release JFN
+	SYSCAL CLOSF,[A]	; Close file...
+	 HALT		; ?!?!
+	HRRZS A		; Get back 0,,jfn
+	SETZM JFNCHS(C)	; Indicate "channel" closed...
+	SKIPE FATAL	; If fatal error happened in assembly,
+	 JRST OCLOS5	; don't rename from temp filenames.
+	HLRZ C,$FJFN(F)	; Now see what if anything to rename it to.
+	JUMPE C,OCLOS5	; If no renaming needed, skip hair.
+	SYSCAL RNAMF,[A ? C]	; Rename file from JFN in A to JFN in C.
+	 HALT		; WTF?
+	SYSCAL RLJFN,[C]
+	 HALT
+OCLOS5:	SYSCAL RLJFN,[A]
+	 HALT
+	SETZM $FJFN(F)
+	POP P,A
+	JRST 2(A)
+
+; OBUFO - Output Buffer and reinitialize.
+;	C/ 0 <ch>,<header>
+;	Clobbers no ACs.
+
+; 10X is pretty much like ITS, JFN is kept in JFNCHS table indexed by <ch>.
+
+OBUFO:	PUSH P,A
+	PUSH P,B
+	MOVE A,1(C)	; Get write BP,
+	HRR A,(C)	; and reset it...
+	TLZ A,770000	; to point at start of buffer,
+	MOVEM A,1(C)	; and store it back, which is OK since we have byte cnt
+	AOSGE 2(C)	; Was buffer marked for initialization (cnt -1)?
+	 JRST OBUFO1	; Yes, don't write anything, just go init rest of it.
+	HLRZ A,(C)	; Get buffer size in wds,
+	MOVNI A,(A)	; make negative,
+	ADD A,2(C)	; and add count of bytes left to get -<# bytes used>.
+	LDB B,[270400,,C]	; Get channel # as index to JFN
+	PUSH P,T
+	SYSCAL SOUT,[JFNCHS(B) ? 1(C) ? A]
+	POP P,T
+OBUFO1:	HLRZ A,(C)	; Get buffer size again,
+	MOVEM A,2(C)	; and reset count with it.
+	POP P,B
+	POP P,A
+	POPJ P,
+
+] ;END IFN TNXSW
+
+SUBTTL COMMON Input Routines - Main File Open, EOF handling
+
+; Open main input file for reading (filespec in ISFB)
+
+OPNRD:
+IFN ITSSW, .IOPDL		; Re-initialize IO pdl
+IFN DECSW\TNXSW, CALL IOPDLC	; Non-ITS systems must simulate.
+	INSIRP SETZM,INFCNT INFCUR INFERR
+	MOVE A,[-TYPDLS-1,,TTYPDL]
+	MOVEM A,ITTYP		; Initialize "tty pdl"
+	PUSHJ P,MACIN1		; Clobber macro expansion status
+	MOVE A,ISFB+$FDEV	; Get device name
+	CAMN A,FSTTY		; TTY?
+	 JRST [	MOVE A,[ISFB+$F6FN1,,IFNM1]	; TTY specified, treat special
+		BLT A,IFNM2		; Clobber .IFNM1, .IFNM2 to specified
+		TYPECR "Reading from TTY:"
+		MOVEI A,3	; => input from tty, don't quit on cr
+		JRST OPNRT2]
+IFN TNXSW, PUSH P,INFB+$FJFN
+	MOVE A,[ISFB,,INFB]	; Copy ISFB specs to INFB (which will hold
+	BLT A,INFB+L$FBLK-1	; actual names of current input file)
+IFN TNXSW, POP P,INFB+$FJFN	; Preserving JFN if on TNX, to avoid re-GTJFN.
+	MOVEI F,INFB		; Point things at INFB.
+	PUSHJ P,OPNRD1		; Try opening file
+	 JRST [	PUSHJ P,IOPNER	; Open lost, type out message
+		POPJ P,]	; Read new command (this may screw on pass2?)
+	MOVEM A,INFERR		; Err msg in main file shouldn't type names.
+	MOVEI A,0		; => input from file
+OPNRT2:	MOVE T,[IFNM1,,RFNAM1]
+	BLT T,RFNAM2		; Set up .FNAM1, .FNAM2
+	SETOM NEDCRL
+	AOS (P)			; Won, skip on return.
+	JRST RCHSET		; Set up to read from file or tty. (arg in A)
+
+
+	; Common stuff for OPNRD1 in all (DEC/ITS/TENEX) versions.
+OPNRD3:	HRRZM A,UTIBED		; Say buffer empty,
+	MOVSI A,EOFCH_13
+	MOVEM A,@UTIBED		; Cause immediate reload.
+OPNRD4:	BLTM 2,$F6FN1(F),IFNM1	; Set up .IFNM1, .IFNM2 from filblk F points at
+	AOS A,INFCNT		; Assign this file a number.
+	MOVEM A,INFCUR		; OPNRD expects this left in A.
+	JRST POPJ1
+
+		; EOF while trying to read character
+
+RPAEOF:	PUSH P,B	; Save B
+RPAEO1:	MOVE B,ITTYP	; Get pdl pointer
+	PUSHJ P,BPOPJ	; Call pop routine (maybe NED's out)
+	JRST RCHTRB	; Return to get character
+
+		; EOF from main file
+
+NEDCHK:	TRNE FF,FRCMND	; ^C read in commannd, :KILL self.
+	 JRST TSRETN
+	SKIPE RCHMOD
+	 JRST NEDCH1
+	AOSN NEDCRL	; Invent one crlf after end of main file.
+	 JRST [ MOVE B,[440700,,[.BYTE 7 ? ^M ? ^J ? EOFCH]]
+		MOVEM B,UREDP
+		HRRZM B,UTIBED
+		RET]
+NEDCH1:
+IFN A1PSW,[
+	PUSHJ P,OUTCHK
+	MOVSI A,-LNEDT
+	XCT NEDT(A)	; Skips if NED condition to be complained about
+	AOBJN A,.-1
+	JUMPGE A,GO8
+]
+	ETF [ASCIZ /No END statement/]
+
+.SCALAR	NEDCRL	; -1 => haven't yet supplied a CRLF at EOF of main file.
+
+IFN A1PSW,[	; Holler "NED" if any of the following:
+NEDT:	SKIPL PRGC	; No end statements have been encountered
+	SKIPGE OUTC	; Output has occured not matched by an end statement
+	SKIPGE OUTN1	; Output has occured other than in 1pass mode
+	TRNN FF,FRPSS2	; Currently in pass 2
+LNEDT==.-NEDT	; Length of table
+]
+
+SUBTTL ITS - Input file Open, buffer input
+IFN ITSSW,[
+
+	; Try .OPENing input file pointed to by F.  Skips if successful.
+	; Sets filenames to actual names.
+
+OPNRD1:	SYSCAL OPEN,[[.BAI,,UTYIC]
+		$F6DEV(F) ? $F6FN1(F) ? $F6EXT(F) ? $F6DIR(F)]
+	 JRST [	.STATUS UTYIC,IFSTS	; Lost, save status now before possible
+		POPJ P,]		; .IOPOP, and make failure return.
+	SYSCAL RFNAME,[1000,,UTYIC	; Now find true filenames.
+		MOVEM $F6DEV(F)		; Store dev,dir directly
+		MOVEM C			; But need to check FN1, FN2 so
+		MOVEM D			; put them in ACs instead.
+		MOVEM $F6DIR(F)]
+	 .LOSE 1000
+	CAIE C,			; If FN1 meaningless for device, skip to use
+	 MOVEM C,$F6FN1(F)	; spec'd FN1 anyway, but else store actual FN1.
+	CAIE D,
+	 MOVEM D,$F6FN2(F)	; Ditto for FN2.
+	MOVE A,IUREDP		; Set up reading ptr,
+	MOVEM A,UREDP
+	JRST OPNRD3	; Set up ^C after buffer, infcur, etc.
+
+
+	; EOFCH encountered on read, reload and jump back for next char
+
+INCHR3:	HRRZ CH1,UREDP	; Get byte pointer
+	CAME CH1,UTIBED	; End of block?
+	 RET		; No, ^C in file.
+	MOVE A,IUREDP
+	MOVEM A,UREDP
+	MOVE A,[-UTIBFL,,UTIBUF]
+	.IOT UTYIC,A	; Read in block
+	ANDI A,-1
+	CAIN A,UTIBUF	; If the iot didn't give us anything, we are at EOF.
+	 JRST RPAEOF
+	HRRZM A,UTIBED	; Store RH (updated pointer) for EOF check at INCHR3
+	MOVSI A,EOFCH_<18.-7>
+	MOVEM A,@UTIBED	; Store a ^C after the data we read, so at EOB we come to INCHR3.
+	JRST RCHTRA	; Now try next char
+] ;END IFN ITSSW
+
+SUBTTL DEC - Input file Open, buffer input
+
+IFN DECSW,[
+
+OPNRD1:	MOVEI C,UTIHDR	; Open the input file w/ names in dnam ... snam.
+	SETZ A,		; Mode ascii.
+	MOVEI D,UTIBUF
+	MOVE TT,UTICHN	; Get channel num. to use.
+	LSH TT,27	; Put in ac field.
+	IOR TT,[OPEN A]
+	MOVE B,$F6DEV(F)
+	XCT TT		; Open channel,a
+	 RET
+	CALL BUFINI	; Initialize the input buffers and header.
+	MOVE D,$F6DIR(F)
+	MOVE A,$F6FNM(F)
+	HLLZ B,$F6EXT(F)
+	TLC TT,(OPEN#LOOKUP)
+	XCT TT		; Lookup channel,a
+	 RET		; Failed.
+IFE SAILSW,[
+	MOVE A,$F6DEV(F)
+	DEVNAM A,	; Get real name of device.
+	 CAIA
+	MOVEM A,$F6DEV(F)
+]
+	MOVE A,UREDP
+	JRST OPNRD3
+
+
+	; Reload buffer, DEC style.
+INCHR3:	HRRZ CH1,UREDP	; Is this ^C at end of buffer?
+	CAME CH1,UTIBED
+	 RET		; No, ^C in file.
+	PUSH P,B
+	MOVE A,UTICHN
+	LSH A,27	; Channel num. in ac fld.
+	TLO A,(IN)
+	XCT A		; Get next bufferfull.
+	 CAIA		; Succeed.
+	JRST INCHR4	; Error.
+INCHR5:	MOVE A,UTICNT
+	ADDI A,9
+	IDIVI A,5
+	ADD A,UREDP	; -> 1st wd not read into.
+	HRRZM A,UTIBED
+	HRRZ A,UREDP
+	AOS A
+	MOVEI B,1	; Scan the file and replace all line numbers with nulls.
+INCHR6:	CAMN A,UTIBED
+	 JRST INCHR7
+	TDNE B,(A)
+	 MOVEM B,(A)
+	AOJA A,INCHR6
+
+INCHR7:	MOVSI B,EOFCH_13
+	MOVEM B,(A)	; Put EOF char after buffer, in extra word.
+	JRST RCHTRB	; Retry RCH.
+
+INCHR4:	XOR A,[<GETSTS B>#IN]
+	XCT A
+	TRZE B,74^4
+	 ETR [ASCIZ /Input data error/]
+	XOR A,[<GETSTS B>#<SETSTS (B)>]
+	XCT A		; Clear error bits in status.
+	TRNN B,2^4
+	 JRST INCHR5
+	JRST RPAEO1	; EOF.
+
+; BUFINI - Create DEC-style buffer ring, with 1 extra word following
+;	each buffer...
+;	A/ <mode>
+;	B/ <device name in 6bit>
+;	C/ <header addr>
+;	D/ <buffer space addr>
+; Note that this extra-word crock is necessary just so it can be filled
+; with ^C's to stop read loop and switch to next buffer.
+
+BUFINI:	MOVEI AA,A
+IFE SAILSW,DEVSIZ AA,
+	 SKIPA AA,[DECBFL+1]	; Default buffer size is that for dsk.
+	AOJLE AA,.-1	; Get size including extra wd.
+	MOVEI T,1(D)	; Addr of wd 2 of 1st buffer.
+	HRLI AA,T	; @AA is addr of 2nd wd of next buffer.
+	SUBI D,(AA)	; Facilitate test for end of buffer space.
+	HRLI T,400000
+	MOVEM T,(C)	; Header -> a buffer, sign set.
+	HRRM T,1(C)	; Make rh of bp -> buffer 1st wd.
+	MOVSI T,440000	; Set up p-field of b.p.
+	IORM T,1(C)
+	HRRZ T,1(C)
+	AOS 1(C)
+	HRLI T,-3(AA)	; Data-area-size +1,,addr-of-2nd-wd
+BUFIN1:	CAIGE D,-UTIBFL(T)	; Room for another after this buffer?
+	 JRST BUFIN2	; No, wrap up.
+	MOVEM T,@AA	; Yes, make next buffer -> this one,
+	HRRI T,@AA	; Point to next one.
+	JRST BUFIN1
+
+BUFIN2:	ADDI D,1(AA)	; -> 2nd wd of 1st buffer.
+	MOVEM T,(D)	; 1st buffer -> last, making ring.
+	RET
+
+] ;END IFN DECSW,
+
+SUBTTL TNX - Input file Open, buffer input
+
+IFN TNXSW,[
+
+; OPNRD1 - Open File for Reading.  Old stuff assumed fnm in DNAM
+;	using UTYIC channel, but new should furnish arguments:
+;	F/ <filblk> to open
+
+; Essentially just GTJFN and OPENF like OINIT does, with same
+; sort of error handling, except that when reading from cmd line
+; as opposed to .INSRT, just go back to get completely new command.
+; (perhaps if typein is just CRLF, go to special TNX style cmd input?)
+
+OPNRD1:	CAIN F,INFB	; Horrible kludge necessary because MIDAS main
+			; level doesn't bother to explicitly close main
+			; input file when pass 1 is done, and TNX barfs if
+			; you try to re-open a JFN... sigh.
+	 JRST [	SKIPN $FJFN(F)	; Main file.  Already opened it?
+		 JRST .+1	; nope, get JFN & open normally.
+		 IFE PMAPSW,[	; Already open. If not mapping, reset read ptr.
+			SYSCAL SFPTR,[$FJFN(F) ? [0]][ERRCOD]
+			 POPJ P,]
+		JRST OPNRD2]	; and avoid attempt to re-open the JFN.
+	SKIPN $FJFN(F)
+	 JRST [	PUSHJ P,GETJFI		; No JFN, get one for input.
+		 POPJ P,		; Could fail.
+		JRST .+1]
+	PUSH P,T		; Read access, full word input.
+	SYSCAL OPENF,[$FJFN(F) ? [440000,,OF%RD]][ERRCOD]
+	 JRST [POP P,T ? POPJ P,]	; Failure
+	POP P,T
+OPNRD2:	HRRZ A,$FJFN(F)
+	MOVEM A,JFNCHS+UTYIC	; Indicate "channel" open with this JFN.
+	PUSHJ P,JFNSTB		; Get actual names/version #.
+	PUSHJ P,CVFSIX		; Put right stuff in $F6 entries.
+	MOVE A,IUREDP		; Opened, set up buffer.
+	MOVEM A,UREDP		; Initialize BP into buffer.
+IFE PMAPSW,	JRST OPNRD3
+IFN PMAPSW,	JRST OPNR50	; for PMAP hacking, lots of stuff to do.
+
+	; Get a JFN for current FILBLK (in F) and stick it into $FJFN(F).
+	; A should hold flags in LH to use in 1st wd of block.
+	; GETJFI - sets usual flags for input
+	; GETJFO - sets " " output
+	; GETJFN - takes whatever A holds.
+
+GETJFO:	SKIPA A,[GJ%FOU+GJ%NEW]	; If hacking output, ask for new version.
+GETJFI:	 MOVSI A,(GJ%OLD)	; If hacking input, file must exist.
+GETJFN:	PUSHJ P,TFMAP	; Stick filblk stuff into GTJFN scratch block.
+	PUSH P,R1
+	PUSH P,R2
+	MOVEI R1,GTJBLK
+	SETZ R2,
+	GTJFN
+	 JRST [	MOVEM R1,ERRCOD	; failure, save error code.
+		JRST GETJF5]
+	HRRM R1,$FJFN(F)	; Win, save JFN.
+	AOS -2(P)
+GETJF5:	POP P,R2	; Can't return in ACs cuz don't know what R1 etc are,
+	POP P,R1	; and might clobber them here.
+	POPJ P,
+
+; TFMAP - Map Tenex filenames from filblk pointed to by F into
+;	standard scratch block for long-form GTJFN.
+;	A/ <flags>,,0	; flags will go into LH of .GJGEN.
+;	Clobbers only A.
+
+TFMAP:	HRR A,$FVERS(F)		; Put version # in RH
+	MOVEM A,GTJBLK+.GJGEN
+IRP FROM,,[$FDEV,$FDIR,$FNAME,$FTYPE,$FPROT,$FACCT,$FJFN]TO,,[.GJDEV,.GJDIR,.GJNAM,.GJEXT,.GJPRO,.GJACT,.GJJFN]
+	MOVE A,FROM(F)
+	MOVEM A,GTJBLK+TO
+TERMIN
+	MOVE A,[.NULIO,,.NULIO]
+	MOVEM A,GTJBLK+.GJSRC	; Don't hack I/O in gtjfn.
+	POPJ P,
+
+.VECTOR GTJBLK(10.)	; Need exactly this many wds for non-extended long call
+
+IFE PMAPSW,[
+	; EOFCH seen in input, check it here.
+
+INCHR3:	HRRZ CH1,UREDP	; Get byte pointer
+	CAME CH1,UTIBED	; End of block?
+	 RET		; No, ^C in file.
+	MOVE A,IUREDP
+	MOVEM A,UREDP
+	PUSH P,T
+	SYSCAL SIJ,[DJCH)QDYA / 40$02,,UTIBUF] ? [-UTIBFL]][A ? A ? A]
+	POP P,T
+	ADDI A,UTIBUF+UTIBFL	; Get UTIBUF + <# bytes stored>
+	CAIG A,UTIBUF	; If the sin didn't give us anything, we are at eof.
+	 JRST RPAEOF
+	HRRZM A,UTIBED	; Store rh (updated pointer) for eof check at inchr3
+	MOVSI A,EOFCH_<18.-7>
+	MOVEM A,@UTIBED	; Store a ^c after the data we read
+	JRST RCHTRA	; Now try next character
+
+] ; IFE PMAPSW
+
+IFN PMAPSW,[	; New stuff for PMAP'ing input etc.
+
+VBLK
+IFNDEF NIBFPS,NIBFPS==10	; # of pages per buffer
+PGBFL==NIBFPS*1000		; Length of a buffer in wds.
+IFNDEF 1STBFP,1STBFP==500	; # of first page to start buffers at.
+
+INBFPG:	1STBFP	; # of 1st buffer page (in our address space)
+INFPAG:	0	; # of page in file corresponding to 1st page in buffer.
+INPGCT:	0	; -# times to refill buffer with new pages.
+INLPGS:	0	; # pages to slurp on last refill (instead of NIBFPS)
+UTIBPE:	0	; BP to last byte of data in buffer (holding ^C)
+UTIBPL:	0	; BP to last byte position in buffer area (constant)
+UTIBPX:	0	; BP to last byte of data when last pages have been mapped.
+INLCHR:	0	; Place to save char that ^C replaces.  If -1, no char.
+;SOSSW:	0	; non-Z if hacking SOS line-number type file.
+FBBYV:	0	; GTFDB dumps cruft in these two locs.
+FBSIZ:	0	; e.g. this gets size of file in bytes.
+PBLK
+
+	; Wrap up open of an input file, by initializing all the cruft
+	; above.
+OPNR50:	SYSCAL GTFDB,[$FJFN(F) ? [2,,.FBBYV] ? MOVEI FBBYV]
+	LDB C,[300600,,FBBYV]	; Get byte size of file
+	CAIN C,
+	 MOVEI C,36.	; If 0 use 36-bit bytes (full wds)
+	MOVEI A,36.
+	IDIVI A,(C)	; Get bytes per wd, ignore remainder.
+	MOVE B,FBSIZ	; Now, with # bytes in file,
+	EXCH A,B
+	IDIVI A,(B)	; find <# in fil>/<# per wd> = # wds in file
+	CAIE B,		; Also hack
+	 ADDI A,1	; rounding up (gasp, wheeze, finally done.)
+	IDIVI A,PGBFL	; Now get # times buffer will need slurping...
+	CAIE B,
+	 ADDI A,1	; Also round up.  B has # "live" words in last slurp.
+	MOVNM A,INPGCT	; Store -# slurps.
+	MOVEI A,1777(B)
+	LSH A,-9.	; Find # pages last slurp really needs.
+	MOVEM A,INLPGS	; and store away.
+	HRLI B,010700
+	MOVEM B,UTIBPX	; Store relative BP to last ch (when last pages mapped)
+	HRRI B,PGBFL-1	; And relative BP to last char in whole buffer
+	MOVEM B,UTIBPL
+	MOVE A,INBFPG	; Find page # buffer starts at in core,
+	LSH A,9.	; Get address, and
+	ADDM A,UTIBPX	; add into the BP's to make them absolute.
+	ADDM A,UTIBPL
+	HRLI A,010700	; also get initial read pointer from that.
+	SUBI A,1	; MUST be "canonical form", so that SEMIC hackery
+	MOVEM A,IUREDP	; will work with weird way INCHR3 returns here.
+	MOVNI A,NIBFPS	; Use this as initial file page #, so the ADDB in
+	MOVEM A,INFPAG	; INCHR3 will do right thing to it.
+	MOVE A,[440700,,[EOFCH_35]]
+	MOVEM A,UREDP	; set up things so first RCH will instantly cause reload.
+	ILDB B,A
+	MOVEM A,UTIBPE
+	SETOM INLCHR	; Mustn't forget that we don't have a stored char yet.
+	JRST OPNRD4	; Finally done with PMAP init stuff.
+
+	; Come here when hit ^C
+INCHR3:	MOVE CH1,UREDP		; Get current read ptr
+	CAME CH1,UTIBPE		; At end of buffer?
+	 POPJ P,		; Nope, ^C in file, actual input.
+	AOSLE CH1,INPGCT	; Aha, end of buffer.  Bump times refilled...
+	 JRST [	SKIPGE A,INLCHR	; and if no more refills, see if last char left
+		 JRST RPAEOF	; No?  All done, true EOF.
+		SETOM INLCHR	; Almost, one haS4 cxyEDfgkP!dK*i"b]P&]yz1vx8˜$∞±uP7w˙z0π9wH72|:92prED`Q"!dV-XLı—.–;tv6˛Œ{–9z7xEDaPdcP!RVE¯îÍ°!dK-ZXnFEBfgk"SP!dK*i"b—BD•))j¸Ër)˝—.–)ˆ^ùy7Úz0π4wWESgk"PV$jib(Efgk"S˙+*©ÙXîÖ$c'VXV(id()FEc' K˚%î*©¸Ñ)Û!¢§£Ù‰VôV(*iRÚ
+)¯—Bfß˝h≤P)Ûì§°#()DB]P#r]Úh7≥4w8ˇD∫≥32y0sryCE`b!)K$g#(cDD]HˆŸ3ˆùŸ1ˇ^\≤∑˜D0≥rP4w34v2H:7P3YzER)&)˙ƒë•#ÙÂrg#Ù!.–1ˇ^\≤∑:4w:z3v2SyHÙ®”ÜÖfgkP)¸ËQ®#DD]P˛Ïà:πzpv7tw:y:7H22yz˛Ï=4∑˛‰∫≥32yˆ˘FÖd)&˙
+LñÙiÊ#ë.–+t<P:ˆT∫±uP27YywzX,2s0z[::4y_P_H¯—Bfß˝h≤P)Û5ì§°#()DB]P)r]P8sryPh=G/É´Ä—Ù&ô¸ÇCAZ.^BNdFFOˆÉKöL7"˜≥´ó¯4PJ	Yzd*ÙÕbLÈ˘B:òë4/˙ÉÉñU\<f]L&.¯ÅM˛É∂˝Ûëv˝e\WBÒá;/5¸4PMI˘=ì5Ej,˜:°]	TZ$"]Ò5*Z,\"<6/5DÔÒÂk~Â^~&O&˙∏hTô˝A´!lÓZ}|&fTv~ı≥(h°IDtrÒ1di¯…Ç¿óˆÇK2ˇπìD&FDwÛ≥ap—!U˜Qÿô*$JÙÕakÒIôHó4VgUD~rBbÓ^W"ÓF/LRnÛª´Õ˘Âph°EtT#cF2\TN2Òã+\Tv\|&O˝ïp—!UıN°ÂˆƒI⁄^bM}f*ˇß£B˚ásÆDÓ&/ıá£N˝¸∏hPëD$JÒIëc4våUB]^|RˇÕph°|TÚÇëä…h4C+QPTLidk5J}ÒAbì1Q)4rSeÒ>Å˘Iêh©ÛqVE}eQ LÛ&)9≈`Hó4vMOÒ”C*L7"˜≥´óqQ J999e˚RJ	¯%ŸÌuD/T%Mtf>DF$"Òós"|d.˝õ+í·˙(I	Yzd*9e-˘&ÖÅ4N/5Dv.\DMrfÛœ°=ÒáëùdÓFD>UaPTL˝9ÇÀ14\MT}˜N∏HóˆÇK2Òá^ù˝ùfù˝ïw]˚ã+íM~7ˇï`h°	%¯ÇÿLŸˇZ)¯¢C2o^>B^|*Ó|b>^NAO,ing wiped, so have to
+		TRNE A,1	; check here, and if depositing EOFCH in #,
+		 HRLI CH1,350700	; then move the EOFCH to beg of word!
+		JRST .+1]
+]
+	LDB A,CH1		; Replace last char of buffer's data
+	MOVEI CH2,EOFCH
+	DPB CH2,CH1		; with the EOF char.
+	MOVEM CH1,UTIBPE	; Remember ptr to end of data,
+	EXCH A,INLCHR		; and save char for then, returning whatever
+	JUMPL A,RCHTRA		; was the last char of last bufferfull.
+				; (may be -1, in which case RCHTRA tries again)
+
+	; Jump here to return a new char in A, something like
+	; RCHTRA without all the fuss.
+INCHR7:	POP P,CH1		; Get return addr
+	ANDI CH1,-1
+	CAIE CH1,RREOF+1
+	 JRST -2(CH1)		; Note -2 not -3 as in RCHTRA!
+	JRST (CH1)		; Special hack since -2 loses for RREOF.
+				; Perhaps someday it will win.
+] ; IFN PMAPSW
+
+] ;END IFN TNXSW
+
+ifn 0,[ ; turn off but keep around for a while.
+SUBTTL old .INSRT Processing
+
+;	.INSRT <filedescription><CR>	; Insert file here
+; TTY: => ok, reads line at a time, rubout allowed within line
+; Pushes macro expansion, other .INSRT's
+; In filedescription, ^R => reset file name counter [?!? - KLH]
+; If device is "@:", always ask for translation.
+
+A.INSR:	NOVAL
+	MOVE A,[ISFB,,FB]	; Default names are those of spec'd input file
+	BLT A,FB+L$FBLK-1	; Zap them into scratch filblk.
+	MOVEI F,FB		; And point at it.
+	MOVE A,FSDSK
+	MOVE B,FSTTY		; Compare "TTY" with
+	CAMN B,$FDEV(F)		; device name, and if identical,
+	 MOVEM A,$FDEV(F)	; default to DSK.
+IFE ITSSW,MOVE A,FSMID		; Always set default extension to "MID" or ">"
+IFN ITSSW,MOVE A,FSGRTN
+	MOVEM A,$FEXT(F)
+
+	TLO FF,FLUNRD
+A.IN1:	PUSHJ P,RFD		; Read file description
+	MOVE A,$FDEV(F)		; Get specified device name
+	CAME A,FSATSN		; Atsign?
+	 PUSHJ P,A.ITRY		; No, try opening file
+
+	; If return, open failed.
+	MOVE A,$F6DEV(F)
+	AOJE A,A.INT1		; Already trying to set up table entry
+	SKIPA F,[MAXIND,,TBLOFS]	; Atsign, or fnf, search table
+
+A.IN2:	 SUBI F,-L$FBLK	; Loop point searching table, increment to next entry, count down LH
+	CAMN F,INDDP	; Compare with pointer to top of table
+	 JRST A.IN3	; Agree => this file not in table
+
+;	MOVEI A,-TBLOFS(F)	; Get index relative to table base.
+; MIDAS complains "illegal use of relocation" when try to use above addr, so must use next 2 instructions instead - barf barf
+	MOVEI A,(F)
+	SUBI A,TBLOFS
+
+	MOVSI B,-L$FBLK		; And index into FB.
+	MOVE T,TBLSFS(A)	; Get specification name this entry
+A.IN25:	CAMN T,FB(B)		; Compare with that just specified
+	 AOBJN B,[AOJA A,.-2]	; Check all names this entry
+IFE TNXSW, JUMPL B,A.IN2
+IFN TNXSW,[JUMPL B,[	MOVEI C,(B)
+			CAIN C,$FJFN	; One item of entry didn7t match, was it JFN?
+			 JRST A.IN25	; Yes, ignore it and continue.
+			JRST A.IN2]	; Sigh, was something else, entry doesn't match.
+	]
+
+		; File is in table
+	MOVSI A,(F)		; Move description from TBLOFS to FB.
+	HRRI A,FB
+	BLT A,FB+L$FBLK-1
+IFN TNXSW, SETZM FB+$FJFN	; Since re-opening, must zap previous JFN.
+	PUSHJ P,A.ITRY		; Try opening file
+
+	; If return, open failed.
+	MOVSI A,TBLSFS-TBLOFS(F)	; Set up LH(BLT pointer),
+	HRRI A,FB
+	BLT A,FB+L$FBLK-1	; Unmap to original names(TBLSFS to FB)
+	PUSHJ P,TYPFB		; Type out specified names
+	TYPE " -> "		; Type out pointer
+	MOVSI A,(F)		; Copy translation (TBLOFS entry) back to FB.
+	HRRI A,FB
+	BLT A,FB+L$FBLK-1
+	SETOM $F6DEV(F)		; "half-kill" entry in TBLOFS
+
+A.INT1:	PUSH P,F
+	MOVEI F,FB
+	PUSHJ P,IOPNER	; Open lost, type out cruft
+	POP P,F
+	TYPE "Use what filename instead? "
+A.INT2:	PUSHJ P,GTYIP	; Prepare to read one line from tty
+	JRST A.IN1	; Try again with what he types in
+
+		; File not in table, try to add a translation for it.
+
+A.IN3:	TLNN F,-1	; More room for another entry in table?
+	 ETF [ASCIZ /Too many @: files/]
+	MOVEI A,TBLSFS-TBLOFS(F)	; Copy FB into TBLSFS (specified name)
+	HRLI A,FB
+	BLT A,TBLSFS-TBLOFS+L$FBLK-1(F)
+	SETOM $F6DEV(F)		; Document fact that entry has only key, not translation
+	MOVNI A,-L$FBLK
+	ADDM A,INDDP		; Update pointer into table
+	MOVE A,FB+$FDEV		; Get specified device name
+	CAME A,FSATSN		; Atsign?
+	 JRST A.INT1		; No, type out garbage and try again, reading from tty
+	MOVE A,ISFB+$FDEV	; Yes, clobber from input device name
+	MOVEM A,FB+$FDEV
+	JRST A.INT2
+
+;TRY OPENING INPUT FILE FOR .INSRT, RETURN IF UNSUCCESSFUL
+
+A.ITRY:	MOVE A,FB+$FDEV		; Get specified device name
+	CAMN A,FSTTY		; TTY?
+	 JRST A.ITRT		; Yes, treat special
+	TLO FF,FLUNRD
+	PUSHJ P,IPUSH		; Save current status
+	PUSH P,F		; save what F points at
+	MOVEI F,FB
+	PUSHJ P,OPNRD1
+	 JRST [POP P,F ? JRST IPOPL]	; Lose, pop and return
+	POP P,F
+	MOVE B,[FB,,INFB]	; Kludge for time being - if win,
+	BLT B,INFB+L$FBLK-1	; Copy all stuff into INFB.
+IFN ITSSW,CALL SETWH2
+	MOVE B,ITTYP
+	MOVEI A,-1-TYPDEL(B)	;
+	HRLI A,IFNM1
+	BLT A,-TYPDEL(B)	; Introduce hysteresis so .INSRT'ing file can reference .IFNM1, .IFNM2
+IFN CREFSW,[
+	SKIPE CRFONP	; If creffing, output push-file block.
+	 PUSHJ P,CRFPSH	; (pop-file block output at ipop)
+]
+A.ITR2:
+	MOVE A,$F6DEV(F)	; Push successful, now check to see if table entry should be finished
+	AOJN A,ASSEM1
+	MOVEI A,(F)	; Move FB into TBLOFS as translation entry.
+	HRLI A,FB
+	BLT A,L$FBLK-1(F)
+	JRST ASSEM1	; Now assemble from file (ASSEM1 clobbers pdl)
+
+		; .INSRT TTY:
+
+A.ITRT:	PUSHJ P,GTYIPA	; Read from tty, don't quit until .INEOF
+	JRST A.ITR2	; Fall back in (doesn't touch .IFNM1, .IFNM2)
+] ; end IFN 0
+
+SUBTTL .INSRT Processing
+
+;	.INSRT <filedescription><CR>	; Insert file here
+; TTY: => ok, reads line at a time, rubout allowed within line
+; Pushes macro expansion, other .INSRT's
+; If device is "@:", always ask for translation.
+
+A.INSR:	NOVAL
+
+	; First set up defaults for parsing filename.
+	BLTM L$FBLK,ISFB,FB 	; Default names are those of spec'd input file,
+	MOVEI F,FB		; stuffed into scratch FB.
+	MOVE A,FSDSK
+	MOVE B,FSTTY		; Compare "TTY" with
+	CAMN B,$FDEV(F)		; device name, and if identical,
+	 MOVEM A,$FDEV(F)	; default to DSK.
+IFE ITSSW,MOVE A,FSMID		; Always set default extension to "MID" or ">"
+IFN ITSSW,MOVE A,FSGRTN
+	MOVEM A,$FEXT(F)
+
+	TLO FF,FLUNRD
+	PUSHJ P,RFD		; Read file description from current input.
+	MOVE A,$FDEV(F)		; Get specified device name
+	CAMN A,FSATSN		; Atsign?
+	 JRST A.IN50		; If so, check out translation right away.
+
+A.IN2:	CAMN A,FSTTY		; TTY?  Must handle specially.
+	 JRST [	PUSHJ P,GTYIPA	; Set up to read until .INEOF or EOF char.
+		JRST ASSEM1]	; And don't do anything to .IFNM1/2, etc.
+	PUSHJ P,IPUSH		; File, push the world.
+	PUSHJ P,OPNRD1		; Try opening file.
+	 JRST [	PUSHJ P,IPOPL	; Sigh, failed, pop world back and go
+		JRST A.IN50]	; try translation entries or TTY input.
+				; Always jumps back to A.IN2.
+
+	; Come here when input file successfully opened.  Clean up etc.
+IFN ITSSW,CALL SETWH2
+	MOVE B,ITTYP
+	BLTM 2,IFNM1,-1-TYPDEL(B)	; Copy new .IFNM1, .IFNM2 onto stack,
+				; to clobber .IFNM1/2 for previous file, so
+			; that .IFNM1/2 etc refers to last file .INSRT'd by
+		; current file (or current file if none .INSRT'd yet)
+IFN CREFSW,[
+	SKIPE CRFONP	; If creffing, output a push-file block.
+	 PUSHJ P,CRFPSH	; (pop-file block is output at IPOP)
+	]
+
+	BLTM L$FBLK,(F),INFB	; Move current filespec to INFB,
+	JRST ASSEM1		; and jump off to smash things to toplevel.
+
+	; Come here when open attempt fails or @: device specified.
+A.IN50:	CAIE F,FB		; Tried translations yet?
+	 JRST A.IN60		; Yes, skip table hacking and go get fnm from TTY.
+	
+	; First open attempt, so OK to search translation table.
+	SKIPA D,[MAXIND,,TBLOFS]	; Load up aobjn-style index to transl table
+A.IN52:	 SUBI D,-L$FBLK	; Loop point for searching table - increment to next entry, count down LH
+	CAMN D,INDDP	; Compare with pointer to top of table
+	 JRST A.IN60	; Agree => this file not in table, get from TTY.
+
+	MOVEI A,(D)		; Get scratch index into tables,
+	HRLI A,-L$FBLK		; making AOBJN of it,
+	MOVEI B,(F)		; and get index into current FB.
+A.IN54:	MOVE C,TBLSFS-TBLOFS(A)	; Get a specification name for this entry
+IFN TNXSW,CAIE B,$FJFN(F)	; (ignoring the JFN item, for TENEX)
+	CAMN C,(B)		; Compare name with that of failed filblk.
+	 AOBJN A,[AOJA B,A.IN54]	; Check all names this entry
+	JUMPL A,A.IN52		; If not found, try next entry.
+
+	; File is in table, try opening it using TBLOFS description.
+	MOVE F,D		; Replace old F by ptr to winning TBLOFS entry.
+IFN TNXSW, SETZM $FJFN(F)	; Since re-opening, must zap any previous JFN.
+	JRST A.IN2		; Jump off to try opening.
+
+	; Come here when open failed and no matching transl entry.
+	; Must set up to gobble down a translation from TTY...
+A.IN60:	TYPE "Error in .INSRT; "
+	CAIE F,FB		; Were we trying to open a translated entry?
+	 JRST [	PUSHJ P,TYPFB	; Yes, so print out appropriate info
+		TYPE " -> "	; to show translated stuff.
+		JRST A.IN70]
+
+	; First time, no translation entry exists, make one.
+	MOVE A,INDDP		; Get current pointer to top of tables
+	TLNN A,-1		; Room for more?
+	 JRST A.IN70		; Nope, can't remember transl, but get right fnm anyway.
+	MOVE F,A		; Yep, use it as pointer to table entry to use.
+	SUBI A,-L$FBLK		; and get new table-top pointer with clever
+	MOVEM A,INDDP		; SOS of LH and ADDI to RH.
+	BLTM L$FBLK,FB,(F)	; Move FB contents to both TBLOFS,
+	BLTM L$FBLK,FB,TBLSFS-TBLOFS(F)	; and TBLSFS.
+
+A.IN70:		; Print out filename F points to, & err msg.
+IFN TNXSW,[
+	PUSHJ P,OPNER1
+	PUSHJ P,RDJFNI	; On 10X, get new filename this way.
+	]
+IFN ITSSW\DECSW,[		; Elsewhere do it painful way.
+	PUSHJ P,IOPNER
+	TYPE "Use what filename instead? "
+	PUSHJ P,GTYIP		; Setup to read 1 line from TTY,
+	PUSHJ P,RFD		; and do it, parsing filename.
+]
+	JRST A.IN2		; now go try opening it.
+
+SUBTTL Misc. .INSRT-related things
+
+		; .INEOF - EOF pseudo
+
+A.IEF2:	PUSHJ P,PMACP	; Loop point, pop entry off macro pdl
+A.INEO:	TLNE FF,FLMAC	; Inputting from macro?
+	 JRST A.IEF2	; Yes, pop it off
+	PUSH P,CMACCR	; Back to inputting from file or tty, cause return to maccr
+	MOVE B,ITTYP	; Get pdl pointer
+	POPJ B,		; Return to pop routine
+
+
+	; Call from ERRH; type input file's names if changed since last err msg.
+ERRTFL:	MOVE C,INFCUR
+	EXCH C,INFERR	; Say last error msg in this file.
+	CAMN C,INFERR	; If prev. msg was in other file,
+	 POPJ P,
+	PUSH P,F
+	MOVEI F,INFB	; Point to current input file,
+	PUSHJ P,TYPFB	; and type out its filename.
+	POP P,F
+	PJRST CRRERR
+
+SUBTTL COMMON IO PDL routines for input. (.INSRT support)
+
+;IO PDL ROUTINES FOR INPUT FILE
+; Push the input file
+
+IPUSH:	AOSN CMEOF	; Want to pop out of tty? (^C  typed in)
+	 CALL POPTT	; Yes, do now before forget.
+
+IFE PMAPSW,[
+	MOVE D,UREDP	; Get input byte pointer
+IFN ITSSW\TNXSW,[
+IFN ITSSW, .IOPUS UTYIC,
+IFN TNXSW, MOVEI A,UTYIC ? PUSHJ P,$IOPUSH
+	TLNN D,760000		; At end of word?
+	 ADD D,[430000,,1]	; Yes, make it point to beginning of next word
+	MOVEM D,UREDP
+	MOVNI A,-2(D)
+	ADD A,UTIBED	; Get # wds we'll need in MACTAB.
+	HLR D,UTIBED	; Remember whether EOF on last .IOT.
+	HRRZS UTIBED	; Now clear out left half for following
+]
+IFN DECSW,[
+	AOS A,UTICHN	; Do ".IOPUSH" - use next channel.
+	LSH A,27
+	ADD A,[WAIT-<0 1,>]	; Construct a WAIT uuo for the current input channel.
+	MOVE C,RCHMOD		; We mustn't copy the buffers while I/O is going on.
+	CAMN A,[WAIT UTYIC,]	; But:  if we are currently in the top-level input file
+	 CAIE C,3		; And it is device TTY:, this channel was never opened.
+	  XCT A			; Don't move buffers while io going on!
+	MOVEI A,UTIBFL+2	; Assume must save all buffer space.
+]
+	PUSH P,A
+	ADD A,FREPTB
+	ANDI A,-1
+	PUSH P,A
+	CAML A,MACTND	; No room in MACTAB => gc it.
+	 CALL GCA1
+	REST A
+	CAML A,MACTND	; Did the GC win?
+	 PUSHJ P,GCCORQ	; NO!!  Try to win somehow
+	MOVEI A,370
+	CALL PUTREL	; Indicate start of saved buffer.
+	REST A
+	AOS B,FREPTB
+	SUBI A,1
+	MOVE C,ITTYP	; Get addr of tty pdl wd that'll point to saved buffer.
+	ADDI C,1
+	HRRZM C,(B)	; Store in rh of 1st wd,
+	MOVEI C,(B)	; Remember addr of saved buffer to push on ttypdl.
+	HRLM A,(B)	; Put length in lh.
+	AOS B
+IFN ITSSW\TNXSW,HRL B,UREDP	; LH <- addr of 1st wd to save.
+IFN DECSW,HRLI B,UTIBUF
+	ADDI A,-2(B)	; Addr of last wd to blt into.
+	BLT B,(A)
+	HRLI A,041000
+	MOVEM A,FREPTB	; Make free bp -> last byte just used.
+	SUB A,MACTAD
+	ANDI A,-1
+	LSH A,2
+	ADDI A,4	; Get char addr of next free byte.
+	MOVEM A,FREEPT
+]
+IFN PMAPSW, CALL IOBPUS
+
+	MOVE B,ITTYP	; Get local version of iopdl
+IPSHP:
+IFE PMAPSW, PUSH B,C		; Push -> saved buffer (GC will relocate)
+IFN DECSW,PUSH B,UTIBED ? PUSH B,UTIHDR
+REPEAT L$FBLK, PUSH B,INFB+.RPCNT	; Save names of input file.
+	PUSH B,INFCUR		; Save number of input file.
+IFE PMAPSW, PUSH B,D	; Lh=lh(old uredp), rh=lh(old utibed) (or just UREDP)
+IFN PMAPSW, INSIRP PUSH B,[INFPAG INPGCT INLPGS UTIBPE UTIBPL UTIBPX INLCHR UREDP IUREDP ]
+
+		; Following two must be last pushed
+	INSIRP PUSH B,[IFNM1 IFNM2]	; Clobbered on pdl if .open successful
+INPDEL==.-IPSHP		; Length of each entry on pdl
+
+	MOVE A,FREEPT	; W must use same gc convention as putrel;
+	CAML A,MACHI	; Namely, gc after using up the last byte.
+	 CALL GCA1
+	MOVEI A,0	; => input from file
+	MOVEM B,ITTYP	; Store back updated pointer
+	JSP B,PUSHTT	; Save stuff, address modify and return
+
+
+	; Pop into the input file
+IPOP:
+IFN CREFSW,[ MOVEI A,2	; If creffing, output pop-file block.
+	SKIPE CRFONP
+	 PUSHJ P,CRFOUT]
+IPOPL:	PUSHJ P,POPTT	; Come here if .INSRT's open failed.
+	PUSH P,C
+	MOVE B,ITTYP	; Get pointer
+	INSIRP POP B,[IFNM2 IFNM1]	; Pop stuff
+IFE PMAPSW, POP B,A		; Pop off UREDP (or halves thereof)
+IFN PMAPSW, INSIRP POP B,[ IUREDP UREDP INLCHR UTIBPX UTIBPL UTIBPE INLPGS INPGCT INFPAG]
+	POP B,INFCUR
+REPEAT L$FBLK,POP B,INFB+L$FBLK-1-.RPCNT
+IFN DECSW,[
+	POP B,C
+	PUSH P,C		; Old UTIHDR
+	POP B,UTIBED
+]
+IFE PMAPSW, POP B,C
+	MOVEM B,ITTYP	; Save updated pdl pointer.
+IFE PMAPSW,[
+	HLRZ B,(C)	; Get length of saved buffer,
+IFN ITSSW\TNXSW,[
+	PUSH P,A
+IFN ITSSW, CALL SETWH2 ? .IOPOP UTYIC,
+IFN TNXSW, MOVEI A,UTYIC ? CALL $IOPOP
+	REST A
+	MOVEI AA,UTIBUF-1(B)	; Get addr of 1st wd won't blt into in utibuf,
+	HRLI AA,(A)		; Get saved lh of utibed,
+	MOVEM AA,UTIBED
+	HRRI A,UTIBUF		; Make A -> 1st wd in buffer,
+]
+IFN DECSW,[
+	MOVE AA,UTICHN
+	LSH AA,27
+	IOR AA,[RELEAS]
+	XCT AA		; This code equivalent to .IOPOP.
+	SOS UTICHN
+	REST UTIHDR
+]
+	MOVEM A,UREDP
+	MOVSI A,EOFCH_13
+	MOVEM A,@UTIBED	; Put EOF char after buffer.
+	MOVSI A,1(C)	; Get addr of 1st data wd of saved buffer,
+	HRRI A,UTIBUF
+	CAIE B,1
+	 BLT A,UTIBUF-2(B)
+	HLLZS (C)	; Tell GC to reclaim saved buffer.
+] ;IFE PMAPSW
+
+IFN PMAPSW, CALL IOBPOP
+
+POPCJ:	REST C
+	RET
+
+;SAVE INTERNAL POINTERS CONCERNING INPUT MODE
+
+TYPDEL==2		; Number of words in relevant pdl entry
+
+PUSHTT:	PUSH P,A
+	PUSH P,F
+	AOSN CMEOF	; If supposed to pop out of tty soon,
+	 CALL POPTT	; Do it now before cmeof clobbered.
+	MOVE F,ITTYP	; Get relevant pdl pointer
+	MOVEI A,0
+	EXCH A,CLNN	; Set up new line number
+	HRL A,CPGN	; Save current page number
+	SETZM CPGN	; Now re-initialize
+	SKIPGE CRFILE	; Save cref-all-on-one-line flag.
+	TLO A,400000
+	PUSH F,A	; Save cpgn,,clnn
+	MOVE A,-1(P)	; Retrieve new mode
+	PUSHJ P,PSHLMB	; Save limbo1 and set up instructions for new mode
+IFN ITSSW,[
+	CALL SETWH2
+	.SUSET [.SWHO3,,A]
+]
+	MOVEM F,ITTYP	; Store back updated pointer
+	JRST POPFAJ
+
+		; Restore internal pointers concerning input mode
+
+POPTT:	PUSH P,A
+	PUSH P,F
+	MOVE F,ITTYP	; Get pdl pointer
+	PUSHJ P,POPLMB	; Pop into limbo1, set up new mode
+	POP F,A		; Get cpgn,,clnn
+	SETZM CRFILE	; Restore all-on-one-line flag.
+	TLZE A,400000
+	 SETOM CRFILE
+	HLRZM A,CPGN
+	HRRZM A,CLNN
+IFN ITSSW,[
+	CALL SETWH2
+	ADD A,CPGN
+	.SUSET [.SWHO3,,A]
+]
+	MOVEM F,ITTYP	; Store back updated pointer
+	JRST POPFAJ
+
+IFN ITSSW,[
+SETWH2:	MOVE A,RCHMOD
+	CAIL A,2
+	 SKIPA A,[SIXBIT /TTY:/]
+	  MOVE A,INFB+$F6FN1
+	.SUSET [.SWHO2,,A]
+	MOVE A,A.PASS
+	LSH A,30
+	ADD A,[SIXBIT /P0/+1]
+	RET
+]
+
+SUBTTL Storage for IO PDL stuff
+
+	 ; IO PDL storage stuff
+
+VBLK
+TYPDLS==TYPDLC*TYPDEL+INPDEL*MX.INS
+		; "tty pdl", stores information about current input mode
+		; (similar to macro pdl but not garbage collected)
+
+ITTYP:	-TYPDLS-1,,TTYPDL	; Pdl pointer (typdel=length of each entry)
+TTYPDL:	NEDCHK		; Actual pdl: initial entry to overpop routine
+	BLOCK TYPDLS	; Pdl proper
+PBLK
+
+SUBTTL TNX - IO PDL Routines (IOPDLC, $IOPUSH, $IOPOP)
+
+IFN TNXSW,[
+
+IFN PMAPSW,[
+	; Push IO buffer & channel...
+IOBPUS:	PUSH P,A
+	MOVEI A,UTYIC
+	CALL $IOPUSH
+	MOVEI A,NIBFPS	; Point at next set of buffer pages.
+	ADDM A,INBFPG
+	POP P,A
+	POPJ P,
+
+	; Pop IO buffer & channel...
+IOBPOP:	PUSH P,A
+	MOVE A,INBFPG
+	HRLI A,NIBFPS
+	CALL DELPGS	; flush buffer pages.
+	MOVNI A,NIBFPS
+	ADDM A,INBFPG	; point down at previous set of buffer pages...
+	MOVEI A,UTYIC
+	CALL $IOPOP
+	POP P,A
+	POPJ P,
+
+; DELPGS - Take arg in A as <# pgs>,,<page #> and flush these pages.
+
+DELPGS:	PUSH P,A
+	PUSH P,B
+	HLRZ B,A
+	HRLI A,.FHSLF	; <fork>,,<page #>
+	TLO B,(PM%CNT)
+	PUSH P,T
+DELPG2:	SYSCAL PMAP,[[-1] ? A ? B][A ? A ? B]	; Free up buffer pages.
+	TLNN FF,FL20X	; If on 20X, that's all.
+	 JRST [	HRRI B,-1(B)	; Else, on 10X, must iterate manually.
+		TRNE B,400000	; See if became "negative".
+		 JRST .+1	; Yep, done with manual iteration.
+		AOJA A,DELPG2]	; Nope, bump page #'s.
+	POP P,T
+	POP P,B
+	POP P,A
+	POPJ P,
+] ;IFN PMAPSW
+
+; IOPDLC - Clear IOPDL stack, close all channels on it.
+;	Clobbers no ACs
+
+; for 10x, need to CLOSF and release each JFN on IOPDL stack.
+
+IOPDLC:	PUSH P,T
+IFN PMAPSW,[
+	MOVEI T,1STBFP	; Reset to point at 1st page of buffer space.
+	MOVEM T,INBFPG
+]
+	EXCH A,IOPDLP
+	JRST IOPDC3
+IOPDC2:	SYSCAL CLOSF,[(A)]
+	 JFCL
+	SUB A,[1,,1]
+IOPDC3:	CAMLE A,[-LIOPDL,,$IOPDL-1]
+	 JRST IOPDC2
+	EXCH A,IOPDLP
+	POP P,T
+	POPJ P,
+
+; $IOPUSH - Push I/O channel in A onto $IOPDL stack.
+;	Clobbers no ACs
+; for 10X this means storing JFN on stack and clearing JFNCHS table entry.
+
+$IOPUSH:EXCH B,IOPDLP	; Get stack pointer
+	PUSH B,JFNCHS(A)	; save JFN for channel
+	EXCH B,IOPDLP
+	SETZM JFNCHS(A)	; Zap entry in channel table to make it look gone
+	POPJ P,
+
+; $IOPOP - Pops channel off $IOPDL into channel # in A.
+;	Clobbers no ACs
+
+; for 10X just pop $IOPDL into JFNCHS, must close and release old JFN tho.
+
+$IOPOP:	PUSH P,T
+	SYSCAL CLOSF,[JFNCHS(A)]
+	 JFCL
+	POP P,T
+	EXCH B,IOPDLP	; Get stack ptr
+	POP B,JFNCHS(A)
+	EXCH B,IOPDLP
+	POPJ P,
+
+VBLK
+JFNCHS:	BLOCK 20	; Channel table index, JFNCHS(ch) gets JFN for chan.
+			; (zero if none)
+LIOPDL==8.	; Length of IO PDL
+IOPDLP:	-LIOPDL,,$IOPDL-1
+$IOPDL:	BLOCK LIOPDL
+PBLK
+] ; IFN TNXSW
+
+SUBTTL DEC - IO PDL Routines (IOPDLC)
+
+IFN DECSW,[
+
+; IOPDLC - Simulate ITS .IOPDL call.  Flushes all channels from
+;	UTICHN downwards to UTYIC.  Actually not a simulation but something
+;	that works in the particular situation for which MIDAS uses .IOPDL.
+
+IOPDLC:	MOVEI A,UTYIC
+	EXCH A,UTICHN	; Set input chnl num. to lowest.
+	LSH A,27
+	IOR A,[RELEAS]	; Set up to releas the highest in use first.
+IOPDL1:	XCT A		; Releas one input channel,
+	CAMN A,[RELEAS UTYIC,]
+	 RET		; All done.
+	SUB A,[0 1,]
+	JRST IOPDL1	; Releas the next one down.
+] ;IFN DECSW
+
+SUBTTL COMMON TTY input routines & variables
+
+VBLK
+CMBUF:	BLOCK CMBFL	; Typein buffer (also used as JCL buffer)
+CMPTR:	0	; Byte pointer to CMBUF.
+CMEOF:	0	; -1 => POPTT instead of reloading after this bufferfull.
+TTYOP:	0	; -1 => the TTY is already open.
+LINEL:	0	; Width of TTY (may be 1,, meaning assume infinite).
+A.TTYFLG:	; Value of .TTYFLG pseudo - another label for TTYFLG.
+TTYFLG:	0	; TTY typeout permitted iff >= 0.
+WSWCNT:	0	; The number of W-switches in the last cmd string.
+TTYBRF:	0	; -1 => ^H break has been requested but not yet done.
+PBLK
+	; Cause input from tty (main routines)
+
+GTYIPA:	SETZM A.TTYF		; Push to tty, don't stop at cr.
+
+IFN ITSSW,   TYPECR "TTY: .INSRTed, end input with ^C"
+IFN DECSW\TNXSW,[
+  IFE SAILSW,TYPECR "TTY: .INSRTed, end input with ^Z"
+  IFN SAILSW,TYPECR "TTY: .INSRTed, end input with CTL-META-LF"
+  ]
+
+GTYIP1:	SKIPA A,[3]
+GTYIP:	 MOVEI A,2	; Input from tty, stop after 1 line.
+	SETZM CMPTR	; Force reload on 1st read.
+	JSP B,PUSHTT	; Set up variables and return
+GTYIPR:	SETZM CMPTR	; Return on .ineof or cr
+	JRST POPTT
+
+	; Call here from ASSEM1 loop when a ^H interrupt is detected.
+TTYBRK:	SETZM A.
