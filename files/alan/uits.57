@@ -1,0 +1,487 @@
+; -*- Midas -*-
+
+title UITS  --  A bear-sized ITS
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+
+p=:6
+
+t=:7
+tt=:10		; T+1, last AC saved by scheduler and UUOs
+
+u=:16		; Always: Process pointer
+ip=:17		; Always: PDL pointer into IPDL
+
+ch==:0,,-1
+chttyo==:1
+chttyi==:2
+
+call=:pushj p,
+return=:popj p,
+save=:push p,
+rest=:pop p,
+icall=:pushj ip,
+if2, ireturn=:jrst @ipopj
+flose=:.lose %lsfil
+slose=:.lose %lssys
+pause=:.break 16,100000
+quit=:.logout 1,
+tyo=:.iot chttyo,
+tyi=:.iot chttyi,
+
+define syscall name,args
+	.call [setz ? .1stwd sixbit /name/ ? args(400000)]
+termin
+
+format"$$pcode==:1
+format"$$errs==:0
+.insrt dsk:syseng;format >
+
+outstr:	syscall siot,[movei chttyo ? a ? b]
+	 slose
+	return
+
+define format &string&,args
+	call [
+	call $format
+.zzz.==-1
+irp arg,,[args]
+	save arg
+.zzz.==.irpcnt
+termin
+	hrroi a,[ascii string]
+	movei b,.length string
+	movni c,.zzz.+1
+	jrst format"format]
+termin
+
+$forma:	save a
+	save b
+	save c
+	save [.+2]
+	jrst @-4(p)
+	rest c
+	rest b
+	rest a
+	rest (p)
+	return
+
+usrvar:	sixbit /OPTION/	? tlo %opint\%opopc
+	sixbit /MASK/	? move [%pirlt\%pipdl]
+lusrvar==:.-usrvar
+
+; Counters
+.scalar nswaps			; Number of process swaps
+.scalar nticks			; Number of clock ticks
+
+; Locks
+.scalar ttylk			; AOSE lock on the TTY
+
+go:	move ip,[-lipdl,,ipdl-1]
+	movei t,ixnorm
+	movem t,ipopj		; Normal exit from atomic mode
+	setzm ttylk		; Lock TTY
+	setzb u,nswaps		; User 0, no swaps yet
+	setzm nticks		; No ticks yet
+	move t,[-lusrvar,,usrvar]
+	syscall usrvar,[movei %jself ? t]
+	 slose
+	move t,[%rlfls\%rlset,,clktim]
+	.realt t,
+	;; End of initialization code,  The scheduler is now running, so we
+	;; are just the system job.
+	jrst sysgo
+
+; Conventions governing IPDL:
+; A process cannot lose the processor when there is anything pushed on
+; IPDL.  Always use IRETURN instead of POPJ IP, if there is a chance
+; that the operation will leave IPDL empty.  This operation will also
+; always restore the PC flags.  IPDL is also used by interrupt routines.
+
+.vector ipdl(4+<lipdl==:100.>)	; (+4 'cause Interrupts push 5 words)
+
+tsint:
+loc 42
+	-ltsint,,tsint
+loc tsint
+	ip
+	%pirlt ? 0 ? 0 ? 0 ? clkint
+ltsint==:.-tsint
+
+dismis:	setz ? sixbit /DISMIS/ ? setz ip
+
+clkint:	aos nticks
+	came ip,[5-lipdl,,ipdl+4]	; Should be 5 things on IPDL
+	 jrst clkin1
+	exch t,ipdl+4		; Schedule now
+	movem tt,ipdl+3
+	movei tt,(t)
+	cain tt,ixjrst		; Simulate JRST 2,IXPC at IXJRST to prevent
+	 move t,ixpc		; timing screw
+	movem t,ipdl
+	move t,ipdl+4
+	move tt,ipdl+3
+	move ip,[1-lipdl,,ipdl]
+	jrst sched1
+
+clkin1:	push ip,[ixtrap]		; Schedule later
+	pop ip,ipopj
+	.call dismis
+	 slose
+
+; ICALL HANG:  Wait for previous instruction to skip
+; Instruction can only look at U and T, except in its address calculation
+; where it can look at anything except TT and IP.
+hang:	move tt,(ip)
+	move tt,-2(tt)
+	hrri tt,@tt
+	tlz tt,(@(17))
+; ICALL BLOK:  Wait for instruction to skip
+; TT (arg):  Instruction (can only look at U and T)
+blok:	came ip,[1-lipdl,,ipdl]	; Should be 1 thing on IPDL
+	 .lose
+	movem tt,uflush(u)
+	hrrzi tt,uacs(u)	; Yes, set up as for SCHED
+	blt tt,uacs+tt-1(u)
+	move t,ipdl
+	movem t,upc(u)
+	movei e,(u)		; E: previously running process
+	skipn upirqc(u)		; Need to PCLSR?
+	 jrst schedl		; No, run someone else
+	jrst schedi		; Go PCLSR
+
+; ICALL SCHED:  Schedule
+sched:	came ip,[1-lipdl,,ipdl]	; Should be 1 thing on IPDL
+	 .lose
+sched1:	movem tt,uacs+tt(u)	; (Clock tick enters here)
+	hrrzi tt,uacs(u)
+	blt tt,uacs+tt-1(u)
+	move t,ipdl
+	movem t,upc(u)
+	movei e,(u)		; E: previously running process
+; Search for another runnable process
+schedl:	move u,uqueue(u)
+	skipe ustop(u)
+	 jrst schedl
+	skipe upirqc(u)
+	 jrst schedi
+	move t,uacs+t(u)	; Flush instruction can look at U and T
+	xct uflush(u)
+	 jrst schedl
+; Swap E out and U in
+scheds:	caie e,(u)
+	 aos nswaps
+	movsi t,(caia)
+	movem t,uflush(u)
+	move t,upc(u)
+	movem t,ipdl
+	movei t,ixnorm
+	movem t,ipopj
+	hrlzi tt,uacs(u)
+	blt tt,tt
+ixnorm:	pop ip,ixpc
+ixjrst:	jrst 2,@ixpc	.see clkint
+
+.scalar ipopj			; Contains IXNORM or IXTRAP
+.scalar ixpc			; New PC at IXJRST
+
+ixtrap:	camn ip,[1-lipdl,,ipdl]	; Leaving Atomic?
+	 jrst sched1		; Yes, then need to schedule
+	jrst ixnorm
+
+; PCLSR U, perhaps to deliver interrupt
+schedi:	movei a,(u)
+	icall pclsr
+	 jrst scheds		; Lost, let him run, he'll be back
+	skipe a,urpcl(u)
+	 jrst schedr		; RPCLSRing going on
+	movsi b,400000
+	andcab b,upirqc(u)
+	jumpe b,scheds		; No interrupts to deliver, run him
+	 .lose			; +++ don't know how to do this yet...
+
+; Process A is RPCLSRing process U
+schedr:	hrli u,1
+	came u,urpcl(a)		; Consistency check
+	 .lose
+	setzm urpcl(a)		; Clear out RPCLSR pointers
+	setzm urpcl(u)
+	aos ustop(u)		; Stop the victim
+	movsi t,(caia)		; Start the hacker
+	movem t,uflush(a)
+	jrst schedl		; Keep searching
+
+; ICALL RPCLSR:  PCLSR another process and AOS its USTOP
+; A (a/v):  Process to PCLSR
+rpclsr:	movei t,(a)
+	cain t,(u)
+	 .lose			; Can't stop yourself
+	icall pclsr
+	 jrst rpclos
+	aos ustop(a)		; Win, stop him and return
+	ireturn
+
+rpclos:	skipe urpcl(a)
+	 jrst rpclwt		; Someone else got here first
+	movsi tt,(cai)		; Wait for scheduler to restart us
+	skipe urpcl(u)
+	 jrst blok		; I'm being RPCLSRed, submit
+	hrli a,1
+	hrrom u,urpcl(a)	; Set up pointers
+	movem a,urpcl(u)
+	jrst blok
+
+rpclwt:	movsi tt,(skipe)	; Wait for other guy to win
+	hrri tt,urpcl(a)
+	sos (ip)		; Then call RPCLSR again
+	jrst blok
+
+; ICALL PCLSR:  Put PC of a process in User mode
+;  Skips if immediately successful
+; A (a/v):  Process to mung
+pclsr:	movsi t,(caia)
+	skipn tt,uuopc(a)
+	 jrst pclsru		; User mode
+	came t,uflush(a)	; Exec mode, blocked?
+	 soja tt,pclsrb		; Blocked in Exec mode
+	movsi t,400000		; Running in Exec mode
+	iorm t,upirqc(a)	; Let him run, but don't let him escape
+	ireturn
+
+pclsru:	camn t,uflush(a)	; Blocked?
+	 jrst ipopj1		; Running in User mode, win
+	movem t,uflush(a)	; Blocked in User mode, unblock,
+	sos upc(a)		; back up PC,
+ipopj1:	aos (ip)		; win
+ipopj0:	ireturn
+
+pclsrb:	movem t,uflush(a)	; Unblock
+	movem tt,upc(a)		; Back up PC (from UUOPC)
+	setzm uuopc(a)		; Put in User mode
+	hrli tt,uuoacs(a)	; Restore ACs (from UUOACS)
+	hrri tt,uacs(a)
+	blt tt,uacs+tt(a)
+	skipe t,urpcl(a)
+	 jrst [	setzm urpcl(a)
+		setzm urpcl(t)
+		jrst .+1 ]
+	aos (ip)		; going to win
+	skipn ulocks(a)
+	 ireturn
+	push ip,u
+	push ip,p
+	movei u,(a)
+	move p,ulocks(a)
+unlckl:	xct -1(p)
+	skipe p,-0(p)
+	 jrst unlckl
+	setzm ulocks(a)
+	pop ip,p
+	pop ip,u
+	ireturn
+
+; CALL PUSHLK:  Push lock block on pdl
+;  Follow with unlocking instruction
+; Address calculation is done immediately and can look at anything except
+; TT and P.  When instruction is executed to unlock the lock, it can look
+; in U and use P.
+pushlk:	move tt,@(p)
+	hrri tt,@tt
+	tlz tt,(@(17))
+	exch tt,(p)
+	push p,ulocks(u)
+	movem p,ulocks(u)
+	jrst 1(tt)
+
+; CALL POPLK:  Pop lock block from pdl
+poplk:	pop p,t
+	came p,ulocks(u)	; Consistency check
+	 .lose
+	pop p,ulocks(u)
+	exch t,(p)
+	xct t
+	return
+
+uuoh:
+loc 41
+	icall uuoh
+loc uuoh
+	movem tt,uuoacs+tt(u)
+	hrrzi tt,uuoacs(u)
+	blt tt,uuoacs+tt-1(u)
+	move t,40
+	movei tt,uuoh1
+	exch tt,(ip)
+	exch tt,uuopc(u)
+	jumpe tt,@ipopj
+	 .lose			; Already in Exec mode?
+
+uuoh1:	tlne t,740777
+	 .lose
+	hlrz tt,t
+	lsh tt,-9
+uuoxct:	xct uuotab(tt)
+	 jrst uuoh2
+	push ip,uuopc(u)
+	aosa (ip)
+uuoh2:	 push ip,uuopc(u)
+	skipe ulocks(u)
+	 .lose			; Leaving Exec with locks locked?
+	setzm uuopc(u)
+	hrlzi tt,uuoacs(u)
+	blt tt,tt
+	skipn upirqc(u)
+	 ireturn
+	jrst sched
+
+uuoerr:	syscall lose,[movei %lssys ? movei uuoxct]
+	 slose
+
+uuotab:	jrst uuoerr
+
+define defuuo name,-rest
+name=:<.-uuotab>_33
+	rest
+termin
+
+defuuo ecall, call (t)
+
+repeat 40-<.-uuotab>, jrst uuoerr
+
+; CALL INIT:  Initialize a process
+; A (a/v):  Process
+; T (arg):  Initial (User mode) PC
+init:	movem t,upc(a)
+	setzm uuopc(a)
+	movei t,1
+	movem t,ustop(a)
+	movsi t,(caia)
+	movem t,uflush(a)
+	setzm upirqc(a)
+	setzm urpcl(a)
+	setzm ulocks(a)
+	icall queue
+	return
+
+; ICALL QUEUE:  Add a process to the queue
+; A (a/v):  Process
+queue:	move t,uqueue(u)
+	hrli t,(u)
+	movem t,uqueue(a)
+	hrrm a,uqueue(u)
+	hrlm a,uqueue(t)
+	ireturn
+
+; ICALL DQUEUE:  Remove a process from the queue
+; A (a/v):  Process
+dqueue:	move t,uqueue(a)
+	hllm t,uqueue(t)
+	movs t,t
+	hlrm t,uqueue(t)
+	ireturn
+
+; System job
+
+.vector syspdl(lsyspdl==:20)
+
+sysgo:	move p,[-lsyspdl,,syspdl-1]
+	call test
+	.open chttyo,[.uao\%tjdis,,'tty ? setz ? setz]
+	 .lose
+	setom ttylk		; TTY now open for business
+syslp:	move a,nswaps
+	icall sched		; Let others run
+test.I:	camn a,nswaps		; Anyone run?
+	 .hang			; No, wait for it to happen
+	jrst syslp		; Yes, then go again.
+
+; Test things
+
+test:
+nusers==:5
+.vector pdls(nusers*<lpdl==:200>)
+	movei c,nusers
+	movei a,users-user0
+	move b,[-lpdl,,pdls-1]
+test3:	movei t,testgo
+	call init
+	movem b,uacs+p(a)
+	sos ustop(a)
+	addi a,luser
+	addi b,lpdl
+	sojg c,test3
+	return
+
+testgo:	movei a,(u)		; A: victim
+	movei b,(u)		; B: self
+testnx:	hrrz a,uqueue(a)
+	cain a,(u)
+	 jrst testnx
+test.B:	ecall [
+	icall rpclsr		; Stop A
+	call pushlk
+	 sos ustop(a)
+	aose ttylk		; Grab TTY
+	 icall hang
+	movei t,(a)
+	hrrz tt,upc(a)
+	format "~&~4<~O~> -> ~4<~O~> @~O ",[b,t,tt]
+irps nm,,[B E H I]
+	cain tt,test.!nm
+	 tyo ["nm]
+termin
+	setom ttylk		; Release TTY
+	call poplk		; Start A
+	return ]
+test.E:	move t,nticks
+	camn t,nticks
+test.H:	 icall hang
+	jrst testnx
+
+cnstnt:
+constants
+
+bit:	repeat 36., 1_<35.-.rpcnt>
+
+patch::
+pat:	block 100.
+
+variables
+
+vpatch:	block 20.
+
+clktim:	60.			; 1 second
+	0 ? 0 ? 0		; just in case
+
+user0::
+
+upc:	0
+
+uuopc:	0			; 0 => User mode
+
+ustop:	0			; 0 => not stopped
+
+uflush:	caia			; Skips => not blocked
+
+upirqc:	0			; 4.9 => PCLSR request
+
+urpcl:	0			; -1,,<process> => being RPCLSRed
+				; 1,,<process> => RPCLSRing
+
+ulocks:	0			; 0 => nothing locked
+
+uqueue:	0,,0			; <previous>,,<next>
+
+uacs:	block tt+1
+
+uuoacs:	block tt+1
+
+luser==:.-user0
+
+users:	block nusers*luser
+
+end go
