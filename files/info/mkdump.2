@@ -1,0 +1,305 @@
+-*-Text-*-
+This documents the MKDUMP EMACS library.
+
+File: MKDUMP,	Node: Top,	Next: Options,	Up: (EMACS)Top
+
+
+                         DUMPING MADE EASY
+
+The problem -- slow startup:
+
+The more an init or EVARS file customizes an EMACS environment, the
+slower that EMACS is to start up.  Setting or creating variables,
+connecting keys to functions, defining word abbrevs, creating
+buffers, turning on modes -- the time for each is additive, with no
+time discount for doing a lot of them.
+
+Loading a library of extended commands and functions is by itself
+fast, but a library may require certain variables or keys to be set
+and this can happen automatically upon loading.  (A library may
+have a specially named function in it for this purpose; M-X Load
+Library will run that function automatically.)  Many libraries will
+only set variables the first time they are loaded; the second load
+into the same environment is fast, particularly important for a
+temporarily loaded library, such as a mail reader.  Nevertheless,
+that first load is a problem and some libraries are notoriously
+slow loaders.
+
+
+The solution -- dump the environment:
+
+The structure of the customized environment can be saved in a
+special disk file called a "dump", so that startup does not have to
+build that structure again -- it only has to read in this file.
+The dump is not an entire EMACS: since much of EMACS (and the Teco
+inside it) is shared between different customizations, the dump
+need only contain what is private to this customization.
+
+The dump is actually a runnable job, containing not only the
+environment structure but also some startup code will get the
+shared parts of the original EMACS.  (Getting them is fast.)  When
+it is through starting up, you have a job that looks like the
+original dumped EMACS job.
+
+
+The simplest use of MKDUMP:
+
+The only preparation necessary to use MKDUMP is to insert the
+following line into your init file, at the top before any library
+loading (note that there are TWO Altmodes at the end of the line):
+
+MM Run LibraryMKDUMP
+
+Or if you have an EVARS file, insert this line into it, at the top:
+
+*: MM Run LibraryMKDUMP
+
+This will prepare EMACS for later dumping by causing M-X Load
+Library to start remembering exactly where it finds the libraries
+it loads.
+
+To make a dumped EMACS job, first start up EMACS the normal way:
+
+	:EMACS<cr>				(on ITS)
+	EMACS<cr>				(on Tenex or Tops-20)
+
+Then type:
+
+	M-X Dump EMACS<cr>
+
+This will write the dump to the file TS DEMACS (on ITS), DEMACS.EXE
+(on Tops-20), or DEMACS.SAV (on Tenex) in your home directory.
+
+The next time you want to run EMACS, you can run the dump:
+
+	:DEMACS<cr>				(on ITS)
+	DEMACS<cr>				(on Tenex or Tops-20)
+
+The dump will start up, load the shared parts of TECO and EMACS,
+and then execute the default EMACS init.  That will print the
+normal greeting message and handle any JCL ("job command line",
+i.e. anything else on the line you type to DDT/EXEC).  For instance
+you can have EMACS initially visiting a file by:
+
+	:DEMACS FILE NAME<cr>			(on ITS)
+	DEMACS FILE.NAME<cr>			(on Tenex or Tops-20)
+
+If you do not want the greeting message or JCL processing, give an
+argument to the Dump EMACS command and make a dump that is still
+faster in startup (not recommended in general, as the default init
+performs certain necessary actions):
+
+	C-U M-X Dump EMACS<cr>
+
+If you want to write the dump to some other file than TS DEMACS or
+DEMACS.EXE, give the filename as a string argument to the Dump
+EMACS command, e.g.:
+
+	M-X Dump EMACSTS DUMPTY<cr>		(on ITS)
+	M-X Dump EMACSEMACHS.EXE<cr>		(on Tenex or Tops-20)
+
+Note that M-X Dump EMACS will dump an exact image of the EMACS,
+including any buffers that have been created and any files that
+have been visited.  Therefore, we suggest that you make the dump
+just after EMACS starts up the slow way, before the environment
+becomes too cluttered.  You may want to load and then kill certain
+libraries that are first-time slow loaders (e.g. BABYL): in the
+dump, they will appear to have already been loaded once, and
+therefore loading them into the dump will be fast.
+
+Also note that you can dump a DEMACS job too.  For instance, you
+might make a small change to your init or EVARS file, set some
+variable say, and don't want to restart slowly just for that.
+Instead, start a fresh DEMACS, set the variable, and then do M-X
+Dump EMACS.
+
+
+The costs -- disk space, fragility, and missing new releases:
+
+The dump file is typically not very large, but it size depends on
+the amount of customization: the number of variables, word abbrevs,
+and buffers and the size of the text in each of these.  If you
+simply reconnect keys and reset variables, the dump should be about
+5 records on ITS, 10 pages on Tenex or Tops-20.  (Same space -- the
+record sizes are different.)
+
+Even if you don't read or fully understand the problems discussed
+below, realize that the way to handle them is simple: when you
+suspect the dump is not working correctly, throw it away and make
+another one.  Start again from your init file, let it slowly (and
+carefully) build the environment, and then dump.  The new dump
+should be ok.  The kinds of (typically confusing) errors that can
+indicate a problem with the dump are: the dump won't start up at
+all, complaining that some file doesn't exist; you get an
+"?Internal Error..." message on Tenex/Tops-20 and are left back at
+the EXEC; or you get an "...attempted to macro a meaningless
+number" error.  If after redumping, the error still occurs, it is
+some problem with EMACS and not the dump.
+
+The dumped environment structure critically depends on the identity
+of the other parts of the EMACS job: the Teco base and the loaded
+libraries.  These parts are not included in the dump, but they are
+referenced by it.  If any of them change or disappear, the dump
+will not work.  Their identities are determined and recorded in the
+dump by their real, full filenames.  (The filename includes any
+version number, and will always be the file's name, rather than the
+name of a link.  For example, M-x Load LibraryWORDAB<cr> checks
+for DSK:EMACS;WORDAB :EJ, and finds it a link to DSK:EMACS;[WORD]
+607.  The filename recorded in the dump is DSK:EMACS;[WORD] 607.)
+
+Some libraries on ITS do not have version numbers, and thus new
+releases of those libraries are indistinguishable by the dump.
+When that dump environment tries to reference something in that
+library, an error will occur.  (Note that on ITS some of the
+commonly dumped libraries have versions: the basic EMACS library,
+WORDAB, and TMACS.  On Twenex/Tenex, all libraries have version
+numbers.)
+
+A new release of a library with version numbers will not interfere
+with a dump, but on the other hand you will not be using that new
+release -- you will still be using the old one.  Thus to get the
+benefit of the new bug fixes and features you will have to watch
+for releases and then start from the init and redump.
+
+
+* Menu:
+
+* Options::	Variables that control the defaults that M-X Dump
+		EMACS<cr> uses.  Also some variables for Teco
+		programmers.
+
+* Concepts::	Teco programmers should be aware of these ideas and
+		warnings.
+
+Node: Options,	Previous: Top,		Next: Concepts,	      Up: Top
+
+There are four option variables that affect the dump that is
+constructed:
+
+
+Dumped EMACS Name:
+
+If you always want to dump to a particular filename, other than
+DEMACS, you can set this variable instead of providing the name as
+a string argument to M-X Dump EMACS.  (The default directory will
+be set to your home (login) directory, so this can be omitted from
+the filename.)
+
+
+Dumped EMACS Quick Start?:
+
+If you always want a quick-starting dump, you can set this variable
+to 1, instead of providing a numeric argument to M-X Dump EMACS.
+
+
+Dumped EMACS Default Filename:
+
+If you want the dump to start up with a particular default filename
+(instead of FOO > on ITS or FOO..0 on Twenex), set this filename.
+
+
+Dumped EMACS Startup Hook:
+
+If you want to add some Teco code to run at startup time (each time
+the dump starts up), put that code in this variable.  For instance,
+this hook might read an incremental word abbrev definition file;
+the following EVARS file line will set that up:
+
+Dumped EMACS Startup Hook: MM Read Incremental Word Abbrev File
+
+For the serious TECO programmer writing a & Startup EMACS macro:
+note the variable Dumped EMACS fsTTYMacro.  The fsTTYMacro flag
+is set to 0 in the dump, since TECO tries to run it before
+libraries are loaded, prohibiting it from calling any functions or
+connecting any keys.  The Dump EMACS command saves this flag in
+Dumped EMACS fsTTYMacro just before zeroing it; thus, a custom
+&Startup macro must restore and call fsTTYMacro from this
+variable.  (This is normally taken care of by the &Startup routine
+created by MKDUMP.)
+
+Node: Concepts,	Previous: Options,			 Up: Top
+
+This section is for the serious TECO programmer, who is writing a
+startup function, one that is run each time the dump starts up.
+This is a surprisingly tricky business, especially keeping track of
+what should be done at init time (thus dumped out and not run when
+the dump starts up -- init time work is typically called "setup"),
+and what needs to be done each time the job is run.  Further,
+startup time action is complicated by actions that TECO takes,
+particularly those concerned with initializing the terminal
+parameters.  The programmer should read carefully those parts of
+TECORD that describe ..L, fsTTYMacro, and fsTTYInit (e.g., do
+M-X TecDocfsTTYMacro<cr> if you have IVORY or PURIFY loaded).
+Also, you should study the actions of the default EMACS init file.
+
+Note that when starting an EMACS from the init file, both init-time
+and startup-time work is done.
+
+A basic rule (sometimes hard to follow!) is that init-time setup
+should be concerned with "state" while startup-time is concerned
+with "action".  State would include things like setting variables,
+loading libraries, connecting keys -- things that "stay around in
+the environment".  Action is transitory things like printing a
+greeting message or acting on JCL.
+
+HOWEVER ... some state CANNOT be set up at init-time and dumped
+out, and thus must be done at startup-time: anything that depends
+on the particular kind of terminal, the job name, perhaps even the
+particular operating system (dumps may be copied from one ITS to
+another for instance, or from one Twenex to another).
+
+(Some users may only use one kind of terminal, and dump out
+terminal dependent connections.  Or have two dumps, one for each of
+two kinds of terminals.)
+
+In particular, TECO will always reset certain terminal parameters
+when it starts up (before any init or dump startup routines get
+run), such as fsEchoLines.  Thus these parameters (if you want to
+set them in a non-standard way) must be reset at startup-time.
+(Terminal parameters should actually all be set by fsTTYMacro,
+since when TECO is advised of a terminal-parameter change
+(1fsTTYInit), it will call fsTTYMacro; also, when Teco is
+restarted (START on Twenex, G on ITS) it will reset some things
+automatically, call fsTTYMacro, and then call ..L.)
+
+Here is a sample startup function, which handles some action
+(greeting message), startup-time state (incremental abbrev loading,
+and default filename), and terminal-dependent parameters (e.g.
+fsTTYMacro setting fsEchoLines):
+
+!& Startup EMACS:! !S Startup-time work.
+The init file should end with a call to this subroutine.!
+
+ !* Set up fsTTYMacro, the hook that Teco runs whenever it thinks!
+ !* the terminal parameters need setting.  If we are called from the!
+ !* init file, it will have already set this flag.  If we are called!
+ !* during dump startup, it will be 0, with its old code in a!
+ !* variable.  We restore it and then call it: !
+
+ fsTTYMacro"e				!* Is 0, must restore it.!
+    qDumped_EMACS_fsTTYMacro fsTTYMacro'
+ m(fsTTYMacro)				!* Now call it.!
+
+ !* Some startup-time state -- incremental abbrevs and default!
+ !* filename: !
+
+ m(m.mRead_Incremental_Word_Abbrev_File)  !* Read from default place.!
+ etDSK: fsHSNamefsDSNamew		!* Reset to home directory.!
+ etTEMP_FILE				!* And random filename.!
+
+ !* Print a greeting message: !
+
+ :ftEMACS_ qEMACS_Version:= ft,_in_Teco_ fsVersion:=
+ ft.__Startup_time_=_ fsRunTime ft_milliseconds.
+
+
+ !* End by jumping to ..L, which is generally the subroutine!
+ !* & Toplevel ^R, the normal EMACS top-level routine: !
+
+ :m..L					!* Jump into top-level of!
+					!* EMACS's  mode.!
+
+Local Modes:
+Fill Column:72
+End:
+   

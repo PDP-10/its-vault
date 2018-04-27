@@ -1,0 +1,157 @@
+-*- Text -*-
+
+File: LPDEV, Node: Top, Up: (DIR), Next: Deleting
+
+The LP and LR family of devices send output to the PostScript, 
+Impress, and QMS/QUIC printers around Tech Sq.
+
+The device name determines which printer the output is sent to.  The
+pattern is that the unit number is the floor number.  Device names
+beginning with "LP" refer to a printers which go at greater than 8 pages
+per minute.  Names beginning with "LR" refer to printers which go at 8
+pages per minute.
+
+The following devices are currently defined:
+
+	LP9:	The 9th floor QMS 1200		(National-Enquirer)
+	LR9:	The 9th floor Apple Laserwriter	(The-Wall-Street-Journal)
+	LP8:	The 8th floor QMS 2400		(Daily-Planet)
+	LR8:	The 8th floor Apple Laserwriter	(The-Washington-Post)
+	LP7:	The 7th floor QMS 2400		(Pravda)
+	LR7:	The 7th floor Apple Laserwriter	(Le-Monde)
+	LP5:	The 5th floor Imagen 24/300	(gi)
+	LR5:	The 5th floor QMS-PS 800	(salami)
+	LP4:	The 4th floor Imagen 12/300	(oval)
+	LP3:	The 3rd floor QMS-PS 2400	(ham)
+	LR3:	The 3rd floor Imagen 8/300	(charmin)
+	LR2:	The 2nd floor QMS-PS 800	(pulp)
+
+Currently only lineprinter-style printing of ASCII text is supported,
+although this may change in the future.  (But see *Note Raw:Raw.)
+
+For example, outputting to LP7: opens a connection to Reagan (where a
+printer server runs) and transmits your text.  Thus
+
+    ^R DSK:INFO;LPDEV >,LP7:      or      :COPY DSK:INFO;LPDEV >,LP7:
+
+makes hardcopy of this info file.  Reading from LP7:.FILE. (DIR)
+produces a listing of the queue, so you can type
+
+    LP7^F                          or      :LISTF LP7:
+
+to see who's output is in front of yours.  A typical queue listing looks
+like:
+
+    Status of The-Wall-Street-Journal:
+
+    Recipient  Queued at          State     Title
+    ALAN       7/17/89 14:02:53   Printing  AI: LR9: ALAN; PCLSR MEMO 496939 bytes
+    CENT       7/17/89 14:03:17   Queued    ML: LR9: CENT; FOO BAR 15728 bytes
+    ALAN       7/17/89 14:03:31   Queued    AI: LR9: ALAN; _COPY_ OUTPUT 24249 bytes
+
+* Menu:
+
+* Deleting::		Deleting entries from the queue.
+			[ currently broken ]
+
+* Commands::		Sending control commands to a printer.
+			[ currently broken ]
+
+* TPL::			How to set your "default" printer.
+
+
+* Raw::			Talking to a printer in its native language.
+			[ currently broken ]
+
+* Maintenance::		Notes for maintainers.
+
+File: LPDEV, Node: Deleting, Previous: Top, Up: Top, Next: Commands
+
+Deleting entries from the queue.
+
+[ As of 7/17/89, deleting was broken. ]
+
+All devices allow you to delete items from the queue.  For example, if
+LP7^F shows you the following:
+
+    7th Floor QMS is ready and printing
+     Time  Owner     Job Files					Size
+     01:57 alan      719 LP7: INFO; PRINT OUTPUT		280
+
+    The most recent job printed was:
+     01:57 alan          LP7: INFO; PRINT OUTPUT                          
+
+then you can delete job 719 by doing
+
+    ^O LP7:719		or		:DELETE LP7:719
+
+or you can delete all entries owned by ALAN by doing
+
+    ^O LP7:ALAN		or		:DELETE LP7:ALAN
+
+(Any second filename and directory you supply will be ignored.)
+
+File: LPDEV, Node: Commands, Previous: Deleting, Up: Top, Next: TPL
+
+Sending control commands to a printer.
+
+[ As of 7/17/89, control commands were broken. ]
+
+Control commands can be sent to the spoolers which drive the 7th, 8th, and
+9th floor printers.  Do this by reading <device>:.CMD. <command>.  For
+example,
+
+    ^R LP7:.CMD. DISABLE	or	 :PRINT LP7:.CMD. DISABLE
+
+will disable the queue for the 7th floor QMS 2400.
+
+File: LPDEV, Node: TPL, Previous: Commands, Up: Top
+
+How to set your "default" printer.
+
+Many programs on ITS will send output to the TPL: device when asked to
+produce lineprinter style output, most notably the :TPL command in DDT and
+the :@ program.  Thus if you have a translation like
+
+     TPL: *; * * , LP9: *; * *
+
+defined in your init file, you have effectively set your default
+lineprinter to be the 9th floor QMS 1200.  Now you can print simple files
+by doing:
+
+    :TPL .INFO.;CUBE INFO
+
+and produce @ listings by doing:
+
+    :@ FOO/88W
+
+(The "/88W" is because @ normally assumes a lineprinter is 120 columns
+wide.)
+
+File: LPDEV, Node: Raw, Up: Top
+
+Talking to a printer in its native language.
+
+[ As of 7/17/89, Raw mode no longer worked. ]
+
+When an LP or LR device channel is opened using open-mode bit 1.4, output
+is sent to the printers in their native language (generally PostScript, but
+that varies from printer to printer).
+
+To take advantage of this, you have to write a program.  No convenient
+command is available.
+
+File: LPDEV, Node: Maintenance, Up: Top
+
+Notes for maintainers.
+
+The source code lives in AI:SYSEN1;LPDEV >.  The table at DEVTBL: is the
+most likely thing to need changing.  It defines the mapping between device
+names and the host names and printer names that provide the corresponding
+services.
+
+The server runs on Lisp Machines.  The source can be found on Reagan in the
+file Reagan:>ITS>ITSLPT.lisp.  The ITSLPT protocol is simple, and the
+source of the server is the only documentation.  The server runs on both
+Reagan and Zermatt.  The AI lab printers go through Reagan and the LCS
+printers through Zermatt.

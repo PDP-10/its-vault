@@ -1,0 +1,57 @@
+!~Filename~:! !Experimental version of Lisp Indent Hook!
+XINDEN
+
+!& Setup XINDEN Library:! !S Install experimental indent hooks!
+
+ m.m &_Experimental_Lisp_Indentation_HookuLisp_Indentation_Hook
+
+
+!& Experimental Lisp Indentation Hook:! !& Internal hook to help Lisp indentation!
+!* This function assumes f has been done and that q..0, q..1, and q..2 are set up.
+Argument conventions --
+ ^X is pos of head of sexp (leading open paren)
+ ^Y is cursor position at indent time
+ qZ is the offset from end of buffer of the cursor pos we began at !
+
+    [1[2[3[4			    !* Get temp qregs!
+    2fo..Q L_Special_Indent_Offset u1    !* q1: indent offset!
+    .u2				    !* q2: standard algorithm result!
+    +1j			    !* Jump to first element!
+    1a*5+1:g..D-A"n q2j 0'	    !* Return if non-alpha char leads!
+    @flx4			    !* q4: keyword to test!
+    @fll			    !*  Skip our operator!
+    -3 fo..Q L_4_Indentu3    !* Look up indentation info!
+    fq3:"l q2j :fm3'		    !* If a string, macro it & return!
+     q3:"l oSpec '		    !* If non-negative, is a specform!
+    q3+1"e oDef '		    !* -1 = DefForm!
+    q3+2"e q2j 0'		    !* -2 = Override any indent hacks!
+				    !* -3, ... fall through to here!
+    qL_Indent_DEFanything"n	    !* If he wants us to,!
+     f~4DEF_-4"e oDef''	    !*  check first for (DEF...!
+    q2j 0			    !* Return using default indent!
+
+ !Spec!				    !* Come here if a special form!
+    !* KMP: A bad assumption is made here which might ought be fixed !
+    !*       sometime. That is that ^X+q1 is on the same line as ^X  !
+    !*	     Ie, that all special forms are >= in size to the special form!
+    !*	     offset ... It's really even more subtle than that!
+    .( +q1j fs shposu4 )j	    !* Compute body indentation hpos.!
+    :<:@fll 1a-;:@; l>	    !* Find start of first argument.!
+    q3"n fs shpos-q4:"g q2j 0''  !* If not a body-only special form,!
+				    !*  If indented less than body should be,!
+				    !*   body must match it.!
+    q3 :<<:@fll 1a-;:@; l> @fll>"n	    !*  Skip that many forms!
+           q3"n q2j ,0'
+           j fsshpos+q1'
+    .-"g q3"n q2j ,0'	    !*   If past it,!
+           j fsshpos+q1'	    !*    Give up if not body-only specform!
+    1:<<:@fll 1a-;:@; l> @fll>"n  !*  Skip another form!
+	      +q1j 0'	    !*   Win if failure!
+    .-"g +q1j 0'		    !*   Win if past it!
+    q2j 0			    !*  Else use default indent!
+
+ !Def!				    !* Come here if a DefForm!
+    l .-q..2"g			    !*  If this is first exp in form!
+        +q1j ,0'		    !*   Jump to head and indent!
+      "# q2j '			    !*   Else use default indentation!
+    0				    !* Say cursor is at right place!

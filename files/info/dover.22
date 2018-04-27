@@ -1,0 +1,436 @@
+-*-Text-*-
+
+File: DOVER	Node: Top	Up: (DIR)	Next: Normal
+
+The DOVER program sends files to the Dover printer.  It can send press
+files, ordinary text files, or XGP-format files.
+
+* Menu:
+
+* Normal::	The simplest way to print a file.
+* Switches::	Options available in printing the file.
+* Edit::	Input editing commands.
+* XGP::		Printing XGP files with :DOVER.
+* Spruce::	Hints about hacking the Dover controller, Spruce
+* DPRESS::	Using DPRESS to display a PRESS file and save paper
+
+File: DOVER,  Node: Normal,  Previous: Top,  Up: Top,  Next: Switches
+
+The DOVER queuer accepts file commands, which specify a file to be
+printed and optionally a font to be used.  The general form is:
+
+	:DOVER [file-specification][_ fonts-spec-list]
+
+	:DOVER .INFO.;DDT ORDER _ HELVETICA10I
+
+file-specification
+
+	The normal ITS file name, which may be a text file, XGP file,
+	or press format file.  <device> defaults to local DSK:
+	(i.e. if you are on MC, <device> defaults to MC:), <sname>
+	defaults to your <msname> (i.e. the default sname for the job).
+	The second filename defaults to PRESS if such a file exists;
+	if not, PRE is tried (for Scribe users), and finally > is used.
+
+	The DOVER program automatically figures out whether the file
+	is a PRESS file or a text file (but you can always say
+	/PRESS, /XGP, or /ASCII).
+
+_ fonts-specification
+
+	Any number of font names or file-specifications delimited
+	by commas that define the fonts to be used.  A font name for
+	the Dover consists of a font family name, a points-size, and a
+	face code.  The family name in the above example is
+	"HELVETICA"; the points-size, 10; the face code, I for Italic.
+	Other letters that may appear in face codes are C for
+	Compressed, E for Expanded, L for Light, and B for Bold.  Any
+	consistent combination of these may be used, or none.
+
+	The fonts-specification is optional.  If it is absent, the
+	default font is LPT8.
+
+Switches can also be included in the command to select options or set
+parameters.  They should go after the file specification or after the
+fonts specification.  It is also possible to supply a jcl line
+containing only switches, e.g.:
+
+	:DOVER /STATUS
+
+The only switches that make sense here are /STATUS and /QUEUE,
+since all others apply only when a file is sent.
+
+File: DOVER,  Node: Switches,  Previous: Normal,  Up: Top,  Next: Edit
+
+Switches and Modifier Commands
+
+  The syntax of a switch is "/" followed by the switch name,
+optionally followed by a ":" and the argument of the command.
+The argument, or the switch name if there is no argument, is
+terminated by a space, slash, "_", or the end of the line.
+Examples:
+
+	FOO BAR/SKIP:10_LPT8/LFTMAR:2540
+
+  The shortest unique prefix of any switch is sufficient.
+However, there are also some special abbreviations for commonly
+used switches, which are not necessarily unique prefixes.  Here
+is a list of them:
+	/A	for /ASCII
+	/D	for /DELETE
+	/L	for /LIST
+	/N	for /NOTIFY
+	/Q	for /QUEUE
+	/S	for /STATUS
+	/T	for /TEXT
+	/X	for /XGP
+
+  Three switches specify what sort of file is being dealt with.
+Normally, the DOVER program can figure this out for itself, so there
+is generally no need to use one of these switches.  However, if :DOVER is
+invoked by another program, for reliability the appropriate one of
+these switches ought to be specified if the type of file is known.
+
+/ASCII or /TEXT	This file contains ordinary ASCII text.
+/PRESS		This file is a PRESS file.
+/XGP		This file is an XGP file.
+
+  When none of these switches appears, the file is considered a
+PRESS file if the first 16 bits of a certain word of the file is
+equal to the "magic" number 27183.  The word used is the last
+word that has an address that is 0 mod 128.; this should be the
+first word of the last record of the file, if it really is a
+PRESS file.  Otherwise, the file is considered a TEXT file,
+unless its second name is XGP, in which case it is treated as an
+XGP file.  You must specify /XGP to process an XGP file if its
+second name is not "XGP".  If /TEXT (/XGP) is not specified, but
+the file is to be treated as a text (XGP) file, the file is
+checked to see if it really looks like a text (XGP) file, in
+order to suppress printing of binary files, which is never nice.
+Currently a text file is rejected if it contains more than 10%
+non-formatting control characters (i.e., control characters that
+are not tabs, linefeeds, carriage returns, or formfeeds).  An
+XGP file is rejected on the same basis, except that a
+compensation is made to discount XGP escape sequences (rubouts
+are not counted, and 4 times the number of rubouts present is
+subtracted from the number of non-formatting control characters
+before the 10% check is made).  Just about any reasonable file
+should pass this test, and if the file you want does not, you
+can always specify /TEXT or /XGP -- but please make SURE it is
+not a binary file first!
+
+  Several switches control where the output goes.  First, there is
+
+/DISKOU or /DSKOUT	Put the output on disk, in <msname>;FOO PRESS,
+			instead of sending it to the Dover or spooling.
+
+When /DISK is not specified, the normal behavior depends upon
+the site on which DOVER is running, as follows:
+
+	MC, ML, DM:	Send to the MC spooler by default.
+
+	AI:		Send to the Dover directly by default,
+			unless it is busy, in which case spool
+			to MC.
+
+The Dover is considered busy if it says so or does not respond
+to queries, AND there are several files queued on MC.  (The
+latter is detected by the existence of the file .XGPR.;%DOVER BUSY
+on AI, which is created/deleted by the MC spooler as conditions
+change, automatically.)
+
+  In any case, the output from DOVER will make it clear what
+happened.
+
+  The following switches permit you get behavior different from
+the default:
+
+/SPOOL, /SP		Send to the spooler on MC, regardless.
+			When a file is spooled, the file itself
+			is written to MC:.DOVR.;$<xuname> > (the
+			$ is a dollar sign, not an altmode), and
+			and spooling information is written in
+			the file MC:.DOVR.;-QUEUE >.  The actual
+			filenames are printed for you.  Note:
+			even on MC, a copy is made, not a link.
+
+/EFTP			Send to the Dover directly, regardless.
+			This has an effect only on AI and MC,
+			since ML and DM cannot talk directly to
+			the Dover.
+
+NOTE:  Use of /EFTP is considered anti-social unless you have
+good reason, since everything has been designed to take
+efficiency and fairness into account.
+
+In cases where DOVER keeps trying to send directly, it will let
+you type ^S to spool the file instead, ^G to give up entirely.
+It may take a little while to respond to ^S or ^G.
+
+  The notify option takes effect only if the file is spooled:
+
+/NOTIFY, /N		Have the MC spooler do a SEND to you when
+			your file has reached the Dover.  (It
+			may be a while after that before it is
+			printed, but it is the best we can do.)
+			You may also do /NOTIFY:user or
+			/NOTIFY:user@site, to have the send go
+			to someone or someplace other than
+			XUNAME@<current-site>.  The site defaults
+			to the current site.  If you are not
+			logged in at the time, the message is
+			discarded, unless there was an error, in
+			which case it turns into mail.
+
+
+  There are two switches that control printing of status
+information after the request (if any) has been processed:
+
+/STATUS, /S		Print the Dover's status, if you are on
+			a site that can talk to it.
+
+/QUEUE, /Q		List the MC spooler queue (DVR^F).
+
+
+  The /DELETE (/D) switch will delete a PRESS or XGP file after
+it is successfully sent or queued.  For safety, it is ignored on
+TEXT files.
+
+  Three more switches control what part of the file is printed, and
+how many times.  They work on text files and on press files.
+
+/COPIES:n		Make n copies.
+/SKIP:n			Skip the first n pages of the file.
+/START:n		Start with page n; equivalent to /SKIP:n-1
+/LASTPAGE:n		Stop printing after page n.
+			0 means keep going to the end of the file.
+/STOP:n			Equivalent to /LASTPAGE:n.
+
+  The other switches set parameters which control how the text of a
+file appears on the page.  They are relevant only when the DOVER
+program is printing a text file.  When an existing PRESS file is being
+printed, the parameters are not used, because the program which
+generated the PRESS file has already made the decisions.
+
+  For switches which take arguments, the default value of the
+parameter (the value used if the switch is NOT specified) appears in
+brackets.  Many switches specify distances on the paper.  These
+arguments are in units of Micas (1 Mica = 10 Microns).
+
+/BOTMAR:n [1270]	Use n micas of bottom margin.
+/BRACKET		Print altmode (033 octal) as ^[, if printing
+			control characters with up-arrows.
+/CTL			Print control characters with up-arrows.
+			This is the default.  A special
+			character (013) is used for the up-arrow
+			in the LPT fonts, but octal code 136
+			(the usual up-arrow) is used otherwise.
+			See also /BRACKET, /DOLLAR, and /SAIL.
+/DOLLAR			Print altmode (033 octal) as a dollar
+			sign.  This is the default if printing
+			control characters with up-arrow and the
+			font family is not LPT.  (LPT
+			has a nice symbol for Altmode.)
+/LFTMAR:n [2540]	Use n micas of left margin.
+/LIST or /L		Put a header on each page, containing the
+			filename, date and page number.
+/LSP:n			Use n points per line (includes font height
+			and points between lines)
+/RGTMAR:n [1270]	Use n micas of right margin.
+/SAIL			Print control characters "as is", as whatever
+			the font defines for their character codes.
+			With the LPT font family, this will give you
+			the Sail characters such as you can see ojn
+			the screen if you do :TCTYP SAIL.
+			With Xerox fonts, it will give you the Xerox
+			assignment of graphics, which is different.
+/TOPMAR:n [1270]	Use n micas of top margin
+/TXTCMD:n [-1]		If n is nonzero, and the file is an XGP file,
+			read semicolon-commands from the file
+			to set parameters.
+/UNPAGED		Treat ^L as a control character instead
+			of starting a new page.
+/VSP:n [*]		Use n points between lines.
+			What this really means is that n is added to the
+			point height of font 0 to get the value of the LSP
+			parameter.
+
+* The default interline spacing, if neither LSP nor VSP is set,
+is 120% of the point size of font 0.
+
+  XGP files can contain parameter specifications in the form of
+semicolon commands, on the first page.  If TXTCMD is -1, then :DOVER
+reads the first page of the file to look for such commands.  However,
+horizontal distances specified in the XGP file are in units of XGP
+dots rather than micas, so that the same file can print compatibly on
+the XGP and on the Dover.  A semicolon command starts with a semicolon
+followed by the name of the parameter, a space, and the argument.
+Semicolon commands can also be used to specify the parameters from the
+terminal, like switches.  In this case, the semicolon command sets the
+parameter for the next time that a command to actually print a file is
+seen.
+
+File: DOVER,  Node: Edit,  Previous: Switches,  Up: Top,  Next: XGP
+
+Input Editing Commands
+
+^C	like CR, but return to DDT after this line
+	 if no error is encountered.
+^D	flush entire input buffer
+^H	same as RUBOUT
+^L	re-display the buffer
+^Q	quote the next character in a file specification
+^U	kill current line
+
+A line does not necessary constitute a complete command if it is a
+semicolon-command which specifies a parameter for the printing.  In
+this case, the first line which is not a semicolon command finished
+the complete command, and until that line is finished it is still
+possible to rub all the way back through the lines containing the
+semicolon command.  Also, a syntax error in a line deletes only that
+line, and not previous lines which were part of the same complete
+command.
+
+File: DOVER,  Node: XGP,  Previous: Edit,  Up: Top,  Next: Spruce
+
+Printing XGP Files with :DOVER
+
+  There are two types of commands that can go in files printed on the
+XGP, in addition to ordinary text.  First, there are semicolon
+commands which serve the same purpose as parameter setting switches.
+Second, there are the short sequences of characters used for font
+switching, underlining, etc.  These are called "XGP escapes".
+
+  The first page of the file may contain "modifier commands", such as
+";LFTMAR" to specify the left margin, or ";VSP" to specify the vertical
+spacing.  *Note Modifiers: Switches, for a description of modifier
+commands, the semicolon forms of switches.  Each command must
+be on a separate line, with the semicolon at the beginning of the line.
+Unrecognized commands are ignored, in case the file simply happened to
+contain lines starting with a semicolon.  A nonempty line which does
+not start with a semicolon indicates that there are no more commands.
+
+  Unless you specify otherwise, the semicolon commands will be printed
+just like all the rest of the page.  To avoid that, reserve the first
+page for semicolon commands only, and include a ";SKIP 1" among them,
+so that the first page will not be printed at all. 
+
+  Many of the semicolon commands meaningful to the XGP are
+intrinsically meaningless for the DOVER.  They will be ignored.  They
+include ;KSUBSET and ;SQUISH for loading only selected characters of a
+font (since the Dover doesn't need to worry about this), and the
+parameters controlling paper size (since the Dover uses precut paper).
+
+  The XGP allows the file to specify its own fonts with a ;KSET
+command.  :DOVER cannot use the XGP font file names which appear
+therein, so you must specify the Dover fonts explicitly in the command
+line when you ask to print the file.  There is a facility in :DOVER
+for knowing the Dover equivalents of specific XGP font files, but as
+of now no equivalences are known.
+
+  The XGP file can also specify the names of the Dover fonts directly
+with the ;DFONTS command, as in ";DFONTS HELVETICA10,HELVETICA10I".
+Why would an XGP file contain Dover font names?  Only if it were
+written by a program which used to write output for the XGP and has
+been converted to know about Dover fonts and the FONTS WIDTHS file but
+not to write real PRESS files.
+
+  Once printing is under way, :DOVER is compatible with the XGP,
+except that a couple of XGP escape codes are not implemented.
+Note that some XGP escape codes will, when used, embody
+assumptions about the widths of characters in various fonts, and
+it is quite likely that these assumptions will turn out false
+when the Dover fonts aren't precisely compatible with the
+analogous XGP fonts on which the assumptions were based.
+
+  *Note XGP: (XGP)Files, for more details on the format of XGP files.
+
+File: DOVER,  Node: Spruce,  Previous: XGP,  Up: Top,  Next: DPRESS
+
+Spruce is the name of the program that controls the Dover.  It
+normally receives and prints Press files (it does not accept
+text files, unlike the XGP).  There are some things that you can
+do via typing to Spruce on the Alto by the Dover that cannot be
+done other ways.  For example, it is possible to separately
+disable SPOOLING (that is, receipt and local storage of files on
+Spruce's disk) and PRINTING (the actual output of files).  This
+might be useful if you need to use special paper for some reason
+(e.g., thesis).  It is suggested that you read the Spruce
+Reference Manual through (skipping the sections on installation)
+before doing this, so you don't screw things up.  A few minutes
+reading is better than accidentally deleting unprinted files,
+etc.  There should be a copy of that manual on top of the disk
+underneath the table with the output sorting bins on it.  Make
+sure it doesn't wander.  Naturally you should be sure to leave
+spooling and printing on when you are done.  Casual Spruce
+hacking is a no-no; further, if you must hack Spruce, try to do
+it at non-peak times, or many angry users may descend on you.
+
+Overflow protection - if you play around with Spruce, please
+leave it in JOB overflow protection mode.  Overflow protection
+refers to counting pages to make sure the output bin does not
+overflow (it would be a real mess it stuff just fell on the
+floor!) CONTINUOUS overflow protection means it stops every 500
+pages or so, waiting for somebody to say it's OK to go ahead.
+The output usually is filed fast enough that this is a loss --
+it won't overflow, but there often is not someone there to type
+P to tell it to go ahead.  JOB overflow protection means stop if
+there is more than 500 pages in a single output request, and
+wait for confirmation.  It is possible to turn overflow
+protection completely off, but job mode seems a better idea.  To
+get job mode, type 6<Carriage-return> at Spruce.
+
+Care and feeding of the Dover -- although things like putting in
+more paper, toner, or fuser oil, and clearing jams are simple
+operations, it is asked that you NOT do them unless you have
+been specifically trained.  The reason is that if they are not
+done well, a number of problems can result.  For example, care
+must be used in putting in more paper, or many jams will result
+(probably AFTER the person who put the paper in is long gone).
+Use care and common sense -- leave anything you don't thoroughly
+understand to the experts.
+
+File: DOVER,  Node: DPRESS,  Previous: Spruce,  Up: Top, Next: Top
+
+Documentation for DPRESS:		DPRESS 564, 2/13/81
+
+DPRESS is a program for displaying PRESS files. Currently
+it displays on the PLASMA TV system centered in building 38
+and on Lisp Machines.
+
+DPRESS is invoked by
+	DPRESS^K
+or
+	:DPRESS [optional <file spec>]
+In the former, a file name is prompted for; in the latter it
+tries to use <file spec>. The directory defaults to your current
+working directory (MSNAME) and the second filename defaults to
+PRESS, so most of the time just the first filename is sufficient.
+If it can not find the file, it prompts again, and the components
+of the last filename as defaults for the new. For example, if you
+did
+	:DPRESS FOO;BAR
+but the press file is on directory BAZ, it is only necessary to say
+	BAZ;
+in response to the complaint.
+
+DPRESS then takes the file and does primative checking to insure
+it is a PRESS file, and makes a couple suggestions if it is not
+(such as making sure you have a \END in a TEX file).
+
+Now for the fonts -- and this gets hairy. It is unrealistic to
+use the full 384 bits per linear inch, since this would be about
+four times the diskspace per file than the XGP fonts take. So
+DPRESS resorts to ALTO fonts, which are about 80 bits per inch.
+This imposes severe resolution limitations, and the smaller fonts
+do look messy. A known and presently unsolvable problem is
+positioning of the Computer Math (CM) fonts, so some TEX files
+may come out a little funny.
+
+Page 1 is computed and the upper left hand corner is displayed.
+Commands are provided to position the page on the screen and to
+select a page of the document. These commands are documented
+within the program by typing ? (question mark).
+
+There are two associated mailing lists: BUG-DPRESS to report
+bugs, and INFO-DPRESS to receive information about changes.

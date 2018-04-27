@@ -1,0 +1,966 @@
+!* This is the EMACS INIT for FMF and KRONJ.  Compressed code
+   generated from this file should be suitable for both ITS and TNX.
+   Warning: some of this file is very hackish.  Use at your own risk.
+
+   A typical EMACS INIT based on this library might be:
+	:i*David Eppsteinm.vBabyl Personal Name
+	m(m.mLoad Library)HAKLIB
+	:m(m.m& Setup HAKLIB Environment)
+
+   It should be safe to just load this library; it won't cause any
+   permanent damage to your EMACS.  If you load it twice, though...
+   !
+
+!~Filename~:! !EMACS macros for FMF and KRONJ!
+HAKLIB
+
+!& Setup HAKLIB Library:! !S Necessary stuff for the library to work!
+
+ 1 f[No Quit				!* do not let us mung ourselves!
+
+ m.l Saved_Point_Vector		!* make local variable for c-x j!
+ %Initial_Local_Count			!* increment permanent local count!
+
+ 0fo..q Buffer_Creation_Hook m.v HAKLIB_Old_Buffer_Creation_Hook
+ :m(m.m &_HAKLIB_Buffer_Creation_Hook m.v Buffer_Creation_Hook)
+					!* Make vars for all bufs (Main too)!
+
+!& Kill HAKLIB Library:! !S Remove pure hooks etc.!
+!* Do not kill this library if & Setup HAKLIB Environment has been run.
+   Too many things are in pure space and will break.!
+
+ qHAKLIB_Old_Buffer_Creation_Hook uBuffer_Creation_Hook
+
+!& Setup HAKLIB Environment:! !S Do the actual initialization!
+
+ 1 fs No Quit				!* Disable ^G until we get through   !
+ !"! 0fs ^R Initu..' 0u:.X()	!* Flush c-X c-R (set again on ITS)  !
+
+!******************** Hooks needed before lib loading ***********************!
+ 2401 m.v SLOWLY_Maximum_Speed			!* Use slowly up to 2400 baud!
+ m(m.m &_HAKLIB_TTY_Macro f(fs TTY Macw))	!* Set our fancy tty macro   !
+ m.m &_HAKLIB_Set_Mode_Line_Hook uSet_Mode_Line_Hook !* and mode line hook!
+
+!******************** Preliminary rearrangement of keys *********************!
+ q...Du.../				!* c-m-/: ^R Down List		     !
+ q...Ku...D				!* c-m-D: ^R Kill SexP		     !
+ q.Wu...K				!* c-m-K: ^R Kill Region	     !
+
+ m.m ^R_Autoargumentu..- 460.-1[0	!* Set meta-minus and meta-digits    !
+ 10<q..-,(%0)@fs ^R CMac>		!* So Alt 1 2 always gives arg of 12 !
+
+!******************** Make a new prefix char or two *************************!
+ m(m.m Make_Prefix_Character).UU.\	!* c-\: new prefix (orig pref meta)  !
+ m(m.m Make_Prefix_Character).DU.W	!* c-W: mode-dependant prefix	     !
+ qPrefix_Char_List[0			!* Add to list of prefixes	     !
+ :iPrefix_Char_List0 Control-\__q.U î  Control-W__q.D î 
+
+!******************** Load some libraries, set some keys ********************!
+!* Libraries should be loaded in the order most convenient for killing them  !
+
+ m.m Load_Library [L			!* L: Library Loader		     !
+ fs X JName:f6[J			!* J: jobname, for now and later     !
+ fs OS Teco"e mL Sends		!* Handle tty messages nicely on ITS !
+    1uSends_Doc			!*   Simpler notification	     !
+    m.m ^R_Send/PrSendU:.X()'	!*   c-X c-R: Read or send tty msgs  !
+ fs O Speed-2401"l mL Slowly		!* Be nice to my slow terminal	     !
+    m.m ^R_Set_Screen_SizeU:.X(S)'	!*   c-X S:   Use less of screen     !
+ qEMACS_Version-161"g			!* In EMACS 162 or greater	     !
+    mL Complt'				!*   Completing reader for buf names !
+ mL ScrLin				!* Move by screen lines, not text    !
+ 1:<mL FixLib				!* Stuff for editing EMACS code	     !
+    m.m Examine_FunctionU:.X()	!*   c-X c-E: Examine a function     !
+    m.m ^R_Examine_KeyU:.X()>	!*   c-X c-K: Examine a q-reg or key !
+ f=JMM"n 1:<mL MWind>'		!* More than 2 windows on the screen !
+ 1:<mL XPage>				!* Winning paging		     !
+ 1:<mL Sketch				!* Kent's template system	     !
+    m.m^R_Sketch_DispatchU:.U(S)>	!*   c-\ S:   Template prefix	     !
+ mL TDebug				!* Better TECO debugging system	     !
+
+!******************** Copies of funcs from other libs ***********************!
+ m.m &_Impurify[I			!* I: function copier		     !
+ mI IVORY ^R_Ivory-Bound_This_Page	!* From IVORY:	Like set bounds page !
+ mI TMACS ^R_Break_Line		!* From TMACS:	Break line in middle !
+ mI TMACS Uncontrolify		!* 		Make ctrls printable !
+ mI TMACS ^R_Uppercase_Last_Word	!*		Backwards uppercasify!
+ mI TMACS ^R_Lowercase_Last_Word	!*		Backwards lowercasify!
+ mI TMACS ^R_Uppercase_Last_Initial	!*		Backwards capitalize !
+
+!******************** Miscellaneous commands ********************************!
+ 0uDisplay_Matching_Paren		!* Don't jump back to matching paren !
+ 1uDisplay_Mode_Line_Inverse		!* Put mode line in reverse video    !
+ 1uError_Messages_in_Echo_Area	!* Err msgs under mode line - big win!
+ 1uAuto_Save_Default			!* Auto-save so crashes aren't as bad!
+
+ 1m.v Suppress_Blanking		!* Don't blank on exit at SCORE	     !
+ 1m.v Next_Screen_Context_Lines	!* Overlap windows by only one line  !
+ 1m.v Tags_Find_File			!* I like lots of buffers	     !
+
+ m.l Overwrite_Mode			!* make overwrite mode local	     !
+ %Initial_Local_Count			!* increment permanent local count   !
+
+ m.m &_HAKLIB_WORDAB_Setup_Hookm.v WORDAB_Setup_Hook
+
+ fs OS Teco"n				!* on TOPS-20			     !
+    g (fs XUName) j<:s.;> 0,.k	!* get last field of uname in buffer !
+    [U hfxU				!* save in qU			     !
+    :i* SCR:U-SAVE..0 m.v Auto_Save_Filenames
+    fs HSName u0 :i* 0U.BABYL m.v Babyl_Default_File
+    '					!* set default filenames from it     !
+
+ :iAuto_Push_Point_Notification_(Mark_Set)	!* More informative than ^@  !
+
+ m.m Save_All_Files m.v MM_Save_Some_Buffers	!* Rename Save All Files     !
+ m.m ~DOC~_Save_All_Files m.v MM_~DOC~_Save_Some_Buffers
+ m.m ^R_Save_File m.v MM_Save_All_Files	!* So Compile wont call it   !
+ m.m ~DOC~_^R_Save_File m.v MM_~DOC~_Save_All_Files
+
+ :i*Extended_Command:_ m.v Read_Command_Prompt
+ :i*Instant_Command:_ m.v Instant_Command_Prompt
+
+ 1m.v Inhibit_TeX_Dollarsign		!*   No flashback to previous dollar !
+ m.m &_HAKLIB_TeX_Mode_Hook m.v TeX_Mode_Hook	!* when in TeX mode	     !
+
+ @:I*/m.m ^R_Examine_Next_M.M m.q X		!* X    examines next M.M    !
+      m.m ^R_Forward_Screen_or_Exit m.q _	!* <sp> goes on or exits     !
+      m.m ^R_Previous_Screen m.q H		!* <bs> shows previous screen!
+      :mTECO_Mode_Hook			!* set keys for TECO	     !
+     /m.v ExFun_Mode_Hook		!* When examining functions	     !
+
+ m.m &_HAKLIB_TECO_Mode_Hookm.v TECO_Mode_Hook
+					!* Set prefix keys for TECO code     !
+
+ @:I*/1m.l Auto_Fill_Mode		!*   Auto fill (to column 70)	     !
+      0m.l Space_Indent_Flag		!*   Never indent on auto-fill	     !
+     /m.vText_Mode_Hookm.vScribe_Mode_Hook !* When in Text and Scribe modes!
+
+!******************** Set up for PASCAL *************************************!
+ 0m.v Reindent_ENDs			!* Dont mung previous line with tab  !
+ 1m.v Begin_on_Same_Line		!* Put Pascal BEGINs on right line   !
+ 0m.v Match_Block_Word			!* Indent Pascal from start of lines !
+ 4m.v Decl_Body_Indentation		!* Only 4 cols in from VAR, TYPE, etc!
+ 4m.v Procedure_Body_Indentation	!* 4 (not 0) cols in from block start!
+ 0m.v Global_Comment_Column		!* Start glob comments at left margin!
+
+ m.m &_HAKLIB_Pascal_Mode_Hookm.v Pascal_Mode_Hook
+
+!******************** Set up for macLISP ************************************!
+ m.m &_HAKLIB_LEDIT_Setup_Hook m.v LEDIT_Setup_Hook	!* Prepare for LEDIT !
+ 0m.v LEDIT_Save_All_Files_Query	!* Dont run Save All Files on exit   !
+
+ @:I*/-1m.l Display_Matching_Paren	!*   Check matching if on screen     !
+      40m.v Comment_Column		!*   Leave some room for comments    !
+      :i*(defun m.v Label_Search_Prefix !* Set up for Label Search	     !
+      :i* (m.v Label_Search_Suffix
+      :i*A'm.v Label_Content_Syntax
+     /m.v LISP_Mode_Hook		!* When in LISP mode		     !
+
+!******************** Set up for mail ***************************************!
+ :i*Babylm.v Mail_Reader_Library	!* I want to read mail with Babyl    !
+ :i*BabylMm.v Mail_Sender_Library	!* BabylM is much quicker to load    !
+
+ -1m.vBabyl_N_After_D			!* Go back if nothing ahead	     !
+
+ m.m &_HAKLIB_Babyl_M_Hook m.v Babyl_M_Hook	!* M prompts for To, Re,     !
+ m.m &_HAKLIB_Babyl_R_Hook m.v Babyl_R_Hook'	!* sets Bcc (like R)	     !
+
+ m.m &_HAKLIB_Babyl_Survey_FROM/TO_Control m.v Babyl_Survey_FROM/TO_Control
+					!* More compact from/to, add date    !
+
+ 0fo..q HAKLIB_Babyl_Label_Answered"e	!* unless want answered,!
+ @:i*| 1,-1m(m.m &_Label_Babyl_Message) to_answer |m.v Babyl_R_Done_Hook'
+					!* Dont label answered, flush to ans !
+
+ 0m.v Babyl_Strip_Local_Host		!* Don't remove the " at SITE"       !
+ 1m.v Babyl_Day_of_Week_Flag		!* Include day of week in dates	     !
+ 
+!******************** Headers to flush (alphabetical) ***********************!
+
+ :i* [Address] [Full-Name] [Keywords] [In-Real-Life] [In-Reply-To] [Location]
+     [Mail-From] [Message-id] [Office] [Phone] [Postal-Address] [Rcvd-Date]
+     [Received] [Redistributed-To] [Redistributed-By] [Redistributed-Date]
+     [Remailed-Date] [Remailed-From] [Remailed-Sender] [Remailed-To]
+     [ReSent-Cc] [ReSent-Date] [ReSent-From] [ReSent-Sender] [ReSent-To]
+     [Return-Path] [Stanford-Phone] [Telephone] [Via]
+    m.v Babyl_Reformation_Flushes_These_Fields
+
+!******************** More rearrangement of keys ****************************!
+ q...(u...[ q...)u...]		!* c-m-[,]: Forward, backward up list!
+ q..^u..! q...^u...!		!* m-exl:   Join lines, del indent   !
+ q.^u..^ 700. fs ^R Initu...^	!* m-^:     Prefix control, self-ins !
+ q...Wu:.U(A)			!* c-\ A:   Append next kill	     !
+ q..Su:.U(C)			!* c-\ C:   Center line		     !
+ q..Ru:.U(E)			!* c-\ E:   Cursor to screen edge    !
+ q..Qu:.U(F)			!* c-\ F:   Fill paragraph	     !
+ q[u:.U()				!* c-\ c-\: Prefix Meta		     !
+
+!******************** From lib EMACS ****************************************!
+ m.m ^R_Character_SearchU..S		!* m-S:     Search forward for char  !
+ m.m ^R_Reverse_Character_SearchU..R	!* m-R:     Search backward for char !
+ m.m ^R_View_Q-regU..Q		!* m-Q:     See what's in a q-reg    !
+ m.m CompileU..Z			!* m-Z:     Save file and compile it !
+ m.m ^R_Just_One_SpaceU.._		!* m-sp:    Kill spaces down to one  !
+ m.m ^R_Indent_Comment_RelativeU.;	!* c-;:     Start comment lined up   !
+ m.m ^R_Indent_NestedU...I		!* c-m-I:   Indent under prev lines  !
+ m.m ^R_Indent_RelativeU..I		!* m-I:     Line up with words above !
+ m.m Revert_FileU..*			!* m-*:     Undo changes since save  !
+ m.m ^R_Count_Lines_PageU...=	!* c-m-=:   Say how big the page is  !
+ m.m Rename_BufferU:.U()		!* c-\ c-B: Change name of buffer    !
+ m.m Set_Visited_FilenameU:.U()	!* c-\ c-F: Change filename of buf   !
+ m.m ^R_Indent_to_ColumnU:.U(9)	!* c-\ tab: my winning tab macro     !
+ m.m ^R_Down_Indented_LineU:.U()	!* c-\ c-N: Start of text on next lin!
+ m.m ^R_Up_Indented_LineU:.U()	!* c-\ c-P: Start of text on prev lin!
+ m.m View_BufferU:.U()		!* c-\ c-V: View a buffer	     !
+ m.m ^R_Kill_Terminated_Wordu:.U(D)	!* c-\ D:   Kill word, following char!
+ m.m Insert_FileU:.U(I)		!* c-\ I:   Insert a file	     !
+ m.m ^R_Next_Several_ScreensU:.U(N)	!* c-\ N:   c-V, but arg = # screens !
+ m.m ^R_Previous_Several_ScreensU:.U(P) !*  P:   m-V, but arg = # screens !
+ m.m UndoU:.U(U)			!* c-\ U:   Undo last major change   !
+ m.m View_FileU:.U(V)		!* c-\ V:   View a file		     !
+ m.m Insert_BufferU:.U(Y)		!* c-\ Y:   Insert a buffer	     !
+
+!******************** From lib TWENEX ***************************************!
+ fs OS Teco"n m.m Rerun_CCLU:.X(Z)	!* c-X Z:   Save, repeat exec command!
+    m.m Push_to_EXECU:.X(@)'		!* c-X @:   Push to inferior EXEC    !
+
+!******************** Impure copies and autoloaders *************************!
+ m.m ^R_Break_LineU..O		!* m-O:     Middle of line autofill  !
+ fs OS Teco"n m.m ^R_WhoeditU...W'	!* c-m-W:   Add to edit history	     !
+    "# 0 fs ^R InitU...W'		!*          or on ITS undefined	     !
+ m.m Buffer_MenuU:.X()		!* c-X c-B: ^R on list of buffers    !
+ m.m ^R_Uppercase_Last_InitialU:.X(C)!* c-X C:   m-C, but backwards	     !
+ m.m ^R_Lowercase_Last_WordU:.X(L)	!* c-X L:   m-L, but backwards       !
+ m.m ^R_Uppercase_Last_WordU:.X(U)	!* c-X U:   m-U, but backwards       !
+
+!******************** From this file ****************************************!
+ m.m ^R_New_WindowU..W		!* m-W:     Choose a better window   !
+ m.m ^R_Refresh_ScreenU.L		!* c-L:     Really refresh screen    !
+ m.m ^R_Swap_Chars_Before_PointU.T	!* c-T:     My winning char twiddler !
+ m.m ^R_Find_Unmatched_ParenU...(	!* c-m-(:   Find ( without )	     !
+ m.m ^R_Super_ParenthesisU...)	!* c-m-):   Complete defun parens    !
+ m.m ^R_Find_Long_LineU:.U()	!* c-\ c-E: Look for overflowing line!
+ m.m ^R_Auto_SaveU:.U()		!* c-\ c-S: Run an auto-save	     !
+ m.m ^R_Change_Case_LetterU:.U()	!* c-\ c-T: Twiddle capitalization   !
+ m.m ^R_Run_TecoU:.U()		!* c-\ esc: Read a line and macro it !
+ m.m ^R_Label_SearchU:.U(.)		!* c-\ .:   Jump to label	     !
+ m.m ^R_Move_to_Screen_BottomU:.U(B)	!* c-\ B:   Go to bottom line of scr !
+ m.m ^R_Move_to_Screen_TopU:.U(T)	!* c-\ T:   Go to top line of screen !
+ m.m ^R_Zap_to_CharacterU...S	!* c-m-S:   Search and destroy       !
+ m.m ^R_Reverse_Zap_to_CharacterU...R!* c-m-R:   Reverse search and kill  !
+ m.m ^R_Previous_BufferU:.X(\)	!* c-X \:   Go to previous buffer    !
+ m.m ^R_Save/Restore_PointU:.X(J)	!* c-X J:   Save or restore position !
+
+!******************** Final dealer prep and handling ************************!
+ 1:<er EMACS;SITE_INIT @y m(hfx*)>	!* Run local init if there is one    !
+
+ fs MSName:f6u0			!* get connected dir name	     !
+ fs OS Teco"e fs XUName:f6[U		!* on ITS get username		     !
+    et DSK:0;U_FOO'		!* and set filename default	     !
+ "# et 0FOO.BAR'			!* on T20 don't need uname to set def!
+
+ :iEditor_Name ModE			!* rename ModE (Modified EMACS)	     !
+ :i..J ModE_ 1fsModeCh		!* set mode line (maybe reset later) !
+
+ 0fs No Quit				!* Ok to ^G out now		     !
+
+ :m(1,m.m &_Startup_J f"e w m.m &_Read_JCL') !* go to handler for jobname!
+
+!& Impurify:! !S Impurify a function from a given library!
+
+ 1,f Library:_( 1,f Function:_[1 )[0	!* 0,1: Library, func!
+ :g(m.a 0 1) m.v MM_1			!* copy main function!
+ :g(m.a 0 ~DOC~_1) m.v MM_~DOC~_1	!* copy documentation!
+ 					!* Pop so library gets unloaded!
+
+!& Get JCL:! !S Get cleaned up JCL into current buffer!
+
+ z"e fj' j @f î  _k		!* get JCL, flush leading whitespace!
+ zj ."e 0fs Modifiedw 0fs X Modified '	!* exit quietly if nothing!
+
+ 0,0a-"e -d'			!* remove cr and lf at end if any!
+ 0,0a-î"e -d'
+ 
+
+!& Read JCL:! !S Interpret JCL as filename to visit!
+
+ 0[1 [0					!* save used q-regs!
+
+ m(m.m &_Get_JCL)			!* get the JCL in the buffer!
+ j :s"n .,z@fx1 -d'			!* 1: commands to execute if any!
+ hfx0					!* 0: name of file to read!
+ 0fs Modifiedw 0fs XModified		!* flush rest of buffer!
+
+ fq0"n m(m.m Find_File) 0'		!* if we have a file, visit it!
+ fq1"g m1'				!* run JCL if any!
+ 					!* finished with initialization!
+
+!& Startup BABYL:! !& Startup B:! !S Babyl subsystem!
+
+ m(m.m &_Run_Subsys) Babyl		!* never returns...!
+
+!& Startup INFO:! !S INFO subsystem!
+
+ m(m.m &_Run_Subsys) Info		!* never returns...!
+
+!& Run Subsys:! !S Run string arg as subsys!
+!* For use by & Startup BABYL and & Startup INFO...
+   Assumes macro name is same as library name is same as editor name.!
+
+[0 :i*[1				!* 1: Subsys name.  Save 0 for later!
+
+ "e mL 1				!* if not given arg, load lib!
+    :iEditor_Name 1		!* rename EMACS!
+    :i..J 1_				!* set mode line!
+    @:i..L |1m(m.m &_Run_Subsys)1|	!* repeat on startup!
+    '
+
+ m.m 1u1				!* get macro to run!
+ m.m ^R_Return_to_Superior[R		!* R: macro to exit EMACS!
+
+!again!					!* provide label for loop!
+ fs TTY Macf"n uA mA'			!* maybe run TTY macro!
+ f[BBind m(m.m &_Get_JCL)		!* get JCL into a scratch buffer!
+ hfx0 f]BBind				!* copy it into A!
+ m1 0				!* run the subsystem!
+ mR o again				!* exit EMACS, then run it again!
+
+!& Startup LEDIT:! !S Process JCL for LISP editor!
+
+ :iEditor_Name LEDIT :i..J LEDIT_	!* set editor name and mode line!
+ m(m.m LISP_Mode)			!* set LISP mode for Main buffer!
+ 0fs Superior				!* clear fs Superior for some reason!
+ mL LEDIT				!* load library!
+ :m(m.m &_Read_JCL)			!* process JCL!
+
+!& Startup MM:! !S Process JCL for MM inferior!
+!* Note that we also special-case for whether jobname is MM before we
+   load MWIND library (it doesn't work very well with MMAIL)!
+
+ :iEditor_Name MMail :i..J MMail_	!* set editor name and mode line!
+ mL MMail				!* does setup and resets ..L!
+ :m(m.m &_Read_JCL)			!* process JCL!
+
+!Test Load:! !C Load any modified macros into Mm-vars and ^R-keys.
+g(m.aIVORY~DOC~ Test Load)jk!
+
+!* Previous garbage is to insert actual documentation from IVORY.!
+
+!* This is unsuitable for & Impurify because it calls too many other macros.
+   It does not call itself recursively forever because this library
+   will be loaded before IVORY so M.A will find the IVORY version.!
+
+ f:m(m.a IVORY Test_Load)
+
+!Buffer Menu:! !C Display information about all buffers.
+g(m.aTMACS~DOC~ Buffer Menu)jk!
+
+!* This is like Test Load.  It works with & Impurify, but the macro is
+   about 2000 characters long, and I would rather not clog up impure space
+   with a string that long.!
+
+ f:m(m.a TMACS Buffer_Menu)
+
+!Grammar Mode:! !& GRAMMAR Mode:! !C Set up for CS143 parser grammars.!
+
+ m(m.m &_Init_Buffer_Locals)		!* Flush local vars!
+ m.m ^R_Indent_Relative m.q I	!* Tab runs Indent Relative!
+ 1m.l Space_Indent_Flag		!* Indent with spaces only!
+ 40m.l Comment_Column			!* Columns at column 40!
+ :i*-- m.l Comment_Start		!* With two dashes!
+ :i*--_ m.l Comment_Begin		!* And an extra space for pretty!
+ 1m(m.m &_Set_Mode_Line) Grammar	!* Pretty mode line!
+
+!& NOTES Mode:! !S Set up for editing notes to myself.!
+
+ :m(m.m Text_Mode)			!* This runs Text mode!
+
+!MIDAS Mode:! !C Set up for editing PDP-10 assembly language.!
+
+!* A pre-comma argument is the name of the mode, eg FAIL or MACRO.
+   This differs from the standard in not setting Ctrl-Meta chars, and
+   in the setting of q.D as a mode prefix dispatch.!
+
+ m(m.m &_Init_Buffer_Locals)		!* flush local vars!
+
+ 1m.l Space_Indent_Flag		!* auto-fill indents!
+ 9fs^R Initm.q I			!* tab self-inserts!
+ 32m.l Comment_Column			!* comments align to column 32!
+ (:i*+1)m.l Comment_Rounding		!* rounded up to the nearest column!
+ (:i*;)f(m.l Comment_Startw)m.l Comment_Begin
+					!* comments begin with semicolon!
+ :i*î  m.l Label_Search_Prefix	!* labels start with CrLf!
+ :i*:= m.l Label_Search_Suffix	!* and end with this!
+ :i*A m.l Label_Content_Syntax	!* only contain alphabetics!
+ 1,(:i*î )m.l Paragraph_Delimiter	!* blank lines delimit paragraphs!
+
+ [2 fq2:"g :i2 MIDAS'		!* 2: name of mode!
+
+ 0fo..q MIDAS_Mode_Dispatch f"n (1,) m.q .D'	!* set old prefix!
+ "# w 96*5fs Q Vector[0		!* or make a new one!
+    m.m ^R_Go_to_AC_Fieldu:0(A)		!* A: go to AC field!
+    m.m ^R_Go_to_Address_Fieldu:0(E)		!* E: go to Address field!
+    m.m ^R_Go_to_Next_Labelu:0(N)		!* N: go forward to label!
+    m.m ^R_Go_to_Previous_Labelu:0(P)	!* P: go backward to label!
+    q0m.v MIDAS_Mode_Dispatch (1,) m.q .D'	!* set dispatch to new vector!
+
+ 1m(m.m &_Set_Mode_Line) 2 	!* set mode line and exit!
+
+!C Mode:! !& C Mode:! !& H Mode:! !C Set up for editing C code!
+
+ m(m.m &_Init_Buffer_Locals)		!* clear all local variables!
+ 1,(m.m ^R_Tab_to_Tab_Stop) m.q I	!* tab tabs to tab stop!
+ 1,(:i*____:___:___:___:___:___:___:___:___:___:___:___:___:___:___:___:___:(
+    )) m.l Tab_Stop_Definitions	!* tab stops every 4 columns!
+
+ 1,40 m.l Comment_Column		!* start comments at column 40!
+ 1,(:i* +1) m.l Comment_Rounding	!* round columns to next possible!
+ 1,(:i* /*) m.l Comment_Start		!* comments start with slash star!
+ 1,(:i* /*_) m.l Comment_Begin	!* but add a space for legibility!
+ 1,(:i* _*/) m.l Comment_End		!* comments end with star slash!
+
+ @:i*| m(m.m &_Exit_EMACS)
+        declare_/noconfirm_pcl-routines_sys:cc.pcl
+       cc_1
+    | m.l Compile_Command
+
+ 1m(m.m &_Set_Mode_Line) C 		!* set mode line, run hook, exit!
+
+!PCL Mode:! !& PCL Mode:! !C Set up for editing PCL code!
+
+ m(m.m &_Init_Buffer_Locals)		!* clear all local variables!
+ 1,(m.m ^R_Indent_Relative) m.q I	!* tab runs indent relative!
+
+ 1,(@:i*| m(m.m &_Exit_EMACS)		!* clean up screen etc.!
+           declare_pcl_1	!* and load pcl-routines!
+|) m.l Compile_Command		!* when compiled!
+
+ :i* CommandProcedure m.l Label_Search_Prefix
+ :i* ;(_( m.l Label_Search_Suffix
+ :i* A m.l Label_Content_Syntax
+
+ 1,(:i*!)f(m.l Comment_Start) m.l Comment_Begin
+					!* start comments with exclam!
+ 1m(m.m &_Set_Mode_Line) PCL 	!* set mode line, run hook!
+
+!# TDebug C:! !C Exit backtrace and continue macro execution.!
+!* This function, which is on C on all other backtraces, lives on X in TDebug.
+   We define C here as a synonym to X so I don't have to remember that. !
+
+ f:m(m.m #_TDebug_X)
+
+!^R Change Case Letter:! !^R Twiddle case of next numarg letters!
+
+ [1 .[0					!* Save current position!
+ :i*abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ[2
+ f"lw -'<				!* Repeat arg times!
+    "l -@:f2f( -."e @fg .,q0')l -c'
+    "# @:f2f(-z"e @fg q0,.')l'
+    1a-Z"g 1a-z+Zu1'"# 1a-Z+zu1' f1 :"l c'>
+ .,q0f 				!* All done, return range of change!
+
+!^R Previous Buffer:! !^R Like c-X B Return.!
+
+qPrevious_Buffer:m(m.m Select_Buffer)
+
+!^R Forward Screen or Exit:! !^R View the next screenful.
+If there are no more, exit recursive ^R level.!
+
+!* This is to put on space for within Examine Function!
+
+ :f fs Window[0 .[1			!* save verified window and point!
+ zj :f				!* get new window at end of buf!
+ fs Window-q0"e m( fs ^R Init)'	!* if the same, exit ^R level!
+ q1j q0fs Window			!* else restore old point and window!
+ @:m(m.m^R_Next_Screen)		!* and go to next screen!
+
+!^R New Window:! !^R Find a new window for point.
+If given a numarg, tries to put point on that line;
+otherwise, tries to fit defun, paragraph etc. on screen.!
+
+!* The default function doesn't understand arguments.  So if we have an
+   argument we do the simple reposition, else call the default function
+   which does all the work.!
+
+ ff&1"n @:f 0'		!* check for argument!
+ @:m(m.m ^R_Reposition_Window)		!* call built-in to do all the work!
+
+!^R Refresh Screen:! !^R Tell TECO the screen should be repainted.
+With no arguments, says the entire screen is dirty.  A numerical
+argument refreshes that line, relative to the current line.
+One c-U is like an argument of 0.  Two c-Us refresh the current window.!
+
+!* This is a more winning refresher macro for c-L.!
+
+ ff&1"e -fs PJATYw '		!* no args?  refresh whole screen!
+ fs RGETTY"e m( fs ^R Init)'	!* printing tty?  do original c-L!
+ fs ^R ArgP&6"e			!* only c-Us as arg?!
+    fs ^R Expt-1"n			!* more than one c-U?!
+       f[Window f+ '			!* yes, just clear window!
+    "# 0''"# ' + (fs ^R VPos) f((	!* else get number of line to refresh!
+       -1,)fs Tyo Hash			!* clear hash code for that line!
+    )+1 f(-1,)@f 0			!* redisplay line and return!
+
+!^R Move to Screen Top:! !^R Go to first line of screen.!
+
+ ff&1f"n':m(m.m ^R_Move_to_Screen_Edge)
+
+!^R Move to Screen Bottom:! !^R Go to last line of screen.!
+
+ -:m(m.m ^R_Move_to_Screen_Edge)
+
+!^R Swap Chars Before Point:! !^R Switch the characters before point.
+Treats CRLFs as single characters.  Point is unchanged.!
+
+ .-b-2"l b+2:j"e @fg 0''		!* move up from beginning of buffer!
+
+ .(.-(0@L .)[0)j			!* 0: position on line!
+ q0"e .-b-2"e :c"e @fg' 1u0''		!* dont wanna NIB error!
+
+ q0"e -2au0 :i0î  0'		!* check for beginning of line!
+ "# q0-1"e 0au0 :i00 î '	!* and one after the begining!
+    "# -au0 0a[1 :i01 0''	!* 0: string to replace (2 or 3 long)!
+
+ .-(fq0)f0 -(fq0) 		!* replace string and return!
+
+!^R Save/Restore Point:! !^R Save or restore point.
+Reads a char from the echo area;  if it is an altmode, reads
+a long name.  If given an argument, labels point with that char
+or name;  otherwise, restores from a previously saved point.!
+
+!*******************************************************************
+** Note that one must do					  **
+**    2u:(5fsQVECTORm.vSaved Point Vector)(0)			  **
+** for this to work.  It also helps to make qSaved Point Vector **
+** local to each buffer; see my Buffer Creation Hook for details. **
+*******************************************************************!
+
+ [0[1[2[3				!* save q-regs used!
+
+ qSaved_Point_Vectoru2		!* 2: q-vector of point names and locs!
+ ff&1"'e u0				!* 0: nonzero if restoring!
+
+ m.i fi :fc u1				!* 1: Input char, upcased!
+ q1-33."n				!* If it isnt altmode ...!
+     q1-177. "e :i1 Delete'			!* Special-case delete!
+     "# q1-40."l q1+100.u1 :i1 Ctrl-1'	!* ^X becomes Ctrl-X!
+	      "# q1:i1'''			!* other chars become string!
+
+ "# :i*C fs Echo Dis		!* Altmode - clear the echo area!
+     q0"e 3,m(m.m &_Read_Line) Named_Point:_ u1' !* Save reads a new name!
+       "# :i* Name_ [CRL_Prefix	!* Restore uses completing reader!
+	  q2[CRL_List			!*   on list of saved point names!
+	  2,m(m.m &_Read_Command_Name) Named_Point:_ u1'
+     fq1:"g 0'			!* Abort on overrubout or null name!
+     :i*Name_1u1'			!* Else prepend "Name "!
+
+ @:fo21u3				!* 0: position of name in list!
+
+ q0"e .u0 q2[..o			!* Saving - look at list of points!
+     q3"l -q3*5j 10,0i -10c q1,.fs Word 5c' !* not already there - make new!
+       "# q3*5+5j'			!* else go to old one!
+     q0,.fs Word'			!* save point!
+
+ "# q3"l :i* 1_holds_no_saved_point @fg'	!* Restore - make sure exists!
+    "# .u0 q:2(q3+1):j"e :i* Out_of_range @fg'	!* Jump, err if bad!
+       "# q0m(m.m &_Maybe_Push_Point)'''	!* Set Mark if long jump!
+
+ 0					!* Exit and say buf wasnt modified!
+
+!^R Indent to Column:! !^R Insert whitespace at start of line.
+Arg (default 8) is number of columns.  If already within indentation,
+adds to it.  A zero arg always deletes all indentation.!
+
+ z-.[0 fn z-q0j 0l .[2			!* 0: saved point; 2: start of line!
+ ff&1"e 8'"# ' [1			!* 1: amount to indent!
+ @f_	L fs S HPos[3 q2,.k	!* 3: previous indent; kill indent!
+ z-.-q0"g q1'"# z-.u0 q1f"n+q3''mMM_&_Xindent	!* do the indentation!
+					!* maybe change saved point, add hpos!
+ q2+(q3/8)-. f"g w0'  		!* exit (old point will be restored)!
+
+!^R Zap to Character:! !^R Kill to next occurrence of character!
+
+ 0[Auto_Push_Point_Option		!* dont let char search set mark!
+ .[1 [9				!* 1: current point, 9: direction!
+ @m(m.m ^R_Character_Search)		!* read a character and search for it!
+ q1,. f  :m(m.m &_Kill_Text)		!* make the kill and return!
+
+!^R Reverse Zap to Character:! !^R Kill to previous occurrence of character!
+
+ -:m(m.m ^R_Zap_to_Character)
+
+!^R Run Teco:! !^R Read a string and macro it.!
+
+ 1,m(m.m &_Read_Line) Teco:_ [0	!* 0: string to macro!
+ fq0:"g 0'				!* Don't do anything if it's empty!
+
+ f=(q:.n(0)f"e w:i*')0"n		!* Different from last minibuf?!
+   q.n[..o zj -5d			!*   remove last entry in stack!
+   j 5,0i ]..o				!*   make room at the front!
+   q0u:.n(0)'				!*   add our string!
+
+ @m(q0 (]0)) w			!* Unwind, macro it, and return!
+
+!^R Whoedit:! !^R Update edit history.
+A variable VEDIT in the first 500 lines is incremented.!
+
+ qComment_Beginf"e qComment Startf"ew :i*;_''[B
+ qComment_Endf"ew :i*'[E			!* B: comment begin, E: end!
+ z-.[Z @fn|z-qzm(m.m &_Maybe_Push_Point)|	!* make sure we save point!
+
+ 0f[VB j gB qBuffer_Filenamesf"n f[DFile'	!* Set default filenames!
+ f=(fsDDevice)PS"n g(fsDDevice) :i'	!* Add device maybe!
+ <i g(fsDSName) >i				!* and directory!
+ g(fsDFn1) .i g(fsDFn2) .i		!* and filenames!
+ fsDVersionf"ew e?"n 1'"# e[ere] fsIFVers+1''\ !* and extension!
+ i,_ 0,-1fsFDConv i,_Edit_by_ g(fsXUName)	!* and time and author!
+ gE iî  gB .[0 fnq0j gE iî  0,.@v	!* Start next comment line!
+ 
+ 1< 500:fbî VEDIT;			!* Look for VEDIT!
+    @f_	L			!* Skip over spaces!
+    1,1a-=@:;			!* Make sure we have an equals!
+    @:f01234567f(-z@;)L		!* Go to start of number!
+    8[..E 8f[IBase			!* Working in octal!
+    .(\[0)f(,.k %0\),. >		!* Update the VEDIT!
+ 0
+
+!^R Auto Save:! !^R Run an auto save to protect buffer from munging.!
+
+ Q:.B(qBuffer_Index+4!*bufbuf!)[..O	!* in original buffer!
+ f[DFile				!* save default file!
+ 1:<1,1m(m.m ^R_Save_File)>"l		!* run auto save carefully!
+    :i* Auto_save_failed @fg'		!* if failed, say so!
+ 0
+
+!^R Find Long Line:! !^R Find a line longer than the terminal width.
+Starts at point.  An argument if given is used instead of tty width.!
+
+ .[0 fnq0j				!* Save point against unfound or c-G!
+ ff"n '"# fsWidth'[1		!* 1: Width to check against!
+ <.-z; 2@:L fs S H Pos-q1"g .u0 0'>	!* Go to next line, check width!
+ :i* No_long_lines_found @fg 0	!* Nothing found, complain!
+
+!^R Find Unmatched Paren:! !^R Find open paren without matching close.!
+
+ zj -ful				!* from end of buf, back up level!
+
+!^R Super Parenthesis:! !^R Insert enough )s to finish top level DEFUN!
+
+!* This macro was originally from ECC, but has been modified
+   so much as to be barely recognizable by now!
+
+!* For the purposes of this macro, a DEFUN is anything with a letter-like
+   or parenthesis-like character in the first column.!
+
+ .-z[0 .[1				!* 0,1: point from end,start of buf!
+ -:sî (î A 		!* go to beginning of defun!
+ fdl .-1[2				!* 2: place to match paren to!
+ q0+zj					!* start back where we were!
+ < -fll .-q2-1:;			!* exit loop if finished, else!
+   q0+zj -ful 1a*5+2 (q0+zj) :g..D i >	!* insert matching paren and continue!
+ q0+zj q1,.				!* return!
+
+!& HAKLIB LEDIT Setup Hook:! !S Set keys for LISP editor!
+
+ :iDefault_Major_ModeLISP		!* Assume we only want to edit LISP  !
+
+ m.m ^R_LEDIT_Find_Functionu....	!* c-m-.: search for DEFUN    (undef)!
+ m.m ^R_LEDIT_Save_DEFUNu...Y	!* c-m-Y: save DEFUN for zap  (undef)!
+ m.m ^R_LEDIT_Zap_to_LISPu:.X(Z)	!* c-X Z: return to LISP   (Last CCL)!
+ m.m ^R_LEDIT_Zap_DEFUN_to_LISPu..Z	!* m-Z:   zap form back     (Compile)!
+
+!& HAKLIB WORDAB Setup Hook:! !S Set keys for word abbreviation!
+
+ m.m ^R_Add_Global_Word_Abbrevu:.X(+)	 !* c-X +:   make new abbrev !
+ m.m ^R_Inverse_Add_Global_Word_Abbrevu:.X(-) !* c-X -:   same backwards  !
+ m.m ^R_Add_Mode_Word_Abbrevu:.U(+)		 !* c-\ +:   local  (c-X c-A)!
+ m.m ^R_Inverse_Add_Mode_Word_Abbrevu:.U(-)	 !* c-\ -:   local  (c-X c-H)!
+ m.m ^R_Word_Abbrev_Prefix_Marku:.X( )	 !* c-X c-@: region     (m-')!
+ m.m ^R_Abbrev_Expand_Onlyu..._		 !* c-m-sp:  expand abbrev   !
+ m.m ^R_Unexpand_Last_Wordu:.X(_)		 !* c-X sp:  unexpand (c-X U)!
+
+!& HAKLIB TECO Mode Hook:! !S Set prefix keys for editing TECO code!
+
+ :i* ! m.l Label_Search_Prefix		!* labels begin with excl!
+ :i* :! m.l Label_Search_Suffix		!* end with colon-excl!
+ :i* _A m.l Label_Content_Syntax	!* can have space or letter!
+
+ 0fs ^R Init f(u..") u..'		!* Undefine m-" and m-'!
+
+ 0fo..q TECO_Mode_Dispatchf"n (1,) m.q .D '
+					!* If already done, just set dispatch!
+ 1,m.m &_File_PURIFY_Loaded"e		!* If no PURIFY or IVORY!
+    m(m.m Load_Library) PURIFY'	!* then load one in!
+ 96*5fs Q Vector[0			!* Else make prefix dispatch in q0!
+ m.m ^R_Backward_Teco_Conditionalu:0(")	!* ": forward conditional!
+ m.m ^R_Forward_Teco_Conditionalu:0(')	!* ': backward conditional!
+ 1,m(m.m &_Get_Library_Pointer) FIXLIB"n	!* FIXLIB library loaded?!
+   m.m ^R_Insert_Variable_Nameu:0(V)		!* V: insert completed var!
+   m.m ^R_Insert_EMACS_Functionu:0(F)	!* F: insert completed func!
+   m.m Goto_Teco_Functionu:0(G)		!* G: goto def of named macro!
+   m.m Who_Usesu:0(W)			!* W: list callers of macro!
+   m.m Trace_Function_Callu:0(W)		!* T: trace calls to macro!
+   m.m Untrace_Function_Callu:0(W)		!* U: remove tracery!
+   m.m List_Traced_Function_Callsu:0(L)	!* L: list traced macros!
+   m.m ^R_Examine_Next_M.Mu:0(X)		!* X: exfun (not w/purify)!
+   m.m ^R_Goto_Next_M.Mu:0(N)		!* N: go to next macro call!
+   m.m ^R_Goto_Previous_M.Mu:0(P)		!* P: go to prev macro call!
+   m.m ^R_Describe_Previous_M.Mu:0(D)	!* D: describe prev macro call!
+   m.m ^R_Print_Next_M.M_Call_Pathsu:0(M)	!* M: print call tree of call!
+   m.m ^R_Print_Key_Call_Pathsu:0(K)		!* K: print call tree of key!
+   m.m Print_Call_Pathsu:0(C)		!* C: print call tree of macro!
+   '
+ q0m.v TECO_Mode_Dispatch (1,) m.q .D 	!* set dispatch and return!
+
+!& HAKLIB Pascal Mode Hook:! !S Set variables and keys for Pascal!
+
+ :i* ProcedureFunction m.l Label_Search_Prefix
+ :i* ;:( m.l Label_Search_Suffix
+ :i* A' m.l Label_Content_Syntax	!* types of labels for pascal!
+
+ 0m.l Comment_Column			!* Comments as far left as possible!
+ (:i*/4+1*4)m.l Comment_Rounding	!* Comments start every 4 columns!
+ m.m ^R_Indent_PASCAL_Stmtm.qI	!* Make tab work right!
+
+ 0fo..q Pascal_Mode_Dispatchf"n (1,) m.q .D '
+					!* Set up dispatch for ^W!
+ 96*5fs Q Vector[0			!* Else make a new dispatch!
+
+ m.m ^R_Plus_Oneu:0(+)		!* +:    make Foo := Foo + 1!
+ m.m ^R_Insert_Commentu:0(*)		!* *:    make an in-line comment!
+ m.m Global_Pascal_Commentu:0(;)	!* ;:    make a block comment!
+ m.m Forward_Levelu:0([)		!* [:    back a level (?)!
+ m.m Back_Levelu:0(])		!* ]:    forward a level (?)!
+ !"! m.m ^R_Start_Stringu:0(')	!* apos: make a string of fixed length!
+ m.m ^R_Slurp_Pascal_to_Charu:0(!)	!* excl: pull previous line (?)!
+
+ !* I dont like some of these settings, but for consistency with Ethan...!
+ m.m ^R_Pascal_ENDU:0(E)		!* E:   insert END!
+ m.m ^R_Pascal_WHILEU:0(W)		!* W:   insert WHILE statement!
+ m.m ^R_Pascal_FORU:0(F)		!* F:   insert FOR statement!
+ m.m ^R_Pascal_WITHU:0()		!* c-W: insert WITH statement!
+ m.m ^R_Pascal_IFU:0(I)		!* I:   insert IF statement!
+ m.m ^R_Pascal_ELSEU:0()		!* c-E: insert ELSE clause!
+ m.m ^R_Pascal_PROCEDUREU:0(P)	!* P:   insert PROCEDURE block!
+ m.m ^R_Pascal_FUNCTIONU:0()	!* c-F: insert FUNCTION block!
+ m.m ^R_Pascal_PROGRAMU:0()	!* c-P: insert PROGRAM block!
+ m.m ^R_Pascal_REPEATU:0(R)		!* R:   insert REPEAT/UNTIL statement!
+ m.m ^R_Pascal_BEGINU:0(B)		!* B:   insert BEGIN/END block!
+ m.m ^R_Pascal_CASEU:0(C)		!* C:   insert CASE statement!
+ m.m ^R_Pascal_RECORDU:0()		!* c-R: insert RECORD clause!
+
+ q0m.v Pascal_Mode_Dispatch (1,) m.q .D 	!* set dispatch and return!
+
+!& Label CRLF Hack:! !S Convert ^M to a CRLF, make null string into ^X!
+
+ f[BBind g() j		    !* set up the string!
+ <:s^M"e z"e :i*"# hfx*'' -2d iî >
+
+!& Hack Syntax:! !S Put ^S before and ^O after each char in a string!
+
+ f[BBind g() j
+ z<i c i>			!* insert ^S and ^Os!
+ hfx*
+
+!^R Label Search:! ! Like TAGS, but works only on buffer.
+Look for label starting at beginning of buffer.
+If given an argument, continue search.
+
+Needs:
+    Label Search Prefix - string defining prefix
+    Label Search Suffix - string defining suffix
+    Label Content Syntax - string of chars (Lisp syntax) within labels!
+
+ [L[O[P[S[C[H[0[7[8[9
+
+!NewLabel!				!* check for delimiters & save!
+ 0fo..q Label_Search_Prefix f(uP) "e o NoLabel'
+ 0fo..q Label_Search_Suffix f(uS) "e o NoLabel'
+ 0fo..q Label_Content_Syntax f(uC) "e
+
+!NoLabel!				!* here if no such variables!
+     :i*_No_Label_Definition_for_this_buffer.__Create_it @fg
+     1 m(m.m &_Yes_or_No) "e 0'	!* possibly create them if not there!
+     m.m &_Label_CRLF_HackuH
+     1,m(m.m &_Read_Line) Label_Prefix:_ mH m.l Label_Search_Prefix
+     1,m(m.m &_Read_Line) Label_Suffix:_ mH m.l Label_Search_Suffix
+     1,m(m.m &_Read_Line) Label_Syntax:_ m(
+	m.m &_Hack_Syntax) m.l Label_Content_Syntax
+     o NewLabel'			!* go back and try again!
+
+ .u0 fn q0j				!* current location, in case of ^G!
+ m(m.m ^R_Widen_Bounds)		!* carefully widen bounds!
+ ff&1u2				!* whether we have an argument!
+ q2"e j 1,f Label:_ m.l Label_Search_Last' "# @l'
+					!* if no args, get new search string!
+					!* else start from next line!
+ qLabel_Search_Last uL		!* save label to look for!
+
+ .uO					!* save original search location!
+ < :sL; .u8 fkc .u7		!* find the string!
+   -:sP"e q8j !<!>'			!* search back for prefix!
+   fkc @f_	l		!* find prefix before label!
+   .-q7 (q8j)"n !<!>'			!* make sure it is immediately before!
+   @f_	l			!* check for whitespace!
+   .u7 :sS"e !<!>'			!* find suffix or stay put if none!
+   fkc .-q7(q7j)"e oFound'>
+
+ qOj < :sL; .u8 fkc .u7		!* find the string!
+   -:sP"e q8j !<!>'			!* search back for prefix!
+   fkc @f_	l		!* skip over whitespace!
+   <.-q7@; sC fk@;>			!* skip over label-like chars!
+   .-q7 (q8j)"n !<!>'			!* make sure it is immediately before!
+   .( :sS; fkc .u8)j			!* find next occurrence of suffix!
+   <.-q8@; sC fk@;>			!* skip over label-like chars!
+   @f_	l			!* skip over whitespace!
+   .-q8"e oFound'>
+   
+ q2"e :i* No_such_label:_L'"# :i* No_more_L'@fg 0
+
+!Found!
+ 0@l q0 m(m.m &_Maybe_Push_Point)	!* remember old point as mark!
+ .u0					!* new location to return to!
+ qComment_Startu7			!* our comment delimiter!
+ 0u8 0u9				!* not done non-comment or any lines!
+ q7"n
+   < %9 b-.; -1@l			!* stop at beginning else go up line!
+     2 f= î "e q8:@;'"#		!* if non-first blank line, quit!
+          fq7 f=7:@; 1u8'>'		!* loop until done!
+ q8"e q9'"# 1'@l			!* Go to appropriate line!
+
+ -1 f[^R Inhibit			!* prevent redisplay!
+ 0@v					!* now show window!
+ 0@:f 0				!* reposition and exit!
+
+!& HAKLIB Babyl Edit Mail Hook:! !S Set keys for editing mail!
+
+ 0,(fsZ)fsBound			!* Set bounds wide just in case!
+
+ qParagraph_Delimiter[0		!* Get para delimiter in 0!
+ fq0"g :i0 0 -' "# :i0-'	!* Add dash so header wont get filled!
+ q0 (]0) [Paragraph_Delimiter		!* Save as new para delimiter!
+
+ 0fo..q Babyl_Edit_Mail_Dispatch f"n [.D :'	!* Check if have old dispatch!
+
+ 96*5fs Q Vector[.D			!* No, make new one!
+ 1,m.m ^R_Babyl_Yankf(u:.D(Y))[...Y	!* c-W Y: Yank (also c-m-Y)!
+ 1,m.m ^R_Fill_Indented_Mail_Regionu:.D(F)	!* c-W F: Fill message!
+ m.m ^R_Babyl_Add_Subject_Fieldu:.D(S)	!* c-W S: Add Subject: field!
+ m.m ^R_Babyl_Add_To-Recipientu:.D(T)	!* c-W T: Add To: field!
+ m.m ^R_Babyl_Add_Cc-Recipientu:.D(C)	!* c-W C: Add Cc: field!
+ m.m ^R_Babyl_Delete_Recipientu:.D(D)	!* c-W D: Remove To or Cc!
+ q.D m.v Babyl_Edit_Mail_Dispatch	!* Save vector for later!
+
+ !* Fall off without popping, so keys stay set!
+
+!& Cc Self:! !& HAKLIB Babyl R Hook:! !S Add self as BCC to outgoing messages!
+!* I want to get a copy of most outgoing mail, so add me as a recipient!
+
+
+ 1fo..q HAKLIB_Babyl_CC_Self"e '	!* default to cc self!
+ .-z[P fn qP+zj j			!* go to beginning of buffer!
+ fs OS Teco"e i Cc:_'"# i Bcc:_'	!* add Bcc or Cc header field!
+ g(0fo..qBabyl_User_Namef"ew fs XUName:f6')	!* and username!
+ iî 				!* finish with a crlf!
+ fs Windowf"l w0'+.fs Window		!* hide it above the screen!
+ 
+
+!& HAKLIB Babyl M Hook:! !S Set up outgoing msgs!
+!* Prompt for To: and Subject: headers, then add self as Cc!
+
+ jk @m(m.m ^R_Babyl_Add_To-Recipient)	!* Add to: field!
+ @m(m.m ^R_Babyl_Add_Subject:_Field)	!* Add subject: field!
+ zj 0fs Window				!* Go to end of buffer!
+ :m(m.m &_Cc_Self)			!* Add self as Cc!
+
+!& HAKLIB Babyl Survey FROM/TO Control:! !S Clean up survey menus!
+!* ^X is mail buffer with nice bounds,
+   ^Y is survey buffer with from/to already in,
+   q1 is start of from/to area in survey buffer.!
+
+ [0[2 [..o q1j			!* Save q-regs, make sure in right buf!
+ 0fo..q Flush_From_Surveyu0 q0"n	!* If list of names to flush!
+   < :s0;				!* Find target string!
+     !<! -:s,-> fkc .,q1f u2	!* Go to start of recipient!
+     !<! :s->, fkc			!* Go to end of recipient!
+     q2,.k >'				!* Bye bye!
+ q1j <:s!.; -fwk>			!* Flush first parts of uname, uucp!
+ u..o j				!* Switch to message buffer!
+ fs OS Teco"e 5'			!* On ITS stop now!
+ :s
+Date:_"e :i0 Unknown'			!* No date, leave unknown!
+ "# :x0 f[BBind g0			!* Else put in temp buffer!
+    0a-)"e -flk -@f_	k'	!* Flush comment at end of line!
+    -4c 1a-_"e di-'			!* Turn time zone space into dash!
+    j 1a"a @:f,_l @f,_l		!* Back to start, maybe skip weekday!
+    fsFDConvertu0 q0+1"e r'		!* Try to convert into internal form!
+    .+1-z"n :i0 Unknown'		!* Give 7-char string if conv failed!
+    "# hk 400000000.,q0fs FD Convert	!* Else produce date in easy format!
+       j 1a-_"e f0'		!* Turn leading space into zero!
+       2jd 3 fc 5jd hx0'		!* Lowercase month, flush dashes!
+    f]BBind'				!* Flush temporary buffer!
+ u..o q1j g0 _i .u1			!* Back to survey, insert!
+ zj 5					!* Pretty, no hosts!
+
+!# Babyl `:! !# Babyl ":! !C# Enter SvM on all messages!
+
+ fs QP Ptr[P				!* Save stack pointer!
+ m(m.m &_Push_Message)			!* Return later to current message!
+ 1m(m.m #_Babyl_J)			!* Jump to first message in file!
+ 2,9999m(m.m &_Babyl_Survey_Several_Messages)	!* compute survey!
+ qP fs QP Unwind			!* Return to original place now!
+ :m(m.m Survey_Menu)			!* Enter survey menu!
+
+!# Babyl <:! !C# Go to start of message!
+
+ j
+
+!# Babyl >:! !C# Go to end of message!
+
+ zj
+
+!& HAKLIB Buffer Creation Hook:! !S Set up permanent local vars!
+
+ qHAKLIB_Old_Buffer_Creation_Hook[1	!* Get old buffer creation hook!
+ fq1"g m1'				!* Macro it if a string!
+
+ 5fs Q Vecu1				!* Cons up a one-element q-vector!
+ 2u:1(0)				!* (will be symtab with 2 cells/sym)!
+ q1uSaved_Point_Vector		!* put it in Saved Point Vector!
+ 
+
+!& HAKLIB TeX Mode Hook:! !S Set vars for TeX mode!
+
+ 1m.l Auto_Fill_Mode			!* Auto fill (to column 70)!
+ m.m ^R_TeX_"m.q " !''!		!* " inserts `` or '' as appropriate!
+
+ @:i*|m(m.m &_Exit_EMACS)		!* Compile does the right thing!
+       TEX_1			!*   i.e says permanently leaving!
+| m.v Compile_Command			!*   and then runs TEX on file!
+
+ qParagraph_Delimiter[1 1,(:i* 1\$$%)m.l Paragraph_Delimiter
+		!* paragraphs delimited by macro begin, disp math, comment!
+
+
+!& HAKLIB TTY Macro:! !S Set tty-dependant vars!
+
+!* Used to set fsOSpeed to 2400 if it was zero, but got screwed
+   too many times on fast Ethernet Heaths to do that any more ... !
+
+ 2,(fs Height/12) f  uEcho_Area_Height	!* adjust echo area to screen!
+ fs O Speed-qSlowly_Maximum_Speed"g		!* Set search window by speed!
+   0' "# fs O Speedf"e 2400'/500+1' m.v Slow_Search_Lines_Used
+
+!& HAKLIB Set Mode Line Hook:! !S Clean up mode line!
+!* When this is set no Set Mode Line Hook should already exist!
+
+ fqEditor_Type"g :iEditor_Type'	!* Flush editor type if any!
+ .-z(-:s Save(off)"n  NoSave'	!* mung NoSave!
+     "# -:s_Save"n fkd'')+zj		!* mung Save!
+
+!*
+** Local Modes:
+** Comment Column: 40
+** PURIFY Library HAKLIB: 1
+** End:
+*!
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             

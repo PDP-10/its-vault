@@ -1,0 +1,1121 @@
+This is the file containing the INFO-ized documentation on using
+TeX with the TBASE macro package.
+
+File: TBASE, Node: Top, Up: (DIR), Next: Conventions
+
+This file describes how to use TeX with the TBASE macro package,
+and contains information on essentially all features available.
+Whereas Knuth's TeX reference manual describes "raw" TeX, that
+is, TeX minus the TBASE macro package, this guide describes the
+use of TeX WITH the package (which contains many of the commands
+users use most often).  This guide also gives some help with
+debugging errors in documents, and hints on writing your own
+macros.
+
+USE OF THIS GUIDE: 
+The earlier sections of this file (up through the section on
+Parameters) deal with the basics of using TeX, explaining some
+of the things that all TeX users need to understand (at least
+partially) to use TBASE effectively.  These sections should be
+read sequentially, as each uses the content of those preceding
+it.  Later sections describe groups of TBASE commands with a
+common purpose, such as paragraphing or page formatting, and may
+be read in just about any order.
+
+Many sections which describe TBASE commands are divided into two
+or three parts. (The parts are separated by lines beginning with
+"%%%".)  In such a section, the first part is intended for users
+of all levels of experience, and presents that section's commands
+in a recipe-like format that can be copied almost verbatim into
+source files.  The second part describes the parameters that
+affect the commands described in that section, giving their
+default values and suggestions about how to obtain certain
+modifications.  The final section describes gory implementation
+details and gives hints to those who wish to write their own
+related commands.
+
+WARNING: On ITS and SPEECH, the program referred to here as TEX
+is actually called XTEX.  Thus, wherever users of these systems
+see the name TEX used as a program or directory name, they should
+substitute the name XTEX.
+
+PLEASE NOTE: This guide is FAR FROM COMPLETE.  Some sections have
+not even been started yet.  If you come across the message:
+
+--->  (This material is forthcoming...)  <---
+
+you have reached a boundary that the author (DCB@AI) is in the
+process of moving.  As major chunks are added, messages will be
+sent to INFO-TEX (see the next section).  Please be patient; the
+target date for completion is August 82.  The author will be
+happy to answer any questions put to him by system mail or in
+person.
+
+Comments and suggestions on the form and content of this guide
+would be appreciated.  Send them to DCB@AI.  (The author thanks
+Eliot Moss, who wrote the original RGUIDE from which much of this
+file has been stolen.)
+
+* Menu:
+
+* Conventions::		Textual conventions used in this manual. 
+
+* Generalities::	Where to find documentation, the place of
+			TeX in the document preparation process,
+			how to report bugs, how to get on
+			the mailing list, etc.
+
+* Running TeX::		Getting TeX started on an input file.
+
+* Setup::		How to set up the beginning of your file
+			to use the TBASE macro package.
+
+* Input::		How TeX scans a file.  In particular,
+			TeX's strange conventions about spacing,
+			blank lines, request names, and so on.
+
+* Macro Invocation::	How to call macros.  This describes how
+			to delineate arguments, and how arguments
+			are processed by TeX.
+
+* Groups::		Groups are sections of input that get
+			formatted in a special local environment.
+			This section describes how to use them.
+
+* Registers::		How string and number registers work.
+			This knowledge is necessary for you to
+			get anything other than the default
+			actions of the macro package.
+
+* Parameters::		How string and number registers
+			control the behavior of the TBASE
+			commands.
+
+* Fonts::		How to load and switch between fonts.
+
+* Line Spacing::	How to control the space between lines.
+
+* Text Features::	This discusses a raft of little, useful
+			things, such as super- and subscripting,
+			underscoring, overstriking, output
+			translation, and hyphenation.
+
+* Margins::		How to move the margins around.
+
+* Paragraphing::	How to get your paragraphs in the desired
+			shape.  This process is at the heart of TBASE.
+
+* Sectioning::		Organizing documents in to chapters,
+			sections, etc.
+
+* Page Layout::		How TBASE lays out the page into vertical
+			sections (top margin, text area,
+			bottom margin, etc.)
+
+* Footnotes::		How to use the footnote facility.
+
+* Figures::		How to use the figure facility.
+
+* Lists::		Enumerated lists of items.
+
+* No-Fill::		How to get the text broken across lines
+			exactly the way it is in the input.
+
+* Displays::		Facilities available for setting things
+			off in the text.  Examples of this kind
+			of thing are quotations, program text,
+			and various kinds of pictures and tables.
+
+* Keeping::		The gory internal details of how
+			things are forced to stay on one page.
+
+* Alignment::		How to get things to line up
+			vertically and horizontally
+			in various ways.
+
+* Supplements::		A list of other TeX macro packages which
+			run under TBASE.  Where to find documentation.
+
+* Writing Macros::	Conventions and hints on macro writing
+			in general.  Specific hints are
+			given in other places.
+
+* Debugging::		How to keep TeX going after it encounters
+			an error processing your file.  Some
+			common causes for particular errors.
+
+* Miscellaneous::	Some things not discussed elsewhere.
+
+File: TBASE, Node: Conventions, Up: Top, Previous: Top, Next: Generalities
+
+TeX runs on ITS, TOPS20, and VAX/Unix.  Thus, just about
+everywhere this manual refers to a file, it is really referring
+to 3 files: one on ITS systems, one on TOPS20 systems, and one on
+Unix systems.  To simplify the text of the manual, we have
+expressed all file names as
+     <device>:<file-name1>.<file-name2>
+where each of the parts is described in more detail below.
+
+The parts <file-name1> and <file-name2> are, on ITS and TOPS20,
+just what their names imply.  Thus the file specification foo.tex
+refers to a file called FOO TEX on ITS and FOO.TEX on TOPS20.  On
+Unix, <file-name1> and <file-name2> are concatenated with a
+period to form a file name that looks just like the file
+specification does in this manual; for example, the spec foo.tex
+refers to a Unix file named foo.tex (capitalization of the spec
+is just like the UNIX capitalization).
+
+The <device> spec stands for a directory according to the
+following table:
+     MAC =  (macro files)
+         NTEXLB;   		on ITS
+	 <TEX.MACROS>		on TOPS20
+	 /projects/Tex/macros	on Unix
+     FNT =  (font information files)
+         TEXTFM;		on ITS
+	 <TEX.FONTS>		on TOPS20
+	 /projects/Tex/fonts	on Unix
+     DOC = (documentation files)
+         NTEXLB;		on ITS
+	 <TEX.DOC>		on TOPS20
+	 /projects/Tex/doc	on Unix
+
+For example, the specification
+
+     mac:tbase.tex
+
+refers to the 3 files:
+
+       NTEXLB;TBASE TEX			on ITS
+       <TEX.MACROS>TBASE.TEX		on TOPS20
+       /projects/Tex/doc/tbase.tex	on Unix
+
+File: TBASE, Node: Generalities, Up: Top, Previous: Conventions, Next: Running TeX
+
+Here is some basic information about what TeX does and how to get
+started using it.
+
+* Menu:
+
+* What TeX does::	TeX's place in the document preparation
+			process.
+
+* Documentation::	What is available and where to find it.
+			How to report bugs.  How to get on the
+			mailing list.
+
+File: TBASE, Node: What TeX does, Up: Generalities, Next: Documentation
+
+TeX is a text formatting program.  Its place in the process of
+preparing documents is illustrated by the following picture:
+
+you -> EDITOR -> input file -> TeX -> output file -> DOVER -> document
+			       |
+			       +--> error messages
+
+The above picture means that the common way of preparing a
+document involves these steps, in order:
+
+1. You prepare an INPUT FILE using your favorite editing program.
+A FILE is a repository of data in the computer system.  The way
+most of out editors work, you simply type the text in to the
+editor, and then when you think it is ready, to give the editor a
+special command, telling it to write what you have typed in, to a
+file on the computer system.  You can also edit files you have
+made before, to correct mistakes, add new text, etc.  The most
+commonly used editors are EMACS, RMODE, and TED.
+
+2. You then run TeX, telling it to process the input file you
+created with the editor.  The term "invoking" means the same as
+"running" in this context.  People will say "Run TeX" or "Invoke
+TeX" just about as readily.  TeX then produces an OUTPUT FILE,
+and possibly some error messages and other information.
+
+3. If there are no errors, then you invoke the appropriate
+program to send the output file to the Dover (TeX ONLY produces
+files for the Dover).  This is done using the following programs:
+
+	on ITS (AI,DM,MC,ML):	DOVER, DOVR
+	on TOPS-20 (EE,SPEECH):	DOVERSEND
+	on UNIX (VX):		DOVER
+
+If there are error messages, or the document does not have the
+desired appearance, you go back to step 1, and create a new input
+file that you think will work better.  It may take doing this
+half a dozen times to get rid of the "bugs" in a new version of a
+document.  (See [*Note Running:Running TeX.] for information
+about running TeX and interpreting its error messages.)
+
+Some of the other text formatters available are: (Opinions
+expressed are mine, but I have found many experienced users to
+agree with most of these statements.)
+
+	R - a slightly less complex formatter than TeX that
+		can be much easier to use but does not produce
+		output that is anywhere near as beautiful.  R has
+		a complete standard macro package that makes
+		it very user-friendly, and it is often the
+		formatter of choice for people who do not use
+		a lot of math in their documents.
+	SCRIBE - has approximately the same capabilities as R,
+		and about the same strong and weak points.
+		Easier for the novice to use than R, but maybe
+		harder for the expert to get what s/he wants.
+		Can do single or multiple pass processing.
+		Limited availability on ITS, typically on MC only.
+	TJ6 - a very simple minded, easy to use formatter, with
+		superficial similarities to R.  Most people find
+		TJ6 too simple: there are too many things it
+		cannot do.  Available only on ITS.
+	PUB - a powerful but often arcane formatter.  Slower
+		than TeX, but it can do a few more things than TeX
+		can (except math).  Available only on ITS.
+
+The diagram of the document preparation process that we drew
+above is overly simple: sometimes one processes the input text
+with other things besides an editor before giving it to TeX, and
+sometimes one processes the output file with other things besides
+TeX some before printing it out.  An example of the first
+situation is this: you can run a spelling checking and correcting
+program (e.g., ISPELL) to find spelling errors before running
+TeX.  Some examples of the second situation are: you may use a
+program that extracts only the pages that have changed between
+versions of a document (e.g., @) or you may merge Alto-created
+figures into your output file using an Alto.
+
+File: TBASE, Node: Documentation, Up: Generalities, Previous: What TeX does
+
+The documentation on bare TeX (i.e., without the TBASE macro
+package) consists of Don Knuth's TeX Manual, which is available
+in book form ("TeX and Metafont", published by Addison-Wesley).
+Knuth's manual contains some tutorial-style material which will
+be helpful to TeX novices, and a lot of detailed material which
+is useful only to TeX wizards.  If you are reading Knuth's manual
+for the first time, just read chapters 1-16, IGNORING all the
+material in the "dangerous bends".  After you have used TeX a few
+times, you could try reading chapters 17-20 (still ignoring the
+dangerous bends").  You should definitely read chapters 1-6
+before you use TeX the first time.
+
+(N.B. Be aware that Knuth's TeX manual is all wrong about Running
+TeX [section 6].  You should read that section anyway, because it
+contains other useful information, but be aware that the material
+about Running TeX is superceded by the info in this guide.)
+
+There is a file which contains sample uses of almost all the
+TBASE macros.  It is called doc:sample.tex, and its TeX output is
+on the file doc:sample.press.  If you dover off both the source
+and TeX output files, you can learn a lot by seeing which macro
+commands produced which output.  In addition, the output file
+alone can be used as a sort of TBASE primer, since most of the
+text is tutorial in nature.
+
+Judi Jones has written a TeX primer (AI working paper #??).  That
+document should complement both this one and the TeX manual, in
+that the Primer is something you can sit down and read all at
+once.  This guide and the manual go farther, and are therefore
+longer.  Having two different explanations of the same thing (one
+in the primer and one in this guide) should help; we have tried
+hard to make sure that the two documents do not say contradictory
+or wrong things.
+
+Detailed documentation of the macro package consists almost
+entirely of this file (doc:tbase.info).  The file doc:tbase.order
+contains a ``quick reference'' listing of most of the package
+macros and parameters.
+
+The macro package itself comes in two parts.  By special
+dispensation, the larger part (mac:lib.tex) is pre-loaded into
+TeX when you get it.  The smaller part (mac:tbase.tex) is
+inserted by a command in your input file [*Note Setup:Setup.]
+and must be read every time.  The TBASE file activates the larger
+package, and defines some useful abbreviations.  If you want to
+inspect these files, you should look instead at one of these
+files:
+  (from ITS systems):	ML:NTEXLB;LIB > and ML:NTEXLB;TBASE >
+  (from TOPS20 sytems):	EE:<tex.macros>lib.texlib (also on SPEECH:)
+			EE:<tex.macros>tbase.texlib (also on SPEECH:)
+  (from Unix systems):	VX:/projects/Tex/lib and VX:/projects/Tex/Tbase
+The difference is that the latter files are nicely indented and
+have comments, whereas the TEX files have been compacted by
+throwing away the indentation and comments.  (If you want to
+write macros using the lucid form and have them compactified,
+contact DCB@AI).
+
+There is a mailing list, 
+    INFO-TEX@MC
+to which messages concerning changes to TeX and the TBASE macro
+package are sent.  If you wish to be added or removed from that
+list, send mail to
+    INFO-TEX-REQUEST@MC
+Bug reports, complaints, and suggestions should be sent to the
+mailing list
+    BUG-TEX@MC
+
+The primary home of all TeX macro package files is ML.  All other
+systems are updated from there.
+
+File: TBASE, Node: Running TeX, Up: Top, Previous: Generalities, Next: Setup
+
+This node gives instructions on how to get TeX to process your
+input file.
+
+* Menu:
+
+* ITS::		Running TeX on ITS
+
+* TOPS20::	Running TeX on TOPS-20
+
+* Unix::	Running TeX on Vax/Unix
+
+* Filenames::	How TeX interprets the name of your input file.
+
+* Error Handling::	What TeX does when it encounters errors
+			in your input file.
+
+File: TBASE, Node: ITS, Up: Running TeX, Next: TOPS20
+
+To run ITS TeX on a file, you must first start it up by giving ITS
+the command:
+
+	TEX^K
+
+(That's TEX followed by a control-K.  It does not matter whether
+the TEX or the control-K are upper or lower case.)  At this
+point, one of two things will happen:
+
+    1.  ITS will print an exclamation point (your screen will look
+	like:
+		tex^K!
+	and then TeX will start to run normally (see below for
+	how to proceed).
+
+    2.  ITS will ask
+		--Clobber Exisiting Job--
+	and wait for your response.  You then type a SPACE (hit
+	the space bar once) at which point TeX will start to
+	run normally (see below for how to proceed).
+
+Once TeX starts to run normally, there will be a (sometimes very
+long) pause while it gets loaded into memory, and then it will
+print on your screen something like:
+
+	MIT TeX version 6.6, created November 4, 1981.
+	Outputs PRESS files
+
+	*
+
+(The exact version number and date that get printed will change
+as time goes by.)  At this point, TeX is ready for you to specify
+your input file (that you prepared using the editor).  If, for
+example, the file is on your connected directory and is named
+PAPER >, you simply say:
+	\input paper 
+and type a carriage return (the space after the word "\input" is
+important).  TeX will then begin to process your file, informing
+you by printing something like:
+	(paper > 1
+	  (NTEXLB;TBASE TEX 1
+	  ...etc...
+
+(If your input file does not have a second file name of TEX or >,
+or if it is not on your connected directory, you will need to
+specify more of its name in your \input command.  See the node
+Filenames [*Note filenames: filenames.] for how to do this.)
+
+As TeX processes your file, it will inform you every time it
+outputs a page, by printing the page number in square brackets on
+your screen.  For example, when it outputs page 5 it types
+	[5]
+
+When TeX is through processing your file, it will print the
+message
+	End of SAIL Execution.
+
+on your screen.  At this point, it will have created two files on
+your directory.  One file, called ERRORS TMP, will contain a copy
+of everything that appeared on your screen while TeX was running.
+The other will be a PRESS file with the same first file name as
+your input file, and a second file name of PRESS.  (In the above
+example, where the input file name was PAPER >, TeX's output
+would go on the file PAPER PRESS.)  This PRESS file is the one
+that you should send to the Dover.
+
+While TeX is processing your file, it may encounter errors in
+your input.  Read the node [*note errors: Error Handling.] to
+find out what to do in this case.
+
+File: TBASE, Node: TOPS20, Up: Running TeX, Previous: ITS, Next: Unix
+
+To run TOPS20 TeX on a file, you invoke TeX with the name of the
+file as an argument.  For example, if your input file is called
+PAPER.TEX on your connected directory, you simply type
+
+	@tex paper
+
+(You may want to first RESET any interrupted old TeX forks that
+you have lying around.)  Once TeX starts to run, there will be a
+(sometimes very long) pause while it gets loaded into memory, and
+then it will print on your screen something like:
+
+	MIT TeX version 6.6, created November 4, 1981.
+	Outputs PRESS files
+
+	*
+
+(The exact version number and date that get printed will change
+as time goes by.)  TeX will then begin to process your file,
+informing you by printing something like:
+
+	(PAPER.TEX.3 1
+	  (<TEX.MACROS>TBASE.TEX.5 1
+	  ...etc...
+
+(If your input file does not have a second file name of TEX,
+or if it is not on your connected directory, you will need to
+specify more of its name in your TeX command.  See the node
+Filenames [*Note filenames: filenames.] for how to do this.)
+
+As TeX processes your file, it will inform you every time it
+outputs a page, by printing the page number in square brackets on
+your screen.  For example, when it outputs page 5 it types
+	[5]
+
+When TeX is through processing your file, you will see the TOPS20
+prompt (@) on your screen.  At this point, TeX will have created
+two files on your directory, both with the same first file name
+as your input file but with different second file names.  One
+will have a second file name of ERR (in our example above it
+would be called PAPER.ERR), and it will contain a copy of
+everything that appeared on your screen while TeX was running.
+The other will be a PRESS file (with a second file name of
+PRESS); this is the one that you should send to the Dover.
+
+While TeX is processing your file, it may encounter errors in
+your input.  Read the node [*note errors: Error Handling.] to
+find out what to do in this case.
+
+File: TBASE, Node: Unix, Up: Running TeX, Previous: TOPS20, Next: Filenames
+
+--> (This material is forthcoming...) <--
+
+File: TBASE, Node: Filenames, Up: Running TeX, Previous: Unix, Next: Error Handling
+
+This node explains how to specify filenames to TeX.  This advice
+applies both to filenames used in \input commands, and to those
+which TOPS20 and Unix users specify on the TeX command line.
+
+* Menu:
+
+* ITS filenames::	How to specify filenames on ITS systems.
+
+* TOPS20 filenames::	How to specify filenames on TOPS20 systems.
+
+* Unix filenames::	How to specify filenames on Unix systems.
+
+File: TBASE, Node: ITS Filenames, Up: Filenames, Next: TOPS20 Filenames
+
+Full filenames on ITS have the form:
+
+	<device>:<directory>;<name1> <name2>
+
+In the \input command of TeX, you may
+	omit <device> if it is DSK
+	omit <directory> if it is your connected directory, or NTEXLB
+	omit <name2> if it is TEX or >
+
+Examples:
+1. I am logged in as DCB and I want to input the file
+	DCB;FOO >
+   I can use the \input command
+	\input foo
+
+2. I am logged in as DCB and I want to input the file
+	JUDI;TEST TEX
+   I can use the \input command
+	\input judi;test
+
+3. I am logged in as DCB and I want to input the file
+	NTEXLB;TBASE TEX
+   I can use the input command
+	\input tbase
+   BUT, if there is a file called TBASE > or TBASE TEX on my
+   directory, I must say
+        \input ntexlb;tbase
+   instead.  (That is, TeX will find the one on my directory
+   before it finds the one on the NTEXLB; directory.)
+
+NOTE: In the \input command, filenames may NOT have spaces in
+them.  Thus,
+
+	\input chap two
+
+will NOT do what you might expect!  If you must supply a second
+name, you do it by enclosing the entire file name in vertical
+bars, as in:
+
+	\input |chap two|
+
+REMEMBER that you need not specify the second file name if it is
+TEX or >.
+
+File: TBASE, Node: TOPS20 Filenames, Up: Filenames, Previous: ITS Filenames, Next: Unix Filenames
+
+Full filenames on TOPS20 have the form:
+
+	<device>:<directory>;<name1>.<name2>.<version>
+
+In the \input command of TeX (or on a command line), you may
+	omit <device> if it is PS
+	omit <directory> if it is your connected directory, or <TEX.MACROS>
+	omit <name2> if it is TEX
+	omit <version> if it is the largest version on the directory
+
+Examples:
+1. I am logged in as DCB and I want to input the file
+	<DCB>FOO.TEX.0
+   (Remember that a version number of 0 stands for the
+   largest existing version).  I can use the \input command
+	\input foo
+
+2. I am logged in as DCB and I want to input the file
+	<JUDI>TEST.TEX.0
+   I can use the \input command
+	\input <judi>test
+
+3. I am logged in as DCB and I want to input the file
+	<TEX.MACROS>TBASE.TEX.0
+   I can use the input command
+	\input tbase
+   BUT, if there is a file TBASE.TEX on my
+   directory, I must say
+        \input <tex.macros>tbase
+   instead.  (That is, TeX will find the one on my directory
+   before it finds the one on the <TEX.MACROS> directory.)
+
+N.B. The conventions given here also apply when specifying
+filenames on the TeX command line.  That is, the filename you use
+on the command line is interpreted exactly as if it had followed
+an \input command.
+
+File: TBASE, Node: Unix Filenames, Up: Filenames, Previous: TOPS20 Filenames
+
+--> (This material is forthcoming...) <--
+
+File:TBASE, Node: Error Handling, Up: Running TeX, Previous: Filenames
+
+If there are errors in your file, TeX will indicate this by
+printing an error message.  Error messages always start with an
+exclamation point, as in:
+
+	! You can't do that in horizontal mode.
+
+After the error message, TeX will print out a number of lines
+detailing exactly where the error occurred, ending with a line
+containing just:
+
+	^
+
+TeX will then stop and wait for instructions.
+
+Until you become a TeXpert, you will just want to tell TeX to try
+and ignore the error, which you do by responding to the ^ prompt
+with a carriage return.  TeX will then go on processing the input
+as if the error had never occurred.  (Those interested can read
+the TeX manual and the node Debugging [*note debugging:
+debugging.]  to find out about other things to do.)
+
+Usually, after you have carriage-returned your way through a
+number of errors, TeX will be able to finish your file normally.
+However, if there are so many errors in your file that TeX seems
+to get hopelessly lost, you can get it to stop by responding with
+	x
+when it types the ^ prompt at you (upper and lower case X's are
+both fine).  TeX will then say:
+
+	Type another x to exit:
+
+and you should.  TeX will respond with
+
+	No output file.
+
+which means that it is done but did not create a PRESS file.
+
+In all cases (whether or not there is an output file), TeX
+creates the file mentioned in the instructions above [*note
+running: Running TeX.] that contains a record of all its error
+messages.  This file is very handy when you are debugging, since
+it contains the location in your input file of all your errors.
+
+File: TBASE, Node: Setup, Up: Top, Previous: Running TeX, Next: Input
+
+This node explains how to format your input files so that they
+can use the TBASE macro package.
+
+If you are new to TBASE, you should probably put these two lines
+at the very beginning of your file:
+
+\input tbase
+\cmcm_twelve
+
+The "\input TBASE" command activates the TBASE macro package.
+All TBASE input files must start with this command, and there
+must not be any text, comments, or blank lines in front of it.
+
+The "\cmcm_twelve" command is one of a number of commands called
+FONT-LOADING commands, and it informs TBASE that you will be
+using the Computer Modern family of fonts for both text and
+section titles, and that you want your normal text size to be
+12pt type.  A font-loading command MUST precede any text you wish
+to output; the choices other than \cmcm_twelve are described in
+the node on Fonts [*note fonts:fonts.].
+
+The above setup gives you the TBASE macro package with its
+default options.  If you decide there are things you don't like
+about some feature or other, consult the appropriate section to
+understand what things can be adjusted, and how.  Then you may
+wish to insert some lines to override the default options.  These
+lines should go between the line containing the \input command
+and the line containing the font-loading command.
+
+%%% The rest of this section describes exactly what happens
+%%% when TeX reads the above commands, and a little more about
+%%% changing defaults.
+
+The "\input tbase" command reads the file NTEXLB;TBASE TEX.
+Although most of the macro package is pre-loaded into the TeX
+that you run, you must still "turn it on" by reading the TBASE
+TEX file.  If you have ANY text or %-comments before this command
+you will lose badly!
+
+The "\cmcm_twelve" command is a "font-loading" command, which
+does three things:
+     1. It loads some fonts into TeX.
+     2. It sets macro package defaults about which fonts to
+        use in various contexts.
+     3. It turns on TBASE's paragraphing and output routines.
+
+Now, it is only at step (3) of this sequence that TBASE consults
+any parameters, even those (like page size) that are not allowed
+to change in the middle of your file.  Default values for all
+TBASE parameters are set by the "\input tbase" command, so the
+best place to change any defaults is BETWEEN that command and the
+font-loading command.  Notice that you must NOT put text you
+want output before the font-loading command, because TBASE will
+not know what font to set it in.  You will get the message:
+    ! Whoa---You have to define a font first.
+
+If you find that there are some parameters which you customarily
+change, you may wish to create a file containing the various
+commands that set them the way you like.  Then, between the
+"\input tbase" command and the font-loading command in your TeX
+input files, you can just put one \input command which reads your
+file of changes.
+
+File: TBASE, Node: Input, Up: Top, Previous: Setup, Next: Macro Invocation
+
+The TeX manual describes in great detail TeX's rules for reading
+your input file, such as when spaces are ignored and what
+constitutes a request name.  This node describes a few special
+TBASE conventions not mentioned in the manual.
+
+In TBASE, the underscore character ("_") acts just like a letter,
+such as "A" or "z".  Thus, it can be used as part of request names
+(e.g., "\cmcm_twelve" is a legal name, as is "\minor_section").
+Notice that, since "_" is a letter, the control sequence \_
+(which produces an underscore character in the output) is NOT a
+single character control-sequence like \' is---you can say \'a
+and get the right thing but if you say \_a TeX will complain
+because there is no control sequence named "\_a".  To get an
+underscore followed by a letter you use a space, as in "\_ a".
+
+In TeX, a blank line (like the one just above this one) is
+automatically translated into a \par instruction (so blank lines
+can be used to separate paragraphs).  TBASE redefines \par so
+that it "does the right thing" in almost all cases; thus, you
+should never be afraid of leaving extra blank lines in your
+manuscript to make it more readable.  The file NTEXLB;SAMPLE TEX
+contains TBASE input which uses blank lines freely; you should
+look at its TeX output (on NTEXLB;SAMPLE PRESS) and notice just
+how few of those blank lines actually do anything.
+
+File: TBASE, Node: Macro Invocation, Up: Top, Previous: Input, Next: Groups
+
+All the TBASE commands (also known as macros) can be given
+arguments in exactly the same way---by surrounding the argument
+text with braces ("{" and "}").  For example, to give the \foo
+macro a single argument consisting of the text "bar baz", you can
+use the input:
+
+    \foo{bar baz}
+
+To give the command \frotz two arguments, the first being "arg1"
+and the second being "arg2", you could say:
+
+    \frotz{arg1}{arg2}
+
+Notice, however, that you can NOT say
+
+    \frotz{arg1} {arg2}
+
+because the space BETWEEN the arguments will NOT be ignored by
+TeX!
+
+Be aware that the brace characters which surround arguments are
+gobbled up by TeX (they're not passed on to the command).  If you
+want to pass the argument "{foo}" to the \bar macro, you must
+say:
+
+     \bar{{foo}}
+
+using TWO pairs of braces (the outer ones are eaten by TeX).
+
+Finally, remember that arguments are NOT optional in TeX.  If a
+TBASE command says it takes two arguments, then you MUST give it
+two arguments.
+
+File: TBASE, Node: Groups, Up: Top, Previous: Macro Invocation, Next: Registers
+
+Recall that a TeX GROUP is any block of text surrounded by braces
+(except the braces used to delimit macro arguments).
+
+TBASE extends TeX's notion of group locality (described in
+chapter 5 of the TeX manual) so that the effects of all TBASE
+commands are restricted to the group containing them.  For
+example, if you use TBASE commands within a group to move the
+left and right margins, they will revert to their pre-group
+positions when you exit the group.
+
+One thing you will notice when you use TBASE is that there are
+very few commands which undo the effects of other commands.
+This is because you can use groups to restrict the effects of
+commands.  For example, instead of structuring your input file
+like this:
+
+    \command_X
+    ... some text set according to the
+    environment set up by command X ...
+    \undo_command_X
+
+you structure it like this:
+
+    {		% start a local group
+    \command_X
+    ... some text set according to the
+    environment set up by command X ...
+    }		% end the local group
+
+Notice that, in the latter structure, it is the end of the group
+which undoes the effects of \command_X.
+
+
+File: TBASE, Node: Registers, Up: Top, Previous: Groups, Next: Parameters
+
+The TBASE macro package has NUMBER REGISTERS and STRING REGISTERS
+which are used in many contexts.  It is hard to give an easy to
+understand explanation of exactly how they work, but they turn
+out to be easy to use in the common situations.  Let us consider
+an example.
+
+Say that you find you are typing 
+	\sum^A{i=1}^Kn 1\over i
+quite a lot, because you use the harmonic numbers quite a bit in
+your research.  You can define a string register to give you a
+handy abbreviation for that:
+	\defstr\hsum{\sum^A{i=1}^Kn 1\over i}
+Then, wherever you want that whole long expression to appear, just
+write "\hsum".
+
+The \defstr (DEFine STRing register) command takes a control
+sequence (in this case, \hsum) and some text enclosed in braces
+("{" and "}") and defines the control sequence as a string
+register containing that text.  This second example:
+	\defstr\foo{ ab c } defines \foo as the string register
+containing the string " ab c ".  Note that you can define a
+string register which contains NO text by saying (for example)
+	\defstr\empty_string{}
+
+Just as string registers are defined using \defstr, number
+registers (which hold integers like 7 or -5) may be defined using
+the command \defnum.  For example, if we input
+	\defnum\foo{105}
+	The serial number of the stolen item was \foo.
+TeX will produce:
+	The serial number of the stolen item was 105.
+
+Notice that we could have used a string register for \foo instead
+of a number register.  While this is true in general (anything
+you can do with number registers you can do with string
+registers), it is conceptually useful to distinguish the two.
+For example, the behavior of almost all TBASE commands are
+affected by certain registers (known as PARAMETERS);
+distinugishing between number and string registers will help you
+keep straight which parameters should be numbers and which should
+be strings.  (See the next section [*note parameters:
+parameters.] for details.)
+
+%%% The next part of this section describes TBASE commands which
+%%% manipulate number and string registers in various ways.
+
+--->  (This material is forthcoming...)  <---
+
+%%% The next part of this section describes the implementation
+%%% of string and number registers.
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Parameters, Up: Top, Previous: Registers, Next: Fonts
+
+TBASE uses number and string registers as PARAMETERS which affect
+the behavior of TBASE commands.  Each command description below
+mentions which registers affect the command and how their values
+are interpreted; this section gives some general hints about
+using and changing these parameters.
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Fonts, Up: Top, Previous: Parameters, Next: Line Spacing
+
+There are a number of different aspects of this subject:
+
+* Menu:
+
+* Font Jargon::		What makes a font a font.
+
+* TBASE font conventions::   How TBASE refers to fonts, and where
+			     various fonts are used by default.
+
+* Loading Fonts::	How to tell TBASE which fonts you will
+			be using in your document.
+
+* Selecting Fonts::	How to put text in a particular font.
+
+* Font Availability::	Which fonts are available on the dover.
+
+File: TBASE, Node: Font Jargon, Up: Fonts, Next: TBASE font conventions
+
+A FONT (from the printer's word FONT or FOUNT meaning a complete
+set of metal type) is a file containing character descriptions.
+A font is uniquely identified by three characteristics:
+
+FONT SIZE:
+    The size of a font is the maximum height of a character in
+that font.  Sizes are generally measured in POINTS (there are 72
+points to the inch), so we generally talk about 10pt fonts, 12pt
+fonts, and so on.
+
+FONT FACE:
+    The face of a font is a word or phrase of printer's jargon
+which describes its appearance.  Some of the better known faces
+are "roman" (or "upright"), "italic", "bold", "bold italic", and
+"small capitals".  (Small caps faces have lowercase letters which
+are really just smaller uppercase letters.)  Another face common
+in TeX circles is the "slant" face, which resembles a roman face
+but leans to the right (sort of like the Leaning Tower of Pisa).
+
+FONT FAMILIES:
+    The family of a font is the name of an arbitrary group of
+fonts that are considered "related" to that font.  In general,
+when a font designer sets out to design a new font, he ends up
+designing a group of fonts, each with a different face but of
+parallel design.  This group is then known as a family.
+    For example, the Helvetica family consists of the faces
+Helvetica Upright (or Roman), Helvetica Italic, Helvetica Bold,
+and so on.  While a Helvetica Italic font is italic and not
+roman, it is much more reminiscent of a Helvetica Upright font
+than, say, a Times Roman Upright font (or even a Times Roman
+Italic font).  Fonts in the same family are intended to be used
+together in documents which use more than one face.
+    Families are often referred to as VARIABLE WIDTH families
+(such as Times Roman), meaning that different letters in the
+family fonts have different widths, or FIXED WIDTH families (such
+as Gacha), where all letters are of the same width.  Fixed width
+families are useful for setting things like programs and tables,
+since things that line up on your screen will also line up in the
+output.  (Don't assume that the character width of a fixed-width
+upright font will be the same as the character width of the bold
+or italic fonts of the same family and size.  Sometimes they are
+and sometimes they aren't.)
+
+To completely specify a font, one must specify its size, face,
+and family.  For example, Computer Modern Roman 10pt is a 10pt
+upright font, Gacha Upright 12pt is another.
+
+A WORD OF WARNING:
+    While the conventions we have outlined here apply fairly
+generally, be aware that there are a lot of idiosyncracies in the
+printing world.  Here are some common ones that you may run
+across:
+
+1. If a family name ends in "roman", the roman font in that
+family is often called by just the family name.  For example,
+Times Roman Upright is often known simply as Times Roman; Scotch
+Roman Upright is often known simply as Scotch Roman.
+
+2. Some faces in some families are so well known that they have a
+special name all their own.  For example, Centaur Italic is known
+as Arrighi.  This phenomenon is especially common nowadays,
+because many font designers take a year or so to design each face
+in a family, sometimes selling the different faces to different
+printing houses!
+
+3. There is absolutely no standardization around the terms
+"dense", "medium", "light", "heavy", and "compressed".  Sometimes
+these terms refer to the pen width used to draw a font (a "dense"
+font might look "bolder" than a "light" font), and sometimes they
+refer to the average character width (you get more characters per
+inch in a "dense" or "compressed" font than in a "medium" one).
+Sometimes the terms are integrated into the family name (as in
+the "Geneva Dense" family), and sometimes they are part of the
+face name (as in the "Dense Upright" face of Helvetica).  In
+general, you should see a font sample before drawing conclusions.
+
+4. There is absolutely NO standardization about character
+positions for non-alphabetic characters.  Check a font sample!
+
+File: TBASE, Node: TBASE font conventions, Up: Fonts, Previous: Font Jargon, Next: Loading Fonts
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Loading Fonts, Up: Fonts, Previous: TBASE font conventions, Next: Selecting Fonts
+
+Before you can use a font, you must do two things:
+   1. Tell TeX what the characters in the font look like.
+   2. Tell TBASE how you will refer to the font when
+      you want to switch to it.
+The process of doing these two things for a particular font is
+called "loading the font".
+
+TBASE provides two ways to load fonts:
+
+* Menu:
+
+* Font-loading commands::	These are special commands which
+				load a whole bunch of commonly-used
+				fonts at one time.  Most users can
+				get all the fonts they want simply
+				by using the right font-loading command.
+				(This section also contains instructions
+				for preparing your own font-loading
+				commands.)
+
+%%% The next way of loading fonts is recommended for
+%%% advanced users only.
+
+* Font-loading files::		These are special TBASE command files
+				which load particular fonts.  (This
+				section also contains instructions
+				for preparing your own font-loading
+				files.)
+
+File: TBASE, Node: Font-loading commands, Up: Loading Fonts, Next: Font-loading files
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Font-loading files, Up: Loading Fonts, Previous: Font-loading commands
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Selecting Fonts, Up: Fonts, Previous: Loading Fonts, Next: Font Availability
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Font Availability, Up: Fonts, Previous: Selecting Fonts
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Line Spacing, Up: Top, Previous: Fonts, Next: Text Features
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Text Features, Up: Top, Previous: Line Spacing, Next: Margins
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Margins, Up: Top, Previous: Text Features, Next: Paragraphing
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Paragraphing, Up: Top, Previous: Margins, Next: Sectioning
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Sectioning, Up: Top, Previous: Paragraphing, Next: Page Layout
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Page Layout, Up: Top, Previous: Sectioning, Next: Footnotes
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Footnotes, Up: Top, Previous: Page Layout, Next: Figures
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Figures, Up: Top, Previous: Footnotes, Next: Lists
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Lists, Up: Top, Previous: Figures, Next: No-fill
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: No-fill, Up: Top, Previous: Lists, Next: Displays
+
+
+File: TBASE, Node: Displays, Up: Top, Previous: No-fill, Next: Keeping
+
+A DISPLAY is a block of text that interrupts a surrounding
+paragraph and is set off from it.  Displays are normally "kept"
+(not broken across page boundaries), and TBASE provides a variety
+of different types:
+
+* Menu:
+
+* Textual Displays::	These displays consists of no-fill text.
+			They are very good for setting programs,
+			tables, titles, and random other text.
+
+* Block Displays::	These displays consists of single filled
+			paragraphs.  They are very good for
+			quotations.
+
+* Math Displays::	These displays are used for equations.
+			They extend TeX's $$ displays, and should
+			be used instead of them.
+
+File: TBASE, Node: Textual Displays, Up: Displays, Next: Block Displays
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Block Displays, Up: Displays, Previous: Textual Displays, Next: Math Displays,
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Math Displays, Up: Displays, Previous: Block Displays,
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Keeping, Up: Top, Previous: Displays, Next: Alignment
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Alignment, Up: Top, Previous: Keeping, Next: Supplements
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Supplements, Up: Top, Previous: Alignment, Next: Writing Macros
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Writing Macros, Up: Top, Previous: Supplements, Next: Debugging
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Debugging, Up: Top, Previous: Writing Macros, Next: Miscellaneous
+
+--->  (This material is forthcoming...)  <---
+
+File: TBASE, Node: Miscellaneous, Up: Top, Previous: Debugging,
+
+--->  (This material is forthcoming...)  <---

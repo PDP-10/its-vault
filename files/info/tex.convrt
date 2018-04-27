@@ -1,0 +1,143 @@
+Notes to users of the TEX and NTEX programs on MIT-MC ...
+
+----------29 Feb 84 (kmp)---------------------------------------
+
+If you used to use XTEX, you want to use TEX80 now. This is the
+same program, just a different name.
+
+If you used to use TEX or NTEX, you want to convert to using TEX80.
+The remainder of this file discusses how to do that conversion.
+The programs TEX and NTEX are no longer supported. They will exist
+as OTEX and ONTEX for emergencies during a transition period, but
+should be expected to go away at any time.
+
+----------26 Feb 84 (dcb)---------------------------------------
+
+    The program invoked by the command TEX on MC is TeX80 version
+3.3.  The program invoked by the commands XTEX, TEXCM, TEXTB, and
+TEXTR is TeX80 version 6.6.  Many have you have noticed that you
+can no longer get files produced by version 3.3 to come off the
+dover correctly.  This note explains why, and suggests some
+fixes that will allow you to run your files through version 6.6.
+
+(N.B. in the following, everything that is said about the program
+TEX also applies to the program NTEX, which is TeX80 version 5.2.
+NTEX users must update their files in the same way as TEX users.)
+
+1. TeX80 version 3.3 reads information about the fonts you ask
+for from files in a directory named TEXTFX.  The files it reads
+are known as TFX files, and differ in format from those used by
+TeX80 version 6.6 (and TeX82, which is not available on MC right
+now).  The latter files, known as TFM files, are in the directory
+TEXTFM.
+
+2. The font information in MC's TFX files for the Computer Modern
+(CM) fonts does not correctly describe fonts which exist on the
+dover.  When a Press file prepared by TeX80 3.3 using these
+font descriptions is run off on the Dover, the Dover substitutes
+a variety of strange fonts for the ones that TeX80 3.3 requested;
+this substitution leads to two results:
+    1. The resulting output looks wierd (characters overlap,
+       symbols don't look the way they should, margins don't
+       align, etc.)
+    2. The cover sheet prepared by the dover (called the `break
+       page') contains a variety of unreadable messages intended
+       to explain which fonts got substituted for which other
+       fonts.  The first of these messages often looks like
+	       FONT CMSS10'''$!#$&#@&*#^!%$  ..etc..
+
+3. The TFX files on MC will NOT be updated to contain correct
+information.  This is because TFX files (and TeX80 version 3.3)
+are completely out of date, and no apparatus exists for
+maintaining them.  USERS OF TEX80 VERSION 3.3 MUST CHANGE OVER TO
+USING EITHER TEX80 VERSION 6.6 (which is also unsupported but
+will continue to work for at least a year) OR TEX82 (which may or
+may not become available on MC; ask CSTACY@MC whether he intends
+to bring it up or not).  TeX80 version 3.3 will in fact disappear
+from MC completely sometime this summer.  The rest of this note
+describes how TeX80 3.3 users can convert their source and macro
+files so as to work with TeX80 version 6.6.  This is a very
+simple change to make.
+
+4. TeX80 6.6 is described in the book ``TeX and Metafont, New
+Directions in Typesetting,'' Donald E. Knuth, Digital Press/AMS,
+1979.  As careful readers of that book will note, the only way in
+which TeX80 6.6 is not completely upward compatible with TeX80
+version 3.3 is in the manner one initially loads font information
+and associates it with a font letter.  In addition, on MC,
+version 6.6 looks for macro files not found in a user's current
+directory on the NTEXLB; directory, while version 3.3 looks for
+such files on the TEXLIB; directory.  Thus, to convert source/macro
+files that worked under version 3.3 to work under version 6.6,
+you must perform the following two changes:
+
+    1. Any command sequence of the form
+	      \:<char>=<fontfile> <optional sizing clause>
+       such as
+	      \:A=CMR10
+	      \:<=cmb10 at 12pt
+	      \:b=HELICA at 10pt
+              \: C=timman at 9pt
+       must be changed to have the form
+	      \font <char>=<fontfile> <optional sizing clause>
+       as in
+	      \font A=CMR10
+	      \font <=cmb10 at 12pt
+	      \font b=HELICA at 10pt
+	      \font  C=timman at 9pt
+       Note that this change ONLY applies to contexts in which
+       the \: macro is being used to LOAD a font, not where it
+       is being used to CHANGE THE CURRENT FONT.  For example,
+       macro definitions of the form
+	      \def\rm{\:A}
+       should be left UNCHANGED!  (These font-changing contexts
+       are distingushed by the fact that the \:<char> is not
+       followed by an = sign.)
+
+    2. Any \input command which inputs a file from the TEXLIB;
+       directory must explicitly refer to that directory.  For
+       example, the two commands:
+	      \input basic
+	      \input |basic tex|
+       intended to input the file TEXLIB;BASIC TEX must now read
+              \input texlib;basic
+	      \input |texlib;basic tex|
+
+       Of course, very few of the files on the TEXLIB directory
+       will work properly with version 6.6 as they now stand;
+       someone should go through them and make these two changes
+       to their contents!
+
+5. A few final notes:
+    a. It is safest not to ask for Computer Modern fonts in sizes
+       greater than 10pt unless you do this by scaling.  For
+       example, instead of issuing the commands
+	      \font A=CMR12
+	      \font B=CMTI12 at 18pt
+       it is better to issue the commands
+              \font A=CMR10 at 12pt
+	      \font B=CMTI10 at 18pt
+       The output produced using these latter commands will look
+       the same, but you are less likely to have the Dover
+       substitute fonts on you.
+
+    b. If you use macro files produced by someone else, such as
+       the PFCTEX files or some other package, you must make sure
+       that these files have been converted as mentioned above.
+       If you don't feel qualified to do the conversion yourself,
+       then get in contact with whoever wrote or maintains the
+       package.  In addition, beware of macro files that \input
+       other macro files; you must convert all of them before
+       using any of them!
+
+    c. Although there are files on the NTEXLB; directory that
+       have the same name as those on the TEXLIB; directory
+       (such as BASIC and so on), these contents of these files
+       are liable to vary widely from those of their TEXLIB;
+       counterparts.  Thus, you cannot get your file to work
+       simply by running it under version 6.6 and letting it
+       automatically substitute NTEXLB; files for TEXLIB; files
+       of the same name.  You must convert the TEXLIB; files
+       and explicitly include TEXLIB; in your \input command.
+
+6. Good luck with the conversion.

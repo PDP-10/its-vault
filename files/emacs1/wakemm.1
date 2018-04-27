@@ -1,0 +1,113 @@
+TITLE WAKEMM - Wake up MMAILR to deliver mail
+SEARCH MONSYM,MACSYM
+ASUPPRESS
+
+A=1
+B=2
+C=3
+D=4
+
+MYPID:	BLOCK 1			; IPCF PID for talking to the world
+IPCBLK:	BLOCK .IPCFP+1		; Block for IPCF transactions
+TEMP:	BLOCK 100		; Temporary storage
+
+START:	RESET%			; Initialize the world
+	MOVX A,IP%CPD		; Creating a PID
+	MOVEM A,IPCBLK+.IPCFL
+	SETZM B,IPCBLK+.IPCFS	; No PID yet
+	SETZM IPCBLK+.IPCFR	; Send to INFO
+	MOVX A,<.IPCI2+3,,TEMP> ; Length of INFO msg,,where INFO msg is
+	MOVEM A,IPCBLK+.IPCFP
+	MOVX A,.IPCIW		; Return PID associated with name
+	MOVEM A,TEMP+.IPCI0
+	SETZM TEMP+.IPCI1	; Duplicate copy not needed
+	DMOVE A,[ASCII/[SYSTEM]MM/] ; 1st part of PID to look up
+	DMOVEM A,TEMP+.IPCI2
+	MOVE A,[ASCII/AILR/]	; 2nd part of PID to look up
+	MOVEM A,TEMP+.IPCI2+2
+	MOVX A,.IPCFP+1		; Length of block
+	MOVEI B,IPCBLK		; Get MMailr's PID
+	MSEND%
+	 ERJMP DONE		; Looks like INFO isn't there
+	MOVE A,IPCBLK+.IPCFS	; Get the PID I made
+	MOVEM A,MYPID		; Remember it for next time
+	DO.
+	  SETZM IPCBLK+.IPCFL	; No flags
+	  SETZM IPCBLK+.IPCFS	; Any sender
+	  MOVE A,MYPID		; I'm the receiver
+	  MOVEM A,IPCBLK+.IPCFR
+	  MOVX A,<10,,TEMP>	; Place to put the reply
+	  MOVEM A,IPCBLK+.IPCFP
+	  MOVX A,.IPCFP+1	; Length of block
+	  MOVEI B,IPCBLK	; Get reply from INFO
+	  MRECV%
+	   ERJMP DONE		; Failure irrelevant here
+	  LOAD A,IP%CFC,IPCBLK+.IPCFL ; See who sent message
+	  CAIE A,.IPCCC		; From <SYSTEM>IPCF?
+	   CAIN A,.IPCCF	; No, from <SYSTEM>INFO?
+	   IFSKP.
+	     LOOP.		; No, get another message
+	   ENDIF.
+	ENDDO.
+	JN <IP%CFE,IP%CFM>,IPCBLK+.IPCFL,DONE ; give up if undeliverable
+
+	SETZM IPCBLK+.IPCFL	; No flags
+	MOVE A,MYPID		; I'm the sender
+	MOVEM A,IPCBLK+.IPCFS
+	MOVE A,TEMP+.IPCI1	; MMailr is the recepient
+	MOVEM A,IPCBLK+.IPCFR
+	MOVX A,<1,,TEMP>	; One word from scratch buffer
+	MOVEM A,IPCBLK+.IPCFP
+	MOVX A,'PICKUP'		; Magic word to wake up MMailr
+	MOVEM A,TEMP
+	MOVX C,^D20
+	DO.
+	  MOVX A,.IPCFP+1	; Length
+	  MOVEI B,IPCBLK	; Send START to MMailr
+	  MSEND%
+	  IFJER.
+	    MOVEI A,^D1000	; Failed, wait a bit
+	    DISMS%
+	    SOJG C,TOP.		; Try a few times
+	    JRST DONE
+	  ENDIF.
+	ENDDO.
+
+	MOVX A,.MUQRY		; Query function for MUTIL%
+	MOVEM A,TEMP
+	MOVE A,MYPID		; Query packets for our PID
+	MOVEM A,TEMP+1
+	MOVX C,^D20		; Number of retries
+	DO.
+	  MOVX A,.IPCFP+2	; Number of words to return
+	  MOVEI B,TEMP		; Argument block in scratch buffer
+	  MUTIL%
+	  IFJER.
+	    MOVEI A,^D1000	; Wait a bit
+	    DISMS%
+	    SOJG C,TOP.		; Retry a few times
+	    JRST DONE
+	  ENDIF.
+	ENDDO.
+	DO.
+	  SETZM IPCBLK+.IPCFL	; No flags
+	  SETZM IPCBLK+.IPCFS	; Sender is filled in by monitor
+	  MOVE A,MYPID		; I'm the receiver
+	  MOVEM A,IPCBLK+.IPCFR
+	  MOVX A,<10,,TEMP>	; Where MMailr reply will go
+	  MOVEM A,IPCBLK+.IPCFP
+	  MOVX A,.IPCFP+1	; Size of block
+	  MOVEI B,IPCBLK	; Get reply from MMailr
+	  MRECV%
+	   ERJMP .+1		; Error uninteresting here
+	  LOAD A,IP%CFC,IPCBLK+.IPCFP ; Get sender code
+	  IFN. A		; Special sender?
+	    CAIE B,.IPCCF	; From <SYSTEM>INFO
+	     CAIN B,.IPCCP	; Or private <SYSTEM>INFO?
+	      LOOP.		; Yes, try for another message
+	  ENDIF.
+	ENDDO.
+DONE:	HALTF%
+	JRST START
+
+	END START

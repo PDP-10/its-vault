@@ -1,0 +1,113 @@
+!* -*- Teco -*- *!
+
+!~Filename~:! !Library for manipulating sends on slow ttys...!
+SENDS
+
+!Muffle DDT Sends:! !S Tell DDT not to notify you of sends in inferiors!
+
+@..SENDRP/-1
+:VP_
+0
+
+
+!& Setup SENDS Library:! !& Do the setup to make this all win...!
+
+1,m(m.m &_Get_Library_Pointer)MODLIN"e
+  @ft MODLIN_Library_needed_by_SENDS_Library;_Loading_it...
+  m(m.m Load_Library)MODLIN
+  @ft _Done. 
+  0fsechoactive'
+0fo..Q SENDS_Docm.v SENDS_Doc
+m(m.m&_Sends_File_Time)m.vLast_Sends_File_Time
+m.m&_Sends_Notificationm.vMM_&_Periodic_Action
+m(m.mMuffle_DDT_Sends)		    !* Tell DDT to be quiet	!
+m.m^R_SEND/PRSENDu...S		    !* C-M-S does prsends	!
+
+
+!& Sends File Time:! !& Get creation date of sends file!
+
+e[ fn ec e] 			    !* Bind io channels		!
+f[dfile			    !* bind default filename	!
+fsuname:f6[U			    !* get uname in qU		!
+fsmachine:f6[S			    !* get site in qS		!
+1:<				    !* Watch for no sends file	!
+   er.TEMP.;S:U_SENDS	    !* Open sends file		!
+  >"n -1'			    !* Return -1 if no file	!
+fsifcdate			    !* Or get file creation date!
+
+
+!^R PRSENDS:! !^R Print sends file in echo area 
+Pauses after each line for input. Type space tot continue, rubout to 
+flush. Anything else flushes and is re-read as an Emacs command.!
+
+m(m.m&_Sends_File_Time)uLast_Sends_File_Time
+f[bbind			    !* bind temp buffer			  !
+f[dfile			    !* bind default filename		  !
+fsuname:f6[U			    !* get uname in qU			  !
+fsmachine:f6[S			    !* get site in qS			  !
+1:<
+er.TEMP.;S:U_SENDS		    !* open sends file			  !
+@y>"N @ft(No_Sends) 0fsechoactive 0'	!* yank file			  !
+:i*CSends_for_U...Afsechodisplay	    !* clear echo area	  !
+m(m.m&_Echo_Display_Input)
+0fsechoactive			    !* lie about having changed echo area !
+0				    !* return				  !
+
+
+!& Sends Notification:! !& Notify about sends in echo area !
+
+m(m.m&_Sends_File_Time)[1	    !* Check sends file time		!
+q1-qLast_Sends_File_Time"n	    !* If needed,...			!
+  qSENDS_Doc"e
+   :i*Cfsechodisplay	    !* Clear echo area 			!
+   @ftYou_have_sends.__You_can_view_them_with_C-M-S_and/or_reply
+      with_C-U_C-M-S._'
+  "# @ft(You_have_sends)''	    !*  Type out			!
+q1uLast_Sends_File_Time	    !* Update last sends time		!
+0fsechoactive			    !* Save echo area display		!
+0				    !* Return				!
+
+!^R SEND:! !^R Send a message to another user!
+1,m(m.m&_Read_Line)Send_To:_[U
+fqU"l@ft(Aborted)0'
+f[bbindw gU j !* Get user name in buffer !
+[M :s@%"l -d .,zfxM hfxU ' "# :iM ' !* Process machine name !
+fsmachine-(f6M)"e :iM ' !* Own site should really be null string !
+e?MUSR:U_HACTRN"n @fg @ft(Not_Logged_In) 0fsechoactivew 0 '
+fsxuname:f6[W
+hk e\ fn e^ 
+iŠ[Message_from_W_at_MIT- g(fsmachine:f6)
+i__ m(m.mInsert_Date)w :l
+i]î 
+1,m(m.m&_Read_Line)Re:_[S
+fqS"g iRe:_ gS iî '
+<:i*C?__fsechodisplay
+ :fi-"e fiw 0;' !* Peek for ^C !
+ 1,m(m.m&_Read_Line):__[T fqT"l 0;'
+ gT iî 
+>
+1:< :ew Mcli: U _ hactrn  ee  >"n @ft(Failed) 0fsechoactive 0'
+@ft(Sent_to_U fqM"g @ft@M' @ft)
+0fsechoactive
+0
+
+!^R SEND/PRSEND:! !^R Without arg, PRSENDS, else SEND!
+
+1m.vSENDS_Doc
+ff"n @:m(m.m ^R_SEND)'
+      "# @:m(m.m ^R_PRSENDS)'
+
+!WHOJ:! !S Say who is logged in and what they are doing.!
+
+f[bbindw f[dfilew e[ fn e]
+er tty: .file. _ (dir)  @y zj -d
+m(m.m&_Echo_Display_Input)
+
+ 
+
+!& Echo Display Input:! !& ...!
+
+j <.-z"e @ft(Done) 0;' :@t	    !* Loop typing each line		  !
+   :fi-¢e fiw @ft(Flushed) 0;' !* Rubout flushes harmlessly	  !
+   :fi-_"n     @ft(Flushed) 0;' !* Non-Space/Rubout is re-read	  !
+   fiw @ftî  l>		    !* Munch char and loop		  !
