@@ -1,0 +1,53 @@
+(DECLARE (SPECIAL PTP-CHANNEL PTR-CHANNEL))
+
+(SETQ PTP-CHANNEL 1 PTR-CHANNEL 2)
+
+(DEFUN PUNCH ()
+       (PROG (FILE FILE-NAME FILE-LENGTH)
+     LUP     (TERPRI)
+             (PRINC '|Type file name in Lisp format: |)
+	     (SETQ FILE-NAME (READ))
+	     (COND ((NOT (SETQ FILE (OPEN FILE-NAME '(IN FIXNUM))))
+		   (TERPRI)
+		   (PRINC '|FILE OPEN FAILED|)
+		   (GO LUP)))
+	     (SETQ FILE-LENGTH (CAR (SYSCALL 1 'FILLEN FILE)))
+	     (OPEN-PTP)
+	     (FEED 100)
+	     (DO ((I 0 (1+ I) ))
+		 ((= I FILE-LENGTH))
+		 (TAPE (IN FILE)))
+	     (FEED 100)
+	     (GO LUP)))
+
+(DEFUN FEED (N)
+       (DO I 0 (1+ I) (= I N)
+	   (TAPE 0)))
+
+(DEFUN TAPE (CHR)
+       (SYSCALL 0 'IOT PTP-CHANNEL CHR))
+
+(DEFUN OPEN-PTP ()
+       (SYSCALL (LSH 15 18.) 'OPEN PTP-CHANNEL (LSH 606460 18.)))
+
+(DEFUN OPEN-PTR ()
+       (SYSCALL (LSH 10 18.) 'OPEN PTR-CHANNEL (LSH 606462 18.)))
+
+(DEFUN TAPE-IN ()
+       (CAR (SYSCALL 1 'IOT PTR-CHANNEL)))
+
+(DEFUN YANK ()
+       (PROG (FILE FILE-NAME)
+  LUP	     (TERPRI)
+	     (PRINC '|Name of output file in Lisp format: |)
+	     (SETQ FILE-NAME (READ))
+	     (SETQ FILE (OPEN FILE-NAME '(OUT FIXNUM)))
+	     (OPEN-PTR)
+	     (DO ((I (TAPE-IN) (TAPE-IN))
+		  (N 0 (1+ N)))
+		  ((= I 377) (PRIN1 (1- N))
+			   (PRINC '| characters read|))
+		 (OUT FILE I))
+	     (CLOSE FILE)
+	     (GO LUP)))
+

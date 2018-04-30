@@ -1,0 +1,587 @@
+
+
+
+TITLE CNVERT - CONVERT STANFORD TO LEAHY - FOONLY PROJECT, 24 APRIL 1976
+INTERN CNVERT,LEAHY,uplhy,lhyrst
+
+EXTERN LHYWRD
+
+	OPDEF INSKIP [TTYUUO 13,]
+	OPDEF OUTSTR [TTYUUO 3,]
+	OPDEF HIBER [CALLI 72]
+
+
+	P_17			;CONTROL STACK
+;TYPICAL CALLING SEQUENCE
+;	PUSH P,[IBUFFER]	;POINTER TO INPUT BUFFER WITH STANFORD DPY LIST
+;	PUSH P,[OBUFFER]	;POINTER TO OUTPUT BUFFER FOR LEAHY DISPLAY LIST
+;	PUSHJ P,CNVERT		;RETURNS WORD COUNT OF OUTPUT IN AC1
+;	......
+;IBUFFER: BLOCK 1000
+;	2000		;SIZE OF OBUFFER
+;OBUFFER: BLOCK 2000
+
+;ACCUMULATOR USE:
+;	0,1		VERY TEMPORARY
+;	X,Y,TYPE	FIELD EXTRACTION
+;	DX,DY		DELTA X,DELTA Y
+;	IPTR,OPTR	BUFFER POINTERS
+;	IWRD		CURRENT STANFORD-III WORD BEING CONVERTED
+;	X0,Y0		CURRENT BEAM POSITION
+;	14,15,16	UNUSED
+;	P		CONTROL STACK
+
+	DEFINE ACCUMULATORS(LIST)<ACPTR__2
+	FOR AC in (LIST)<AC_ACPTR
+ACPTR__ACPTR+1
+>>
+	ACCUMULATORS<X,Y,TYPE,DX,DY,IPTR,OPTR,IWRD,X0,Y0,wdcnt>
+;	ACCUMULATOR<X,Y,TYPE,DX,DY,IPTR,OPTR,IWRD,X0,Y0>
+
+;FETCH ARGUMENTS FROM STACK
+CNVERT:	hrrz IPTR,-2(P)
+	hlrz wdcnt,-2(p)
+	HRRZ OPTR,-1(P)
+	HLRZ TYPE,-1(P)		;LENGTH OF OUTPUT BUF.
+	MOVEI X0,0		;INITIAL BEAM POSITION
+	MOVEI Y0,0
+;CLEAR OUTPUT BUFFER
+	MOVE 0,OPTR 
+	HRL 
+	AOS			;XWD FROM,TO
+	MOVE 1,OPTR 
+	SETZM (1)
+	ADD 1,TYPE  
+ 	BLT 0,-1(1)
+	SUBI 1,4
+ 	MOVEM 1,LASTWORD#	;LAST WORD OF OUTPUT BUFFER
+;TWO PARAMETER WORDS TO LEAHZY
+	move optr
+	hrli	[cparam:	400006,,010000
+				4000000
+				52000777
+				41776777
+				40000000 ]
+	blt 4(optr)
+	addi optr,5
+		
+
+;MAIN CONVERSION SCANS WORDS UNTIL THE STANFORD-III EXECUTES A HALT
+; OR UNTIL THE LEAHY BUFFER BECOMES FULL
+LOOP:	CAML OPTR,LASTWORD 
+ 	JRST DONEX			;IS LEAHY BUFFER FULL YET
+	SOJL WDCNT,DONE
+	MOVE IWRD,(IPTR)		;FETCH STANFORD III WORD
+	aos iptr
+	LDB 1,[POINT 4,IWRD,35]		;4-BITS OF OPCODE
+	PUSHJ P,@OPTABLE(1)		;DISPATCH
+	JRST LOOP
+
+donex:	outstr [asciz /
+DISPLAY BUFFER OVERFLOW - DISPLAY TRUNCATED.
+/]
+
+DONE:	jsp 1,xchk
+	jfcl
+	MOVE 1,OPTR
+	HRRZ -1(P)	;WORD COUNT OF OUTPUT BUFFER
+	SUB 1,0
+	SUB P,[3(3)] 
+ 	JRST @3(P)	;EXIT
+
+OPTABLE:		;  1=TEXT WORD
+	XHALT
+ 	XTEXT
+ 	SHORT
+ 	XTEXT		; 00=HALT,JMP	02=SHORT
+	XCNTR
+ 	XTEXT
+ 	LONG
+  	XTEXT		; 04=JMS,JSR,SAV 04=LONG
+	XSELT
+ 	XTEXT
+ 	TSSKP
+ 	XTEXT		; 10=SELECT	12=TEST SKIP
+	XREST
+ 	XTEXT
+ 	IIINOP
+ 	XTEXT		; 14=RESTORE	16=NOP
+TYPETABE:	5B14 
+	 	6B14 
+	 	4B14 
+		6B14	
+
+;STANFORD-III VECTOR UNPACKING
+
+LONG:	MOVE X,IWRD 
+ 	ASH X,-=25			;11-BIT X FIELD
+	MOVE Y,IWRD 
+ 	ROT Y,=11 
+ 	ASH Y,-=25			;11-BIT Y FIELD
+
+	LDB [POINT 3,IWRD,24] 		;GET BRIGHTNESS FIELD.
+	JUMPE LONG2
+	CAMN IIIBRT
+	JRST LONG2
+ 	MOVEM IIIBRT#			;BRIGHTNESS
+	TLO OPTR,700000
+	MOVEI DY,11
+BRTX:	CAIL 2
+	MOVEI DY,0
+	DPB DY,[POINT 3,CPARAM,26]
+	LSH DY,-3
+	DPB DY,[POINT 1,CPARAM+1,16]
+	
+LONG2:	LDB DY,[POINT 3,IWRD,27] 
+	jumpe DY,long1		;Setting chr. size ?
+	camn dy,ccsz#		;Yes. Is it changing ?
+	jrst long1		;No.
+	TLO OPTR,700000
+	movem dy,ccsz		;Yes.
+	dpb dy,[point 3,cparam,23]
+	move dy,cxsz(dy)
+	movem dy,cxinc#		;Horiz.size of char.
+LONG1:	JUMPG OPTR,LONG3
+	jsp 1,xchk
+	addi optr,2		;Step over a vector...
+	subi optr,1
+	push optr,cparam
+	push optr,cparam+1
+	movei optr,1(optr)
+
+long3:	LDB TYPE,[POINT 3,IWRD,31]	;VECTOR TYPE
+	TRZN TYPE,4 
+ 	JRST RELATV			;MODE RELATIVE ?
+	PUSHJ P,VECTA			;make Leahy Vector 
+ 	POPJ P,
+
+SHORT:	;;;;jrst 4,.
+	LDB X,[POINT 7,IWRD,06] 
+ 	ROT X,-7 
+ 	ASH X,-=29 			;7-BIT X FIELD
+	LDB Y,[POINT 7,IWRD,13] 
+ 	ROT Y,-7 
+ 	ASH Y,-=29 			;7-BIT Y FIELD
+	LDB TYPE,[POINT 2,IWRD,15]	;VECTOR TYPE
+	ADDM X0,X 
+ 	ADDM Y0,Y			;SHORT ARE RELATIVE
+	PUSHJ P,VECTA			;MAKE LEAHY VECTOR
+	LDB X,[POINT 7,IWRD,22] 
+ 	ROT X,-7 
+ 	ASH X,-=29 			;7-BIT X FIELD
+	LDB Y,[POINT 7,IWRD,29] 
+ 	ROT Y,-7 
+ 	ASH Y,-=29 			;7-BIT Y FIELD
+	LDB TYPE,[POINT 2,IWRD,31]	;VECTOR TYPE
+RELATV:	ADDM X0,X 
+ 	ADDM y0,y
+	PUSHJ P,VECTA 
+	POPJ P,				;MAKE LEAHY VECTOR
+
+;PACK LEAHY VECTOR GIVEN X,Y TYPE
+YCHK:	CAMN X,X0
+	CAME Y,Y0
+xchk:	SKIPA DX,(optr)
+	POPJ P,
+ 	JUMPE DX,1(1)
+	TLNE DX,40 
+ 	JRST (1)
+ 	AOS OPTR			;TERMINATE TEXT ?
+	jrst 1(1)
+
+vecta:	camg x,[-1000]
+	hrrei x,-1000
+	cail x,777
+	movei x,777
+	camg y,[-1000]
+	hrrei ,-1000
+	cail y,777
+	movei y,777
+
+	jsp 1,Ychk
+	jrst vectb
+L1:	hrli 400040			;tangent word opcode field
+	DPB X0,[POINT 10,0,11]
+	DPB Y0,[POINT 10,1(OPTR),11]
+	movem (optr)
+	DPB X,[POINT 10,1(OPTR),35]
+ 	DPB Y,[POINT 10,1(OPTR),25]	;FINAL BEAM LOCUS
+	MOVE TYPETABLE(TYPE) 
+ 	IORM 1(OPTR)
+	MOVE DX,X 
+ 	SUB DX,X0			;SIGNED DELTAS
+	MOVE DY,Y 
+ 	SUB DY,Y0
+	MOVEM X,X0 
+ 	MOVEM Y,Y0			;UPDATE BEAM LOCUS
+	MOVMM DX,X 
+ 	MOVMM DY,Y			;ABSOLUTE DELTAS
+
+;DETERMINE MAJOR AXIS
+	CAMG Y,X 
+ 	JRST [EXCH DX,DY 
+	 JRST .+3]			;X-AXIS IS MAJOR
+	HRLZI 4 
+	 IORM 1(OPTR)			;Y-AXIS IS MAJOR
+	JUMPGE DY,.+3 
+	 HRLZI 10 
+	 IORM (OPTR)			;SIGN OF MAJOR AXIS
+	JUMPN TYPE,L2
+;TEST FOR HORIIZONTAL OR VERTICAL CASE, DELTA MINOR AXIS=0
+	JUMPE DX,L3			;IF DX=0 THEN TAN=0
+
+;COMPUTE TANGENT HAVING SIGN OF THE MINOR AXIS (DX=MINOR, DY=MAJOR)
+;TANGENT = 777 * MINORDELTA / ABS(MAJORDELTA)
+	ASH DX,=9 
+ 	SOS DX
+	MOVMS DY 
+ 	IDIV DX,DY
+	JRST L3
+
+;IF INVISIBLE VECTOR THE TANGENT=(IF POS(DX) THEN 1000 ELSE 0000777)
+L2:
+	 HRRI DX,1000 
+	 SKIPGE DX 	
+	 SETCA DX,		;SETQ INVISIBLE TANGENT
+	 HRLZI 10 
+	 XORM (OPTR)		;COMPLEMENT SIGN MAJOR AXIS
+L3:	DPB DX,[POINT 10,(OPTR),25]		;PACK TANGENT INTO LEAHY LIST
+	HRLI 40;IORM (OPTR)			;VECTOR OP CODE
+	POPJ P,
+
+;PACK LEAHY VECTOR GIVEN X,Y,TYPE
+VECTB:	DPB x,[POINT 10,2(OPTR),35]
+ 	DPB Y,[POINT 10,2(OPTR),25]	;FINAL BEAM LOCUS
+	MOVE TYPETABL(TYPE) 
+ 	IORM 2(OPTR)		;VIS,END,INV,END
+	MOVE DX,X 
+ 	SUB DX,X0				;SIGNED DELTAS
+	MOVE DY,Y 
+ 	SUB DY,Y0
+	MOVEM X,X0 
+ 	MOVEM Y,Y0			;UPDATE BEAM LOCUS
+	MOVMM DX,X 
+	MOVMM DY,Y			;ABSOLUTE DELTAS X,Y
+
+;DETERMINE MAJOR AXIS
+	CAMG Y,X 
+	 JRST [EXCH DX,DY 
+	 JRST .+3]	;X-AXIS IS MAJOR
+	HRLZI 4 
+	 IORM 2(OPTR)				;Y-AXIS IS MAJOR
+	JUMPGE DY,.+3 
+	 HRLZI 4 
+	 IORM (OPTR)		;SIGN OF MAJOR AXIS
+	JUMPN TYPE,M2
+
+;TEST FOR HORIZONTAL OR VERTICAL CASE, DELTA MINOR AXIS=0
+	JUMPE DX,M3		;IF DX=0 THEN TAN=0
+
+;COMPUTE TANGENT HAVING SIGN OF THE MINOR AXIS (DX=MINOR, DY=MAJOR)
+;TANGENT = 777 * MINORDELTA / ABS(MAJORDELTA)
+	ASH DX,=9 
+ 	SOS DX
+	MOVMS DY
+  	IDIV DX,DY
+	JRST M3
+
+;IF INVISIBLE VECTOR THEN TANGENT=(IFF POS(DX) THEN 1000 ELSE 777)
+m2:
+	 HRRI DX,1000 
+ 	SKIPGE DX 
+ 	SETCA DX,		;SETQ INVISIBLE TANGENT
+	 HRLZI 4 
+ 	XORM (OPTR)		;COMPLEMENT SIGN MAJOR AXIS
+M3:	DPB DX,[POINT 10,(OPTR),35]	;PACK TANGENT INTO LEAHY LIST
+	ADDI OPTR,3 
+ 	POPJ P,
+;unpack a word of 7-bit ascii from stanford III text display word
+xtext:	rot iwrd,7
+	pushj p,lchr
+	rot iwrd,7
+	pushj p,lchr
+	rot iwrd,7
+	pushj p,lchr
+	rot iwrd,7
+	pushj p,lchr
+	rot iwrd,7
+	pushj p,lchr
+	popj p,
+;LEAHY CHARACTER DISPLAY - CHARACTER IN LOW ORDER OF IWRD
+lchr:	TRNN IWRD,177 
+ 	POPJ P,		;IGNORE THE NULLS
+
+
+;ADVANCE LEAHY BEAM POSITION FOR THIS CHARACTER
+	LDB 0,[POINT 7,IWRD,35]
+
+;	CAIN 0,11 
+;	 JRST [ADDI X0,0 
+;	 JRST L1]	;TAB
+;	CAIN 0,12 
+;	 JRST [SUBI Y0,0 
+;	 JRST L1]	;LINEFEED
+;	CAIN 0,15 
+;	 JRST [MOVEI X0,0 
+;	 JRST L1]	;CARRIAGE RETURN
+
+	ADD X0,cxinc	;PRINTABLE CHR
+	cail x0,770
+	jrst [	sub x0,cxinc
+		popj p,]
+
+;PACK A 7-BIT ASCII CHARACTER INTO THE LEAHY DISPLAY LIST
+	MOVE (OPTR) 
+	JUMPE C1	;IF ZERO-WORD THEN 1ST CHR
+	TLNE 40 
+ 	JRST C0		;IF VECTOR-WORD THEN STEP-OVER
+	TRNN 177B28 
+ 	JRST C2 
+ 	JRST C3		;2ND OR 3RD CHR ?
+C0:	ADDI OPTR,2
+C1:	MOVSI 30 
+ 	MOVEM (OPTR)	;LEAHY TEXT WORD OPCODE
+	DPB IWRD,[POINT 7,(OPTR),21] 
+ 	POPJ P,		;1ST CHARACTER
+C2:	DPB IWRD,[POINT 7,(OPTR),28] 
+ 	POPJ P,		;2ND CHARACTER	
+C3:	DPB IWRD,[POINT 7,(OPTR),35] 			;3RD CHARACTER
+	AOS OPTR 
+ 	POPJ P,
+
+cxsz:	4
+	10
+	14
+	20
+	24
+	30
+	34
+	40
+
+
+
+IIINOP:		POPJ P,			; 16 = III NO OPERATION
+
+XHALT:		TRNE IWRD,20 
+ 		JRST XJUMP	; 00 = HALT
+		popj p,
+
+
+;NOT IMPLEMENTED, EXECUTED AS NOP'S
+
+XJUMP:	POPJ P,		; 20 = JMP
+XCNTR:	POPJ P,		; 04 = JMS, 24 = JSR, 64 = SAV
+XSELT:	POPJ P,		; 10 = SELECT
+TSSKP:	POPJ P,		; 12 = TEST SKIP
+XREST:	POPJ P,		; 14 = RESTORE
+
+dpy__210
+dprest__4
+dpreqs__2
+dprqcl__1
+pi__4
+
+lhyrst:	setom lhyf1#
+	popj p,
+
+
+GOD:	movei 1,0
+	trpset 1,
+	jfcl
+	cono 4,400	;PI off
+	aosn lhyf1
+;;;  movei 20
+	cono dpy,dprest	;Display Reset
+	cono dpy,dpreqs	;Start display processor to gobble words
+	movei TYPE,200
+	sojg TYPE,.
+;;;  sojg .-4
+	POPJ P,
+
+LEAHY:
+	aose lchgfg
+	popj p,
+
+	pushj p,lhycnt
+	movei x,4
+	movei dy,0
+	PUSHJ P,GOD
+ll1:	trne x,100
+	hrri x,4
+	move optr,pogptr(x)
+	move dx,-1(optr)
+	SUB DX,-2(OPTR)		;GET MINUS THE NO. OF WORDS IN THIS POG.
+	jumpge dx,ll2
+	subi dx,3
+	sub dy,dx
+LL5:	HRREI Y,-7776(DY)
+	SKIPL Y
+	ADD DX,Y
+	LDB TYPE,[POINT 4,DX,35]
+	SUB OPTR,TYPE
+	HRL OPTR,DX
+	JRST .+1(TYPE)
+LL3:  REPEAT 20,<DATAO DPY,.-LL3(OPTR)>
+	ADD OPTR,[20,,20]
+	JUMPL OPTR,LL3
+	JUMPGE Y,LL4
+ll2:	sojge x,ll1
+LL4:	cono dpy,dprqcl
+	cono pi,200
+	jrst 2,@[.+1]
+	JUMPGE Y,LLOOP
+	popj p,
+
+lhycnt:	movei y,4
+	movei dy,0
+	move x,pogptr(y)
+	add dy,-2(x)
+	sub dy,-1(x)
+	sojge y,.-3
+
+	MOVE DX,[POINT 3,DY,23]
+	SKIPA X,[POINT 7,POGD+15,14]
+	IDPB OPTR,X
+	ILDB OPTR,DX
+	   ADDI OPTR,60
+	tlne dx,760000
+	jrst .-4
+	dpb optr,[point 7,pogd+16,21]
+	popj p,
+
+LLOOP:	MOVEI TYPE,=31
+	HIBER TYPE,
+	JFCL
+
+	INSKIP
+	SKIPA DX,[-5,,LPARAM]
+	POPJ P,
+	PUSHJ P,GOD
+	
+	ADDI Y,1
+	SKIPL (OPTR)
+	SOJA OPTR,.-2
+	SOS DY,Y
+	LDB 1,[POINT 10,(OPTR),11]
+	DPB 1,[POINT 10,LPARAM+4,35]
+	LDB 1,[POINT 10,1(OPTR),11]
+	DPB 1,[POINT 10,LPARAM+4,25]
+	DATAO DPY,(DX)
+	AOBJN DX,.-1
+
+	HRLI X,200000	;FLAG LOOP MODE
+	MOVNI DX,3(Y)
+	ADDI DY,10
+	JRST LL5
+
+LPARAM:	6011000
+	6000000
+	52000777
+	41776777
+	40000000
+
+
+;leahy iots
+intern lhyadd,lhyiot,lhyout
+
+	 1000
+	 1000
+POG0:	block 1000
+
+	 400
+	 400
+POGA:	block 400
+
+	 1000
+	 1000
+POGB:	block 1000
+
+	 12000
+	 12000
+POGC:	block 12000
+
+   	 1000
+	 1000
+POGD:	block 1000
+
+pognm:	1	;EXPERIMENTALLY DETERMINED WINNING ASSIGNMENT FOR D.
+	3
+	2
+	4
+	0	
+
+
+pogptr:	pog0
+	poga
+	pogb
+	pogc
+	pogd
+
+sva:	block 17
+
+svacs:	movem 16,sva+16
+	movei 16,sva
+	blt 16,sva+15
+	popj p,
+
+gpog:	pushj p,svacs
+	ldb 1,[point 4,40,12]
+	movei x,4
+	came 1,pognm(x)
+	sojge x,.-1
+	jumpge x,cpopj
+	movei x,4
+	skipL pognm(x)
+	sojge x,.-1
+	jumpl x,[	AOS -1(P)	;DO A SKIP RETURN TO THE
+			SUB P,[1,,1]			
+			JRST RACS]	; TOP LEVEL CALLER.
+	movem 1,pognm(x)
+pogclr:
+	move y,pogptr(x)
+	MOVE -2(Y)
+	movem -1(y)
+cpopj:	popj p,
+
+lhyadd:	pushj p,gpog
+llx:	move X,pogptr(x)
+	movem X,svpog#
+	MOVE Y,X
+	sub y,-1(X)
+	ADD Y,-2(X)
+	HRL Y,-1(X)
+	push p,@40
+	push p,y
+	pushj p,cnvert
+	movns 1
+	sos svpog
+	addm 1,@svpog
+	aos (p)
+lly:	setom 40	
+racs:	movsi 16,sva
+	blt 16,16
+	setom lchgfg#
+	popj p,
+
+lhyout:	pushJ p,gpog
+	pushj p,pogclr
+	jrst llx
+
+lhyiot:	pushj p,svacs
+	ldb 1,[point 4,40,12]	;AC field of DPYIOT
+	jumpg 1,racs		;don't simulate
+	movei x,4
+	pushj p,pogclr
+	sojge x,.-1
+	jrst lly
+
+
+patch:	block 40
+
+uplhy:	pushj p,svacs
+	pushj p,leahy
+	jrst racs
+
+
+end
+
