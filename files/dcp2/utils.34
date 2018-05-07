@@ -1,0 +1,1282 @@
+;;; -*-midas-*-
+
+commen ~
+CONKIL	-- Kills idle chaos file servers
+UPTIME	-- Uptime of all hosts that are thought to have it
+MUPTIME -- Uptime of MINITS systems
+XUPTIME -- Uptime on only experimental hosts
+XMUPTIME-- Uptime experimental and MINITS
+AUPTIME	-- Uptime on everybody that 'should' have it
+8TO7	-- Convert left packed 8-bit to 7-bit
+BAR	-- shove status at host
+BAZ	-- start echo connection
+BAX	-- start reecho connection
+BAS	-- start sink connection
+BASS	-- Sink connection with full size packets
+BASM	-- Sink connection with minimal packets
+BARUT	-- gets routing table
+QUUX	-- status every 10 seconds and report
+BAP	-- Send stuff to the PERTEK on host 510
+SCS	-- Snarf comsat stats
+BRDUPT	-- BRD UPTIME
+~
+
+title	DCP's MIDAS untility programs
+
+.begin utils
+
+irps ac,,nil xjname links
+ac=.irpcnt
+termin
+
+utils:	movei links,utils"$util$
+	.suset [.rxjname,,xjname]
+utils2:	skipn links
+	 jrst [	.value [asciz /:Utility program not found.î:kill /]
+		.logout 1,
+		.break 16,160000
+		.value]
+	came xjname,(links)
+	 jrst [	hrrz links,1(links)
+		jrst utils2]
+	hlrz links,1(links)
+	jrst (links)
+
+constants
+variables
+
+.end utils
+
+utils"$util$==0
+define .util. name,beg
+	.1stwd sixbit /name/
+	beg,,utils"$util$
+    utils"$util$==.-2
+termin
+
+
+.begin conkil
+
+.util. conkil,go
+
+title	CONKIL -- kill idle chaos file servers 
+
+idebug==0			;0<-->not debugging
+
+nmins==10.			;n minutes of idle allowed, then POOF
+
+irps ac,,nil a b c d e f g t tt w x y z zz p
+ac=.irpcnt
+termin
+
+tyo==1				;terminal output
+logo==10			;log output file
+
+lpdl==30
+
+call=pushj p,
+return=popj p,
+
+define syscal name,args
+	.call [setz ? sixbit/name/ ? args ((setz))]
+termin
+
+.vector pdl(lpdl)
+.scalar nkilld			;for soley
+
+go:	move p,[-lpdl,,pdl-1]
+	syscal open,[[.uao,,tyo] ? [sixbit /tty/]]
+	 .lose 1400
+	call evsyms		;get system symbols
+	call logfil		;setup the log file
+	setzm nkilld
+	call conkil		;go kill connections
+	call report		;report number
+	call die		;and die
+
+die:	.close logo,
+	skipe debug
+	 .value
+	.logout 1,
+	.break 16,160000
+	.value
+
+
+define symtab syms
+irp sym,,[syms]
+	sym',,[squoze 0,/sym/]
+termin
+	0
+termin
+
+symtbl:	symtab [nindx,chsusr,jname,lubtm,time,l]
+
+define eval val,tab,idx
+	move val,tab
+	addi val,idx
+	move val,400000(val)
+termin
+
+evsyms:	movei a,symtbl
+evslp:	hrrz b,(a)
+	skipn b
+	 jrst evsy02
+	move b,(b)
+	.eval b,
+	 .lose 1000
+	hlrz c,(a)
+	movem b,(c)
+	aoja a,evslp
+
+evsy02:	move t,[-200,,200]
+	setzi tt,
+	syscal corblk,[movei %cbred+%cbndr
+		movei %jself ? t
+		movei %jsabs ? tt]
+	 .lose 1000
+	return
+
+
+define princ &str&
+	move x,[440700,,[asciz str]]
+	movei y,.length str
+	syscal siot,[movei tyo ? x ? y]
+	 .lose 1000
+	move x,[440700,,[asciz str]]
+	movei y,.length str
+	syscal siot,[movei logo ? x ? y]
+	 .lose 1000
+termin
+
+define princ1 &str&
+	move x,[440700,,[asciz str]]
+	movei y,.length str
+	syscal siot,[movei tyo ? x ? y]
+	 .lose 1000
+termin
+
+define 6type [ref]
+	move x,ref
+	call $6type
+termin
+
+$6type:	movei t,6
+$6typ2:	setzi y,
+	rotc  x,6
+	addi  y,"A-'A		;'"
+	.iot tyo,y
+	.iot logo,y
+	sojg t,$6typ2
+	return
+
+define octal [ref]
+	move x,ref
+	call $octal
+termin
+
+define decim [ref]
+	move x,ref
+	call $decim
+termin
+
+$octal:	skipa t,[8.]
+$decim:	movei t,10.
+	push p,[0]
+$dec02:	idivi x,(t)
+	addi y,"0		;"
+	push p,y
+	jumpn x,$dec02
+
+$dec92:	pop p,t
+	skipn t
+	 return
+	.iot tyo,t
+	.iot logo,t
+	jrst $dec92
+
+
+logfil:	syscal sstatu,[	movem tt ? movem tt
+			movem tt ? movem tt
+			movem tt ? movem tt]
+	 .lose 1000
+	came tt,[sixbit /MC/]
+	 jrst [	syscal open,[movsi .uao ? movei logo
+				['nul,,]]
+		 .lose 1400
+		jrst logfi4]
+	move a,[syscal open,[movs b ? movei logo
+			['dsk,,] ? ['conkil] ? ['log,,] ? [sixbit /dcp2/]]]
+	movei b,.uao*100001
+	xct a
+	 call [	movei b,.uao
+		xct a
+		 .lose 1400
+		return]
+	syscal fillen,[movei logo ? movem a]
+	 .lose 1000
+	.access logo,a
+logfi4:	.rdatime a,
+	6type b
+	princ " "
+	6type a
+	princ " "
+	.suset [.runame,,a]
+	6type a
+	princ "
+"
+	return
+
+
+
+conkil:	setzi b,
+conki1:	caml b,nindx
+	 return
+	eval t,chsusr,(b)
+	skipl t
+	 call ckchk
+	aoja b,conki1
+
+ckchk:	eval c,chsusr,(b)
+	eval d,jname,(c)
+	came d,[sixbit /FILE/]
+	 return
+	hrrz d,c		;get user part
+	idiv d,l		;convert it to index
+	eval e,time
+	eval t,lubtm,(c)
+	sub e,t
+	idivi e,30.*60.		;convert to minutes
+	caig e,nmins
+	 return
+	princ "Gunning CHAOS index "
+	octal b
+	princ ", USER "
+	octal d
+	princ ", idle for "
+	decim e
+	princ " minutes.
+"
+	skipn debug
+	call [	.gun d,
+		 skipa
+		  aos nkilld
+		return]
+	return
+
+report:	.suset [.rxuname,,a]
+	came a,[sixbit /soley/]
+	 return			;only if soley
+	move a,nkilld
+	caile  a,msgmax
+	 movei a,msgmax
+	xct (a)[
+		irp msg,,[[What do you think you're doing, twit??
+],[Only one???  Do you think you're justified??
+],[Congratulations; some poor soul just lost his file server.
+],[Three, what an odd number.
+],[MC ITS NOT IN OPERATION
+],[Five....golden...wire wrap boards...
+],[SIXbit will soon become the character set of ITS text files.
+Please update your programs.
+],[Seven, you lose, please pay the cashier two million dollars
+],[8 CHAOS connections freed.  Now you can use all 8 inferiors to
+SUPDUP to the IBM 370.
+],[You just freed 10^.95424 CHAOS connections.  Please weep for the dead.
+],[#o12 connections zapped.  This must be your lucky day.
+],[MC ITS going down in 11:00.  Soley's gunning file servers again.
+	-God
+],[PDL over flow... too many connections quilled.
+]]
+		call [	princ1 "msg"
+			return]
+		msgmax==.irpcnt
+		termin
+		]
+	return
+
+...lit:	constants
+debug:	idebug
+...var::variables
+	0			;make sure page exists
+
+.end conkil
+
+.begin uptime
+
+title UPTIME -- Polls various CHAOS sites for their uptime
+
+irps ac,,nil a b c d e f g t tt w x y z p
+ac==.irpcnt ? termin
+
+chaosi==1
+chaoso==2
+ttyo==3
+
+lpdl==40
+.vector pdl(lpdl)
+
+.insrt system;chsdef >
+
+define syscal name,args
+ .call [setz ? sixbit/name/ ? args ((setz))]
+termin
+
+define princ &string&
+	move t,[440700,,[asciz string]]
+	movei tt,.length string
+	syscal siot,[movei ttyo ? t ? tt]
+	  .lose 1000
+termin
+
+;;; General, Minits, Xperimental
+irpc ch,,gmx
+host%!ch==1_.irpcnt
+termin
+
+define upentry prefix,flags
+prefix!uptime:
+	setzi b,
+		irpc ch,,flags
+	iori b,host%!ch
+		termin
+	jrst go
+.util. prefix!uptime,prefix!uptime
+termin
+
+upentry ,mg
+upentry a,mxg
+upentry m,m
+upentry x,x
+upentry xm,mx
+
+.util. brdupt,brdupt
+
+define host &name&,number,flag
+	host%!flag,,[[asciz name],,number]
+termin
+
+go:	movei a,[
+				;;; ITS machines
+			HOST /MC    /,001440,g
+			HOST /ML    /,003114,g
+				;;; MINITS bridges (MIT)
+			HOST /BYPASS/,000530,m
+			HOST /PLASMA/,000500,m
+			HOST /INFINT/,007700,m
+				;;; PFC-ish things
+			HOST /PFCV80/,003641,m
+				;;; EECS things
+			HOST /EECS  /,005542,g
+			HOST /ROOSTA/,000542,m
+			HOST /BENJI /,003420,m
+			HOST /FRANKY/,003410,m
+			;HOST /EETEST/,000510,x
+			;HOST /EET.IL/,015410,x
+			;HOST /EET.3C/,015420,x
+				;;; AI-ish things
+			HOST /OZ    /,011406,g
+			HOST /TOTO  /,000406,m
+			HOST /NE439A/,013012,m
+			HOST /NE433A/,003144,m
+			HOST /NE437A/,013014,m
+			HOST /NE437B/,013015,m
+			HOST /NE438A/,013013,m
+			HOST /AIPRNT/,003117,x
+			HOST /PUMA  /,003037,x
+				;;; talking things
+			HOST /SPEECH/,012035,g
+			HOST /CHATTR/,000435,m
+			HOST /SPHUB1/,016220,m
+				;;; Roman things
+			HOST /XX    /,002420,g
+			HOST /XI    /,003020,m
+				;;; General randoms
+			HOST /ARCHUB/,016276,m
+			;HOST /SIPB  /,016020,x
+				;;; RTS things
+			HOST /MITVAX/,003120,g
+				;;; random unix systems
+			HOST /CIPG  /,016260,g
+			HOST /DSPG  /,016240,g
+			HOST /MATH  /,007770,g
+			HOST /CCC   /,016310,g
+			;; Symbolics
+			HOST /DASHER/,000402,m
+			HOST /PRANCR/,017024,m
+			HOST /DANCER/,017036,m
+			HOST /TACOMA/,017037,m
+			HOST /BLITZN/,021402,m
+			HOST /DONNER/,022401,m
+			HOST /FELLOW/,030402,m
+			HOST /SCRC  /,017402,x
+			HOST /VIXEN /,017050,g
+			;HOST /68K   /,024440,x
+			0,,0
+		]
+	movem b,flags'
+	move p,[-lpdl,,pdl-1]
+	syscal open,[[.uao,,ttyo] ? ['tty,,]]
+	  .lose 1400
+
+	princ /
+ Site    dd:hh:mm:ss/
+goloop:	skipn b,(a)
+	 jrst die
+	tsnn b,flags
+	 aoja a,goloop
+	hlr b,(b)
+	princ /
+/
+	hrli b,440700
+	skipa
+	.iot ttyo,t
+	ildb t,b
+	jumpn t,.-2
+	princ /: /
+	movei b,[	.byte 16.
+			%corfc_8 ? 6
+			0 ? 0 ? 0 ? 0 ? 0 ? 0
+			.byte 8
+			irpc ch,,[UPTIME]
+			"ch ? termin	;"
+			.byte]
+	move c,(a)
+	hrr c,(c)
+	dpb c,[$cpkda (b)]
+	syscal chaoso,[movei chaosi ? movei chaoso ? movei 1]
+	 .lose 1000
+	syscal pktiot,[movei chaoso ? b]
+	 .lose 1000
+	movei t,30.*5
+	syscal netblk,[movei chaoso ? movei %csrfs ? t ? movem tt]
+	 .lose 1000
+	caie tt,%cscls
+	 jrst [	princ /Timed out while trying to get connected./
+		aoja a,goloop]
+	pushj p,read1
+	aoja a,goloop
+
+brdupt:	move p,[-lpdl,,pdl-1]
+	syscal open,[[.uao,,ttyo] ? ['tty,,]]
+	  .lose 1400
+
+	princ /
+ Site    dd:hh:mm:ss/
+	syscal chaoso,[movei chaosi ? movei chaoso ? movei 25.]
+	 .lose 1000
+	movei b,[	.byte 16.
+			16_8 ? 32.+6
+			0 ? 0 ? 0 ? 0 ? 0 ? 0
+			.byte 8
+			repeat 32. -1
+			irpc ch,,[UPTIME]
+			"ch ? termin	;"
+			.byte]
+	syscal pktiot,[movei chaoso ? b]
+	 .lose 1000
+	pushj p,read1
+	jrst .-1
+
+read1:
+.vector ipkt(128.)
+	syscal pktiot,[movei chaosi ? movei ipkt]
+	 .lose 1000
+	ldb tt,[$cpkop ipkt]
+	caie tt,%coans
+	 jrst [	princ /Did not get ANS packet./
+		aoja a,goloop]
+	ldb tt,[$cpkop ipkt]
+	caie tt,%coans
+	 jrst [	princ /Connection closed -- /
+		move t,[440800,,ipkt+%cpkdt]
+		ldb tt,[$cpknb ipkt]
+		syscal siot,[movei ttyo ? t ? tt]
+		 jfcl
+		aoja a,goloop]
+	setzi b,
+	move c,[440800,,ipkt+%cpkdt]
+	repeat 4,[ildb t,c ? lsh t,.rpcnt*8 ? add b,t ? ]
+	idivi b,60.		;convert to seconds
+	irps div,,[60. 60. 24.]
+	  idivi b,div ? push p,c ? termin
+	push p,b
+
+.vector timstr(12.)
+	movei c,"0		;"
+	movem c,timstr
+	move  c,[timstr,,timstr+1]
+	blt   c,timstr+12.-1
+
+	movei b,4
+	movei c,2
+golp2:	move  d,c
+	pop   p,e
+golp3:	idivi e,10.
+	addi  f,"0
+	movem f,timstr(d)
+	sos   d
+	jumpn e,golp3
+	addi  c,3
+	sojg  b,golp2
+
+	move  b,[-12.,,0]
+	movei c,"0		;"
+	movei d,40
+golp40:	came c,timstr(b)
+	 jrst golp50
+	movem d,timstr(b)
+	aobjn b,golp40
+golp50:	movei d,":		;"
+		irp idx,,[3,6,9]
+	camn c,timstr+idx
+	 movem d,timstr+idx
+		termin
+
+	move  b,[444400,,timstr]
+	movei c,12.
+	syscal siot,[movei ttyo ? b ? c]
+	 jfcl
+	popj p,
+
+die:	.logout 1,
+	.break 16,160000
+	.value
+
+.end uptime
+
+.begin 8to7
+
+.util. 8to7,go
+
+title	8to7 --  convert left packed 8-bit to 7-bit
+
+irps ac,,nil a b c d e f g t tt x y z zz p
+ac=.irpcnt ? termin
+
+dski==1
+dsko==2
+
+lpdl==20
+ljclbuf==20
+lbuf==2000
+
+.vector pdl(lpdl),buf(lbuf),ifile(4),ofile(4),ddtfil(4)
+
+call=pushj p,
+return=popj p,
+define syscal name,args
+	.call [setz ? sixbit/name/ ? args ((setz))]
+termin
+
+go:	move p,[-lpdl,,pdl-1]
+	call getjcl
+	call getfil
+	call getin
+	call getout
+	call conv
+	call finish
+
+die:	.logout 1,
+	.break 16,160000
+	.value
+
+getjcl:	.suset [.roption,,a]
+	tlnn a,%opcmd
+	 call [	.value [asciz /:Usage is  :8to7  <8bit infile>,<7bit outfile> î:KILL /]
+		call die]
+	setzm jclbuf
+	move a,[jclbuf,,jclbuf+1]
+	blt a,jclbuf+ljclbuf-1
+	.break 12,[..rjcl,,jclbuf]
+	return
+
+
+$$rfn==1
+.insrt syseng;rfn >
+
+rsixtp:	caie a,<",>
+	 return
+	setom offlag
+	aos (p)
+	return
+
+getfil:	.break 12,[6,,ddtfil]
+	move a,ddtfil+1		;get sname
+	exch a,ddtfil+3		;put sname in ITS slot and get fn2
+	exch a,ddtfil+2		;put fn2   in ITS slot and get fn1
+	exch a,ddtfil+1		;put fn1   in ITS slot
+	move a,[ddtfil,,ifile]
+	blt  a,ifile+4-1
+	move d,[440700,,jclbuf]
+	movei b,ifile
+	setzm offlag'		;clear output file flag
+	call rfn"rfn
+
+	move a,[ifile,,ddtfil]
+	blt a,ddtfil+4-1
+	move a,ddtfil+1		;get ITS fn1
+	exch a,ddtfil+2		;put fn1   in ddtfil position, get ITS fn2
+	exch a,ddtfil+3		;put fn2   in ddtfil position, get ITS sname
+	exch a,ddtfil+1		;put sname in ddtfil position
+	.break 12,[400006,,ddtfil]	;set print default
+
+	skipn offlag
+	 .value [asciz /:No output file given.î:KILL /]
+
+	move a,[ifile,,ofile]
+	blt a,ofile+4-1
+	move  a,[sixbit />/]
+	movem a,ofile+2
+	movei b,ofile
+	call rfn"rfn
+	return
+
+getin:	syscal open,[[.bii,,dski]
+		ifile+0 ? ifile+1 ? ifile+2 ? ifile+3]
+	 call [	.value [asciz /:Couldn't open input fileî:kill /]
+		call die]
+	syscal fillen,[movei dski ? movem fillen']
+	 call [	.value [asciz /:Couldn't get input file lengthî:kill /]
+		call die]
+	return
+
+getout:	move a,[.uao,,dsko]
+	movs b,ofile+0
+	cain b,<'tty>
+	 tlo a,%tjsio
+	syscal open,[a
+		ofile+0 ? [sixbit/_8to7/] ? [sixbit/output/] ? ofile+3]
+	 call [	.value [asciz /:Couldn't open output fileî:kill /]
+		call die]
+	return
+
+conv:	skipn a,fillen
+	 return
+	caile a,lbuf
+	 movei a,lbuf
+	movn b,a
+	addm b,fillen
+	hrls b
+	hrri b,buf
+	.iot dski,b
+	imuli a,4		;number of 8 bit characters per word
+	move b,a		;for conversion counter
+	move c,[441000,,buf]	;eight bit pointer
+	move d,[440700,,buf]	;seven bit pointer
+conv01:
+	ildb e,c
+	idpb e,d
+	sojg b,conv01
+	move d,[440700,,buf]
+	syscal siot,[movei dsko ? d ? a]
+	 .lose
+	jrst conv
+
+finish:	.close dski,
+	syscal renmwo,[movei dsko ? ofile+1 ? ofile+2]
+	 .value [asciz /:RENAME failed.îî:proceed /]
+	.close dsko,
+	return
+
+constants
+variables
+jclbuf:	block ljclbuf
+	-1
+
+.end 8to7
+
+.begin scs
+.util. scs,go
+
+define syscal name,args
+	.call [setz ? sixbit/name/ ? args ((setz))]
+termin
+				;[<]
+go:	move 3,[sixbit />/]	
+	syscal open,[[.bii,,1] ? [sixbit /DSK/] ? [sixbit /STATS/] ? 3 ? [sixbit /.mail./]]
+	 .lose 1400
+	syscal open,[[.bio,,2] ? [sixbit /DSK/] ? [sixbit /_scs/] ? 3 ? [sixbit /dcp2/]]
+	 .lose 1400
+	setzi 1,
+loop:	syscal corblk,[movei %cbred
+		movei %jself ? movei foo/2000
+		movei 1 ? 1]
+	 jrst fin
+	move 2,[-2000,,foo]
+	.iot 2,2
+	aoja 1,loop
+fin:	.close 1,
+	.close 2,
+	.break 16,160000
+
+.=<.+1777>&<-2000>
+foo:	block 2000
+
+.end scs
+
+
+.begin bar
+
+
+irps prog,,bar baz bax bas bass basm quux barut mus bap
+.util. prog,go
+termin
+
+irpc a,,[zabcdefghijpy]
+a=.irpcnty
+termin
+
+tsthst==530			;FOOBAR
+;tsthst==3530			;FOOBAR
+;tsthst==3502			;NPLASMA
+;tsthst==500			;PLASMA
+;tsthst==3621			;pfc-TEST
+;tsthst==16100			;PLASMA on subnet 34
+;tsthst==542			;EE-NETWORK-11
+;tsthst==16050			;Multics-Gateway
+
+define syscal name,args
+ .call [setz ? sixbit/name/ ? args ((setz))]
+termin
+
+maxpln==488.
+
+%corfc==1
+%coans==5
+%codat==200
+%cscls==0
+%csrfs==3
+$cpknb==041400,,0
+
+nchnls==4
+
+call=pushj p,
+return=popj p,
+
+lpdl==5
+pdl:	block pdl
+
+host:	tsthst
+jclbuf:	block 20
+
+go:	move p,[-lpdl,,pdl]
+	.suset [.roption,,a]
+	tlnn a,optcmd		;do we have jcl?
+	 jrst go2
+	.break 12,[..rjcl,,jclbuf]
+	move a,[440700,,jclbuf]
+	setzi b,
+hstlop:	ildb c,a
+	subi c,"0
+	jumpl c,hstfin
+	caile c,"9
+	 jrst hstfin
+	imuli b,8
+	add b,c
+	jrst hstlop
+hstfin:	skipe b
+	 movem b,host
+go2:
+	.suset [.rxjname,,a]
+	  irps prog,,bar baz bax bas bass basm quux barut mus bap
+	camn a,[sixbit /prog/]
+	  jrst prog
+	  termin
+	.break 16,160000
+
+bar:	movei y,nchnls
+	sos y
+	imuli y,2
+	setzi j,
+	setzi z,
+	move a,y
+bar1:	syscal chaoso,[movei 0(a) ? movei 1(a) ? movei 1]
+	  .lose 1000
+	soj a,
+	sojge a,bar1
+	.rdtime f,
+
+bar2:	move a,y
+bar3:	syscal netblk,[movei 1(a) ? movei %csrfs]
+	  .lose 1000
+	move host
+	dpb  [242000,,quuxbf+1]
+	syscal pktiot,[movei 1(a) ? movei quuxbf]
+	  .lose 1000
+	aoj j,
+	soj a,
+	sojge a,bar3
+	jumpe z,bar2
+	.rdtime g,
+	sub g,f
+	hrlz h,j
+	imuli h,30
+	idiv h,g
+	setzi z,
+	jrst bar2
+
+;;; :job baz1
+;;; :load ts baz
+;;; .xjname/ 1'baz
+;;; :job baz0
+;;; :load ts baz
+;;; .xjname/ 1'baz
+;;; :job baz
+;;; :load ts baz
+;;; :gzp
+;;; :job baz0
+;;; :gzp
+;;; :job baz1
+;;; :gzp
+
+bax:	skipa a,[pktbax]
+baz:	movei a,pktbuf
+	syscal chaoso,[movei 0 ? movei 1 ? movei 8]
+	  .lose 1000
+	move host
+	dpb  [242000,,1(a)]
+	syscal pktiot,[movei 1 ? a]
+	  .lose 1000
+	syscal netblk,[movei 1 ? movei %csrfs]
+	  .lose 1000
+	setzi d,
+	setzi e,
+	movei j,maxpln
+baz1:	syscal whyint,[movei 1 ? movem ? movem ? movem a]
+	  .lose 1000
+	jumpn a,baz2
+	 camn d,e
+	  aos a
+	 came d,e
+	  add a,[1,,]
+baz2:	hrrz c,a		;number of output slots
+	skipa
+	call [	sosge j
+		  movei j,maxpln
+		dpb j,[$cpknb pkt2]
+		syscal pktiot,[movei 1 ? movei pkt2]
+		  .lose 1000
+		aos d
+		return]
+	sojge c,.-1
+	hlrz c,a		;number of available input packets
+	skipa
+	call [ syscal pktiot,[movei 0 ? movei room]
+		  .lose 1000
+		aos e
+		return]
+	sojge c,.-1
+	jrst baz1
+
+
+bass:	skipa f,[movei j,maxpln]
+basm:	 move  f,[tdza j,j]
+	  skipa
+bas:	move  f,[sosge j]
+	syscal chaoso,[movei 0 ? movei 1 ? movei 1]
+	 .logout 1,
+	movei a,[	.byte 16.
+			%corfc_8 ? 4
+			tsthst ? 0
+			0 ? 0 ? 0 ? 0
+			.byte 8
+			irpc ch,,[SINK]
+			"ch ? termin	;"
+			.byte]
+	move host
+	dpb [242000,,1(a)]
+	syscal pktiot,[movei 1 ? a]
+	 .logout 1,
+	syscal netblk,[movei 1 ? movei %csrfs]
+	 .logout 1,
+	movei j,maxpln
+bas1:	xct f
+	 movei j,maxpln
+	dpb j,[$cpknb pkt2]
+	syscal pktiot,[movei 1 ? movei pkt2]
+	 .logout 1,
+	jrst bas1
+	
+
+bap:	syscal chaoso,[movei 0 ? movei 1 ? movei 1]
+	 .logout 1,
+	movei a,[	.byte 16.
+			%corfc_8 ? 6
+			510 ? 0
+			0 ? 0 ? 0 ? 0
+			.byte 8
+			irpc ch,,[PERTEK]
+			"ch ? termin	;"
+			.byte]
+	syscal pktiot,[movei 1 ? a]
+	 .logout 1,
+	syscal netblk,[movei 1 ? movei %csrfs]
+	 .logout 1,
+bap1:	move 1,[440800,,[
+	   .byte 8
+	   repeat 60.,[ .rpcnt ? ]
+	   207
+	   .byte
+	   ]]
+	movei 2,60.+1
+	syscal siot,[movei 1 ? 1 ? 2]
+	  .logout
+	jrst bap1
+
+
+define print &str&
+	princ str
+	princ /
+/
+termin
+
+define princ &str&
+	move i,[440700,,[asciz str]]
+	movei j,.length str
+	syscal siot,[movei p ? i ? j]
+	  .lose
+termin
+
+quux:	syscal open,[[.uao,,p] ? [sixbit /tty/]]
+	  .lose 1000
+	print /
+-30ths- --IN--- --OUT-- -ABORT- -LOST-- --CRC-- RAMERR- BITCNT- -OTHER-/
+quux2:	.call [	setz ? 'chaoso ? movei 0 ? movei 1 ? setzi 1]
+	  .lose 1000
+	move host
+	dpb  [242000,,quuxbf+1]
+	.call [ setz ? 'pktiot ? movei 1 ? setzi quuxbf]
+	  .lose 1000
+	.call [ setz ? 'netblk ? movei 1 ? setzi %csrfs]
+	  .lose 1000
+	.call [	setz ? 'pktiot ? movei 0 ? setzi quuxb2]
+	  .lose 1000
+	ldb  a,[341000,,quuxb2]
+	caie a,%coans
+	 jrst [ princ /Did not get an ANS packet/
+		print //
+		jrst quux7]
+	move a,[441000,,quuxb3]
+	.rdtime b,
+	idpb b,a
+	lsh b,-8
+	idpb b,a
+	setzi b,
+	idpb b,a
+	idpb b,a
+	move a,[441000,,quuxb3]
+	movei b,9
+quux3:	setzi c,
+	movei d,4
+quux4:	lsh c,-8
+	 ildb e,a
+	 lsh e,24.
+	 add c,e
+	 sojg d,quux4
+	movei e,7
+	push p,[-1]
+quux5:	idivi c,10.
+	addi d,"0
+	push p,d
+	soj e,
+	jumpn c,quux5
+	skipa c,[" ]
+	.iot p,c
+	sojge e,.-1
+quux6:	pop p,c
+	skipl c
+	 .iot p,c
+	jumpg c,quux6
+	princ / /
+	sojg b,quux3
+	print //
+quux7:	movei 30.*10.
+	.sleep
+	jrst quux2
+
+
+barut:	syscal open,[[.uao,,p] ? [sixbit /tty/]]
+	  .lose 1400
+	syscal chaoso,[movei 0 ? movei 1 ? movei 1]
+	  .lose 1000
+	movei a,[	.byte 16.
+			%corfc_8 ? .length /dump-routing-table/
+			0 ? 0 ? 0 ? 0 ? 0 ? 0
+			.byte 8
+			irpc ch,,[DUMP-ROUTING-TABLE]
+			"ch ? termin	;"
+			.byte]
+	move host
+	dpb [$cpkda (a)]
+	syscal pktiot,[movei 1 ? a]
+	 .lose 1000
+	syscal netblk,[movei 1 ? movei %csrfs]
+	 .lose 1000
+	syscal pktiot,[movei 0 ? movei quuxb2]
+	 .lose 1000
+	ldb a,[$cpkop quuxb2]
+	caie a,%coans
+	 jrst [	princ /Did not get an ANS packet./
+		jrst barute]
+	ldb a,[$cpknb quuxb2]
+	idivi a,4
+	movei e,0
+	move b,[440800,,quuxb2+%cpkdt]
+barutl:	print //
+	move c,e
+	call baruto
+	princ /: /
+	ildb c,b
+	ildb d,b
+	lsh d,8
+	add c,d
+	call baruto
+	princ /  /
+	ildb c,b
+	ildb d,b
+	lsh d,8
+	add c,d
+	call baruto
+	aos e
+	sojg a,barutl
+barute:	.logout 1,
+	.break 16,160000
+	.value
+baruto:	repeat 6,[
+	  idivi c,8
+	  addi d,"0		;"
+	  push p,d
+	  ]
+	repeat 6,[
+	  pop p,d
+	  .iot p,d
+	  ]
+	return
+	
+
+mustim==20.
+musti6==mustim/6
+mus:	.call [	setz ? 'chaoso ? movei 0 ? movei 1 ? setzi 1]
+	  .lose 1000
+;; a=prev b=this c=rfc-byte-pointer d=fifth-byte-pointer e=rfc-count f=note,,len
+	movei a,0
+	movei b,0
+	move  c,[441000,,musrf1]
+	move  d,[440700,,fifth]
+	movei e,8
+	move  f,[1,,1]
+mus1:	ildb b,d
+	camn b,a
+	 jrst [	subi f,musti6
+		call musnot
+		push p,f
+		move f,[1,,musti6]
+		call musnot
+		pop p,f
+		hrri p,mustim
+		jrst mus1]
+	cain b,"_
+	 jrst [	addi f,mustim
+		jrst mus1]
+	call musnot
+	movei f,mustim
+	skipe a,b
+	 jrst musnew
+	move f,[1,,1]
+	call musnot
+	call musout
+	.break 16,160000
+
+
+musout:	dpb e,[042000,,musrfc]
+	move host
+	dpb  [242000,,musrfc+1]
+	.call [	setz ? 'pktiot ? movei 1 ? setzi musrfc]
+	  .lose 1000
+	.call [ setz ? 'netblk ? movei 1 ? setzi %csrfs]
+	  .lose 1000
+	.call [ setz ? 'pktiot ? movei 0 ? setzi room]
+	  .lose 1000
+	return
+
+musnew:	cain a,<" >	;">
+	 jrst [	move f,[1,,mustim]
+		jrst mus1]
+	movei g,nottbl
+	hlrz h,(g)
+	came h,a
+	 aoja g,.-2
+	hrl f,(g)
+	jrst mus1
+
+musput:	ldb  g,[221000,,f]
+	idpb g,c
+	ldb  g,[321000,,f]
+	idpb g,c
+	idpb f,c
+	addi e,3
+	return
+
+musnot:	call musput
+	cail e,400.
+	 call [	call musout
+		move c,[441000,,musrf1]
+		movei e,8
+		return]
+	return
+
+
+pktbar:	.byte 16.
+	%corfc_8 ? 4
+	tsthst ? 0
+	0 ? 0
+	0 ? 0
+	.byte 8
+	"F ? "O ? "O ? <" >
+	.byte
+
+pktbuf:	.byte 16.
+	%corfc_8 ? 4
+	tsthst ? 0
+	0 ? 0
+	0 ? 0
+	.byte 8
+	"E ? "C ? "H ? "O
+	.byte
+
+pktbax:	.byte 16.
+	%corfc_8 ? 6
+	tsthst ? 0
+	0 ? 0
+	0 ? 0
+	.byte 8
+	irpc ch,,[REECHO]
+	"ch ? termin
+	.byte
+
+define .8bit *str*
+  .byte 8
+    irpc ch,,[str]
+    "ch
+    termin
+  .byte
+termin
+
+pkt2:	.byte 16.
+	%codat_8 ? maxpln
+	0 ? 0			;destination will be filled in by system
+	0 ? 0			;source      will be filled in by system
+	0 ? 0			;pn and ack fields
+	.8bit "This is a string of characters that should be at least 64. characters long. "
+	.8bit "And if that isn't enough, perhaps this is. All I want to do is fill up"
+	.8bit " a packet so that I can change the length and excercise all packet sizes"
+	.8bit " on the test system."
+	block 128.
+
+quuxbf:	.byte 16.
+	%corfc_8 ? 6
+	tsthst ? 0
+	0 ? 0
+	0 ? 0
+	.byte 8
+	irpc ch,,[STATUS] ? "ch ? termin
+	.byte
+
+room:
+quuxb2:	block 4
+	block 32./4		;for the host string
+quuxb3:	block 1			;header word gets converted to time
+	block 128.
+
+musrfc:	.byte 16.
+	%corfc_8 ? 0
+	tsthst ? 0
+	0 ? 0 ? 0 ? 0
+	.byte 8
+	.8bit "MUSIC  !"
+musrf1:	block 128.
+
+define .ascii *str*
+	irpc ch,,[str] ? "ch ? termin
+termin
+
+	.byte 7
+fifth:
+
+	.ascii /gggS_______  fffs_______   /
+	.ascii / gggSGGGgWWWq___/
+	.ascii /_gggsGGGgrrrw___/
+	.ascii /_ttrWSSfgttrWSSf/
+	.ascii /gttrW_ _q_ _ t_______   /
+	.ascii / GGGf_________  /
+	.ascii / GGGfsssmBBBvbbb/
+	.ascii /aGGGfsssmBBBvbbb/
+	.ascii /agqqq___jjjww___/
+	.ascii /qqqWWwwrreettrrTTttYYTTiiuuo/
+	.ascii /ipppitttWqggSaaa/
+	.ascii /m1ooutrrwjgfsmaa/
+	.ascii /apppiyyyRWWWqhhh/
+	.ascii /h_ _____H_ _/
+	.ascii / HHHS___f___N___/
+	.ascii /H_W_w_W_r_q_q_H_/
+	.ascii /H_W_w_W_r_q_q_H_/
+	.ascii /Y_O_o_O_1_i_i_Y_/
+	.ascii /H_q_Q_q_H_q_H_G_/
+	.ascii /Q_W_r_W_Q_W_Q_q_/
+	.ascii /W_r_R_r_W_r_R_r_/
+	.ascii /W_r_R_r_W_r_R_r_/
+	.ascii /W_r_R_r_R_y_Y___/
+	.ascii /_iYTTtrWWwqwrWHgwqHfqHgSNyYyYyYy/
+ 	.ascii /YiYTTtrWWwqwrWHgwqHfqHgSNHYY/
+	.ascii /W333OYYYtWWWHrrrt333OYYYtWWW/
+	.ascii /HYYYY_ _ YYYY_ _ oooO_ _________/
+	.ascii / HHHgAAAa_________/
+	.ascii / qqqGQQQqTTTrAAA/
+	.ascii /aqqqgQQQqYYYtAAA/
+	.ascii /aiiYTGGHqiiYTGGHqiiYTTTtrrrWwwwq/
+	.ascii /jggfSWWrtggfSWWrtggfSSSsaaaNnnnb/
+	.ascii /VooiYgghFooiYtty/
+	.ascii /RssaNttyYtyYiRyYiRyYiRyYiyYiotYiotYi/
+	.ascii /otYioYioOOOOOOOOO_ _/
+	.ascii / pppppppppppp_ _/
+	.ascii / oooo_ ___III_oo/
+	.ascii /oooot___y___w_/
+
+
+
+
+	0
+	.byte
+
+%note==110.
+define notes *chars*
+	irps ch,,[chars]num,,[
+	1   196. 9.  44. 5    4   99.  3   27. 37.  98. 185. ]denom,,[
+	1   185. 8.  37. 4    3	  70.  2   17. 22.  55.	98.  ]
+	;a  a#   b   c   c#   d   d#   e   f   f#   g   g#
+  "ch,,<<100000000./%note*denom/num>+50.>/100.
+  termin
+%note==%note*2
+termin
+
+nottbl:
+;      a # b c # d # e f # g #
+notes /% % % z Z x X c v V b B/
+notes /n N m a A s S d f F g G/
+notes /h H j q Q w W e r R t T/
+notes /y Y u i I o O p 1 2 3 4/
+nottbe::
+
+.insrt system;chsdef >
+
+.end bar
+
+end utils"utils
+
+
+;;; local modes:
+;;; mode:midas
+;;; auto fill mode:
+;;; fill column:70
+;;; compile command: :midas dcp;_1 î
+;;; end:
