@@ -1,0 +1,788 @@
+	TITLE RayGun
+
+A=1
+B=2
+C=3
+D=4
+E=5
+T=6
+TT=7
+I=10
+J=11
+P=17
+
+CLICH=16	;CLI
+LOGCH=15	;LOG FILE
+INQCH=14	;INQUIR FILE
+
+DEFINE ASCNT *STRING*
+.LENGTH STRING,,[ASCII STRING]
+TERMIN
+
+;Control parameters.  Crud for particular machine is BLTed in.
+CTLBEG::
+MXSLDU:	0	;Fair share control.  SLOADU greater than this => heavy load
+MXSUSR:	0	;More than this many users means system is heavily loaded
+DILMSK:	0	;Right-to-left mask for dialup lines.
+		;Can't use %TYDIL because we aren't interested in random
+		;Vedic dialups, etc.  Assumes T44 and above not dialups!
+MNDIAL:	0	;Dialups are rare unless at least this many are free
+MNSTTY:	0	;If less than this many pseudo ttys left, they are rare
+MNIMSC:	0	;If less than this many network sockets left, they are rare
+MNJOBS:	0	;If less than this many job slots left, they are rare
+SPCJNM:	0	;Unregistered users may run this job without hassle.
+SPCNMP:	0	;One smaller than this is a fraud.
+GPOLST:	0	;Aobjn pointer to list of names of authorized group O users
+BRFMSG:	0	;ASCNT ptr to first part of message.
+CRKMSG:	0	;ASCNT ptr to other message
+CTLEND==.-1
+
+;List of machine names and parameter block addresses
+
+MCHNTB:	SIXBIT/MC/
+	MCPARM
+	SIXBIT/ML/
+	MLPARM
+	SIXBIT/AI/
+	AIPARM
+LMCHNT==.-MCHNTB
+
+;These variables are set to reflect which resources are scarce.
+HVYLOD:	0
+NODIAL:	0
+NOSTTY:	0
+NOIMSC:	0
+NOJOBS:	0
+
+;Other variables
+DEBUG:	0	;Non-zero means use TTY instead of CLI
+CROCKP:	0	;Please don't make this non-zero
+LSRTBP:	0	;Index to next entry in next two tables
+LUNAME:	BLOCK 200	;Uname of a loser
+LJNAME:	BLOCK 200	;Jname of a loser
+CRTSTY:	BLOCK 100	;non-zero => this tty is a crtsty, don't hassle separately
+
+PDL:	-60,,.
+	BLOCK 60
+
+PAT: PATCH": BLOCK 200
+
+;Control parameters for MC
+MCPARM:	OFFSET CTLBEG-.
+MXSLDU:	500.	;Fair share less than 20% means system is heavily loaded
+MXSUSR:	20.	;More than 20. users means system is heavily loaded
+DILMSK:	1_4+1_5+1_6+1_7+1_10+1_11+1_12+1_13+1_14
+		;Right-to-left mask for dialup lines.
+		;Can't use %TYDIL because we aren't interested in random
+		;Vedic dialups, etc.  Assumes T44 and above not dialups!
+		;*** This seems like a crock--Moonp
+MNDIAL:	1	;Dialups are rare unless at least one is free
+MNSTTY:	4	;If less than 4 pseudo ttys left, they are rare
+MNIMSC:	5	;If less than 5 network sockets left, they are rare
+MNJOBS:	5	;If less than 5 job slots left, they are rare
+SPCJNM:	'MACSYM	;Unregistered users may run Macsyma without hassle.
+SPCNMP:	180.	;A Macsyma smaller than this is a fraud.
+GPOLST:	-1,,[SIXBIT/PDP11/]	;List of names of authorized group O users
+BRFMSG:		;ASCNT ptr to first part of message.
+	ASCNT/MESSAGE FROM SYSTEM OVERSEER
+You appear not to be an authorized user of the Macsyma Consortium machine. If you are in fact authorized, please ignore this message and contact Ellen Lewis. Since /
+CRKMSG:	ASCNT/MESSAGE FROM SYSTEM OVERSEER
+You appear to be an authorized user of the Macsyma Consortium machine.  Since /
+
+	OFFSET 0
+
+;Control parameters for ML
+MLPARM:	OFFSET CTLBEG-.
+MXSLDU:	250.	;Fair share less than 40% means system is heavily loaded
+MXSUSR:	10.	;More than 10. users means system is heavily loaded
+DILMSK:	1_2+1_3+1_11	;Right-to-left mask for dialup lines.
+		;Can't use %TYDIL because we aren't interested in random
+		;Vedic dialups, etc.  Assumes T44 and above not dialups!
+MNDIAL:	1	;Dialups are rare unless at least one is free
+MNSTTY:	2	;If less than 2 pseudo ttys left, they are rare
+MNIMSC:	5	;If less than 5 network sockets left, they are rare
+MNJOBS:	5	;If less than 5 job slots left, they are rare
+SPCJNM:	0	;No special program unregistered users may run
+SPCNMP:	180.	;A Macsyma smaller than this is a fraud.
+GPOLST:	-1,,[0]	;List of names of authorized group O users (none)
+BRFMSG:		;ASCNT ptr to first part of message.
+	ASCNT/MESSAGE FROM SYSTEM OVERSEER
+I am just a simple computer program, but it looks to me as if you are not an authorized user of the MathLab machine.  Since /
+CRKMSG:	ASCNT/MESSAGE FROM SYSTEM OVERSEER
+You appear to be an authorized user of the Mathlab machine.  Since /
+
+	OFFSET 0
+
+;Control parameters for AI
+AIPARM:	OFFSET CTLBEG-.
+MXSLDU:	250.	;Fair share less than 40% means system is heavily loaded
+MXSUSR:	10.	;More than 10. users means system is heavily loaded
+DILMSK:	1_15+1_16+1_17	;Right-to-left mask for dialup lines.
+		;Can't use %TYDIL because we aren't interested in random
+		;Vedic dialups, etc.  Assumes T44 and above not dialups!
+MNDIAL:	1	;Dialups are rare unless at least one is free
+MNSTTY:	2	;If less than 2 pseudo ttys left, they are rare
+MNIMSC:	5	;If less than 5 network sockets left, they are rare
+MNJOBS:	5	;If less than 5 job slots left, they are rare
+SPCJNM:	0	;No special program unregistered users may run
+SPCNMP:	180.	;A Macsyma smaller than this is a fraud.
+GPOLST:	-4,,[	;List of names of authorized group O users
+	     SIXBIT/LISPM/
+	     SIXBIT/PDP11/
+	     SIXBIT/RT11/
+	     SIXBIT/XGP/
+	    ]
+BRFMSG:		;ASCNT ptr to first part of message.
+	ASCNT/MESSAGE FROM SYSTEM OVERSEER
+I am just a simple computer program, but it looks to me as if you are not an authorized user of the A.I. machine.  Since /
+CRKMSG:	ASCNT/MESSAGE FROM SYSTEM OVERSEER
+You appear to be an authorized user of the A.I. machine.  Since /
+
+	OFFSET 0
+
+DEFINE SOUT CH,*STRING*
+	MOVEI TT,.LENGTHSTRING
+	MOVE T,[440700,,[ASCIISTRING]]
+	.CALL [	SETZ
+		SIXBIT/SIOT/
+		MOVEI CH
+		T
+		SETZ TT ]
+	 .LOSE 1000
+TERMIN
+
+;;; DEFINE MACROS SO THAT SYSTEM VARIABLES ACCESSED
+;;; THROUGH ABS PAGES CAN BE REFERENCED IN A NATURAL WAY
+;   These come from the METER program of yore.
+
+DEFINE CONC A,B
+A!B!TERMIN
+
+DEFINE INSIRP INS,LST
+IRPS OP,,LST
+ INS,OP
+TERMIN
+TERMIN
+
+DEFINE ABSREF SYMS
+DEFINE ABSTAB
+IRPW SYM,,[SYMS]
+IFSE [SYM]----, IMMEDS:	;FROM HERE DOWN ARE NOT ADDRESSES
+.ELSE [  SQUOZE 0,SYM
+  CONC ABSRF",\.IRPCNT,ABS
+  CONC [EXPUNGE ABSRF"]\.IRPCNT,ABS
+]
+TERMIN
+TERMIN
+IRPW SYM,,[SYMS]
+IFSN [SYM]----, ABSRF. SYM,\.IRPCNT
+TERMIN
+TERMIN
+
+DEFINE ABSRF. SYM,CT
+ABSRF"!CT!ABS==0
+IF1,[DEFINE SYM ?MOD
+(MOD)[.,,ABSRF"!CT!ABS]TERMIN
+]
+IF2,[DEFINE SYM ?MOD
+(MOD)<ZZZ==ABSRF"!CT!ABS ? ABSRF"!CT!ABS==[.,,ZZZ] ? ZZZ>TERMIN
+]
+TERMIN
+
+.BEGIN ABSRF		;PLACE TO KEEP NNNABS SYMBOLS
+.END
+
+ABSREF [SLOADU
+	SUSRS
+	TTYSTS
+	IMSOC1
+	UNAME
+	JNAME
+	XUNAME
+	USRRCE
+	UTMPTR
+	IMSOKB
+	STYSTS
+	USRHI
+	NMPGS
+	SUPPRO
+	TTYTBL
+	TTYTYP
+----
+	LUBLK
+	MAXJ
+	NCT
+	NFSTTY
+	NSTTYS
+]
+
+;The program starts here
+GO:	MOVE P,PDL
+	.CLOSE 1,
+	PUSHJ P,RITUAL		;Map absolute pages
+;Here set up parameters for particular machine
+	.CALL [	SETZ
+		'SSTATU
+		REPEAT 5,MOVEM A
+		SETZM A ]	;Machine name
+	 .LOSE 1000
+	.RDATE B,
+	TLZ B,777700
+	CAMN B,[SIXBIT/  0401/]
+	 SETOM CROCKP
+	MOVSI B,-LMCHNT/2
+GTMCHN:	CAME A,MCHNTB(B)
+	 AOBJN B,[AOJA B,GTMCHN]
+	SKIPL B
+	 .VALUE			;Machine now known
+	MOVS B,MCHNTB+1(B)	;Get pointer to machine's parameters
+	HRRI B,CTLBEG		;BLT into standard place
+	BLT B,CTLEND
+	SKIPN CROCKP
+	 JRST GO1
+	MOVE A,CRKMSG
+	MOVEM A,BRFMSG
+;First step is to see how loaded things are
+GO1:	SETZ E,			;E ends up non-zero if anything is scarce
+	MOVE A,SLOADU		;Get inverse fair share
+	CAMLE A,MXSLDU		;If not high enough,
+	 SETOB E,HVYLOD		; the system is heavily loaded
+	MOVE A,SUSRS		;Load also depends on how many users
+	CAMLE A,MXSUSR
+	 SETOB E,HVYLOD
+	MOVEI I,NCT		;Scan the dialup lines
+	SETZ B,			;B gets number of free dialups
+DILSCN:	SOJL I,DILSCX
+	MOVEI A,1
+	LSH A,(I)		;Mask bit for line
+	TDNN A,DILMSK		;Skip if this is a dialup line
+	 JRST DILSCN
+	HRRO A,TTYSTS(I)	;See if in use
+	AOJN A,DILSCN		;Jump if in use
+	AOJA B,DILSCN		;Free, count number free
+
+DILSCX:	CAMGE B,MNDIAL
+	 SETOB E,NODIAL		;Not enough free dialups
+	MOVEI I,NSTTYS		;Now scan pseudo ttys
+	SETZ B,			;B accumulates number free
+STYSCN:	SOJL I,STYSCX
+	SKIPN STYSTS(I)		;Skip if sty in use
+	 AOJA B,STYSCN
+	JRST STYSCN
+
+STYSCX:	CAMGE B,MNSTTY
+	 SETOB E,NOSTTY		;Not enough stys free
+	MOVE I,IMSOKB		;Scan Arpanet sockets
+	MOVEI B,0		;B gets number free
+ARPSCN:	SOJL I,ARPSCX
+	SKIPN IMSOC1(I)		;Skip if socket in use
+	 AOJA B,ARPSCN
+	JRST ARPSCN
+
+ARPSCX:	CAMGE B,MNIMSC
+	 SETOB E,NOIMSC		;Not enough sockets free
+	MOVE I,USRHI		;Scan job slots
+	SETZ B,			;B gets number in use
+JOBSCN:	SUBI I,LUBLK
+	JUMPL I,JOBSCX
+	SKIPE UNAME(I)		;Skip if job slot not in use
+	 AOJA B,JOBSCN
+	JRST JOBSCN
+
+JOBSCX:	MOVEI C,MAXJ		;Get number free
+	SUBM C,B
+	CAMGE B,MNJOBS
+	 SETOB E,NOJOBS		;Not enough free job slots
+;Drop through
+;Drop in
+;Scanning complete.  If load is heavy, look for losers
+	JUMPE E,EOJ		;No scarce resources, do nothing
+	MOVEI A,INQCH		;We're going to need the INQUIR data base
+	MOVE B,[-NINQPG,,INQPG]
+	PUSHJ P,LSRTNS"LSRMAP
+	 .VALUE
+	.CALL [	SETZ		;Open log file
+		SIXBIT/OPEN/
+		JFFO A		;Error code
+		[100000+.UAO,,LOGCH]
+		[SIXBIT/DSK/]
+		[SIXBIT/RAYGUN/]
+		[SIXBIT/LOG/]
+		SETZ [SIXBIT/MOON/]]
+	 JRST [	CAIE A,%ENSFL	;If doesn't exist, create it
+		 .VALUE
+		.CALL [	SETZ
+			SIXBIT/OPEN/
+			[.UAO,,LOGCH]
+			[SIXBIT/DSK/]
+			[SIXBIT/RAYGUN/]
+			[SIXBIT/LOG/]
+			SETZ [SIXBIT/MOON/]]
+		 .LOSE 1400
+		JRST .+1]
+	.CALL [	SETZ
+		'FILLEN
+		MOVEI LOGCH
+		SETZM A ]
+	 .LOSE 1000
+	.ACCESS LOGCH,A		;Append to end of file
+;Now we scan through each job tree, based on USRRCE
+;We ignore the system and disowned pseudo-trees (telephone poles).
+;Important to scan from highest TTY first to have good chance of winning with CRTSTYs
+;*** What??
+	MOVEI I,NCT
+TRESCN:	SOJL I,TRESCX
+	SKIPE CRTSTY(I)
+	 JRST TRESCN		;Ignore this tty, it's a crtsty and already handled elsewhere.
+	MOVEI E,USRRCE(I)	;UTMPTR = this for job's in this tree
+	MOVEI E,REMAPT(E)	;unrelocate
+	SETZM BLOG'		;Barf flag for not logged in
+	SETZM BDIAL'		;Barf flag for wasting dialups
+	SETZM BSTTY'		;Barf flag for wasting stys
+	SETZM BIMSCS'		;Barf flag for wasting imp sockets
+	SETZM BGAG'		;Barf flag for loser was gagged.
+	SETZM TUNAME'		;Top job's UNAME
+	SETZM TJNAME'		;Top job's JNAME
+	SETZM TXUNAM'		;HACTRN's XUNAME will go here
+	SETZM TNJOBS'		;Number of jobs will go here
+	SETZM TSPCJB'		;This set if special privileged job exists
+	SETZM TIMSCS'		;Number of arpanet sockets goes here
+	SETZM TDIAL'		;This set if on dialup tty
+	SETZM TSTY'		;This set if on STY
+	MOVE J,USRHI		;Scan all job slots
+TRJSCN:	SUBI J,LUBLK
+	JUMPL J,TRJSCX
+	SKIPE UNAME(J)		;Make sure job exists
+	 CAME E,UTMPTR(J)	;and is in this tree
+	  JRST TRJSCN
+	MOVE A,JNAME(J)		;Use jname rather than suppro to avoid JOB.07 lossage
+	CAME A,['HACTRN]	;If this is top job, save stuff
+	 JRST TRJSC1
+	MOVEM A,TJNAME
+	MOVE A,UNAME(J)
+	MOVEM A,TUNAME
+	MOVE A,XUNAME(J)
+	MOVEM A,TXUNAM
+TRJSC1:	AOS TNJOBS
+	MOVE A,JNAME(J)
+	CAME A,SPCJNM		;Check for special job
+	 JRST TRJSC2
+	MOVE A,NMPGS(J)		;Check for fraud
+	CAML A,SPCNMP
+	 SETOM TSPCJB
+TRJSC2:	JRST TRJSCN
+
+TRJSCX:	MOVEI A,1		;See if this tree is on dialup tty
+	LSH A,(I)
+	TDNE A,DILMSK
+	 SETOM TDIAL
+	MOVE A,TTYTYP(I)	;See if on STY
+	TRNN A,%TYSTY
+	 JRST TRJST9
+	SETOM TSTY
+	MOVE A,I		;Access the STY
+TRJST1:	SUBI A,NFSTTY
+	HRRZ A,STYSTS(A)	;Get owning user index
+	SKIPL SUPPRO(A)		;If not top level, no special magic
+	 JRST TRJST9		;Otherwise count STY owner as part of tree
+	SKIPGE B,TTYTBL(A)	;Get tty number
+	 JRST TRJST4		;No tty must be telser
+	SETOM CRTSTY(B)		;This is a crtsty, we'll charge for its tty here
+	MOVEI A,1		;But musn't aos TNJOB (to make SPCJNM hack work)
+	LSH A,(B)
+	TDNE A,DILMSK
+	 SETOM TDIAL
+	MOVE A,TTYSTS(B)
+	TRNN A,%TYSTY
+	 JRST TRJST9
+	MOVE A,B
+	JRST TRJST1		;Check out owner of crtsty
+
+;Charge for telser's arpanet sockets.  A has user index.
+TRJST4:	MOVE B,IMSOKB
+TRJST5:	SOJL B,TRJST9
+	SKIPGE C,IMSOC1(B)
+	 TLNE C,200000
+	  JRST TRJST5
+	CAIN A,(C)
+	 AOS TIMSCS
+	JRST TRJST5
+
+TRJST9:	MOVE A,IMSOKB		;Scan for sockets he owns
+TRASCN:	SOJL A,TRASCX
+	SKIPGE B,IMSOC1(A)	;Check socket for not in use
+	 TLNE B,200000		;and for being-closed
+	  JRST TRASCN
+	MOVE B,UTMPTR(B)	;See if owner is in this tree
+	CAMN B,E
+	 AOS TIMSCS
+	JRST TRASCN
+
+;Got info on what this tree is using.  See if might deserve to be barfed at.
+TRASCX:	SKIPN TUNAME
+	 JRST TRESCN		;Doesn't exist anyway
+	SKIPN NOJOBS		;If no job slots, or system
+	 SKIPE HVYLOD		;heavily loaded,
+	  JRST TSTGRP		;that is grounds enough
+	SKIPE NODIAL
+	 SKIPN TDIAL
+	  JRST TRSCX1
+	SETOM BDIAL
+	JRST TSTGRP		;Wasting dialup lines
+
+TRSCX1:	SKIPE NOSTTY
+	 SKIPN TSTY
+	  JRST TRSCX2
+	SETOM BSTTY
+	JRST TSTGRP		;Wasting pseudo-ttys
+
+TRSCX2:	SKIPE NOIMSC
+	 SKIPN TIMSCS
+	  JRST TRESCN		;This guy's OK.
+	SETOM BIMSCS
+	JRST TSTGRP		;Wasting arpanet sockets
+
+;This guy is using up a scarce resource.  See if he's registered
+;in INQUIR as legitimate.
+TSTGRP:	HLLO A,TUNAME		;See if logged in
+	AOJN A,TSTGR1
+	MOVE A,TNJOBS		;Not logged in, if has any jobs
+	CAIG A,1
+	 JRST TRESCN
+	SETOM BLOG		;Barf at him for not being logged in
+
+TSTGR1:	MOVEI A,INQCH		;Logged in, get group from INQUIR
+	MOVE B,TXUNAM
+	PUSHJ P,LSRTNS"LSRUNM
+	 JRST UNKNWN		;Not a known user
+	MOVEI A,LSRTNS"I$GRP	;Get b.p. to group character
+	PUSHJ P,LSRTNS"LSRITM
+	 JRST TORIST		;No group = tourist
+	ILDB A,A		;Fetch the character
+	CAIE A,"T
+	 CAIG A,40
+	  JRST TORIST		;Jump if group=T, space, or missing
+	CAIN A,"N		;Nonpaying Macsyma user
+	 JRST NONPAY
+	CAIE A,"O		;Non-human?
+	 JRST GOODGY		;Probably a legitimate user, don't hassle
+	MOVE A,GPOLST		;See if this non-human is one we know about
+	MOVE B,TXUNAM
+GRPTS2:	CAME B,(A)
+	 AOBJN A,GRPTS2
+	JUMPL A,TRESCN		;Yes.
+				;Illegal aliens are obviously tourists
+TORIST:	JRST BADGUY		;Tourist get asked to leave
+
+NONPAY:	JRST BADGUY		;Likewise non-paying Macsyma users
+
+BADGUY:	SKIPN CROCKP
+	 JRST BARF
+	JRST TRESCN
+
+GOODGY:	SKIPE CROCKP
+	 JRST BARF
+	JRST TRESCN
+
+;Here if not known to INQUIR.  Don't hassle if just running Macsyma,
+;otherwise treat as a tourist.
+UNKNWN:	MOVE A,TNJOBS
+	CAIG A,2		;Barf if got more than HACTRN and MACSYMA
+	 SKIPN TSPCJB		;Barf if don't have a Macsyma
+	  JRST BADGUY
+	JRST TRESCN		;Let him go free
+
+;Here when we've decided to barf at someone
+;BLOG, BDIAL, BSTTY, BIMSCS, HVYLOD, and NOJOBS contain barfage flags
+BARF:	MOVSI A,'CLI		;Send them a nasty message
+	SKIPE DEBUG
+	 MOVSI A,'TTY		;Don't really send if debugging
+	.CALL [	SETZ
+		SIXBIT/OPEN/
+		[.UAO,,CLICH]
+		A
+		TUNAME
+		SETZ TJNAME ]
+	 JRST [	SETOM BGAG	;Can't send message, for now just log
+		JRST BARF9 ]	;Maybe it should force access? *******
+	.IOT CLICH,[177]	;Supplying own header
+	SKIPN DEBUG
+	 JRST BARF0
+	.IOPUSH LOGCH,
+	.IOPUSH CLICH,
+	.IOPOP LOGCH,
+	MOVE TT,TUNAME
+	PUSHJ P,LOG6
+	MOVE TT,TJNAME
+	PUSHJ P,LOG6
+	.IOT LOGCH,[^M]
+	.IOT LOGCH,[^J]
+	.IOPUSH LOGCH,
+	.IOPOP CLICH,
+	.IOPOP LOGCH,
+BARF0:	SETZM HPOS'		;Clear message-grinder horizontal position
+	MOVE TT,BRFMSG		;Send initial part of message
+	PUSHJ P,CLIOUT		;Then send reasons why he's losing
+	SETZ B,			;Flag to concatenate with previous via comma
+	MOVE TT,[ASCNT/the system is heavily loaded/]
+	SKIPE HVYLOD
+	 PUSHJ P,CLIOOO
+	MOVE TT,[ASCNT/you are using up scarce job slots/]
+	SKIPE NOJOBS
+	 PUSHJ P,CLIOOO
+	MOVE TT,[ASCNT/you have not logged in/]
+	SKIPE BLOG
+	 PUSHJ P,CLIOOO
+	MOVE TT,[ASCNT/you are using up scarce dialup lines/]
+	SKIPE BDIAL
+	 PUSHJ P,CLIOOO
+	MOVE TT,[ASCNT/you are using up scarce STYs (network ttys)/]
+	SKIPE BSTTY
+	 PUSHJ P,CLIOOO
+	MOVE TT,[ASCNT/you are using up scarce Arpanet sockets/]
+	SKIPE BIMSCS
+	 PUSHJ P,CLIOOO
+	MOVE TT,[ASCNT/ you should not really be on right now.  Please finish up and go away. Your cooperation in not interfering with the work of legitimate users helps keep this an open system.
+/]
+	SKIPE CROCKP
+	 MOVE TT,[ASCNT/ you should not really be on right now. Please finish up and go away immediately. Your cooperation in not interfering with the playing of games by tourists is greatly appreciated.
+/]
+	PUSHJ P,CLIOUT
+	.CLOSE CLICH,		;Fire it off
+;Drops through
+;Drops in
+BARF9:	.RDATE TT,		;Log what we're doing
+	PUSHJ P,LOG6
+	.RTIME TT,
+	PUSHJ P,LOG6
+	MOVE TT,TUNAME
+	PUSHJ P,LOG6
+	MOVE TT,TJNAME
+	PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/GAG!!/]
+	SKIPE BGAG
+	 PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/LOAD/]
+	SKIPE HVYLOD
+	 PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/JOBS/]
+	SKIPE NOJOBS
+	 PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/LOGIN/]
+	SKIPE BLOG
+	 PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/DIALUP/]
+	SKIPE BDIAL
+	 PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/STY/]
+	SKIPE BSTTY
+	 PUSHJ P,LOG6
+	MOVE TT,[SIXBIT/NETSOC/]
+	SKIPE BIMSCS
+	 PUSHJ P,LOG6
+	.IOT LOGCH,[^M]
+	.IOT LOGCH,[^J]
+	AOS C,LSRTBP		;Save this guy in table of losers
+	MOVE A,TUNAME
+	MOVEM A,LUNAME-1(C)
+	MOVE A,TJNAME
+	MOVEM A,LJNAME-1(C)
+	JRST TRESCN		;Check next tree
+
+;Like CLIOUT but hacks comma in between
+CLIOOO:	JUMPE B,CLIOO1
+	PUSH P,TT
+	MOVE TT,[ASCNT/, and /]
+	PUSHJ P,CLIOUT
+	POP P,TT
+CLIOO1:	MOVEI B,1		;flag and drop into CLIOUT
+
+;Transmit ASCNT string in TT to CLICH.  Clobbers T and TT.
+;Also grinds it, using the variable HPOS.
+CLIOUT:	HLRZ T,TT		;length
+	HRLI TT,440700		;b.p.
+	PUSH P,A
+	PUSH P,TT		;-1(P) is starting b.p.
+	PUSH P,T		;0(P) is starting count
+CLIOU1:	JUMPE T,CLIOU2		;Scan rest of string for next break
+	ILDB A,TT
+	SUBI T,1
+	CAIN A,^M
+	 JRST [	SETZM HPOS ? JRST CLIOU1 ]
+	CAIGE A,40
+	 JRST CLIOU1
+	CAIE A,40
+	 JRST [ AOS HPOS ? JRST CLIOU1 ]
+	AOS A,HPOS		;Space, see if past column 50
+	JUMPE T,CLIOU2		;If at end of string, put a space anyway.
+	CAIGE A,50.
+	 JRST CLIOU1
+	;Break here and change this space into a crlf
+	SUBM T,0(P)		;- # chars skipped over including the space
+	SETCMM 0(P)		;# chars skipped over, not including the space
+CLIOU2:	.CALL [	SETZ
+		SIXBIT/SIOT/
+		MOVEI CLICH
+		MOVE -1(P)
+		SETZ 0(P) ]
+	 .LOSE 1000
+	JUMPE T,CLIOU3		;This was the finishing up, don't crlf
+	.IOT CLICH,[^M]
+	.IOT CLICH,[^J]
+	SETZM HPOS
+	MOVEM TT,-1(P)
+	MOVEM T,0(P)
+	JRST CLIOU1
+
+CLIOU3:	SUB P,[2,,2]
+	POP P,A
+	POPJ P,
+
+;Output sixbit from TT into log file, followed by a space.
+;Clobbers T and TT.
+LOG6:	SETZ T,
+	LSHC T,6
+	ADDI T,40
+	.IOT LOGCH,T
+	JUMPN TT,LOG6
+	.IOT LOGCH,[40]
+	POPJ P,
+
+;Come here after checking all trees.  If any users were barfed at,
+;wait five minutes and record whether or not they go away.
+TRESCX:	SKIPN LSRTBP
+	 JRST EOJ		;no losers
+	.CLOSE LOGCH,		;Don't leave this open
+	.CLOSE INQCH,		;..
+	.CORE INQPG		;Flush the mapped in file
+	 JFCL
+	MOVEI A,5*60.*30.
+	SKIPE DEBUG
+	 .VALUE
+	.SLEEP A,
+	.CALL [	SETZ		;Re-open log file
+		SIXBIT/OPEN/
+		[100000+.UAO,,LOGCH]
+		[SIXBIT/DSK/]
+		[SIXBIT/RAYGUN/]
+		[SIXBIT/LOG/]
+		SETZ [SIXBIT/MOON/]]
+	 .LOSE 1400		;Barf, it was there a minute ago
+	.CALL [	SETZ
+		'FILLEN
+		MOVEI LOGCH
+		SETZM A ]
+	 .LOSE 1000
+	.ACCESS LOGCH,A		;Append to end of file
+	MOVE C,LSRTBP		;Check for losers
+UNCSCN:	SOJL C,EOJ
+	.CALL [	SETZ		;See if still here
+		SIXBIT/OPEN/
+		[10+.BII,,INQCH]
+		[SIXBIT/USR/]
+		LUNAME(C)
+		SETZ LJNAME(C)]
+	 JRST UNCSCN		;Thank you
+	.RDATE TT,
+	PUSHJ P,LOG6
+	.RTIME TT,
+	PUSHJ P,LOG6
+	MOVE TT,LUNAME(C)
+	PUSHJ P,LOG6
+	MOVE TT,LJNAME(C)
+	PUSHJ P,LOG6
+	SOUT LOGCH,/is still here after five minutes.	<==
+/
+	JRST UNCSCN
+
+;Here when done
+EOJ:	.LOGOUT
+	.VALUE
+	JRST EOJ
+;;; PURIFICATION RITUAL
+
+ABSTB1:	ABSTAB
+ABSTB2:
+
+RITUAL:	INSIRP PUSH P,A B I J
+
+	LIM==J
+	V==B
+	L==A
+
+	MOVEI LIM, IMMEDS-ABSTB1	;LIMIT ON REMAPPABLENESS
+	MOVSI I, <ABSTB1-ABSTB2>/2	;SCAN ABSTAB
+EVLOOP:	MOVE V, ABSTB1(I)		;GET SYMBOL
+	.EVAL V,			;EVALUATE IT
+	 .VALUE				;NOT THERE???
+	CAIG LIM, (I)			;SKIP FOLLOWING CODE
+	 JRST EVLP00			; IF IMMEDIATE SYMBOL
+	CAIGE V, REMAPT			;REMAP LOW CORE
+	 SUBI V, REMAPT			;INTO HIGH CORE
+EVLP00:	ADDI I, 1
+	MOVE TT, ABSTB1(I)		;FOLLOW PATCH LIST
+PLOOP:	JUMPE TT,EVLPNX			;JUMP IF END OF LIST
+	MOVE L,TT
+	HLRZ TT,(L)			;LOC TO PATCH
+	HRRM V,(TT)			;PATCH IT
+	HRRZ TT,(L)			;LINK TO NEXT
+	JRST PLOOP			;AND TRY AGAIN
+
+EVLPNX:AOBJN I, EVLOOP			;NEXT SYMBOL
+
+; HAVING PATCHED, SET UP PAGE TABLE
+; FOR NOW, WE DON'T ACTUALLY PURIFY ANY PAGES...
+
+	SETZB V,L
+	MOVEI TT, REMAPT_-10.		;GET ABS PAGES
+	HRLI TT, <REMAPT-400000>_-10.	;FROM 0 TO 400000
+	MOVE T, TT
+GETMOR:	.CALL [	SETZ
+		'CORBLK
+		MOVEI %CBNDR
+		MOVEI %JSELF
+		MOVE TT
+		MOVEI %JSABS
+		SETZ T ]
+	 JRST .+2		;ERROR RETURN
+	 JRST GOTIT
+	.SUSET [.RBCHN,,V]	;FIND OUT WHAT LOST
+	.CALL [	SETZ
+		'STATUS
+		V
+		SETZM V]	;GET ERROR CODE
+	 .LOSE 1000
+	LDB V, [220600,,V]	;..
+	CAIE V, 32		;CAN'T GET THAT ACCESS
+	 .VALUE			;NO - UNCLEAR
+	ADD TT, [40,,40]	;YES - BITING MD10'S HAVE A 32K HOLE!
+	MOVE T, TT
+	JUMPL TT, GETMOR
+GOTIT:	JUMPN L,GOTIT1		;IF GONE AROUND TWICE, DONE
+	MOVEI TT, <1000000-REMAPT>_-10.	;DO REMAPPAGE
+	HRLI TT, -<REMAPT_-10.>
+	SETZ T,
+	AOJA L,GETMOR
+
+GOTIT1:	INSIRP POP P,J I B A
+	POPJ P,
+
+CONSTANTS
+VARIABLES
+
+;INSERT THE LSRTNS PACKAGE
+
+LSRTNS"$$ULNM==0	;WON'T BE NEEDING LAST NAMES STUFF
+LSRTNS"$$ULNP==0
+.INSRT LSRTNS
+CONSTANTS
+VARIABLES
+
+INQPG==<.+1777>/2000	;FIRST PAGE FOR INQUIR
+NINQPG==100		;NUMBER OF PAGES FOR MAPPING INQUIR FILE
+	BLOCK NINQPG*2000
+
+REMAPT==500000		;MUST BE FAIRLY MOBY PAGE FOR UTMPTR HACK TO WIN
+
+
+END GO

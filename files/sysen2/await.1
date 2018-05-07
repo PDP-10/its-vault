@@ -1,0 +1,213 @@
+;-*-Midas-*-
+
+	TITLE  Await - Await the return of some idle person.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;	Usage:
+;;;
+;;;	:AWAIT <uname>
+;;;
+;;;	Output:
+;;;
+;;;	[UNAME is back!]	When idle-time becomes less than the
+;;;				sleep-time (i.e. you've typed something)
+;;;
+;;;	(And a few assorted other messages, but that's the main one.)
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+A=1	;General porpoise
+B=2
+C=3
+U=4	;Uname/GP
+J=10	;Pointer to JCL
+P=17	;The obligatory PDL
+
+CLIC==1		;CLI output chnl
+TTYI==2		;TTY directory input chnl (One time only)
+USRC==3		;USR very-temp chnl, used to see if you are logged in.
+DOZTIM==226	;Time in ticks between checks (5 Seconds)
+DIETIM==21450	;How long, in ticks, to wait to self-destruct after
+		;you've logged out. (5 Minutes)
+LOGTIM==3410	;Time (ticks once more) between Are-You-Logged-In
+		;checks.  (1 Minute)
+JCLEN==2	;2*5 = 10. Characters.  Only expecting UName+Delimiter
+PDLEN==10	;Sufficient? (Should be)
+
+
+TIMGON:	0	;Time you were noticed missing.  0 if not noticed before.
+
+SLEEPY:	0	;The UName of the idle person
+UNAME:	0	;Your uname
+
+JCLBUF:	BLOCK JCLEN
+	-1
+
+PDLIST:	-PDLEN,,PDLIST
+	BLOCK PDLEN
+
+CR:	^M	;Carriage Return
+LF:	^J	;Line-Feed
+OB:	"[	;Open&
+CB:	"]	;Close brackets
+SP:	40	;Space
+DEL:	177	;Delete/Rubout
+
+DEFINE SYSCAL OP,ARGS
+	.CALL [SETZ ? SIXBIT /OP/ ? ARGS ((SETZ))]
+	TERMIN
+
+DEFINE TYPE &STRING			;Sends: [SLEEPY <string>]
+	MOVEI A,<.LENGTH STRING>
+	MOVE B,[440700,,[ASCII STRING]]
+	PUSHJ P,TYPELN
+	TERMIN
+
+DEFINE OUTCHR LOCS
+	IRP FOO,,[LOCS]
+	.IOT CLIC,FOO
+	TERMIN TERMIN
+
+
+BEGIN:	.BREAK 12,[..RJCL,,JCLBUF]	;Get JCL into JCLBUF,
+	MOVE J,[440700,,JCLBUF]		;and make pointer to same
+	.SUSET [.RUNAME,,UNAME]		;Get your uname into UNAME
+	MOVE P,PDLIST			;Initialize main PDL
+	MOVE C,[440600,,SLEEPY]		;Make byte pointer to SLEEPY
+
+GETHIR:	ILDB A,J	;(HIR = His/Her)
+	CAIE A,^C	;Check for delimiters: ^C, ^M, ^_ and ^@
+	  CAMN A,CR
+	    JRST GOTOIT
+	CAIE A,^_
+	  CAIN A,^@
+	    JRST GOTOIT
+	CAMG A,SP	;Some other random control char?
+	  ADDI A,140	;  Yes.  Un-control it
+	CAIL A,140	;Lower-case?
+	  SUBI A,40	;  Uh huh.  Make it caps.
+	SUBI A,40	;Change to 6bit
+	IDPB A,C	;Add in new letter
+	AOS B		;That makes this the Bth character
+	CAIE B,6	;This the last possible?
+	  JRST GETHIR	;  No, can take more.  Keep reading.
+
+GOTOIT:	JUMPN B,OPEN
+	.VALUE [ASCIZ /: Do :AWAIT <uname> KILL /]
+
+OPEN:	SYSCAL OPEN,[%CLBIT,,.UAI
+		     %CLIMM,,TTYI	;Open TTY:.FILE. (DIR) so
+		     [SIXBIT /TTY/]	;we can get SLEEPY's TTY#
+		     [SIXBIT /.FILE./]
+		     [SIXBIT /(DIR)/]]
+	  .LOSE %LSFIL
+	PUSHJ P,READLN	;Skip 1st blank line
+	PUSHJ P,READLN	;and then the header.
+
+GETLIN:	.IOT TTYI,A	;Skip "T" in "Txx"
+	.IOT TTYI,B	;Get 1st digit of TTY# in B
+	CAIN B,"R	;Was this the last line?  ("R" as in "FREE...")
+	  JRST LOGNOT	;  Yeah, so Sleepy isn't logged in, so say so...
+	SUBI B,60	;Make a real number
+	IMULI B,10	;Make it the 10s (8s?) digit
+	.IOT TTYI,C	;Get next char,
+	SUBI C,60	;Make IT a num,
+	ADD B,C		;and add it.  So Tens+Ones in ac B.
+	.IOT TTYI,A	;Skip a blank.
+	SETZ U,		;Zap ac U (will hold uname of this line)
+
+GETUNM:	MOVEI C,6	;# chars to read (We want the blanks and everything)
+	.IOT TTYI,A	;Get one,
+	SUBI A,40	;Make it 6bit
+	LSH U,6		;Make room in U for it,
+	ADD U,A		;add it in, then
+	SOJN C,GETUNM+1	;if need to read more, READ!
+	PUSHJ P,READLN	;Skip rest of line
+
+COMPAR:	CAME U,SLEEPY	;Is this Sleepy's line?
+	  JRST GETLIN	;  No.  Keep reading.
+	.CLOSE TTYI,	;Yup.  Close this file, we need it no more.
+
+;;;
+;;;	Well, Sleepy is here all right... And we have hir ttynum
+;;;	in ac B.  Now we can settle down to some serious waiting.
+;;;
+
+DOVAL:	.VALUE [ASCIZ /:VKî/]	;:Proceed - :Disown
+	.RDTIME U,			;Store the time we did so in ac U
+
+RUHERE:	.RDTIME C,	;Get now time.
+	SUB C,U		;The difference in ac C
+	CAIGE C,LOGTIM	;Is it time to see if you are still around?
+	  JRST GETIDL	;  Naw, not yet.  Just do you trip.
+	.RDTIME U,	;Yeah; set the time of last check into ac U (now)
+	SYSCAL OPEN,[%CLBIT,,.BII
+		     %CLIMM,,USRC	;Try and open your HACTRN.
+		     [SIXBIT /USR/]	;If can't, you're not here.
+		     UNAME
+		     [SIXBIT /HACTRN/]]
+	  JRST POOFY			;  *Gasp*  You're gone!!
+	.CLOSE USRC,			;Oh, wait, no you aren't.
+	SETZM TIMGON			;Make sure TIMe GONe is zero
+	JRST GETIDL			;Close that Hactrn and go to it
+
+POOFY:	MOVE C,TIMGON	;Get the time we noticed you gone in ac C
+	JUMPN C,CHKGON	;If this value is zero, this is when we
+	MOVEM U,TIMGON	;noticed, and so store the initial time.
+	JRST SLEEP	;Go back to bed for now...
+
+CHKGON:	MOVE A,U	;Now time in ac A
+	SUB A,C		;Time since you've been noticed gone in ac A
+	CAIL A,DIETIM	;Is this over your allowed gone-time?
+	  JRST DIE	;  Yep.  Croak.
+
+GETIDL:	SYSCAL TTYVAR,[%CLIMM,,400000(B)
+		       [SIXBIT /IDLTIM/]	;Get idle-time in ac A
+		       %CLOUT,,A]
+	  JRST GONE				;If fails, assume he's gone.
+	CAIG A,DOZTIM	;If time idle is less than or equal to time
+	  JRST AWAKE	;we've been dozing, then we say he's awake,
+
+SLEEP:	MOVEI C,DOZTIM	;(30ths to sleep)
+	.SLEEP C,	;else sleep for DOZTIM seconds,
+	JRST RUHERE	;and check again.
+
+LOGNOT:	.VALUE [ASCIZ /: Not logged in KILL /]
+
+AWAKE:	TYPE "is back!"
+	JRST DIE
+
+GONE:	TYPE "seems to have left"
+
+DIE:	.LOGOUT 1,		;DIE  (Bwa ha ha  <glint><glint>) 
+
+
+TYPELN:	SYSCAL OPEN,[%CLBIT,,.UAO
+		     %CLIMM,,CLIC	;Open your CLI so we can send
+		     [SIXBIT /CLI/]	;to you.
+		     UNAME
+		     [SIXBIT /HACTRN/]]
+	  JRST DIE			;If we can't, tough -> DIE
+	OUTCHR [DEL,OB]	;Get to a new line and do "["
+	MOVE C,SLEEPY	;Put Sleepy's name in ac C
+	SETZ U,		;Zero U in prep for receiving rot'd char
+	ROTC C,6	;One char from C into U
+	ADDI U,40	;Make it full ASCII
+	.IOT CLIC,U	;Out that chr,
+	JUMPN C,.-4	;If more chars in uname, do 'em.
+	OUTCHR [SP]	;A space before the text.
+			;Now send out the line of actual message
+	SYSCAL SIOT,[%CLIMM,,CLIC ? B ? A]
+	  JRST DIE	;If THIS fails, also die.
+	OUTCHR [CB,CR,LF]	;End with "]" CR/LF
+	.CLOSE CLIC,		;Let's not be stupid and leave this open.
+	POPJ P,			;Return
+
+READLN:	.IOT TTYI,A	;Keep reading until we hit LF (EOL)
+	CAME A,LF
+	  JRST READLN
+	POPJ P,
+
+	END BEGIN

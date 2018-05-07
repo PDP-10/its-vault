@@ -1,0 +1,120 @@
+;-*-MIDAS-*-
+TITLE VT52P
+
+;This program is for init files of VT52 users.  It sends
+;the "Are you a VT52?" code to the tty, and if it receives
+;the "Yes, I am a VT52" response, valrets ":TCTYP VT52"
+;and sets the ttyloc to the program's JCL.
+
+;If the JCL contains a \ character, that terminates the
+;ttyloc and begins a valret string, which is automatically privided
+;with a CR.  Succesive \ characters will provide additional
+;CRLF's, but also do a ^V.  Preceed them with ^W if you don't
+;want TTY output turned on.
+
+;Sample use:
+;:VT52P ESG\:--You are at ESG--
+
+;To use this as a conditional in an init file, you should
+;have it valret a number, which you can check with :IF
+;later.  It does not work to valret a :JUMP.
+;Since it valrets nothing if you are not on a vt52, you
+;need to valret something before running it.
+;Sample Init file use:
+;0
+;:VT52P ESG\1
+;:IF N Q
+;(:JUMP EXIT
+;)
+
+
+A=1
+B=2
+C=3
+D=4
+E=5
+F=6
+T=7
+TT=8
+P=17
+
+CHTTYI==1
+CHTTYO==2
+
+GO:	MOVE P,[-PDLLEN,,PDL+2]
+	.OPEN CHTTYI,[.UII,,'TTY ]
+	 .LOSE %LSSYS
+	.OPEN CHTTYO,[.UIO,,'TTY ]
+	 .LOSE %LSSYS
+	.CALL [SETZ
+		SIXBIT/CNSGET/
+		%CLIMM,,CHTTYI
+		%CLOUT,,TT
+		%CLOUT,,TT
+		SETZ (%CLOUT) T]	;T gets TCTYP.
+	 .LOSE %LSSYS
+	CAIN T,%TNSFW		;If software tty, then doesn't matter.
+	 JRST EXIT
+	.RESET CHTTYI,		;Flush any pending input, since it messes things up.
+	.IOT CHTTYO,[^[]
+	.IOT CHTTYO,["Z] ;Now check to see if this is the vt52 sequence.
+	IRP FOO,,[33,"/ ,"K]
+	.IOT CHTTYI,A
+	CAIE A,FOO
+	 JRST EXIT
+	TERMIN 
+
+;It claims it's a VT52.  Get the JCL and valret the tctyp setting
+;If there's JCL then valret ":KILL :TTYLOC" and the
+;the JCL, a ^M, and a ^V.
+;Turn any \ characters into ^M's.
+;Misfeature: To valret anything, you must set the ttyloc.  Fix.
+	.CLOSE CHTTYI,
+	.CLOSE CHTTYO,
+	.VALUE [ASCIZ/:TCTYP VT52
+P/]
+	.BREAK 12,[..RJCL,,JCLBUF]
+	SKIPN JCLBUF
+	  JRST EXIT
+	MOVE B,[440700,,[ASCIZ/:KILL
+:TTYLOC /]]
+	MOVE D,[440700,,VALBUF]
+CP1LUP:	ILDB C,B		;First copy :KILL :TTYLOC into the valret buffer.
+	CAIN C,0
+	  JRST CP2
+	IDPB C,D
+	JRST CP1LUP
+CP2:	MOVE B,[440700,,JCLBUF]	;Then copy the JCL.
+CP2LUP:	ILDB C,B
+	CAIE C,^C		;Check for JCL terminators.
+	  CAIN C,^M
+	    JRST VALIT
+	CAIN C,^_
+	  JRST VALIT
+	CAIN C,"\		;Turn \ into ^M^V.
+	  JRST [MOVEI C,^M
+		IDPB C,D
+		MOVEI C,^V
+		JRST .+1]
+	IDPB C,D
+	JRST CP2LUP
+
+VALIT:	MOVEI C,^M
+	IDPB C,D
+	MOVEI C,^V
+	IDPB C,D
+	.VALUE VALBUF
+	.VALUE
+EXIT:	.CLOSE CHTTYI,
+	.CLOSE CHTTYO,
+	.LOGOUT 1,
+
+PDLLEN==10
+PDL:	BLOCK PDLLEN
+
+JCLBUF:	BLOCK 20
+	-1
+VALBUF:	BLOCK 22
+VARIABLES
+CONSTANTS
+	END GO

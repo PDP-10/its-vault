@@ -1,0 +1,419 @@
+; -*- Midas -*-
+
+.begin clock
+
+; Routines for hacking the serial line calendar clock.
+
+; Programs that .INSRT this library:
+; SYSEN1;PDSET
+; SYSEN1;NETIME
+
+; Requirements:
+; CHCLKI, CHCLKO
+; A, B, C, T, TT=T+1
+; P
+
+; Modification history:
+; 2/7/90 Alan	Wrote it.
+
+.auxil
+
+.tyo6 .ifnm1
+.tyo 40
+.tyo6 .ifnm2
+fmtvrs==:.ifvrs
+printx / included in this assembly.
+/
+
+ifndef $$set, $$set==:0		; Include routines for setting the clock
+
+call==:<pushj p,>
+return==:<popj p,>
+save==:<push p,>
+rest==:<pop p,>
+
+minyr==:1990.			; Can't hurt to set this to the current
+				; year whenever you edit this code.
+
+itstab:	sixbit /AI/
+ltabs==:.-itstab
+
+ttytab:	sixbit /T01/
+ltabs==:.-ttytab
+
+finish:	setz ? sixbit /FINISH/ ? setzi chclko
+
+open:	.call [ setz ? sixbit /SSTATU/
+		repeat 5, movem tt
+		setzm tt ]
+	 .lose %lssys
+	movsi t,-ltabs
+	came tt,itstab(t)
+	 aobjn t,.-1
+	jumpge t,ensdv
+	.call [ setz ? sixbit /OPEN/
+		moves tt
+		movsi .uao\%tjsio ? movei chclko
+		setz ttytab(t) ]
+	 return
+	.call [	setz ? sixbit /OPEN/
+		movsi .uai ? movei chclki
+		setz ttytab(t) ]
+	 .lose %lsfil
+	.call [	setz ? sixbit /TTYSET/
+		movei chclko
+		move [<010101,,010101>*%tgact]
+		setz [<010101,,010101>*%tgact] ]
+	 .lose %lssys
+	.reset chclko,
+	.iot chclko,[^m]
+	.call finish
+	 .lose %lssys
+	movei t,30.		; Wait one second for any response...
+	.sleep t,
+	.reset chclki,		; and flush it.
+	move tt,[sixbit /ATAC/]
+	jrst docmd
+
+ifn $$set,[
+
+setdow:	jumpl c,ebdrg		; & Set day of week from C (Monday = 0)
+	move t,c
+	idivi t,7
+	lsh tt,6
+	ior tt,[sixbit /ATSW0/]
+	jrst docmd
+
+] ;ifn $$set
+
+getdow:	move tt,[sixbit /ATRW/]	; & Get day of week into C (Monday = 0)
+	call query
+	 return
+	cail t,10.
+	 caile t,16.
+	  jrst error
+	addi t,4
+	idivi t,7
+	movei c,(tt)
+	aos (p)
+	return
+
+ifg <minyr+100.>-2100., .err Calendar clock will fumble leap-year in 2100.
+
+ifn $$set,[
+
+setdat:	call chkdtc		; & Set date 
+	 jrst ebdrg
+	move tt,[sixbit /ATSD/]
+	call sixout
+	movei t,(a)
+	idivi t,100.
+	movei t,(tt)
+	call ddout
+	movei t,(b)
+	call ddout
+	movei t,(c)
+	call ddout
+	jrst docmd0
+
+] ;ifn $$set
+
+getdat:	move tt,[sixbit /ATRD/]	; & Get date
+	call query
+	 return
+	caml t,[1000000.]
+	 camle t,[1991231.]
+	  jrst error
+	idivi t,100.
+	movei c,(tt)
+	idivi t,100.
+	movei b,(tt)
+	movei a,<<minyr/100.>*100.>-100.(t)
+	caige a,minyr
+	 addi a,100.
+	call chkdat
+	 jrst error
+	aos (p)
+	return
+
+spd==:24.*60.*60.
+
+ifn $$set,[
+
+settim:	skipl t,a		; & Set time from A
+	 cail t,spd
+	  jrst ebdrg
+	idivi t,60.
+	jumpe tt,settm1
+	subi tt,60.
+	imul tt,[-30.]
+	.sleep tt,
+settm1:	idivi t,60.
+	save tt
+	save t
+	move tt,[sixbit /ATST/]
+	call sixout
+	rest t
+	call ddout
+	rest t
+	call ddout
+	movsi tt,(sixbit /00/)
+	jrst docmd
+
+] ;ifn $$set
+
+gettim:	move tt,[sixbit /ATRT/]	; & Get time into A
+	call query
+	 return
+	caml t,[1000000.]
+	 camle t,[1235959.]
+	  jrst error
+	idivi t,100.
+	cail tt,60.
+	 jrst error
+	movei a,(tt)
+	idivi t,100.
+	cail tt,60.
+	 jrst error
+	imuli t,60.
+	addi tt,-6000.(t)
+	imuli tt,60.
+	addi a,(tt)
+	aos (p)
+	return
+
+docmd:	call sixout		; & command from TT, check response
+docmd0:	call resp		; & check command response
+	 return
+	caie t,10.
+	 jrst error
+	aos (p)
+	return
+
+sixout:	setzi t,		; & send SIXBIT from TT
+	lshc t,6
+	movei t,40(t)
+	.iot chclko,t
+	jumpn tt,sixout
+	return
+
+ddout:	idivi t,10.		; & send two digit number from T
+	movei t,"0(t)
+	.iot chclko,t
+	movei tt,"0(tt)
+	.iot chclko,tt
+	return
+
+query:	call sixout		; & query from TT, response into T
+resp:	.iot chclko,[^m]	; & activate and read response into T
+	movei t,1
+	.call finish
+	 .lose %lssys
+resp1:	.status chclki,tt	; Don't hang because somebody stole the clock
+	trne tt,2000
+	 jrst resp4
+resp2:	.iot chclki,tt
+	cain tt,^m
+	 jrst resp7
+	cail tt,"0		; Skip over non-digits
+	 caile tt,"9
+	  jrst resp1
+	imuli t,10.
+	addi t,-"0(tt)
+	jrst resp1
+
+resp4:	;; Clock usually answers in under .1 second -- if not, give it
+	;; another second before failing.
+irp delay,,[3.,30.]
+	movei tt,delay
+	.sleep tt,
+	.status chclki,tt
+	trnn tt,2000
+	 jrst resp2
+termin
+	jrst enapp
+
+resp7:	cain t,19.
+	 jrst erodv
+	aos (p)
+	return
+
+erodv:	movei tt,%erodv
+	return
+
+ebdrg:	movei tt,%ebdrg
+	return
+
+enapp:	movei tt,%enapp
+	return
+
+ensdv:	movei tt,%ensdv
+	return
+
+error:	movei tt,%ebdfl
+	return
+
+define irpmon body
+irp length,,[31.,29.,31.,30.,31.,30.,31.,31.,30.,31.,30.,31.]
+body
+termin
+termin
+
+monlen:	irpmon [length]
+
+chkdtc:	cail a,minyr		; & Check date and proper century
+	 cail a,minyr+100.
+	  return
+chkdat:	cail b,1.		; & Check date
+	 caile b,12.
+	  return
+	cail c,1.
+	 camle c,monlen-1(b)
+	  return
+	cain c,29.
+	 caie b,2.
+	  jrst popj1
+lyearp:	trne a,3		; & skip if A is a leap year
+	 return
+	movei t,(a)
+	idivi t,100.
+	jumpn tt,popj1
+	trnn t,3
+popj1:	 aos (p)
+cpopj:	return
+
+.day.==-2
+monday:	irpmon [.day. ? .day.==.day.+length]
+
+.y.==1900.-1601.
+dy1900==<.y.*365.>+<.y./4.>-<.y./100.>+<.y./400.>
+
+datdyr:	add c,monday-1(b)	; & date -> day & year
+	call lyearp
+	 caig b,2
+	  aoj c,
+	return
+
+datday:	call datdyr		; & date -> abs day
+dyrday:	movei t,-1601.(a)	; & day & year -> abs day
+	imuli t,365.
+	add c,t
+	movei t,-1601.(a)
+	lsh t,-2
+	addi c,(t)
+	idivi t,25.
+	subi c,dy1900(t)
+	lsh t,-2
+	addi c,(t)
+	return
+
+dpy==:365.
+dp4y==:<dpy*4.>+1
+dp100y==:<dp4y*25.>-1
+dp400y==:<dp100y*4.>+1
+
+daydyr:	move t,c		; & abs day -> day & year
+	addi t,dy1900
+	idivi t,dp400y
+	movei a,(t)
+	movei t,(tt)
+	idivi t,dp100y
+	cain t,4
+	 soja t,[ addi tt,dp100y ? jrst .+1 ]
+	lsh a,2
+	addi a,(t)
+	movei t,(tt)
+	idivi t,dp4y
+	imuli a,25.
+	addi a,(t)
+	movei t,(tt)
+	idivi t,dpy
+	cain t,4
+	 soja t,[ addi tt,dpy ? jrst .+1 ]
+	lsh a,2
+	addi a,1601.(t)
+	movei c,(tt)
+	return
+
+daydat:	call daydyr		; & abs day -> date
+dyrdat:	call lyearp		; & day & year -> date
+	 caige c,31.+28.
+	  soj c,
+	movei b,1
+	camle c,monday-1+6(b)
+	 addi b,6
+	camle c,monday-1+3(b)
+	 addi b,3
+	camle c,monday-1+2(b)
+	 aoj b,.+2
+	  camle c,monday-1+1(b)
+	   addi b,1
+	sub c,monday-1(b)
+	return
+
+getut:	call getdow		; & get universal time in A
+	 return
+getut1:	save c
+	call getdat
+	 jrst pop1j
+	call datday
+	move b,c		; B: day
+	call gettim		; A: time
+	 jrst pop1j
+	call getdow		; C: dow
+	 jrst pop1j
+	rest t
+	caie c,(t)
+	 jrst getut1
+	move t,b
+	idivi t,7
+	caie c,(tt)
+	 jrst error
+	imuli b,spd
+	add a,b
+	aos (p)
+	return
+
+pop1j:	rest (p)
+	return
+
+sysut:	.rlpdtm t,		; & get universal time from system into A
+	tlnn tt,040000
+	 return
+	tlne tt,400000
+	 subi t,spd
+	tlne tt,100000
+	 subi t,60.*60.
+	movei a,(tt)
+	idivi t,spd
+	movei c,(t)
+	movei b,(tt)
+	call dyrday
+	imuli c,spd
+	move a,c
+	addi a,(b)
+	sub a,zone
+	aos (p)
+	return
+
+zone:	-5.*60.*60.
+
+ifn $$set,[
+
+setut:	move t,a		; & set universal time from A
+	idivi t,spd
+	movei a,(tt)		; A: time
+	move b,t		; B: abs day
+	idivi t,7
+	movei c,(tt)
+	call settim
+	 return
+	call setdow
+	 return
+	move c,b
+	call daydat
+	jrst setdat
+
+] ;ifn $$set
+
+.end clock

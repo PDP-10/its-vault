@@ -1,0 +1,3580 @@
+;-*-MIDAS-*-
+
+	title DOVER queuer and press file maker.
+	subttl Definitions
+
+;  AC definitions.  F is used for bit flags.
+
+f=0
+w=1
+x=2
+y=3
+z=4
+a=5
+b=6
+c=7
+d=8
+e=11
+ch=13
+t=14				;T and TT are clobbered freely by chaosnet IO
+tt=15
+sp=16
+p=17
+
+;  I/O channels.  chtti/chtto are TTY input/output channels
+; chdsk is for reading the input file
+; chsi and chso are chaosnet input and output.
+
+chtti==1
+chtto==2
+chdsk==3
+chsi==4
+chso==5
+cherr==6
+chdsko==7
+chdsk2==10
+
+; Assembly switches
+
+define nd. xx
+irps yy,,[xx]
+ ifndef yy,xx
+ .istop
+termin termin
+
+nd. pdllen==100.	; length of pushdown list
+nd. ttibfl==400.	; length of TTY input buffer
+nd. txtbfl==2000	; length of TXTBUF (used to read file to be printed).
+nd. maxfnt==16.		; number of fonts allowed.
+nd. entbfl==6000	; buffer for creating entity
+nd. dirbfl==1000	; buffer for part size info for making part directory
+nd. slbfl==4000		; buffer for output data bytes
+
+; Bit flags in F
+
+f%==1,,525252
+f%tty==400000		; We have the tty.
+f%jcl==200000		; We got JCL.
+f%live==100000		; do not commit suicide when finished queueing
+
+.insrt system;chsdef
+
+;Pup definitions (inside an UNC packet)
+puptcl==100001		;Protocol number in $CPKAN
+$pplen==242000,,%cpkdt	;Total length (including header and checksum)
+$pptrn==141000,,%cpkdt	;Transport control
+$pptyp==041000,,%cpkdt	;Pup type
+%pppid==%cpkdt+1	;Pup id (left 4)
+$ppdhs==242000,,%cpkdt+2	;Destination host
+$ppdph==042000,,%cpkdt+2	;Destination port high
+$ppdpl==242000,,%cpkdt+3	;Destination port low
+$ppshs==042000,,%cpkdt+3	;Source host
+%ppspr==%cpkdt+4	;Source port (left 4)
+%ppdat==%cpkdt+5	;Data starts here
+
+$$chaos==1
+$$analyze==1
+.insrt syseng;netwrk
+
+define syscal xx,yy
+	.call [setz ? sixbit "xx" ? yy ((setz))]
+termin
+
+define insirp xx,yy
+irps zz,,yy
+	xx,zz
+termin termin
+
+;	cvtmica ac	;converts qty in ac from XGP dots to micas.
+;	cntmica ac,ac1	;where ac1 is the name for ac+1, converts
+;			;and does not save ac+1.
+define cvtmica ac,nosave
+ifn ac+1-nosave,push p,ac+1
+	imuli ac,2540.
+	idivi ac,200.
+ifn ac+1-nosave,pop p,ac+1
+termin
+
+; Macro to output an ASCII string.  It may not have unbalanced
+; brackets or any " marks in the string argument.
+;	type [<string>]
+
+define type string
+	movei t,[asciz "string"]
+	pushj p,outstr
+termin
+
+;Decrement 7-bit byte pointer in AC.
+define dbp7 ac
+	add ac,[070000,,]
+	skipge ac
+	 sub ac,[430000,,1]
+termin
+
+	subttl Data area and macros
+
+debug:	-1				; non-zero if debugging
+dskout:	0				; non-zero to output press file to
+					; FOO PRESS for examination.
+mcsplf:	-1				; non-zero to send output to MC spooler
+ctrls:	0				; ^S typed ?
+ctrlg:	0				; ^G typed ?
+snever:	0				; never spool (set by /EFTP)
+notify:	0				; request notification (spooling only)
+notusr:	block 10.			; user to notify
+notsit:	0				; site included ?
+dqueue:	0				; display queue ?
+qbuf:	block 10.			; buffer for queue display info
+status:	0				; give Dover status ?
+
+savepc:	block 1				; save of .JPC on a hit bug
+
+pdl:	block pdllen			; pushdown list
+
+ttibuf:	block ttibfl			; TTY input rubout processing done here
+swtbeg:	0				; BP to start of input subunit now
+					; being parsed.  Error message prints
+					; text starting from there.
+
+machin:	block 1				; which machine being run on
+chaosp:	block 1				; non-zero if machine has Chaosnet
+xuname:	block 1				; this job's XUNAME
+xjname:	block 1				; this job's XJNAME
+
+ddirs:
+ddtsnm:	block 1				; DDT's SNAME
+msname:	block 1				; this job's SNAME
+hsname:	block 1				; this job's HSNAME
+nddirs==.-ddirs
+
+qdate:	0				; Date, in disk format.
+
+dfn2s:	sixbit "PRESS"			; list of fn2's to try
+	sixbit "PRE"
+	sixbit "XGP"
+	sixbit ">"
+nfn2s==.-dfn2s
+
+clrbeg::				; start of area 0'ed at start of parse.
+
+device:	block 1			; selected device
+fn1:	block 1			; selected FN1
+fn2:	block 1			; selected FN2
+sname:	block 1			; selected SNAME
+
+rdevice: block 1		; resolved (RFNAME) device
+rfn1:	block 1			; copies of fn1, fn2
+rfn2:	block 1
+rsname:	block 1			; resolved (RFNAME) SNAME
+
+qfn1:	block 1			; FN1 for making MC queue entry
+qfn2:	block 1			; FN2 for same
+qqfn2:	block 1			; FN2 of -QUEUE entry
+
+fntlen==12			;Each font is remembered with 12 words.
+fntfam==0			;Words 0 - 3 are the font family name in ASCIZ.
+				;Note: maximum family name is 19 chars,
+				;so there is always room for a zero afterward.
+fntfml==4			;Length of family name is 4 words.
+fntsiz==4			;Word 4 is the size in points.
+fntfac==5			;Word 5 is the face code ("I", "B", etc).
+fnthgt==6			;Word 6 is the height from fonts widths file.
+fntwid==7			;Word 7 is the width.
+fntbas==10			;Word 10 is the baseline height.
+fntexp==11			;Word 11 is nonzero if font given explicitly.
+
+fntbeg:	block fntlen*maxfnt
+fntend::
+
+;XGP parameters - values in micas.
+;Args to commands are in micas from the tty, in XGP dots for commands in files.
+;ELFTMAR, etc., are set when the values are explicitly specified,
+;to make sure they are not overridden by values specified in XGP files.
+lftmar:	0
+elftmar:0
+topmar:	0
+etopmar:0
+rgtmar:	0
+ergtmar:0
+botmar:	0
+ebotmar:0
+vsp:	0
+evsp:	0
+lsp:	0
+elsp:	0
+
+mode:	0			;0 => press, 1 => text, -1 => XGP file.
+smode:	0			;-1 => mode was specified by switch;
+				;don't try to guess from the file.
+delfil:	0			; delete file when done ? (only PRESS or XGP)
+
+badtxt:	0			;apparently not a text file ?
+
+ctlflg:	0			;-1 for /CTL; ctl chars with uparrows.
+ectlflg:0			;-1 if /CTL or /SAIL specified
+nodol:	0			;-1 for altmode as up-arrow bracket
+lptfam:	0			;-1 if font family is LPT
+unpaged:0			;-1 for /UNPAGED; ^L as ctl char, not new page
+dfhdrf:	0			;-1 for /LIST; put a header on each page.
+txtcmd:	-1			;(Set to -1 when this area is initialized)
+				;-1 => if XGP file, do ";" commands inside it.
+etxtcmd:0
+txtcm1:	0			;-1 while doing ";" commands in an XGP file.
+
+skipct:	0			;Number of pages to skip from start of file.
+eskipct:0
+
+outenb:	-1			;-1 => Output enabled (for XGP skipping)
+
+lastpg:	0			;Number of last page to print (0 means eof).
+elastpg:0
+
+copies:	1			;Number of copies.
+ecopies:0
+
+nd. hdrlen==128./5+1
+header:	block hdrlen		;Ascii page hdr for ;HEADER and ;LIST
+hdrcnt:	0			;Length of header in characters.
+
+widths:	block 200*maxfnt	;widths of all characters in all fonts.
+				;fontnum*200+character is the index.
+
+fwidt1:	0			;temporary storage for FWIDTH
+
+txtbuf:	block txtbfl		; Buffer for reading from file to be printed.
+txtptr:	0			; B.P. for fetching from TXTBUF.
+txtcnt:	0			; Number of characters to fetch in TXTBUF.
+txtflg:	0			; -1 if we have EOF reading from the text file.
+txtrhd:	0			; -1 if a word read ahead for next bufferful.
+txtrhw:	0			;If we have a word of read-ahead, here it is.
+
+nd. txtlbl==40
+txtlbf:	block txtlbl		;Buffer for reading a command line from a file.
+
+pressw:	0			;Page width in micas not incl margins.
+pressh:	0			;Page height in micas not incl margins.
+pressx:	0			;X-pos in press file, rel to margin.
+				;This does not count any printing chars
+				;accumulating for PRSCHS.  The width of those
+pressy:	0			;Current y-pos in press file, rel to margin.
+pressb:	0			;Current adjusted y-baseline.
+pressf:	0			;Current font number.
+prsxy:	0			;Set-x command,,set-y command.
+				;Contains the entity command bytes for setting
+				;our logical x-pos and logical y-pos.
+				;They are normally set-x and set-y,
+				;but can be exchanged to rotate the printing.
+cspace:	0			;Inter-character spacing, in micas.
+
+pagnum:	0			;Page number in input text file
+subpag:	0			;Subpage counter
+
+strptr:	0			;Pointer to string being output by STRPRS
+strcnt:	0			;remaining length of string.
+
+slbuf:	block slbfl		; Buffer for data bytes of a page (8-bit bytes)
+				; Also temp storage for FWIDTH.
+;Storing into slbuf is done with a BP in SP.
+;There is no free count.  Instead, we check every so often
+;and if the buffer has enough characters in it for a packet we send one.
+prtcbp:	0			; Pointer into SLBUF at start of latest run of
+				; printing chars, for which no entity command
+				; has been made yet.
+
+pagwds:	0			; Number of words of data output already for
+				; this page.
+
+undrln:	0			; While inside an underline, this is the
+				; x-position at which the underline starts.
+
+entbuf:	block entbfl		; Buffer for entities of a page
+entbpt:	0			; BP for storing in it (8-bit bytes)
+entcnt:	0			; Number of free bytes left in it
+
+dirbuf:	block dirbfl		; Buffer for info on lengths of pages, for
+				; part directory.  Each 18 bit byte holds
+				; length of 1 page, in Alto wds.
+dirbpt:	0			; BP for storing in it (18-bit bytes)
+dircnt:	0			; number of free bytes left in it
+
+fdrpnm:	0			; Part number of font directory part, for
+				; making part dir.
+
+pfnbln==30.
+pfnbuf:	block pfnbln		; Buffer for printing filenames, and err device
+
+clrend::
+
+;EFTP output variables.
+;These variables are for the current connection (we only bother with one)
+;These are only used now for getting the Spruce status, not for file transfer
+dhost:	1002		;dover host number.
+dport:	0		;dover port number: 20 for sending press file,
+			;	21 for status.
+shost:	0		;Our host number.  See CHSINI.
+sport:	0		;our ethernet port.
+timout:	10.*30.		;Complain after 10 seconds of no response
+pupid:	0		;ID number of next pup.
+sprsts:	-1		;Code number for spruce status
+
+xmtbuf:	block 128.
+netwrk"pktbuf::
+rcvbuf:	block 128.
+lstrec:	block 128.	;Last record of existing press file
+
+patlen==100
+pat:	block patlen			; patch area
+patche:	-1
+patch==pat				; beginning of free patch area
+
+	subttl Command parser and machine equivalence tables
+
+; Command and command dispatch tables
+
+; cmd <command>,<dispatch>
+;
+; <command>	is the name of the command.
+;
+; <dispatch>	is the address that the command should dispatch to for
+;		processing.  If the command wants to scan for a filespec
+;		(such as ;LIST), it should not skip.
+;		Normally, commands should skip.
+
+; When the command routine is called, A has 0 if it is a switch, -1 if a ";"
+; command.  To prohibit using the command as a switch, put SETZ in front of
+; its dispatch.
+
+define cmnds
+cmd ASCII,stext
+cmd AUTCUT,popj1
+cmd BOTMAR,sbotmar
+cmd BRACKET,snodol
+cmd COPIES,scopies
+cmd CTLFLG,sctlflg
+cmd D,sdelete
+cmd DELETE,sdelete
+cmd DFONTS,sdfonts
+cmd DISKOU,sdskout
+cmd DSKOUT,sdskout
+cmd EFTP,nmcsplf
+cmd FFCUT,popj1
+cmd HEADER,setz sheader
+cmd KSET,setz skset
+cmd L,slist
+cmd LASTPA,slastpg
+cmd LFTMAR,slftmar
+cmd LIST,slist
+cmd LSP,slsp
+cmd NOTIFY,snotify
+cmd PRESS,spress
+cmd PRINT,cpopj
+cmd QUEUE,squeue
+cmd RGTMAR,srgtmar
+cmd S,sstatus
+cmd SAIL,snoctl
+cmd SKIP,sskipct
+cmd SPOOL,smcsplf
+cmd SQUISH,popj1
+cmd START,sstart
+cmd STATUS,sstatus
+cmd STOP,slastpg
+cmd T,stext
+cmd TEXT,stext
+cmd TOPMAR,stopmar
+cmd TXTCMD,stxtcmd
+cmd UNPAGED,sunpaged
+cmd VSP,svsp
+cmd X,sxgp
+cmd XGP,sxgp
+termin
+
+define cmd cmnd,dsptch
+ .1stwd sixbit "!cmnd!"
+termin
+comtab:	cmnds				; generate SIXBIT table of commands
+	sixbit "______"			; terminate table for scanner
+
+define cmd cmnd,dsptch
+	dsptch
+termin
+dsptab:	cmnds				; generate dispatch addresses for
+					; command args
+numcom==:.-dsptab			; number of commands
+
+; Table of SIXBIT masks used in finding unique abbreviations
+
+msktab:	sixbit "      "
+	sixbit "     _"
+	sixbit "    __"
+	sixbit "   ___"
+	sixbit "  ____"
+	sixbit " _____"
+
+;Numeric parameter switches.  Most are normally in micas, but
+;when specified inside an XGP file the args are in dots, and are converted.
+;For ;skip and ;txtcmd the args are just numbers.  B is negative to
+;suppress the conversion, in that case.
+irps xx,,lftmar topmar rgtmar botmar vsp lsp
+s!xx:	movei b,xx
+	jrst setvar
+termin
+
+sstart:	hrroi b,skipct		;/start:5 is the same as /skip:4
+	pushj p,setvar
+	 popj p,
+	sos skipct
+	jrst popj1
+
+irps xx,,txtcmd skipct copies lastpg
+s!xx:	hrroi b,xx
+	jrst setvar
+termin
+
+setsk1:	ildb x,z
+setvsk:	caie x,40			; skip spaces and tabs
+	 cain x,^I
+	  jrst setsk1
+	popj p,
+
+setvar:	movei x,(c)
+	jumpl a,setv1			; No colon if is a ';' command
+	pushj p,setvsk
+	caie x,":
+	 jrst setvls
+	ildb x,z
+setv1:	setzb c,a			; Read arg in C.  Count chars in A.
+	pushj p,setvsk
+	caia
+setv2:	ildb x,z
+	cail x,"0
+	 caile x,"9
+	  jrst setv3
+	imuli c,10.			; Accumulate decimal integer in C.
+	addi c,-"0(x)
+	aoja a,setv2
+
+setv3:	cain x,40
+	 jrst setv4
+	caie x,",			; Valid switch terminator?
+	 cain x,^M
+	  jrst setv4
+	caie x,"/
+	 cain x,"_
+	  jrst setv4
+	skipe txtcm1			; No error if reading from file
+	 popj p,
+	movei t,[asciz "Argument not digit for parameter switch: "]
+	jrst error
+
+setv4:	jumpe a,setvls			; No digits  => arg was empty.
+	skipn txtcm1
+	 jrst setv5
+	jumpl b,setv6			; If this parameter is a distance on
+	cvtmica c			; paper, convert from dots to micas.
+setv6:	skipn 1(b)			; Don't override if already set by user
+setv5:	 movem c,(b)			; Else set the variable.
+	setom 1(b)			; Say variable is set.
+	move a,x
+	jrst popj1			; Return - we won.
+
+setvls:	skipe txtcm1			; OK if reading from file
+	 popj p,
+	movei t,[asciz "No argument for parameter switch: "]
+	jrst error
+
+;setvoc:	jumpl a,setvo1
+;	caie c,":
+;	 jrst setvls
+;setvo1:	setzb c,a		; Read arg in C.  Count chars in A.
+;setvo2:	ildb x,z
+;	cail x,"0
+;	 caile x,"9
+;	  jrst setv3
+;	imuli c,10			; Accumulate octal integer in C.
+;	addi c,-"0(x)
+;	aoja a,setvo2
+
+sctlflg:setom ctlflg
+	setom ectlflg
+	popj p,
+
+snoctl:	setzm ctlflg
+	setom ectlflg
+	popj p,
+
+snodol:	setom nodol
+	popj p,
+
+sunpaged:setom unpaged
+	popj p,
+
+sdelete:setom delfil
+	popj p,
+
+sdskout:setom dskout
+	setzm mcsplf
+	popj p,
+
+nmcsplf:skipn chaosp	;Always spool if no Chaosnet
+	 popj p,
+	setzm mcsplf
+	setom snever
+	popj p,
+
+smcsplf:setom mcsplf
+	setzm snever
+	popj p,
+
+snotify:setom notify
+	setzm notusr
+	caie c,":			; value given ?
+	 popj p,
+	move c,[440700,,notusr]
+snotlp:	ildb x,z
+	caie x,40
+	 cain x,",
+	  jrst snotdn
+	caie x,^M
+	 cain x,"_
+	  jrst snotdn
+	cain x,"/
+	 jrst snotdn
+	cain x,"@
+	 setom notsit
+	idpb x,c
+	jrst snotlp
+snotdn:	movei x,0			; terminate string
+	idpb x,c
+	popj p,
+
+squeue:	setom dqueue
+	popj p,
+
+sstatus:skipe chaosp		;Can only get status if Chaosnet
+	 setom status
+	popj p,
+
+slist:	setom dfhdrf
+	popj p,
+
+;Specify that this file is an ordinary text file (no XGP commands)
+stext:	hrrzm p,mode
+	setom smode
+	jrst popj1
+
+;Specify that this file contains XGP commands.
+sxgp:	setom mode
+	setom smode
+	jrst popj1
+
+;Specify that this file is already a press file.
+spress:	setzm mode
+	setom smode
+	jrst popj1
+
+subttl specifying fonts
+
+skset:	skipe txtcm1		; ;KSET command in XGP file must be handled
+	 jrst sksf		; differently, since it contains font filenames
+;The ;DFONT command can appear in an XGP file and specify DOVER fonts.
+sdfont:	movei b,fntbeg
+	move a,c
+skset1:	caie a,^J
+	 cain a,^M			;if font filenames follow,
+	  jrst skset2
+	pushj p,fpsdf			;parse them.
+	addi b,fntlen
+	caie b,fntend
+	 jrst skset1
+skset2:	pushj p,fwidth			;Get widths of fonts now, so if there
+	jrst popj1			;is an error, it is reported right away
+
+
+sksf:	movei b,fntbeg
+	move a,c
+sksf1:	caie a,^J
+	 cain a,^M
+	  jrst skset2
+	push p,b
+	push p,d
+	move d,z
+	movei b,slbuf		;Read font filenames into temp storage.
+	pushj p,rfn"rfn
+	move z,d
+	pop p,d
+	pop p,b
+	skipe fntfam(b)		;Don't override a font specified by the user.
+	 jrst sksf2
+	move t,slbuf+1		;Get fn1 of font file, and look for equivalent.
+	move c,[-xftbln,,xftab]
+sksf3:	camn t,(c)
+	 jrst sksf4
+	addi c,fntfac+1
+	aobjn c,sksf3
+	type [No equivalent known for XGP font: ]
+	move y,slbuf+1
+	pushj p,outsix	
+	jrst error1
+
+sksf4:	movsi c,1(c)		;Found => set this font to that equivalent.
+	hrri c,(b)
+	blt c,fntfac(b)
+sksf2:	addi b,fntlen
+	caie b,fntend
+	 jrst sksf1
+	jrst skset2
+
+;Table of equivalences from XGP fonts to Dover fonts.
+;There are seven words per entry.
+;The first one is the sixbit name of the XGP font.
+;The next six are the fntfam (4 wds), fntsiz and fntfac of the Dover font.
+;The first entry is a sample.
+xftab:	sixbit "fntfoo"
+	ascii "foo" ? 0 ? 0 ? 0	;Family name
+	8			;size
+	0			;face code
+xftbln==.-xftab
+
+	subttl Startup and user group lookup
+
+; Initialize everything.  Compute the machine name, etc.
+
+start:	.core memend_-12		; make sure have variables, etc.
+	 .lose
+	move p,[-pdllen,,pdl]
+	move t,[-4,,[.rxunam,,xuname	; user's name for cover sheet
+		     .rsnam,,msname	; Default directory.
+		     .rhsnam,,hsname	; Home directory
+		     .rxjnam,,xjname]]	; For halt suppression (see use)
+	.suset t
+	syscal usrvar,[%climm,,%jssup ? %climm,,.rsnam ? %clout,,ddtsnm]
+	 .lose %lssys
+	move t,[jsr tsint]
+	movem t,42
+	move t,[-3,,[.smask,,[%piioc]	; enable for IOC's
+		     .smsk2,,[1_chtti]	; for ^S, ^G
+		     .roption,,a]]	; set OPTOPC
+	.suset t
+	tlo a,optopc
+	.suset [.soption,,a]
+	syscal sstatu,[repeat 5,%clout,,x; system status
+		       %clout,,machin]	; machine name in sixbit.
+	 .lose %lssys
+	move x,[squoze 0,chaosp]	;See if we have a Chaosnet connection
+	.eval x,
+	 movei x,0
+	movem x,chaosp		;If we have one, try directly first
+	movs b,machin		;Unless we're MC, the machine with the
+	cain b,'MC		;spooler, because people complain for some
+	 setz x,		;reason
+	skipe x
+	 setzm mcsplf
+	syscal rqdate,[%clout,,qdate]
+	 .lose %lssys
+	jrst jclini
+
+; Look for a JCL string.  If there is one, gobble down the JCL and process
+; it.  Be careful that if F%TTY is off (meaning that no TTY is available) the
+; job does not have the TTY for output.
+
+jclini:	setzb f,b			; clear flags,char counter
+	.suset [.roption,,x]
+	setzm ttibuf
+	tlne x,%opcmd			; did I get a JCL command?
+	 .break 12,[..rjcl,,ttibuf]	; yes, gobble down a buffer
+	skipe ttibuf
+	 pushj p,jclprs			; If we have JCL, paw it over.
+
+; Find out whether we have a TTY to get commands from in case there is no JCL.
+ttycmd:	.suset [.rtty,,x]
+	tlnn x,%tbnot			; do I have the TTY?
+	 .open chtti,[.uai,,'TTY]
+	  jrst notty			; Open fails, we can't use the tty.
+	syscal ttyget,[%climm,,chtti ? %clout,,x ? %clout,,x ? %clout,,c]
+	 jrst notty
+	tlo c,%tscle			; Make FF echo as ^L, not clear screen.
+	syscal ttyset,[%climm,,chtti ? [323232,,323232]
+			[333232,,320232] ? c]	;Don't echo rubout!
+	 .lose %lsfil			; only ^G/^S interrupt
+	.open chtto,[%tjdis\.uio,,'TTY]	;Do handle ^P on tty output.
+	 .lose %lsfil
+	tlo f,f%tty			; Remember that we have a TTY.
+notty:	tlo f,f%live
+notty1:	tlnn f,f%jcl			; If no JCL, type DOVER.version.
+	 pushj p,announ
+	tlne f,f%jcl			; If have JCL, just go parse it.
+	 jrst prsini
+	jrst fetch			; Else start reading commands.
+
+; Output header; {Debug} DOVER.version
+
+announ:	skipn debug			; debugging version?
+	 jrst pgmver			; no, type program name+version only
+	type [Debug ]			; yes, warn this is a debugging version
+pgmver:	move y,[SIXBIT/DOVER/]
+	pushj p,outsix			; and output it
+	.iot chtto,[".]			; type a period
+	move y,[.fnam2]			; load version
+	jrst outsix			; and output that too
+
+;Preprocess JCL to make sure it ends with a CRLF, and set RB.PTR to
+;point at the end of it.
+jclprs:	tlo f,f%jcl			; If we have JCL, remember that fact.
+	move a,[440700,,ttibuf]
+	movem a,rubout"rb.prs+rbblok
+jclpr1:	ildb b,a			; Put a CRLF at the end of it.
+	caie b,^C
+	 jumpn b,jclpr1
+	movei b,^M
+	idpb b,a
+	movei b,^J
+	idpb b,a
+	movem a,rubout"rb.ptr+rbblok	; Remember a pointer to just after CRLF
+	popj p,
+
+;Start reading the lines of a new queue request from the TTY.
+fetch:	move p,[-pdllen,,pdl]
+	.close chdsk,			; close all channels, just in case
+	.close chsi,
+	.close chso,
+	.close cherr,
+	.close chdsko,
+	.close chdsk2,
+	tlne f,f%jcl
+	 jrst jclend			; jcl ran out
+	tlne f,f%live			; fed a ^C ?
+	 tlnn f,f%tty			; have the TTY ?
+	  jrst death			; commit suicide.
+	.iot chtto,[^P]			; and a new line
+	.iot chtto,["A]			; before command lines
+	.iot chtto,["#]
+	movei a,chtto
+	movei b,rbblok
+	move c,[010700,,ttibuf-1]
+	movem c,rubout"rb.beg(b)
+	addi c,ttibfl-1
+	movem c,rubout"rb.end(b)
+	setzm rubout"rb.prs(b)		; All flags to be cleared, at nxtlin.
+	pushj p,rubout"init		; Init rubout proc.  Get TTY properties
+	jrst nxtlin
+
+;Come here if not a PRESS file, and apparently not a text or XGP file.
+;But don't come if /TEXT or /XGP given.
+
+badfil:	move y,rdevice
+	pushj p,outsix
+	type [: ]
+	move y,rsname
+	pushj p,outsix
+	type [; ]
+	move y,rfn1
+	pushj p,outsix
+	.iot chtto,[40]
+	move y,rfn2
+	pushj p,outsix
+	type [ is DEFINITELY not a good PRESS file.
+It does not LOOK like a nice text or XGP file either, because
+it contains too many control characters without enough XGP
+escapes.  It is probably either a bad PRESS file, or a binary
+file, neither of which should be run off.  But if you are SURE
+the file is OK, /TEXT or /XGP will force it to be processed in
+the corresponding fashion.  Be careful, please ...
+If you do not understand this message, do not proceed!!!
+]
+	jrst fetch			; start over
+
+;Type error message (ASCIZ string in T),
+;followed by relevant part of input command, if any,
+;followed by a CRLF.
+error:	pushj p,outstr
+	skipe txtcm1			; Error in command read from input file
+	 jrst fetch			;  => abort completely.
+	skipe d,swtbeg
+error0:	 camn z,d
+	  jrst error1
+	ildb ch,d
+	.iot chtto,ch
+	jrst error0
+
+error1:	type [
+]
+	move z,rubout"rb.prs+rbblok	; Flush erroneous line from the buffer.
+	movem z,rubout"rb.ptr+rbblok
+
+;Read some more lines of an unfinished queue request from the TTY.
+nxtlin:	tlne f,f%jcl			; If had jcl, handle any leftovers
+	 jrst jclend
+	tlne f,f%live			; live ?
+	 tlnn f,f%tty			; have the TTY ?
+	  jrst death			; commit suicide.
+	movei b,rbblok
+	pushj p,rubout"read	;Read line, do rubout proc.  Add info to DATA.
+	jumpl a,fetch		;Over-rubout => just try again.
+	skipe rubout"rb.prs(b)	;Was already-parsed stuff rubbed out?
+	 jrst parse		;No - resume parse, but only do new line.
+	move a,rubout"rb.beg(b)
+	movem a,rubout"rb.prs(b)
+	jrst prsini		; Else reparse everything from the beginning,
+
+jclend:	skipe status		; status requested ?
+	 pushj p,dovsts		; do it
+	skipe dqueue		; queue list requested ?
+	 pushj p,dovque		; do it
+	jrst death
+
+;Here to start parsing a new queue request.  Reinitialize all data on the
+;request, first.
+prsini:	move a,[clrbeg,,clrbeg+1]
+	setzm clrbeg
+	blt a,clrend-1
+	move x,[asciz "LPT"]		;Default font 0 to LPT 8.
+	movem x,fntbeg+fntfam
+	movei x,8
+	movem x,fntbeg+fntsiz
+	movei x,1
+	movem x,copies
+irps xx,,lftmar topmar rgtmar botmar
+	move x,d!xx
+	movem x,xx
+termin
+	setzm sname		; clear default sname
+	move x,machin		; load up this machine name
+	movem x,device		; and make it the default device
+	setom txtcmd		; Default for ";" commands in XGP file is "on".
+	jrst parse
+
+dlftmar: 2540.			; One inch, in micas
+dtopmar: 2540.*2/3		; 2/3 inch, in micas
+drgtmar: 2540.*2/3		; 2/3 inch, in micas
+dbotmar: 2540.*2/3		; 2/3 inch, in micas
+
+;Read a character from the TTY for Rubout"Read.
+rubout"inchr:
+	.iot chtti,a			; gobble down a single character
+	caie a,^C			; ^C?
+	 popj p,
+	tlz f,f%live			; Yes, say suicide after this command,
+	pushj p,crlf			; and type a CRLF.
+	movei a,^M			; Aside from this, ^C is just like CR.
+	popj p,
+
+crlf:	.iot chtto,[^M]
+	.iot chtto,[^J]
+	popj p,
+
+rubout"outchr:
+	cain a,^P		;Output, suppressing specialness of ^P.
+	 jrst [	.iot chtto,[^P]
+		.iot chtto,["P]
+		popj p,]
+	.iot chtto,a
+	popj p,
+
+rubout"display:			;Output, allowing ^P to be special.
+	.iot chtto,a
+	popj p,
+
+rubout"dispat:			;Dispatch routine for Rubout"Read to
+				; call on each character.
+	cain a,^C
+	 jrst rubout"break
+	cain a,^H
+	 jrst rubout"rubout
+	jrst rubout"rb$dsp
+
+rubout"prompt:
+	.iot chtto,["#]
+	popj p,
+
+rubout"$$brkins==1
+rubout"$$prompt==1
+rubout"$$ctlech==1
+rubout"$$ffclr==0
+
+.insrt syseng;rubout
+
+;Argument block for calling Rubout.
+rbblok:	block rubout"rb.len
+
+; After Rubout"Read has obtained some more input, parse it.
+; If we come across a final command, write the queue request.
+; If we run out of input before finding a final command,
+; go back to NXTLIN to get more input.
+
+parse:	move z,rubout"rb.prs+rbblok	; Get pointer to stuff left to parse.
+	camn z,rubout"rb.ptr+rbblok	; There's no more stuff => read more.
+	 jrst nxtlin
+	setzm swtbeg
+	pushj p,spcfls			; flush spaces
+	move y,z			; (crock) load scratch copy of buf ptr
+	ildb c,y			; and peek at the first character
+	cain c,^J
+	 jrst ignln3			; Ignore null lines.
+	jumpe c,ignln3
+	caie c,";			; Is this line a spooler command?
+	 jrst prsfnm
+	pushj p,splrcm			; Yes, decode it.
+	 jrst prsfnm			; No skip => filename may follow.
+	jrst ignln3			; Skip => now read another line.
+
+;This line is the name of a file to print
+prsfnm:	movei b,device
+	pushj p,rfname			; Parse the filename,
+	tlnn e,17			; do nothing if null
+	 jrst ignln3			; - possibly just switches
+	push p,[fetch]
+	move c,a
+	pushj p,skset			; read font names.
+	 jfcl
+	skipe sname		; if sname given, then just default fn2
+	 jrst [	movei b,sname
+		pushj p,deffn2
+		 jfcl
+		jrst defsn1 ]
+	move b,[-nddirs,,ddirs]	; otherwise, try list of sname's in order
+	pushj p,deffn2
+	 aobjn b,.-1
+	cail b,0
+	 skipa b,-1(b)
+	  move b,(b)
+	movem b,sname
+defsn1:	move a,(a)
+	movem a,fn2
+	jrst havnam
+
+deffn2:	skipe fn2			; If FN2 specified, just check;
+	 jrst [	movei a,fn2
+		syscal open,[[.bai,,chdsk] ? device ? fn1 ? fn2 ? (b)]
+		 popj p,		; no skip
+		.close chdsk,
+		aos (p)
+		popj p, ]
+	move a,[-nfn2s,,dfn2s]		; try defaults in order
+	syscal open,[[.bai,,chdsk] ? device ? fn1 ? (a) ? (b)]
+	 aobjn a,.-1			; try, try again ...
+	.close chdsk,			; close anyway
+	caige a,0			; found ?
+	 aosa (p)			; yes - skip return
+	  subi a,1			; back a up to last name
+	popj p,
+
+havnam:	pushj p,txtprs			; Guess file type and process ";" 
+	skipn mode			; commands in XGP files
+	 jrst opress
+	skipn fnthgt+fntbeg		; If font 0 defaults to LPT8 and width
+	 pushj p,fwidth			; not looked up, look it up now.
+	jrst otext
+
+;Here to mark entire line being read as already handled.
+ignln3:	move z,rubout"rb.prs+rbblok
+ignln4:	ildb c,z			; Start at beginning and skip over it.
+	caie c,^J			; Don't bother removing it from ttibuf.
+	 jrst ignln4
+	movem z,rubout"rb.prs+rbblok
+	jrst parse
+
+subttl filename parsing
+
+; Read a file name off Z into filename block <- B.  Returns RFN flags in E.
+; Clobbers D.  Returns terminator in A and C.
+rfname:	setz e,
+	cain c,^M
+	 popj p,
+	move d,z
+	pushj p,rfn"rfn
+	move z,d
+	move c,a
+	popj p,
+
+rfn"psixtp:
+rfn"rsixtp:
+	caie a,"/
+	 cain a,"_
+	  aos (p)
+	popj p,
+
+rfn"$$rfn==1
+rfn"$$pfn==1
+rfn"$$switch==1
+
+.insrt syseng;rfn
+
+;Process "/" switches in filenames.
+;On return from a switch routine, the character in A will be reprocessed.
+switch:	dbp7 d				; Back bp over 1st char of switch name.
+swit1:	push p,b
+	push p,c			; In RFN, C holds file block addr.
+	move z,d
+	dbp7 d				; Back over slash so err msg has it
+	movem d,swtbeg
+	pushj p,get1wd			; Read a word of sixbit into W.
+	camn w,[sixbit "L"]		; "L" is OK for "LIST", as a switch
+	 move w,[sixbit "LIST"]		; even though not unique abbreviation.
+	pushj p,decod1			; Decode as a spooler command.
+	 jrst badsw			; Unknown name gets error message.
+	skipge dsptab(y)		; Not all commands are legal switches.
+	 jrst badsw1
+	setz a,				; Say it's a switch, not a ";" command.
+	pushj p,@dsptab(y)		; Call the routine for the switch.
+	 jfcl
+swit6:	move d,z			; Update RFN's b.p.
+	ldb a,d
+	setzm swtbeg
+	pop p,c
+	pop p,b
+	jrst popj1
+
+badsw:	movei t,[asciz "Undefined switch: "]
+	jrst error
+
+badsw1:	movei t,[asciz "Spooler command used as switch which cannot be: "]
+	jrst error
+
+; Here to scan after a ; looking for a spooler command.
+; If it is one, we process it.
+; If it is not one, we get an error, unless TXTCM1 is set.
+splrcm:	movem z,swtbeg
+	ibp z				; (grumble) (losing parse code)
+	pushj p,decode
+	 jrst [	skipl txtcm1
+		 jrst badcom
+		popj p,]
+	seto a,				; it's a spooler command, not a switch.
+	jrst @dsptab(y)
+
+;Read from b.p. in Z a command name, and decode as a spooler command.
+;No skip => not recognized.
+;Skip => Y has index in DSPTAB.  Either way, C has terminating character.
+
+decode:	pushj p,get1wd			; one sixbit word to w, padded with 0's
+decod1:	jumpge w,cpopj			; null or illegal word, crap out
+	move x,w			; copy it into x
+	ior x,msktab(y)			; but make it padded with 1's
+
+;  Look for unique match in table of specially known commands.  If this routine
+; throws you, it actually is quite simple.  It takes the command in two copies,
+; one padded by 0's as normal, and the other padded with 1's.  Now, for a
+; command to be a match, with unique abbreviations allowed, there must be one
+; and only one command whose value is between these two, unless an exact match
+; is also an abbreviation of another.
+
+	movsi y,-numcom			; load command table AOBJN pointer
+	camle w,comtab(y)		; a match?
+	 aobjn y,.-1			; no, not yet
+	jumpge y,cpopj			; error return if no match
+	camn w,comtab(y)		; exact match?
+	 jrst popj1			; yes, don't foul up if also abbrev
+	caml x,comtab(y)		; a match at all?
+	 camle x,comtab+1(y)		; a unique match?
+	  jrst cpopj			; no, complain about bad command
+	jrst popj1
+
+	subttl SIXBIT input
+
+; Here to pick up a SIXBIT word in W, length in Y, terminator in C,
+; off bp in Z, clobbers X
+
+get1wd:	movei y,6			; max # of chars in a SIXBIT word
+	setz w,				; initially null word
+	move x,[440600,,w]		; load pointer to first char in word
+gt1wd1:	pushj p,charin			; get a character
+	 popj p,			; hit a break
+	subi c,<" >			; SIXBITify
+	idpb c,x			; and save in word
+	sojg y,gt1wd1			; continue until packed
+	pushj p,charin			; gobble another character
+	 popj p,			; finally hit a break!
+	jrst .-2			; keep on trying
+
+; Here to gobble down a character, and skip if SIXBIT
+
+charin:	ildb c,z			; get a character
+	cail c,140
+	 subi c,40
+	caie c,":			; An arg for a switch
+	 cain c,"/			; or another switch
+	  popj p,			; terminates a switch name.
+	caie c,"_			; End of filespec terminates switch.
+	 caig c,40
+	  popj p,
+	jrst popj1
+
+;  Here to flush any spaces (for after a ; or :).  This routine isn't as
+; cretinous as it looks; how many people put 69 spaces after delimiters???
+
+spcfls:	move y,z			; copy byte pointer
+spcfl1:	move z,y			; Get Z past spaces, not terminators
+	ildb x,y			; get a character
+	caie x,^M			; Keep going if skippable.
+	 cain x,^I
+	  jrst spcfl1
+	cain x,40
+	 jrst spcfl1
+	popj p,
+
+popj3:	aos (p)
+popj2:	aos (p)
+popj1:	aos (p)				; bump return PC(skip return)
+cpopj:	popj p,				; and return(non-skip return)
+
+subttl read and print font names
+
+;Read in a font name for press file use.
+;These font names are not file names.  They contain
+;a family name, a face code, and a point size.
+;We store the family name in 4 words of ASCII starting at FNTFAM,
+;the face code in FNTFAC and the size in FNTSIZ.
+;B points to FNTFAM for the font we are reading.
+;Return on finding a comma or CR.  Terminating char in A and X.
+;We allow switches before and after font names.
+fpsdf:	pushj p,fpspsp		;skip any leading spaces.
+	cain x,"/		;Slash means a switch.
+	 jrst [	pushj p,fpsswt	;Process it.
+		jrst fpsdf]	;Spaces may follow it.
+fpsdf0:	caie x,^M		;if the first nonspace is a terminator,
+	 cain x,",		;this font is not being specified.
+	  popj p,		;leave it alone.
+	caige x,40
+	 popj p,
+	skipe txtcm1		;If this is in a ;DFONT command in an XGP file,
+	 skipn fntexp(b)	;then don't override any fonts already given.
+	  trna
+	   jrst [
+		ildb x,z	;Just skip over the font name
+		jrst fpsdf0]
+	setom fntexp(b)
+repeat fntlen,setzm fntfam+.rpcnt(b)
+	skipa a,[440700,,fntfam(b)]	;stuff family name down this bp.
+fpsdf1:	 ildb x,z
+	cail x,"0		;the family name should be ended by a digit.
+	 caile x,"9
+	  cain x,40		;or spaces and then a digit
+	   jrst fpsdf2
+	cail x,40
+	 cain x,^M		;if we find a name terminator, barf, since
+	  jrst fpsdfl		;there ought to be a point size here.
+	cain x,",
+	 jrst fpsdfl
+	cail x,140
+	 subi x,40
+	came a,[010700,,fntfam+fntfml-1(b)]
+	 idpb x,a
+	jrst fpsdf1
+
+;found end of family name.
+fpsdf2:	cain x,40
+	 pushj p,fpspsp
+	cail x,"0
+	 caile x,"9
+	  jrst fpsdfl		;error if the next thing is not a size
+;now read in the point size	
+	tdza a,a		;accumulate decimal number in a.
+fpsdf4:	 imuli a,10.
+	addi a,-"0(x)
+	ildb x,z
+	cail x,"0
+	 caile x,"9		;stop and store the number at first non-digit
+	  trna
+	   jrst fpsdf4
+	movem a,fntsiz(b)
+;now all characters before the next space or terminator should be the face code
+	seto a,			;accumulate the face code as zero bits in a.
+	cain x,40
+fpsdf3:	 pushj p,fpspsp
+	cail x,40
+	 cain x,^M		;check for a terminator.
+	  jrst fpsdf5		;if we find one, store what we got.
+	caie x,",
+	 cain x,"/
+	  jrst fpsdf5
+	cail x,140
+	 subi x,40
+	cain x,"E		;the characters "ecilb" set bits in a.
+	 trz a,1		;"e" means extended, "c" means compressed,
+	cain x,"C
+	 trz a,2
+	cain x,"I		;"i" means italic,
+	 trz a,4
+	cain x,"L		;"l" means light, "b" means bold.
+	 trz a,10
+	cain x,"B
+	 trz a,20
+	jrst fpsdf3
+
+fpsdf5:	trne a,3		;extended compressed is an error,
+	 trnn a,30		;as is light bold
+	  jrst fpsdfc
+	setz c,
+	trnn a,1		;turn bits in a into xrox face code in c.
+	 addi c,12.
+	trnn a,2
+	 addi c,6
+	trnn a,4
+	 addi c,1
+	trnn a,10
+	 addi c,4
+	trnn a,20
+	 addi c,2
+	movem c,fntfac(b)
+;here at end of so-far valid font name, having skipped any spaces.
+fpsdf6:	move a,x		;Return terminating char in A as well as X.
+	cain x,"/		;Slash means a switch.  Process it,
+	 jrst [	pushj p,fpsswt
+		pushj p,fpspsp	;then pass any more spaces.
+		jrst fpsdf6]
+	caie x,",
+	 cain x,^M		;should now have reached valid terminator.
+	  popj p,
+	movei t,[asciz "Garbage in font name: "]
+	jrst error
+
+;Skip spaces down bp in Z.  Leave first nonspace in X.
+fpspsp:	ildb x,z
+	cain x,40
+	 jrst fpspsp
+	popj p,
+
+;here if font name is ended at the end of the family name (point size missing).
+fpsdfl:	movei t,[asciz "No points size in font name: "]
+	jrst error
+
+fpsdfc:	movei t,[asciz "Inconsistent face code (light bold or compressed extended): "]
+	jrst error
+
+;Here to process a switch after seeing a slash before or after a font name.
+fpsswt:	move d,z
+	pushj p,swit1
+	 jfcl
+	movem z,d
+	dbp7 z
+	popj p,
+
+;Print the name of a font.  B indexes the font.
+;Clobbers A and X.
+prspfn:	skipn fntfam(b)			;output nothing if font not specified.
+	 popj p,
+	push p,a			;save output insn.
+	move a,[440700,,fntfam(b)]
+prspf1:	ildb x,a			;fetch, print chars of font family
+	jumpe x,prspf2
+	.iot chtto,x
+	jrst prspf1
+
+prspf2:	movei x,40
+	.iot chtto,x
+	push p,c
+	move c,-1(p)
+	move a,fntsiz(b)		;output point size.
+	push p,b
+	pushj p,prspf8
+	pop p,b
+	pop p,c
+	move a,fntfac(b)		;get face code, prints as letters
+	caige a,12.			;see fpsdf for inverse transformation,
+	 jrst prspf3			;with comments.
+	movei x,"E
+	.iot chtto,x
+	subi a,12.
+prspf3:	caige a,6
+	 jrst prspf4
+	movei x,"C
+	.iot chtto,x
+	subi a,6
+prspf4:	trzn a,1
+	 jrst prspf5
+	movei x,"I
+	.iot chtto,x
+prspf5:	caige a,4
+	 jrst prspf6
+	movei x,"L
+	.iot chtto,x
+	subi a,4
+prspf6:	caige a,2
+	 jrst prspf7
+	movei x,"B
+	.iot chtto,x
+prspf7::
+popaj:	pop p,a
+	popj p,
+
+;Print decimal number in A clobbering B, X.
+prspf8:	idivi a,10.
+	hrlm b,(p)
+	skipe a
+	 pushj p,prspf8
+	hlrz x,(p)
+	addi x,"0
+	.iot chtto,x
+	popj p,
+
+subttl get font widths
+
+;Get the widths of the fonts from the font widths file.
+fwidth:	syscal open,[[.bii,,chdsk] ? [sixbit "DSK"] ? [sixbit "FONTS"]
+			[sixbit "WIDTHS"] ? [sixbit "FONTS"]]
+	 .lose %lsfil
+	syscal fillen,[%climm,,chdsk ? %clout,,a]
+	 .lose %lsfil
+	movei b,fwidbf+1777(a)	;get core at FWIDBF to hold FONTS.WIDTHS
+	lsh b,-12
+	.core (b)
+	 .lose
+	movns a
+	hrlzs a
+	hrri a,fwidbf		;Read the file into that core.
+	.iot chdsk,a
+	.close chdsk,
+
+;Now process the fonts one at a time.  B indexes which font we are hacking.
+	movei b,fntbeg
+fwidf:	skipn fntfam(b)		;Is this font specified?
+	 jrst fwid9
+	setzm fwidt1		;No scalable entry found yet.
+	move a,[442000,,fwidbf]	;a gets b.p. to ildb through the file.
+	seto z,			;when we learn the family code, put it in Z.
+fwid1:	ildb x,a		;read thru the "ixn" entries to associate
+	lsh x,-12.
+	caie x,1		;family codes with each family we have.
+	 jrst fwid6
+	ildb d,a		;get family code of this entry.
+	tlc a,003000		;read 8-bit bytes for a while
+	ibp a			;ignore len of family name, we don't need it.
+	movei e,19.
+repeat fntfml,setzm slbuf+.rpcnt ;Make sure low bits are clear!
+	move c,[440700,,slbuf]
+fwid3:	ildb x,a		;copy family name into slbuf.
+	idpb x,c
+	sojg e,fwid3
+	tlc a,003000		;switch back to 16-bit bytes
+repeat fntfml,[
+	move e,fntfam+.rpcnt(b)	;compare each family name we are using
+	came e,slbuf+.rpcnt	;with the family name in the ixn entry.
+	 jrst fwid1
+]
+	move z,d		;names match.  save family code in font's data
+	jrst fwid1		;now look at next "ixn" entry.
+
+fwid2:	ildb x,a		;now look at type 4 entries
+	lsh x,-12.
+fwid6:	caie x,4		;if we run out, font is not in FONTS WIDTHS,
+	 jrst [	move d,fntsiz(b)
+		skipe x,fwidt1	;unless we already saw a scalable entry.
+		 jrst fwid8	;If so, go use it.
+		type [Undefined dover font: ]
+		pushj p,prspfn
+		movei t,[asciz ""]
+		jrst error]
+	tlc a,003000		;read 8-bit bytes for a while
+	ildb e,a		;family code
+	ildb c,a		;face code
+	ildb x,a		;first character number in font
+	movem x,slbuf
+	ildb x,a		;last character number in font
+	movem x,slbuf+1
+	tlc a,003000		;switch back to 16-bit bytes
+	ildb x,a		;size of font described by this entry.
+	movem x,slbuf+2
+	ildb x,a		;rotation of font described by this entry.
+	movem x,slbuf+3
+	ildb d,a		;start addr of segment containing font's data
+	ildb x,a		; (it's a double word)
+	lsh d,16.
+	ior x,d
+ifn 0,[	ibp a ? ibp a ]		;we skip the segment length in the aoja's below
+	camn z,e		;compare family code -- it must match
+	 skipe slbuf+3		;don't get fooled by rotated fonts
+	  aoja a,fwid2		;keep looking if no match
+	move e,fntfac(b)
+	came e,c		;face code must also match.
+	 aoja a,fwid2
+	move d,fntsiz(b)
+	skipn e,slbuf+2		;is it a scalable entry?
+	 jrst [	movem x,fwidt1	;If so, save it for later.
+		jrst fwid2]	;Don't use unless no entry for specific size.
+	imuli e,72.		;convert size in entry from micas to points,
+	addi e,1270.		;rounding to nearest point.
+	idivi e,2540.
+	caie e,(d)		;size in entry must equal specified,
+	 aoja a,fwid2
+	skipa d,[72000.]	;dummy scaling factor for absolute font sizes
+fwid8:	 imuli d,2540.		;otherwise compute the scaling factor
+	ldb a,[014300,,x]
+	addi a,fwidbf-1
+	hrli a,002000		;a now points to ildb start of correct word
+	trne x,1
+	 ibp a			;make it the right alto-word also.
+
+;we must now read out the widths from the data segments.
+	ibp a			;read the bounding box info.
+	ildb e,a		;second word is the baseline depth (negative).
+	trne e,100000
+	 orcmi e,77777		;extend the sign
+	imul e,d		;and convert the baseline to micas
+	idiv e,[-72000.]
+	movem e,fntbas(b)
+	ibp a
+	ildb e,a		;fourth word is height above baseline.
+	imul e,d		;convert height to micas
+	idivi e,72000.
+	movem e,fnthgt(b)
+	move w,b
+	subi w,fntbeg
+	idivi w,fntlen		;W gets number of this font.
+	lsh w,7			;W gets index of char widths of this font
+	add w,[widths(c)]	;W is indirect address to width of char in C.
+	movsi c,-200		;Default all widths to 0.
+fwidw2:	setzm @w
+	aobjn c,fwidw2
+	ildb x,a		;Read in the flags word.
+	trne x,100000		;Jump if fixed-width font,
+	 jrst fwidw3
+	move c,slbuf		;else read the widths of all the characters
+fwidw1:	ildb x,a
+	cain x,100000		;If char is marked as nonexistent in this funny
+	 setz x,		;way, we should take its width to be zero.
+	imul x,d		;scale if necessary
+	idivi x,72000.
+	movem x,@w		;and store them in the table.
+	camge c,slbuf+1		;stop when we have done all the characters.
+	 aoja c,fwidw1
+fwidw:	movei c,40
+	move x,@w		;The width of space is the "width of the font".
+	movem x,fntwid(b)
+fwid9:	addi b,fntlen		;advance to next font.
+	caie b,fntend
+	 jrst fwidf
+	.core memend_-12
+	 .lose
+	popj p,
+
+fwidw3:	ildb x,a		;For fixed-width font, just get width,
+	imul x,d		;scale, for relative size info,
+	idivi x,72000.
+	movsi c,-200
+fwidw4:	movem x,@w		;and store it for all characters.
+	aobjn c,fwidw4
+	jrst fwidw
+
+subttl output a press file
+
+;Send the file over using Chaos byte stream.  But first copy out the
+;last record, make sure it's a press file, change the
+;user name to the current user.
+
+opress:	pushj p,txtop0		;open file, no buffering.
+	syscal fillen,[%climm,,chdsk ? %clout,,a ]
+	 .lose %lsfil
+	movei t,[asciz "File not really a PRESS file."]
+	sojl a,error
+	idivi a,128.		;Determine file length, except the last record.
+	imuli a,128.		;SP has number of words left to output
+	move sp,a		;(not including last record)
+	.access chdsk,sp	;Read in the last record and save it away.
+	move a,[-128.,,lstrec]
+	.iot chdsk,a
+	ldb a,[242000,,lstrec]	;First word should be the magic number
+	caie a,27183.		;or this is not a press file.
+	 jrst error
+	skipn eskipct		;If want only part of the file,
+	 skipe elastpg		;need special hair
+	  jrst fndpag
+	move a,copies
+	addi a,1_20
+	skipe ecopies		;If we have specified # copies,
+	 dpb a,[044000,,lstrec+4]	; force that many
+	move a,xuname		;Now put current user's name in last record.
+	camn a,[-1]		;But only if not -1
+	 jrst nounam
+	move b,[440600,,a]
+	move c,[441000,,lstrec+77.]
+	movei tt,6		;start with count.
+	idpb tt,c
+stunam:	ildb t,b		;follow with data.
+	addi t,40
+	idpb t,c
+	sojg tt,stunam
+nounam:	.access chdsk,[0]	;Go back to beginning of file.
+	seto b,
+
+;Send the data of the file open on CHDSK.
+;If B is nonzero, then follow it by the contents of LSTREC.
+	pushj p,dvrini		;Start talking to right output destination
+opresl:	movei c,txtbfl/<%cpmxc/4>*<%cpmxc/4> ;Ask for amount of data that fills
+	caml c,sp		; integral number of maximum size packets,
+	 move c,sp		; but stop before last record.
+	jumpe c,opres2
+	move e,c
+	movns c
+	add sp,c
+	hrlzs c
+	hrri c,txtbuf
+	.iot chdsk,c
+	movei d,txtbuf		;output these words (count is in E) to ethernet
+	pushj p,ethwds
+	jrst opresl
+
+opres2:	movei d,lstrec		;When we reach the last record, output our
+	movei e,128.		; modified copy instead of the original.
+	skipe b
+	 pushj p,ethwds
+	pushj p,ethend		;Then send "end of data" and we are done.
+	popj p,
+
+;Output a range of pages from a press file.
+fndpag:	pushj p,dvrini
+	ldb b,[242000,,lstrec+1] ;Number of parts in press file.
+	ldb sp,[042000,,lstrec+1] ;Record number of part directory.
+	ldb d,[242000,,lstrec+2] ;Number of records in part directory.
+	setz e,			;Page counter
+	move t,[442200,,dirbuf]
+	movem t,dirbpt
+	setzm dircnt		;Counts parts output.
+fndpa1:	move c,sp
+	imuli c,128.		;Addr of next part dir record in PDP-10 words
+	.access chdsk,c
+	move c,[-128.,,entbuf]	;Read in next record of part dir.
+	.iot chdsk,c
+	move c,[-128.,,entbuf]
+fndpa2:	ldb x,[242000,,1(c)]
+	ldb y,[042000,,1(c)]
+	imuli x,400		;X = size of part incl padding, in Alto words
+	subm x,y		;Y = size of next part w/o padding in Alto wds
+	ldb z,[042000,,(c)]	;Z has starting record number.
+	imuli z,128.		;Z has starting address.
+	ldb w,[242000,,(c)]	;W has part type.
+	add c,[2,,2]
+	jumpn w,[		;font dir is always done, but save part num.
+		move t,dircnt
+		movem t,fdrpnm	;Save part number.
+		jrst fndpa4]
+	addi e,1		;If not font dir part, increment page number
+	camg e,skipct		;If page number in range, output it.
+	 jrst fndpa3
+	skipn lastpg
+	 jrst fndpa4
+	movei t,-1(e)
+	camle t,lastpg		;lastpg is inclusive.
+	 jrst fndpa3
+;Output one page.
+fndpa4:	insirp push p,b c d e x y z sp
+	.access chdsk,z		;Find it.
+	move sp,x
+	lsh sp,-1		;Find length in PDP-10 words.
+	pushj p,fndpa5		;Copy contents to ethernet.
+	insirp pop p,sp z y x e d c b
+	idpb y,dirbpt		;Remember length of data of part.
+	aos dircnt		;Count parts so we know number of font dir.
+fndpa3:	sojle b,fndpa6		;Consider next part.  When parts exhausted,
+	jumpl c,fndpa2
+	sojg d,[aoja sp,fndpa1]
+fndpa6:	setzm pagwds
+	pushj p,prsen1		;Go generate part dir and file dir.
+	jrst ethend		;Send eof mark.
+
+;Copy c(SP) PDP-10 words from CHDSK to the ethernet.
+fndpa5:	movei c,txtbfl/<%cpmxc/4>*<%cpmxc/4> ;Get amount of data that fills
+	caml c,sp		; integral number of maximum size packets
+	 move c,sp		; but stop before last record.
+	jumpe c,cpopj
+	move e,c
+	movns c
+	add sp,c
+	hrlzs c
+	hrri c,txtbuf
+	.iot chdsk,c
+	movei d,txtbuf		;output these words (count is in E) to ethernet
+	pushj p,ethwds
+	jrst fndpa5
+
+subttl get switch settings from file
+
+txtprs:	skipe smode		;Has the mode been specified already?
+	 jrst txtpr1
+	pushj p,txtopn		;If not, guess from the file.
+	movs a,fn2		;If FN2 is XGP, it surely is an XGP file
+	cain a,(sixbit "XGP")
+	 jrst [	setom mode
+		jrst txtpr1 ]
+	syscal fillen,[%climm,,chdsk ? %clout,,a]
+	 .lose %lsfil
+	subi a,1
+	trz a,177		;Look for magic number in last record
+	syscal rfpntr,[%climm,,chdsk ? %clout,,x]
+	 .lose %lsfil
+	syscal access,[%climm,,chdsk ? a]
+	 .lose %lsfil
+	move y,[-1,,a]
+	.iot chdsk,y
+	syscal access,[%climm,,chdsk ? x]
+	 .lose %lsfil
+	lsh a,-20.
+	caie a,27183.
+	 aos mode		;if not magic assume TEXT file
+
+;Now, if it's an XGP file, and we want to process commands from it, do so.
+txtpr1:	skipge mode
+	 skipn txtcmd
+	  popj p,
+	skipe smode		;(Dumb hack - already open and bfr initted).
+	 pushj p,txtopn
+	setom txtcm1
+txtpr4:	pushj p,txtlin		;Read a line of the file into txtlbf
+	cain a,^L		;Exit if we reach eof or end of page.
+	 jrst txtprx
+	jumpl a,txtprx
+	move z,[440700,,txtlbf]
+	ldb a,[350700,,txtlbf]	;Look at first character of the line.
+	cain a,^M		;Aside from blank lines,
+	 jrst txtpr4
+	caie a,";
+	 jrst txtprx		;a line not starting with ";" ends the commands
+	pushj p,splrcm		;If line starts with ";", process as a command.
+	 jfcl
+	jrst txtpr4
+
+txtprx:	setzm txtcm1
+	.close chdsk,
+	popj p,
+
+;Read a line from the text file into txtlbf.
+;We return the terminator in A.
+;If it is negative or ^L, we hit eof or end of page, and line is malformed
+;(may not end with CRLF) so it should be ignored.
+txtlin:	move b,[440700,,txtlbf]
+txtli1:	pushj p,txti
+	camn b,[010700,,txtlbf+txtlbl-1]	;If line too long, fake eof
+	 seto a,		;so we don't have a line not ended by CRLF.
+	skipl a			;Exit at end of file or end of page.
+	 cain a,^L
+	  popj p,
+	idpb a,b		;Else store char in the line, unless buffer is
+	cain a,^J		;full, and then exit if end of line.
+	 popj p,
+	jrst txtli1
+
+;Open text file and initialize buffering.  Clobbers A.
+txtopn:	setzm badtxt
+	pushj p,txtop0
+	movei t,[asciz "File is empty!"]
+	syscal fillen,[%climm,,chdsk ? %clout,,a ]
+	 .lose %lsfil
+	jumpe a,error
+	pushj p,txtop1		;initialize buffering 
+	move a,txtcnt		;if short, no check necessary
+	cail a,500.
+	 skipe smode		;if not specified as text, check to make sure
+	  popj p,
+	push p,b		;save B
+	push p,txtptr		;save byte pointer
+	movei t,0		;init rubout counter
+	push p,t		;and other bad char counter
+txtchk:	ildb b,txtptr		;get and check a byte
+	cain b,177		;rubouts are bad
+	 aoja t,txtch1
+	cail b,40		;control char?
+	 jrst txtch1
+	caie b,^I		;ignore tab, cr, lf, ff
+	 cain b,^J
+	  jrst txtch1
+	caie b,^L
+	 cain b,^M
+	  trna
+	aos (p)			;bad
+txtch1:	sojg a,txtchk
+	pop p,a			;Bad char count to a.
+	pop p,txtptr		;restore byte pointer
+	pop p,b			;restore b
+	skipg mode		;Text, or XGP ?
+	 jrst [	ash t,2		;For XGP, subtract 4 times # rubouts from bads.
+		subi a,(t)
+		jrst .+2 ]
+	  addi a,(t)		;For text, count rubouts as bad.
+	imuli a,10.		;more than 1 in 10 baddies?
+	caml a,txtcnt
+	 setom badtxt
+	popj p,
+
+;Actually open the file.
+txtop0:	syscal open,[[.bai,,chdsk] ? device ? fn1 ? fn2 ? sname]
+	 jrst fnferr
+	syscal rfname,[%climm,,chdsk ? %clout,,rdevice ? %clout,,rfn1
+			%clout,,rfn2 ? %clout,,rsname]
+	 .lose %lsfil
+	popj p,
+
+;initialize buffering.
+txtop1:	setzm txtflg		;We have not encountered EOF yet.
+	setzm txtrhd		;We have no word of read-ahead in core.
+;reload the text-file input buffer.
+txtbf:	skipge a,txtflg		;eof on previous refill => exit returning -1.
+	 jrst [	seto a,
+		popj p,]
+	setzm txtbuf
+	move a,[txtbuf,,txtbuf+1]
+	blt a,txtbuf+txtbfl-1
+	move a,[440700,,txtbuf]
+	movem a,txtptr
+	move a,[-txtbfl,,txtbuf]
+	skipl txtrhd		;Is there a word of read-ahead?
+	 jrst txtbf1
+	move a,txtrhw		;Yes => store it at front of buffer,
+	movem a,txtbuf
+	setzm txtrhd
+	move a,[1-txtbfl,,txtbuf+1]	;and any further file input follows it.
+txtbf1:	.iot chdsk,a
+	movem a,txtflg		;TXTFLG is set negative if we are at EOF.
+	jumpge a,[
+		move a,txtbuf+txtbfl-1
+		movem a,txtrhw	;If no eof, use last word as read-ahead.
+		setom txtrhd
+		movei a,txtbfl*5-5
+		movem a,txtcnt	;Don't count it as part of this buffer.
+		setz a,
+		popj p,]
+	movei a,0
+	hlro a,txtflg		;calculate # words read
+	addi a,txtbfl
+	push p,a
+	imuli a,5		;# characters read
+	movem a,txtcnt
+	pop p,a			;Now discard padding chars from end of buffer.
+	addi a,txtbuf-1		;-> last word with any data in it
+	setom txtbuf-1		;Don't lose if buffer is all padding!
+	hrli a,010700		;bp to last byte of last occupied word in buf
+	push p,b
+dbplr:	ldb b,a			;go backward char by char.
+	jumpe b,dbpl		;null, ignore
+	caie b,3
+	 cain b,14
+	  jrst dbpl		;either eof char or form feed, flush
+txtbix:	movei a,		;On reaching non-padding char, we are done.
+	pop p,b
+	popj p,
+
+dbpl:	movei b,0		;For a padding char, delete it from the buffer
+	dpb b,a			;by turning it into a null character.
+	sos txtcnt		;1 less character in the buffer now
+	add a,[070000,,]	;backup the byte pointer
+	jumpge a,dbplr		;return to check this char
+	sos a
+	hrli a,10700		;back up a word worth
+	jrst dbplr
+
+;here to get one character from text buffer
+
+txtbfi:	pushj p,txtbf
+	jumpl a,cpopj		;eof
+txti:	sosge txtcnt
+	 jrst txtbfi
+	ildb a,txtptr
+	popj p,
+
+;Peek ahead at the next character from the text buffer.
+;Returns character in A, or -1 if at end of file.
+txtpek:	skipn txtcnt
+	 jrst [	pushj p,txtbf
+		jumpl a,cpopj
+		jrst txtpek]
+	move a,txtptr
+	ildb a,a
+	popj p,
+
+subttl	Output an ASCII file
+
+otext:	setzm lptfam
+	move b,[asciz "LPT"]	;Font family is LPT ?
+	camn b,fntbeg+fntfam
+	 setom lptfam
+	movni a,1		;Default CTLFLG according to mode.
+	skipg mode
+	 movei a,0
+	skipn ectlflg		;/CTL or /SAIL specified?
+	 movem a,ctlflg
+
+otextb:	skipe a,lsp
+	 jrst otext1
+	move a,fntsiz+fntbeg	;If LSP is not specified, default it to the VSP
+	imuli a,2540.		;plus the nominal (point) size of font 0.
+	addi a,36.		;If VSP is also not given, LSP defaults to 120%
+	idivi a,72.		;of the nominal size of font 0
+	skipe evsp		;round points to micas
+	 jrst [	add a,vsp
+		jrst otext1 ]
+	imuli a,120.		;times 120%, rounded
+	addi a,50.
+	idivi a,100.
+otext1:	movem a,lsp
+	pushj p,txtopn		;Initialize reading the input file.
+	skipe badtxt		;Bad file ?
+	 jrst badfil		;Print nasty message!
+	skipn header		;If we want the default header
+	 skipn dfhdrf		;and have not also specified a header
+	  trna
+	   pushj p,defhdr	;then go set up the default one.
+	movei a,1
+	movem a,pagnum		;Page 1 of input file now.
+	setom subpag		;Will be subpage 0 after prspin increments this
+	skipn b,skipct		;If supposed to skip some pages, do so.
+	 jrst otext2
+	setzm outenb		;Disable outputting
+otext3:	pushj p,txti
+	jumpl a,cpopj
+	cain a,^L		;Scan for ^L's
+	 jrst [	aos pagnum
+		sojg b,otext3
+		jrst otext2 ]
+	cain a,177		;and for XGP commands
+	 pushj p,otxrub
+	jrst otext3
+	jrst otext3		;(subroutine can skip)
+
+otext2:	setom outenb
+	pushj p,dvrini		;Initialize output to Dover.
+	pushj p,prsbeg		;Initialize construction of press file.
+	setz z,			;Z contains the current font index.
+	move w,[a,,widths]	;W is indirect pointer to width of char in A.
+	move x,pressx		;X is current x-pos relative to left margin.
+				;PRESSX, on the other hand, is updated
+				;only by non-printing characters.
+	setzm cspace		;Clear inter-character spacing.
+otextl:	pushj p,txti
+	xct otextt(a)
+	 jrst otextl
+otextp:	idpb a,sp		;Printing character: output to SLBUF.
+	add x,@w		;Accumulate its width.
+	caml x,pressw		;If haven't exceeded the line width, keep going
+	 jrst [	pushj p,prslin	;Otherwise, continue the line
+		jrst otextl ]
+	skipn cspace		;Need inter-character space?
+	 jrst otextl		;No, keep going.
+	pushj p,prschs		;Flush buffer
+	move a,cspace		;Move requested amount.
+	addm a,pressx
+	jrst otextl
+
+otextx:	pushj p,prsend
+	jrst ethend
+
+	jrst otextx		;character -1 means eof.
+otextt:	pushj p,otxnul
+	repeat ^H-1,pushj p,otxctl
+	pushj p,prsbs		;Backspace
+	pushj p,prstab		;Tab
+	pushj p,prslf		;Linefeed
+	pushj p,otxctl
+	pushj p,otxtff		;Formfeed
+	pushj p,prscr		;Return
+	repeat "-^M-1,pushj p,otxctl
+	pushj p,otxalt		;Altmode
+	repeat " -"-1,pushj p,otxctl
+	repeat 177-<.-otextt>,trna
+	pushj p,otxrub		;Rubout - special in XGP files.
+ifn .-otextt-200,.err otextt wrong length
+
+;Handle ^L in text file.
+;We sometimes discard our return address and return to otextx instead.
+otxtff:	skipe unpaged		;Treat as control char instead ?
+	 jrst otxctl
+	setzm cspace
+	setom subpag
+	aos b,pagnum		;We advance to first subpage of new input page.
+	skipe lastpg		;If past last page supposed to print, stop.
+	 camg b,lastpg
+	  jrst prspag
+	pop p,b			;Discard return address!
+	jrst otextx
+
+otxalt:	skipl mode		;Never make $ in XGP mode
+	 skipe nodol
+	  jrst otxctl		;Print as bracket.
+	skipn lptfam
+	 movei a,"$		;Print as $ unless in LPT.
+	jrst popj1
+
+otxnul:	skipg mode
+	 popj p,
+otxctl:	skipn ctlflg
+	 jrst popj1
+	push p,a
+	movei a,"^		;Normal up-arrow (caret) character.
+	skipe lptfam
+	 movei a,013		;Special up-arrow in LPT font.
+	pushj p,otxprt
+	pop p,a
+	xori a,100
+	jrst popj1
+
+;Output the printing character in A, as a subroutine.
+otxprt:	idpb a,sp		;Printing character: output to SLBUF.
+	add x,@w		;Accumulate its width.
+	caml x,pressw		;If haven't exceeded the line width, keep going
+	 jrst prslin		;Otherwise, continue the line
+	skipn cspace		;Need inter-character space?
+	 popj p,		;No, keep going.
+	pushj p,prschs		;Flush buffer
+	move a,cspace		;Move requested amount.
+	addm a,pressx
+	popj p,
+
+subttl XGP escape codes
+
+;Here if Rubout encountered in text file.
+otxrub:	skipl mode		;If ASCII file, treat rubout as a control char.
+	 jrst [	skipn outenb	;Output only if output enabled
+		 popj p,
+		jrst otxctl ]
+	pushj p,xarg1
+	caile a,4
+	 jrst popj1
+	jrst @otxrtb(a)
+
+otxrtb:	popj1			;Rubout ^@ quotes ^@.
+	xgpx1			;XGP escape 1
+	xgpx2			;XGP escape 2
+	xgpx3			;XGP escape 3
+	xgpx4			;XGP escape 4
+
+xgpx1:	pushj p,xarg1		;Rubout ^A something.
+	caig a,20		;If something is small, it's a font number.
+	 jrst [	skipn outenb
+		 popj p,
+		jrst prsfnt ]
+	cail a,40		;Not between 40 and 53 => not defined.
+	 caile a,53
+	  jrst undef
+	jrst @xgpx1t-40(a)
+
+xgpx1t:	xgpsc			;(40) set column (2*column)
+	xgpund			;(41) underscore (y-offset, 2*length)
+	xgplin			;(42) line space (y-space)
+	xgpbas			;(43) baseline adjust (offset)
+	xgppgn			;(44) print page number
+	xgphdr			;(45) specify heading (length, length*text)
+	xgpubg			;(46) start underline
+	xgpuen			;(47) end underline (y-offset)
+	xgpics			;(50) set inter-character spacing (spacing)
+	xgpswu			;(51) end specified width underline
+				;	(thickness, y-offset)
+	xgprbs			;(52) relative baseline adjust (offset)
+	xgprun			;(53) relative underline (y-offset, 2*length)
+
+;Read one character from the current input string or from the input file.
+;Used primarily for arguments to XGP escapes.
+xarg1:	skipg strcnt
+	 jrst txti
+	sos strcnt
+	ildb a,strptr
+	popj p,
+
+;Read one-byte signed arg into A.
+xarg1s:	pushj p,xarg1
+	trne a,100
+	 subi a,200
+	popj p,
+
+;Read three-byte arg into A.
+xarg3:	pushj p,xarg2
+	trna
+;Read two-byte arg into A.
+xarg2:	 pushj p,xarg1
+	lsh a,7
+	push p,a
+	pushj p,xarg1
+	add a,(p)
+	sub p,[1,,1]
+	popj p,
+
+;Set baseline relative to position of line.  Followed by one-byte signed arg.
+xgpbas:	skipa b,pressy
+;Set baseline relative to previous baseline.  Followed by one-byte signed arg.
+xgprbs:	 move b,pressb
+	skipn outenb
+	 jrst xarg1s			;Read and skip arg
+	pushj p,prschs
+	hrrz a,prsxy
+	pushj p,prsebt
+	pushj p,xarg1s
+	add a,b
+	movem a,pressb
+	setzm cspace
+	jrst prsewd
+
+;Set column.  Followed by two-byte arg.
+xgpsc:	skipn outenb
+	 jrst xarg2
+	pushj p,prschs
+	pushj p,xarg2
+	cvtmica a,b			;Convert A to micas, clobbering B.
+	move x,a
+	movem x,pressx
+	popj p,
+
+;Relative set column.  Followed by one-byte signed arg.
+xgpx2:	skipn outenb
+	 jrst xarg1s
+	pushj p,prschs
+	pushj p,xarg1s
+	cvtmica a,b			;Convert A to micas, clobbering B.
+	add x,a
+	movem x,pressx
+	popj p,
+
+;Set inter-character spacing.  Followed by one-byts unsigned arg.
+xgpics:	pushj p,xarg1
+	skipn outenb
+	 popj p,
+	cvtmica a,b
+	movem a,cspace
+	popj p,
+
+;Print page number.  No arg.
+xgppgn:	skipn outenb
+	 popj p,
+	move a,pagnum		;Output the page number in the input file
+	pushj p,decprs
+	skipn subpag
+	 popj p,
+	movei a,".		;and the subpage number, if any.
+	pushj p,otxprt
+	move a,subpag
+	jrst decprs
+
+;Output a decimal number in A, as output to press file.
+decprs:	idivi a,10.
+	hrlm b,(p)
+	skipe a
+	 pushj p,decprs
+	hlrz a,(p)
+	addi a,"0
+	jrst otxprt
+
+xgpx3:	type [XGP escape 3 (^?^C) is unimplemented -- ignored.
+]
+	jrst xarg2	;Skip the 2 byte arg.
+
+xgpx4:	type [XGP escape 4 (^?^D) is unimplemented -- ignored.
+]
+	push p,[11.]	;Skip 11 bytes.
+xgpx41:	pushj p,xarg1
+	sosle (p)
+	 jrst xgpx41
+	popj p,
+
+undef:	type [Undefined XGP escape code found in file -- ignored.
+Code was ^?^A followed by character with octal code ]
+	tlnn f,f%tty
+	 popj p,
+	movei t,(a)
+	pushj p,octout
+	type [.
+]
+	popj p,
+
+subttl underlining
+
+xgprun:	skipa b,pressb
+xgpund:	 move b,pressy
+	pushj p,xarg1s
+	skipn outenb
+	 jrst xarg2
+	cvtmica a			;Convert A to micas, not clobbering B.
+	sub b,a
+	move c,pressx
+	pushj p,xarg2
+	move d,a
+	movei e,2
+	jrst dound
+
+xgpubg:	skipe outenb
+	 movem x,undrln
+	popj p,
+
+xgpswu:	pushj p,xarg1
+	skipa e,a
+xgpuen:	 movei e,2
+	skipn outenb
+	 jrst xarg1s
+	pushj p,prschs		;Force out printing chars so pressx is right.
+	pushj p,xarg1s
+	cvtmica a,b			;Convert A to micas, clobbering B.
+	move b,pressy
+	sub b,a
+	move c,undrln
+	setzm undrln
+	move d,pressx
+	jrst dound
+
+;Output an underscore.
+;B has the Y position of top of underscore.
+;C has the X position of start of underscore.
+;D has the X position of end of underscore.
+;E has thickness of underscore, in XGP dot units.
+dound:	pushj p,prschs		;Make sure things are clean.
+	cvtmica e		;Convert E to micas.
+	hlrz a,prsxy
+	pushj p,prsebt		;Put cursor at lower left corner of rectangle.
+	move a,c
+	pushj p,prsewd
+	hrrz a,prsxy
+	pushj p,prsebt
+	move a,b
+	sub a,e
+	pushj p,prsewd
+	movei a,376		;"show rectangle" for the underline.
+	pushj p,prsebt
+	move a,d
+	sub a,c
+	pushj p,prsewd		;1st arg is width of underline.
+	move a,e
+	pushj p,prsewd		;2nd arg is thinkness.
+	hrrz a,prsxy		;set cursor pos back to current text cursor.
+	pushj p,prsebt
+	move a,pressb
+	pushj p,prsewd
+	hlrz a,prsxy
+	pushj p,prsebt
+	move a,x
+	jrst prsewd
+
+subttl XGP file headers
+
+;Output a string of characters to the press file.
+;Process XGP escapes even if the file is an ASCII file, so /LIST works.
+;A should contain the string pointer and B the count of characters
+; (nulls are needed).
+strprs:	movem a,strptr
+	movem b,strcnt
+strpr1:	skipg strcnt
+	 popj p,
+	pushj p,xarg1
+	xct otextt(a)
+	 jrst strpr1
+	pushj p,otxprt
+	jrst strpr1
+
+;Come here for ;HEADER command to set header.  Z has bp to ildb characters.
+sheader:
+	setzm header
+	move x,[header,,header+1]
+	blt x,header+hdrlen-1	;Clear out header storage buffer
+	move x,z
+	ildb x,x
+	cain x,^M		;Arg is empty => leave it that way (no header).
+	 popj p,
+	setz b,
+	move y,[440700,,header]
+shead1:	ildb a,x		;Else copy whole line in to the header buffer
+	cain a,^M
+	 jrst shead2
+	cail b,hdrlen*5-6
+	 jrst [	type [Header too long]
+		jrst error1]
+	idpb a,y
+	aoja b,shead1		;B counts the length.
+
+shead2:				;And follow with 3 crlfs.
+irpc xx,MJMJMJ
+	movei a,^xx
+	idpb a,y
+termin
+	addi b,6
+	movem b,hdrcnt		;Remember how long the header is.
+	popj p,
+
+;Specify header with XGP escape command.
+;Followed by one byte containing length,
+;then that many characters of header.
+xgphdr:	pushj p,xarg1		;get length and save it.
+	skipe outenb
+	 movem a,hdrcnt
+ifle hdrlen-<128./5>,.err header buffer to short.
+	move b,a
+	skipn outenb
+	 jrst xgphd1
+	setzm header		;Clear buffer (only for human looking at it)
+	move a,[header,,header+1]
+	blt a,header+hdrlen-1
+	move c,[440700,,header]
+xgphd1:	pushj p,xarg1		;Copy the argument characters into the buffer.
+	skipe outenb
+	 idpb a,c
+	sojg b,xgphd1
+	popj p,
+
+;Set up the default header for /LIST.
+defhdr:	setzm header
+	move a,[header,,header+1]
+	blt a,header+hdrlen-1
+	move d,[440700,,header]
+	pushj p,hedubg
+	move a,qdate
+	pushj p,datime"timeng	;Output date and time
+	pushj p,heduen
+	movei a,40
+	repeat 10,idpb a,d	;ten spaces
+	pushj p,hedubg
+	movs b,rdevice
+	cain b,(sixbit "DSK")
+	 jrst [	move b,machin
+		movem b,rdevice
+		jrst .+1 ]
+	movei b,rdevice
+	pushj p,rfn"pfn		;Output filenames
+	pushj p,heduen
+	movei a,40
+	repeat 10,idpb a,d	;ten spaces
+;Then output a "print page number" command, inside underlines, and 3 crlfs.
+irpc xx,,[Å&Page Å$Å'
+
+
+]
+	movei a,"xx
+	idpb a,d
+termin
+	move a,[440700,,header]
+	setz b,			;Now count the characters to set up HDRCNT.
+defhd1:	camn a,d
+	 jrst defhd2
+	ibp a
+	aoja b,defhd1
+
+defhd2:	movem b,hdrcnt
+	popj p,
+
+;Start underlining, in the default header.
+hedubg:
+irpc xx,,[Å&]
+	movei a,"xx
+	idpb a,d
+termin				;Start with a "start underline" command.
+	popj p,
+
+;Stop underlining, in the default header.
+heduen:
+irpc xx,,[Å']
+	movei a,"xx
+	idpb a,d
+termin				;Start with a "start underline" command.
+	popj p,
+
+subttl	press file output routines
+
+;Init the entity and part directory buffers, and sp, for press file output.
+;Also init various other random variables we need.
+prsbeg:	move ch,pwidth
+	sub ch,lftmar
+	sub ch,rgtmar
+	movem ch,pressw		;compute effective page width, not incl margins
+	move ch,pheight
+	sub ch,topmar
+	sub ch,botmar
+	movem ch,pressh		;compute effective page height, not incl margins
+	move ch,[356,,357]	;compute the "set x" and "set y" commands
+;	skipl pressp
+;	 movs ch,ch		;for landscape dover they are swapped
+	movem ch,prsxy
+	movei ch,dirbfl*2
+	movem ch,dircnt		;Number of free bytes in DIRBUF
+	move ch,[442200,,dirbuf]
+	movem ch,dirbpt		;Set up storing pointer.
+	pushj p,prsfdr		;Output font directory part.
+	jrst prspin		;Init for first page.
+
+pwidth:	85.*254.		;Page width in micas.
+pheight:110.*254.		;Page height in micas.
+
+;Output the font directory part.
+prsfdr:	movei ch,entbfl*4
+	movem ch,entcnt
+	move ch,[441000,,entbuf]
+	movem ch,entbpt
+	setzm entbuf		;clear out entity buffer (the part we will use)
+	aos entbuf		;set low order bits so obviously not ascii file
+	move d,[entbuf,,entbuf+1]
+	blt d,entbuf+256.-1
+	setz b,			;b counts font we are outputting.
+;output the next font's name.
+prsfd1:	move c,b
+	imuli c,fntlen
+	addi c,fntbeg		;get address of data block of this font.
+	skipn fntfam(c)		;mention only the fonts which are specified.
+	 jrst prsfd6
+	movei a,16.		;entry length in words.
+	pushj p,prsewd
+	movei a,0		;font set 0
+	pushj p,prsebt
+	move a,b		;font number in b.
+	pushj p,prsebt
+	movei a,0		;use all the characters of the font, 0 - 127.
+	pushj p,prsebt
+	movei a,127.
+	pushj p,prsebt
+	pushj p,prsfd2		;output font family name.  c is its address.
+	move a,fntfac(c)
+	pushj p,prsebt		;output font face code.
+	setz a,
+	pushj p,prsebt		;start with character 0 of the font.
+	move a,fntsiz(c)
+	pushj p,prsewd		;output size of font.
+	setz a,
+;	skipg pressp
+;	 tdza a,a
+;	  movei a,90.*60.
+	pushj p,prsewd		;output rotation
+prsfd6:	caie b,maxfnt-1		;output all fonts.
+	 aojg b,prsfd1
+	setz a,
+	pushj p,prsewd		;end the font directory.
+	movei c,entbfl*4
+	sub c,entcnt
+	addi c,3
+	lsh c,-2		;Get # of PDP-10 words all or partly used up.
+	movei d,entbuf
+	movei e,128.		;Output them; pad to multiple of 128. words.
+	cail c,128.
+	 movei e,256.
+	sosge dircnt		;count off space in dirbuf
+	 .value [1]		;can't overflow since we are just starting.
+	move a,e
+	lsh a,1
+	idpb a,dirbpt		;save length of this part for later
+	pushj p,ethwds		;Output the words themselves.
+	popj p,
+
+;output a font family name as a 20 byte bcpl string.
+;c contains index into font name tables.  clobbers a.
+prsfd2:	push p,b
+	push p,c
+	add c,[440700,,fntfam]
+	push p,c		;save ptr to family name, so can scan twice.
+	movni b,19.		;b counts number of characters (minus 19)
+prsfd3:	ildb a,c
+	jumpe a,prsfd4
+	aojl b,prsfd3
+prsfd4:	movei a,19.(b)		;now a has exactly the count of characters.
+	pushj p,prsebt		;store the count.
+	pop p,c
+	movei b,19.		;now output 19 chars of string
+prsfd5:	skipe a			;fill it out with zeros.
+	 ildb a,c
+	pushj p,prsebt
+	sojg b,prsfd5
+	pop p,c
+	pop p,b
+	popj p,
+
+;Construct an entity command for some printing characters that are in SLBUF.
+;This routine is called whenever someone wants to do cursor-motion, etc.
+;The idea is that whoever wants to output a printing char can do so
+;and the entity command will be made as soon as anything other than a
+;printing character must be output.
+;All that need be done by whoever outputs the printing character is
+;  idpb char,sp
+;  add x,width of char
+
+;PRTCBP is the bp to ildb the first printing char.  SP points at the last.
+;PRESSX contains the X-position of the first of these characters.
+;X contains the X-position after the printing characters
+;Clobbers no ACs.
+prschs:	push p,a
+	move a,sp		;Compute number of chars from PRTCBP to SP.
+	sub a,prtcbp
+	jumpe a,popaj		;Exit doing nothing if SP hasn't been touched.
+	push p,b
+	push p,c
+	ldb b,[410300,,sp]
+	ldb c,[410300,,prtcbp]
+	andi a,-1
+	lsh a,2			;Get 4* words of difference
+	sub c,b			;plus extra bytes of difference
+	add a,c			;to get number of characters in the range.
+	move b,a
+	hlrz a,prsxy
+	pushj p,prsebt
+	move a,pressx
+	pushj p,prsewd
+prsch1:	caig b,32.		;If 32 chars or fewer, use a short command.
+	 jrst [	movei a,-1(b)	;*** gratuitous 140 removed -- Moon ***
+		pushj p,prsebt
+		jrst prsch2]
+	movei a,360		;Else use regular "show characters" command.
+	pushj p,prsebt
+	move a,b
+	cail a,400		;But one command handles at most 255 chars,
+	 movei a,377		;so we may need to use more than one.
+	sub b,a
+	pushj p,prsebt		;argument is number of characters.
+	jumpn b,prsch1
+prsch2:	movei a,(sp)		;Now output some of SLBUF it is full enough.
+	cail a,slbuf+slbfl
+	 .value [1]
+	cail a,slbuf+%cpmxc/4*6
+	 pushj p,outb2
+	movem sp,prtcbp		;Remember where next "show chars" should start.
+	movem x,pressx		;Transfer width of these chars into PRESSX.
+	jrst popcba
+
+;Select font.  Font number in A.  Clobbers A.
+prsfnt:	camn a,pressf
+	 popj p,
+	movem a,pressf
+	pushj p,prschs		;deal with any accumulated printing characters.
+	move z,a		;Update Z and W which store the font number
+	imuli z,fntlen		;in different forms.
+	move w,a
+	lsh w,7
+	add w,[a,,widths]
+	addi a,160		;add "font" command code to font number.
+	jrst prsebt
+
+;output number in a as two bytes to entity buffer.
+prsewd:	sosge entcnt
+	 jrst prsp7
+	rot a,-8
+	idpb a,entbpt
+	rot a,8
+;output byte in a to entity buffer.
+prsebt:	sosge entcnt
+	 jrst prsp7
+	idpb a,entbpt
+	popj p,
+
+prsp7:	type [Entity buffer is full.
+]
+	jrst etherr
+
+subttl press file formatting operations
+
+;All of these operations update the current X-position which is assumed
+;to be in both X and PRESSX both before and after.  The current font index
+; is in Z.
+
+;Move to next line of page.  Set the y position to the new baseline.
+;Y decreases down the page.  Clobbers A.
+prslin:	push p,cspace		;Save/restore cspace across prscr
+	pushj p,prscr
+	pop p,cspace
+	jrst prslf1
+;move vertically down ("output a ^j").
+prslf:	pushj p,prschs
+	setzm cspace
+prslf1:	move a,lsp		;Get standard interline spacing.
+	jrst prslf2
+
+xgplin:	pushj p,prschs		;Dump out any pending text ("do a line feed")
+	pushj p,xarg1		;Move a line, specified interline spacing.
+	skipn outenb
+	 popj p,
+	cvtmica a
+	setzm cspace
+prslf2:	movns a
+	setzm undrln
+	addb a,pressy		;Decrement Y since it decreases down the page.
+;	skipg pressp		;if portrait orientation
+;	 movn a,a		;then lf decreases y
+;	addb a,pressy
+	jumpl a,prspag		;If page is full, start a new one.
+	movem a,pressb		;Current baseline starts off as line position.
+	hrrz a,prsxy		;"set y" command
+	pushj p,prsebt
+	move a,pressy
+	jrst prsewd
+
+;Move to left margin ("output a ^M").
+prscr:	pushj p,prschs
+	setzb x,pressx
+	setzm cspace
+	popj p,
+
+;Do the equivalent of a tab, in a press file.
+prstab:	pushj p,prschs
+	insirp push p,a y
+	move a,fntbeg+fntwid(z)
+	add a,cspace
+	add x,a
+	lsh a,3
+	addi x,-1(a)
+	idiv x,a
+	imul x,a
+	movem x,pressx
+	pop p,y
+	jrst popaj
+
+;Do a backspace to a press file.
+prsbs:	pushj p,prschs
+	movn x,fntbeg+fntwid(z)
+	sub x,cspace
+	addb x,pressx
+	popj p,
+
+;finish a page.
+prspag:	pushj p,prschs		;make entity command for last chars in slbuf.
+	movei ch,slbuf-1
+	skipn pagwds		;don't output an empty page.
+	 caie ch,(sp)
+	  trna
+	   jrst prspin
+	setz ch,
+	insirp push p,a b c
+	push p,d
+	push p,e
+	idpb ch,sp		;output at least 2 data bytes of zero,
+prsp1:	idpb ch,sp
+	tlne sp,300000		;plus enough to get to pdp-10 word boundary
+	 jrst prsp1
+	pushj p,outb2		;now force out all of slbuf even if it isn't
+				;full.  Since we are on a pdp-10 word bndry,
+				;nothing is left.
+	move a,entcnt		;make sure we have room for the entity trailer
+	caige a,24.
+	 jrst prsp7
+	movei ch,377
+	skipa a,entbpt
+prsp3:	 idpb ch,a		;now pad entity to pdp-10 word bndry with NOPs
+	tlne a,300000
+	 jrst prsp3
+
+;now write entity trailer in entbuf to terminate the entity commands.
+	hrli a,042000		;switch to writing 16-bit alto words
+	setz ch,
+	idpb ch,a		;store entity type (0) & font set (0)
+repeat 2,idpb ch,a		;store starting data byte number
+	move b,pagwds		;store number of data bytes in 2 words.
+	lsh b,2
+	subi b,2		;but omit 2 bytes of the padding from the count
+	rot b,-16.		;because they are the required zero word
+	idpb b,a		;between the data list and the entity list
+	rot b,16.
+	idpb b,a
+;	skipl pressp
+;	 skipa b,topmar
+	  move b,lftmar
+	idpb b,a		;output left margin (xe).
+;	skipl pressp
+;	 skipa b,lftmar
+	  move b,botmar
+	idpb b,a		;output bottom margin (ye)
+	setz ch,		;store zero as left and bottom
+repeat 2,idpb ch,a
+	move b,pressw		;store width of page (micas) as width of entity
+	move ch,pressh		;store height of page (micas) as ht of entity
+;	skipl pressp		;for landscape orientation
+;	 exch b,ch		;we swap them
+	idpb b,a
+	idpb ch,a		;a now points 2 bytes into a pdp-10 word.
+	movei b,1(a)		;compute length in pdp-10 words of entry.
+	subi b,entbuf
+	movei ch,(b)
+	addm ch,pagwds		;accumulate into total size of page.
+	lsh ch,1		;get size of entry, in alto words.
+	idpb ch,a		;store in last two bytes of entry,
+	movei d,entbuf		;filling out pdp-10 word.
+	move e,pagwds		;record size, rnd up to integral # of records
+	addi e,127.		;for sake of padding.
+	andi e,-128.
+	sub e,pagwds		;Now sub number of data words (already output)
+	add e,b			;to get number of words to output now.
+	pushj p,ethwds		;Output them.
+	move b,pagwds		;get length of this entity in pdp-10 words
+	tlne b,-1		;make sure it fits in 18 bits
+	 .value [1]
+	sosge dircnt		;check for room in dirbuf
+	 jrst [	type [DIRBUF is full.
+]
+		.value [1] ]
+	lsh b,1
+	idpb b,dirbpt		;store that number for use in part directory.
+	pop p,e
+	pop p,d
+	insirp pop p,c b a
+	jrst prspin
+
+;init for next output page.
+prspin:	setzm pagwds		;zero words in next page, so far.
+	aos subpag		;Increment subpage number within input page.
+	move sp,[041000,,slbuf-1]
+	movem sp,prtcbp		;no printing characters in it yet.
+	movei ch,entbfl*4	;no entities in it yet.
+	movem ch,entcnt		;number of free bytes
+	move ch,[441000,,entbuf]
+	movem ch,entbpt		;storing pointer.
+	setzb x,pressx		;x pos set to left margin.
+	move a,pressh
+	movem a,pressy
+	pushj p,prslf1		;y pos set one line down from top margin.
+	push p,pressf		;Save prev font - must reselect in each page.
+	setzb z,pressf		;The press file starts each page in font 0.
+	move w,[widths(a)]
+	skipn header		;Do we want a /LIST header?
+	 jrst prspi3
+	pushj p,txtpek		;No header if page is empty, or if at EOF.
+	cain a,^L
+	 jrst prspi3
+	jumpl a,prspi3
+	push p,mode
+	setom mode		;Set mode to "xgp file" so xgp cmds in hdr work
+	move a,[440700,,header]	;if this is /ASCII/LIST.
+	move b,hdrcnt
+	pushj p,strprs
+	pop p,mode
+prspi3:	pop p,a
+	jrst prsfnt
+
+;output the part directory and document directory of a press file.
+;when we return, the file is ready to be closed.
+prsend:	pushj p,prspag		;force out last page.
+	setzm fdrpnm		;normally, font dir part number is 0.
+ifl slbfl-200, .err slbfl must be at least 200 for prsend
+prsen1:	move sp,[042000,,slbuf-1] ;use slbuf to accumulate part directory.
+	move z,[442200,,dirbuf]	;z points at part's info in part dir buffer.
+	setzb x,y		;X has part number; Y has record count
+prsd1:	camn z,dirbpt		;finished all parts?
+	 jrst prsd2
+	movei a,(sp)		;Now output some of SLBUF it is full enough.
+	cail a,slbuf+slbfl
+	 .value [1]
+	cail a,slbuf+%cpmxc/4*6
+	 pushj p,outb2
+	movei d,1		;Determine part type.  1 for font dir,
+	came x,fdrpnm		;if part number matches font dir part number.
+	 setz d,		;Otherwise 0 for printed page.
+	idpb d,sp		;output part type as word.
+	idpb y,sp		;output starting record number
+	ildb a,z		;get length in alto words
+	addi a,377		;convert to record count
+	idivi a,400
+	add y,a			;accumulate in total length
+	idpb a,sp		;output.
+	xori b,377
+	idpb b,sp
+	aoja x,prsd1
+
+;pad and actually write out the part directory.
+prsd2:	hrrz e,sp		;Get number of PDP-10 words we have used up
+	subi e,slbuf-1
+	add e,pagwds		;including those already output.
+	addi e,177		;Bump to integral number of records.
+	andi e,-200
+	sub e,pagwds		;Now remove from the cnt the wds already output
+	movei d,slbuf
+	pushj p,ethwds		;This gives number of words to output now.
+;now output document directory.
+prsd4:	setzm pagwds
+	move sp,[042000,,slbuf-1] ;use slbuf to accumulate document directory.
+	movei a,27183.		;word 0 is magic check for PRESSness
+	idpb a,sp
+	move a,x
+	lsh a,2			;first, how many recs in part dir?
+	addi a,377		;compute from # of parts
+	idivi a,400		;a has # recs in part dir.
+	move d,a
+	addi a,1(y)		; + # recs in the parts, + 1 for this record,
+	idpb a,sp		;gives total size, which goes in word 1.
+	idpb x,sp		;word 2 is number of parts
+	idpb y,sp		;word 3 is record at which part dir starts.
+	idpb d,sp		;word 4 is size of part dir.
+	seto d,
+ 	idpb d,sp		;word 5 ("backpointer") is unused by us
+	movei a,112115		;words 6,7 should be seconds since 00:00,
+repeat 2,idpb a,sp		; 1 jan 1901, GMT.  A recent constant will do.
+	movei a,1
+	idpb a,sp		;words 8,9 say print number of copies.
+	move a,copies
+	idpb a,sp
+repeat 2,idpb d,sp		;words 10,11 are range of pages.  -1 means all
+	idpb d,sp		;word 12 is printing mode.  use the default.
+	movei b,200-13.
+	idpb d,sp		;pad with -1's to word 200
+	sojg b,.-1
+;now output filename, for dover title page.
+	tlc sp,003000		;switch to 8-bit bytes
+	ibp sp			;skip over the byte to hold the string len.
+	push p,sp		;save bp to this byte, to store through later
+	movei b,rdevice
+	move d,sp
+	pushj p,rfn"pfn
+	move sp,d
+	pop p,a
+	movei b,26.*2
+	pushj p,prsdpd		;pad to 26 words long.
+	ibp sp			;skip over the byte to hold the string length.
+	push p,sp		;save bp to this byte, to store through later
+	move a,xuname
+	pushj p,sixsp
+	pop p,a
+	movei b,16.*2
+	pushj p,prsdpd		;pad to 16 words long.
+	ibp sp			;skip over the byte to hold the string length.
+	push p,sp		;save bp to this byte, to store through later
+	move d,sp
+	pushj p,datime"timget	;Get current time in A.
+	pushj p,datime"timeng	;Output it.
+	move sp,d
+	pop p,a
+	movei b,<200-16.-26.>*2	;pad out rest of record.
+	pushj p,prsdpd
+	movei d,slbuf
+	movei e,200
+	pushj p,ethwds
+	popj p,
+
+;Output sixbit word in A down bp in SP.  Clobbers A, B.
+sixsp:	jumpe a,cpopj
+	setz b,
+	rotc a,6
+	addi b,40
+	idpb b,sp
+	jrst sixsp
+
+datime"$$outf==1		;Do insert the TIMENG routine.
+
+.insrt syseng;datime
+
+;Force out what is stored in SLBUF, sans any unfilled PDP-10 words.
+;SP is backed up to the start of the buffer,
+;and the number of words output is counted in PAGWDS.
+outb2:	push p,d
+	push p,e
+	move e,sp
+	ibp e			;Point at first not-filled word.
+	push p,(e)		;Save it, to put at start of buffer.
+	hrrzi e,-slbuf(e)	;How many are filled?
+	addm e,pagwds		;Count how many output in this page so far.
+	sub sp,e		;Back up bp by that far.
+	movei d,slbuf
+	pushj p,ethwds		;Output the filled words.
+	pop p,slbuf		;Put unfilled word at front of buffer
+	pop p,e
+	pop p,d
+	popj p,
+
+;A points at start of bcpl string, SP at end,
+;store the length, and pad string to desired length in B.
+;Clobbers A, C, D.
+prsdpd:	setz c,
+	move d,a		;Count characters in string.  C gets count.
+prsdp1:	camn d,sp
+	 jrst prsdp2
+	ibp d
+	aoja c,prsdp1
+
+prsdp2:	cail c,(b)
+	 .value [1]		;overflow should never be possible.
+	dpb c,a			;store count at front of "bcpl string".
+	tdza a,a
+prsd3:	 idpb a,sp
+	caige c,-1(b)		;pad string to desired length.
+	 aoja c,prsd3
+	popj p,
+
+subttl ethernet output
+
+;Open a channel to the appropriate guy to receive a press file
+;If writing to disk, channel CHDSKO is open in block mode.
+;If writing to Chaos net, channel CHSO is open in 8-bit SIOT mode
+dvrini:	skipe dskout
+	 jrst [	syscal open,[[.bao,,chdsko] ? [sixbit "DSK"]
+				[sixbit "FOO"] ? [sixbit "PRESS"]]
+		 .lose %lsfil
+		popj p,]
+	skipn mcsplf		;Definitely spooling?
+	 jrst dvrin1		;No, decide
+	syscal open,[[.uai,,chdsko] ? [sixbit "MC"] ? [sixbit ".DOVR."]
+				[sixbit "NOTICE"] ? [sixbit ".DOVR."]]
+	 caia
+	  pushj p,news
+	syscal open,[[.uai,,chdsko] ? [sixbit "MC"] ? [sixbit ".DOVR."]
+				[sixbit "BROKEN"] ? [sixbit ".DOVR."]]
+	 jrst nonews
+	.close chdsko,
+	move t,xjname		; permit user to continue if name not DOVER
+	camn t,[sixbit "DOVER"]	; (trick to let hackers proceed)
+	 jrst fetch
+nonews:	syscal open,[[.bao,,chdsko] ? [sixbit "MC"] ? [sixbit "_DOVR_"]
+				[sixbit "OUTPUT"] ? [sixbit ".DOVR."]]
+	 caia
+	  popj p,
+	pushj p,nmcsplf		;try not to spool
+	skipl mcsplf
+	 jrst [	type [Could not open connection to MC; sending directly to Dover.
+]
+		jrst dvrini ]	;go try another way
+	movei t,[asciz "Sorry, could not open connection to MC.
+"]
+	jrst error
+
+dvrin1:	pushj p,dovidl		;Wait until Spruce is ready to receive a file
+	 jrst dvrini		;Comes back here if flags have been changed
+	pushj p,chsini		;Skip return: send via Chaosnet
+	movsi a,%corfc_10.
+	hrri a,5_4
+	movem a,xmtbuf
+;; Subnet 1 is falling apart.  All the ITS machines are on subnet 6.
+;; AI-CHAOS-11 is on subnet 6.  Subnet 6 is intact.  Hence following
+;; change.  --sra 22 Oct 86
+;;	movsi a,(426_24)	;Subnet 1 address
+	movsi a,(3072_24)	;Subnet 6 address
+	movem a,xmtbuf+%cpkd
+	move a,[.byte 8 ? "D ? "O ? "V ? "E]
+	movem a,xmtbuf+%cpkdt
+	movsi a,(.byte 8 ? "R)
+	movem a,xmtbuf+%cpkdt+1
+	syscal pktiot,[%climm,,chso ? %climm,,xmtbuf]
+	 jsr neterr
+	movei tt,10.*30.	;10-second timeout
+	syscal netblk,[%climm,,chso ? %climm,,%csrfs ? tt ? %clout,,a]
+	 jsr neterr
+	cain a,%csopn
+	 popj p,
+	type [Network connection failure: ]
+	movei a,chso
+	pushj p,netwrk"analyze
+	 jfcl
+	pushj p,crlf
+	type [Trying again]
+	pushj p,crlf	
+	setzm snever		;Maybe offer to spool this time
+	setom sprsts		;Get Spruce status again
+	jrst dvrin1		;mcsplf is already zero
+
+;;; Come here if IOC error or ^G/^S interrupt
+tsint:	0 ? 0
+	push p,t
+	skipge tsint		;first or second word intr ?
+	 jrst ts2nd
+	.suset [.rbchn,,t]	; ioc error
+	cain t,chso
+	 jsr neterr
+	pop p,t
+	syscal lose,[ movei 1+<.lz %piioc> ? tsint+1 ]
+	 .lose %lssys
+
+;;; Here if ^G/^S interrupt
+ts2nd:	movei t,chtti
+	.ityic t,
+	 jrst intret
+	cain t,^G
+	 jrst [	setom ctrlg
+		jrst intret ]
+	cain t,^S
+	 jrst [	setom ctrls
+		tlo f,f%tty
+		jrst intret ]
+intret:	pop p,t
+	.dismiss tsint+1
+
+;;; JSR here if network error on chso but it's not in .bchn
+neter1:	0
+	movei a,chso
+	jrst neter2
+
+;;; JSR here if any network problem
+neterr:	0
+	.suset [.rbchn,,a]
+neter2:	type [Network error: ]
+	pushj p,netwrk"analyze
+	 jfcl
+	.logout 1,
+
+putchr:	.iot chtto,t
+	popj p,
+
+;Send data to ethernet.  E is the number of words, and D the starting address.
+;Clobbers D, E, T and TT.
+;Doesn't really send to ethernet directly any more.
+ethwds:	skipn dskout		;If DSKOUT, write data to disk file instead.
+	 skipe mcsplf
+	  jrst [ hrloi tt,-1(e)
+		 eqvi tt,(d)
+		 .iot chdsko,tt
+		 popj p, ]
+	move tt,d
+	hrli tt,440800
+	move t,e
+	imuli t,4
+	syscal siot,[ movei chso ? tt ? t ]
+	 .lose %lssys
+	popj p,
+
+popcba:	pop p,c
+popbaj:	pop p,b
+	pop p,a
+	popj p,
+
+;Send end-of-data marker to ethernet.
+ethend:	skipe mcsplf
+	 jrst mcend
+	skipe dskout
+	 jrst [	.close chdsko,
+		jrst chkdel ]
+	syscal force,[ movei chso ]
+	 .lose %lssys
+	;Send an EOF, get it acknowledged, send another EOF, and close
+	movsi tt,%coeof_10.
+	movem tt,xmtbuf
+	syscal pktiot,[ movei chso ? movei xmtbuf ]
+	 jsr neterr
+	syscal finish,[ movei chso ]
+	 jsr neterr
+	syscal pktiot,[ movei chso ? movei xmtbuf ]
+	 jsr neterr
+chkdel:	.close chdsk,
+	skipg mode		;don't delete text files
+	 skipn delfil		;delete only if asked
+	  popj p,
+	syscal delete,[rdevice ? rfn1 ? rfn2 ? rsname]
+	 .lose %lsfil
+	popj p,
+
+;Here to make -QUEUE entry on MC
+mcend:	move a,xuname		;use <dollar>XUNAME for first name
+	move t,[440600,,a]	;scan for "bad" characters
+mcfxnm:	ildb y,t
+	jumpe y,mcfxn3		
+	caie y,'_
+	 cain y,'/
+	  jrst [movei y,'?	;replace baddie with ?
+		dpb y,t
+		jrst .+1 ]
+	tlne t,770000
+	 jrst mcfxnm
+	jrst mcfxn2
+mcfxn1:	idpb y,t
+mcfxn3:	tlne t,770000
+	 jrst mcfxn1
+mcfxn2:	lsh a,-6		
+	ior a,[sixbit "$"]
+	movem a,qfn1
+	syscal renmwo,[ %climm,,chdsko ? a ? [sixbit ">"] ]
+	 .lose %lsfil
+	syscal rfname,[ %climm,,chdsko ? %clout,,x ? %clout,,x ? %clout,,qfn2 ]
+	 .lose %lsfil
+	.close chdsko,
+	syscal open,[ [.uao,,chdsko] ? [sixbit "MC"] ? [sixbit "_DOVQ_"]
+			[sixbit "OUTPUT"] ? [sixbit ".DOVR."] ]
+	 .lose %lsfil
+	movei t,[asciz "/FILE:MC:.DOVR.;"]
+	pushj p,qostr
+	move y,qfn1
+	pushj p,qosix
+	.iot chdsko,[40]
+	move y,qfn2
+	pushj p,qosix
+	movei t,[asciz "
+/DELETE
+/PROGRAM:DOVER
+"]
+	pushj p,qostr
+	skipn notify
+	 jrst qerr
+	movei t,[asciz "/NOTIFY:"]
+	pushj p,qostr
+	skipn notusr			; name given in jcl ?
+	 jrst qouser
+	movei t,notusr			; copy jcl
+	pushj p,qostr
+	jrst qosite			; handle site stuff
+qouser:	move y,xuname
+	pushj p,qosix
+qosite:	skipe notsit			; need @ site ?
+	 jrst qomsg
+	.iot chdsko,["@]
+	move y,machin
+	pushj p,qosix
+qomsg:	movei t,[asciz "
+Your file "]
+	pushj p,qostr
+	move y,rdevice
+	pushj p,qosix
+	.iot chdsko,[":]
+	.iot chdsko,[40]
+	move y,rsname
+	pushj p,qosix
+	.iot chdsko,[";]
+	.iot chdsko,[40]
+	move y,rfn1
+	pushj p,qosix
+	.iot chdsko,[40]
+	move y,rfn2
+	pushj p,qosix
+	movei t,[asciz " has been sent to the Dover.
+"]
+	pushj p,qostr
+	skipe ecopies
+	 jrst [	movei t,[asciz " COPIES = "]
+		pushj p,qostr
+		move x,copies
+		andi x,177777
+		pushj p,qonum
+		jrst .+1 ]
+	skipe eskipct
+	 jrst [	movei t,[asciz " SKIP = "]
+		pushj p,qostr
+		move x,skipct
+		pushj p,qonum
+		jrst .+1 ]
+	skipe elastpg
+	 jrst [	movei t,[asciz " LASTPAGE = "]
+		pushj p,qostr
+		move x,lastpg
+		pushj p,qonum
+		jrst .+1 ]
+	movei t,[asciz "
+"]
+	pushj p,qostr
+qerr:	movei t,[asciz "/ERROR:"]
+	pushj p,qostr
+	skipn notusr			; name given in jcl ?
+	 jrst qeuser
+	movei t,notusr			; copy jcl
+	pushj p,qostr
+	jrst qesite			; handle site stuff
+qeuser:	move y,xuname
+	pushj p,qosix
+qesite:	skipe notsit			; need @ site ?
+	 jrst qefin
+	.iot chdsko,["@]
+	move y,machin
+	pushj p,qosix
+qefin:	movei t,[asciz "
+"]
+	pushj p,qostr
+; Rename and close -QUEUE file
+	syscal renmwo,[ %climm,,chdsko ? [sixbit "-QUEUE"] ? [sixbit ">"]]
+	 .lose %lsfil
+	syscal rfname,[ %climm,,chdsko ? %clout,,x
+			%clout,,x ? %clout,,qqfn2 ]
+	 .lose %lsfil
+	.close chdsko,
+	tlnn f,f%tty	; output info to user ?
+	 jrst chkdel
+	type [Spool file is MC:.DOVR.;]
+	move y,qfn1
+	pushj p,outsix
+	.iot chtto,[40]
+	move y,qfn2
+	pushj p,outsix
+	type [.
+Queue entry is MC:.DOVR.;-QUEUE ]
+	move y,qqfn2
+	pushj p,outsix
+	type [.
+]
+	jrst chkdel
+
+; Display MC spooler's queue
+dovque:	tlnn f,f%tty
+	 popj p,
+	syscal open,[ [.uai,,chdsk2] ? [sixbit "DVR"] ? [sixbit ".FILE."]
+			[sixbit "(DIR)"] ? [sixbit "FOO"] ]
+	 jrst [	type [Sorry -- could not read the queue.
+]
+		popj p, ]
+dqlup:	movei x,50.
+	move y,[440700,,qbuf]
+	syscal siot,[ movei chdsk2 ? y ? x ]
+	 jrst [	type [Sorry -- error reading queue.
+]
+		jrst dqdun ]
+	subi x,50.
+	jumpe x,dqdun
+	move y,[440700,,qbuf]
+dqlup1:	ildb a,y
+	caie a,^L
+	 cain a,^C
+	  jrst dqdun
+	.iot chtto,a
+	aojl x,dqlup1
+	jrst dqlup
+dqdun:	.close chdsk2,
+	popj p,
+
+
+;Outputs ASCIZ string pointed at by t to CHDSKO.  Clobbers X.
+qostr:	hrli t,440700
+	trna
+qostr1:	.iot chdsko,x
+	ildb x,t
+	jumpn x,qostr1
+	popj p,
+
+;Outputs sixbit value in Y to CHDSKO.  Clobbers X and Y.
+qosix:	movei x,0
+	lshc x,6
+	addi x,40
+	.iot chdsko,x
+	jumpn y,qosix
+	popj p,
+
+;Output decimal number in X to CHDSKO.  Clobbers X and Y.
+qonum:	jumpge x,qonum1
+	 jrst qonum1
+	.iot chdsko,["-]
+	movn x,x
+qonum1:	idivi x,10.
+	jumpe x,qonum2
+	push p,y
+	pushj p,qonum1
+	pop p,y
+qonum2:	addi y,"0
+	.iot chdsko,y
+	popj p,
+
+;Print dover status
+;bashes registers
+dovsts:	pushj p,dovst1		;Get status from spruce
+	 popj p,		;Reply was err msg; already printed so return.
+	move b,[241000,,%ppdat+rcvbuf]	;After first 2 bytes, ascii string
+	ldb c,[$pplen+rcvbuf]
+	subi c,22.+2
+	pushj p,strout
+	popj p,
+
+;;; Subroutine to pick up status from Dover
+dovst1:	pushj p,chsini
+	movei a,21		;Spruce status port
+	movem a,dport		;is destination port
+	movei a,200		;Ask spruce for its status
+	setom pupid
+	pushj p,inipup
+	movei c,0		;No data
+	pushj p,finpup
+	pushj p,xmtpkt		;Transmit inquiry packet
+	pushj p,rcvpkt		;Wait for reply (not ack!), retrans if nec.
+	 popj p,		;Got error
+	ldb t,[$pptyp+rcvbuf]	;Response should be type 201
+	caie t,201
+	 jrst [	pushj p,octout
+		movei t,[asciz " invalid packet type from Spruce status port
+"]
+		jrst outstr ]
+	ldb tt,[242000,,%ppdat+rcvbuf]	;Get spruce status code
+	movem tt,sprsts
+	jrst popj1
+
+;;; Call here to wait for Spruce to be idle
+;;; This seems like a good idea because it avoids interrupting
+;;; existing printing to send more stuff over
+;;; This also decides whether or not to spool (called if mcsplf is 0)
+dovidl:	skipn chaosp		;Do we have a Chaosnet?
+	 jrst [	setom mcsplf	;No, must spool
+	 	popj p, ]
+	skipe snever		;Did user explicitly say /E ?
+	 jrst dovid0		;If so, don't touch other network hosts
+	move t,machin
+	camn t,[sixbit /AI/]	;If we are on AI
+	 jrst [	syscal open,[[.uai,,chdsk2] ? [sixbit "AI"] ? [sixbit "%DOVER"]
+				[sixbit "BUSY"] ? [sixbit ".XGPR."]]
+		 jrst dovid0	;Spooler not clogged, go direct
+		.close chdsk2,
+		jrst dovid1 ]
+	syscal open,[[.uai,,chdsk2] ? [sixbit/MC/]
+			[sixbit/%SPOOL/] ? [sixbit/IDLE/] ? [sixbit/.DOVR./]
+			%clerr,,t ]
+	 jrst [	cain t,%ensfl
+		 jrst dovid1	;Spooler queue exists, use spooler
+		jrst dovid0 ]	;Can't open file, assume spooler idle
+	.close chdsk2,		;No need to spool if spooler idle
+	jrst dovid0
+
+dovid1:	type [There is a queue; spooling...
+]
+	setom mcsplf
+	popj p,
+
+dovid0:	skipge tt,sprsts	;Got status yet?
+	 jrst [	pushj p,dovst1		;If not, get it now
+		 movei tt,0		;If no answer, assume it's busy
+		jrst .+1 ]
+	cain tt,2		; 2 = ready
+	 jrst dovrdy		; go to it!
+;On AI, spooling to MC is so much slower than sending directly
+;that it is always faster to wait! - RMS
+;	skipn snever
+;	 jrst [	type [The Dover is busy or not answering; spooling to MC ...
+;]
+;		setom mcsplf
+;		popj p, ]
+	type [Spruce is busy, or does not answer.
+While waiting, you can type ^G to quit, or ^S to spool.
+]
+	setzm ctrlg
+	setzm ctrls
+dovid2:	movei tt,5*30.		;Wait for it to get ready
+	.sleep tt,
+	skipe ctrlg
+	 jrst [	.iot chtti,x	;flush char
+		type [OK, I give up!
+]
+		jrst fetch ]
+	skipe ctrls
+	 jrst [	.iot chtti,x	;flush char
+		pushj p,smcsplf ;Don't put the s back below! (Gumby)
+		movei t,[asciz "pooling instead ...
+"]
+		jrst outstr ]
+	pushj p,dovst1
+	 movei tt,0
+	caie tt,2
+	 jrst dovid2
+dovrdy:	type [[Attempting Chaosnet transmission]
+]
+	jrst popj1
+
+;;; What's this?
+etherr:	jrst fetch
+
+;Print dover news file open on chdsko
+news:	movei tt,128.*5
+	move t,[440700,,xmtbuf]
+	syscal siot,[movei chdsko ? t ? tt]
+	 .lose %lsfil
+news1:	cail tt,128.*5
+	 jrst [	.close chdsko,
+		popj p, ]
+	skipge t
+	 sub t,[430000,,1]
+	ldb a,t
+	caie a,^C		;Sigh
+	 cain a,^L
+	  jrst [add t,[070000,,]
+		aoja tt,news1 ]
+	subi tt,128.*5
+	movns tt
+	move t,[440700,,xmtbuf]
+	syscal siot,[movei chtto ? t ? tt]
+	 .lose %lsfil
+	jrst news
+
+subttl Creation of pups for output.
+
+;Subroutine to initialize xmtbuf to zero except for headers.
+;A has pup type.
+inipup:	setzm xmtbuf
+	move tt,[xmtbuf,,xmtbuf+1]
+	blt tt,xmtbuf+127.
+	movei tt,%counc
+	dpb tt,[$cpkop xmtbuf]
+	movei tt,puptcl
+	dpb tt,[$cpkan xmtbuf]
+	move tt,dhost
+	dpb tt,[$cpkda xmtbuf]
+	dpb tt,[$ppdhst xmtbuf]
+	move tt,dport
+	dpb tt,[$cpkdi xmtbuf]
+	dpb tt,[$ppdpl xmtbuf]
+	lsh tt,-20
+	dpb tt,[$ppdph xmtbuf]
+	move tt,shost
+	dpb tt,[$cpksa xmtbuf]
+	dpb tt,[$ppshs xmtbuf]
+	move tt,sport
+	dpb tt,[$cpksi xmtbuf]
+	lsh tt,4
+	movem tt,%ppspr+xmtbuf
+	dpb a,[$pptyp xmtbuf]
+	aos tt,pupid
+	dpb tt,[$cpkpn xmtbuf]
+	lsh tt,4
+	movem tt,%pppid+xmtbuf
+	popj p,
+
+;Subroutine to fill in xmtbuf to complete a Chaos packet and a pup.
+;Data byte count in C
+finpup:	movei tt,22.(c)		;Total byte count for pup
+	dpb tt,[$pplen xmtbuf]
+	dpb tt,[$cpknb xmtbuf]	;= packet data length
+	push p,a
+	movei a,xmtbuf
+	pushj p,ckspup		;TT gets pup checksum, T byte ptr to before it
+	idpb tt,t		;Store checksum
+	jrst popaj
+
+;Compute pup checksum, A -> pup.
+;Returns checksum in TT and ildb pointer to it in T.
+ckspup:	push p,b
+	push p,c
+	ldb b,[$pplen(a)]
+	subi b,1
+	lsh b,-1		;Number of 16-bit words not counting checksum
+	movei t,%cpkdt(a)	;Checksum pup header and data
+	hrli t,442000
+	movei tt,0		;TT accumulates checksum
+ckspu1:	ildb c,t
+	add tt,c
+	trze tt,1_20		;One's complement addition
+	 addi tt,1
+	lsh tt,1		;Left rotate 16-bit
+	trze tt,1_20
+	 addi tt,1
+	sojg b,ckspu1
+	cain tt,177777		;Minus-zero gronker
+	 movei tt,0
+	pop p,c
+	pop p,b
+	popj p,
+
+subttl ethernet transmission
+
+;Initialize chaosnet channels.
+chsini:	syscal chaoso,[ %climm,,chsi ? %climm,,chso ? %climm,,5 ]
+	 .lose %lssys
+	.suset [.rioc+chsi,,a]
+	hlrzs a
+	move b,[squoze 0,chslcl]
+	.eval b,
+	 .lose
+	add b,a
+	hrlzs b
+	hrri b,b
+	.getloc b,
+	ldb a,[042000,,b]
+	movem a,sport
+	ldb a,[242000,,b]
+	movem a,shost
+	popj p,
+
+;Transmit the packet in XMTBUF.  Remember in XMTTIM the time of transmission
+;and in XMTTMT the time at which we should time out and complain.
+xmtpkt:	.rdtime t,		;Save starting time, for timeout
+	add t,timout
+	movem t,xmttmt'
+	setom xmtcpl'		;No complaint yet
+;Retransmit the packet in XMTBUF (used when no reply received).
+xmtpk1:	syscal pktiot,[%climm,,chso ? %climm,,xmtbuf ]
+	 .lose %lssys
+	.rdtime t,		;Time in 30ths of last transmission
+	movem t,xmttim'
+	popj p,
+
+;*** No longer used ***
+;Wait for acknowledgement of last packet transmitted.
+;Retransmit if necessary (therefore, the packet must still be in XMTBUF).
+;If PUPID is -1, no packet has been sent yet, so we do nothing.
+wtack:	skipge pupid
+	 popj p,
+	pushj p,rcvpkt		;Read packet from the net.  Retrans as nec.
+	 pushj p,etherr
+	pushj p,eftpak		;Does it ack ours?
+	 trna
+	  popj p,		;Yes, return.
+	pushj p,xmtpkt		;Not acked => retry sending.
+	jrst wtack
+
+;*** No longer used ***
+;Look at received packet, should be acknowledgement of packet ID in PUPID.
+;Skip if it is, if other acknowledgement no skip, else blow out
+eftpak:	ldb tt,[$pptyp rcvbuf]
+	caie tt,31
+	 jrst eftpa1
+	setzm keptry
+	move t,%pppid+rcvbuf
+	lsh t,-4
+	camn t,pupid
+	 aos (p)
+	popj p,
+
+eftpa1:	skipe keptry		;Already done this and asked user?
+	 popj p,		;Yes, just keep trying
+	caie tt,33
+	 jrst [	type [Random packet type ]
+		ldb t,[$pptyp rcvbuf]
+		pushj p,octout
+		type [ received -- please do :BUG DOVER]
+		jrst eftpa2 ]
+	type [EFTP Abort: ]
+	ldb c,[$pplen rcvbuf]
+	subi c,22.+2.
+	move b,[241000,,%ppdat+rcvbuf]
+	pushj p,strout
+eftpa2:	skiple pupid
+	 jrst etherr		;If error after transfer started, give up
+	tlnn f,f%tty		;If no human to ask, give up.
+	 jrst etherr
+	type [
+Keep trying? ]
+	.iot chtti,t
+	push p,t
+	type [
+]
+	pop p,t
+	trz t,40
+	caie t,"Y
+	 pushj p,etherr
+	setom keptry'
+	popj p,
+
+;Wait until we receive a reply for the packet we sent,
+;retransmitting every second until we receive something.
+;Then if it is an error message, complain and return non-skip.
+;If it is not an error message, return skipping.
+rcvpkt:	syscal whyint,[%climm,,chsi ? %clout,,tt ? %clout,,tt ? %clout,,tt]
+	 .lose %lssys
+	hlrzs tt		;Number of input packets available
+	jumpn tt,rcvpk2		;Some input, process it
+	.rdtime tt,		;Time for retransmission?
+	caml tt,xmttmt
+	 pushj p,rcvpk6		;Timed out, go complain
+	subi tt,30.		;Retransmission interval 1 second
+	caml tt,xmttim
+	 jrst rcvpk0
+	skipl xmtcpl		; Should we be watching for ^S ?
+	 skipn ctrls		; ^S typed ?
+	  caia
+	   popj p,
+	movei tt,6		;Sleep for 0.1 second
+	.sleep tt,
+	jrst rcvpkt
+
+;Here when we receive a packet.
+rcvpk2:	syscal pktiot,[%climm,,chsi ? %climm,,rcvbuf]
+	 .lose %lssys
+	push p,a		;See if checksum ok in that
+	movei a,rcvbuf
+	pushj p,ckspup
+	ildb a,t
+	caie a,177777
+	 camn a,tt
+	  jrst rcvpk4		;It's ok
+	pop p,a			;It loses, ignore it.
+	aos ncksum'		;Retransmit right away.
+rcvpk0:	pushj p,xmtpk1
+	jrst rcvpkt
+
+;Packet received with valid checksum.  Look for error packet.
+rcvpk4:	pop p,a
+	ldb tt,[$pptyp rcvbuf]
+	cain tt,4
+	 jrst rcvpk5
+	movei t,[asciz "[Host responding now]
+"]
+	skipl xmtcpl
+	 pushj p,outstr		;uncomplain if we complained.
+	aos (p)
+	popj p,			;Success return
+
+;Error packet received
+;Starting 24. bytes into the data area is an ascii message
+rcvpk5:	push p,b
+	push p,c
+	type [PUP Error: ]
+	ldb c,[$pplen rcvbuf]
+	subi c,22.+24.
+	move b,[441000,,%ppdat+rcvbuf+6]
+	pushj p,strout
+	pop p,c
+	pop p,b
+	popj p,			;Take failure return
+
+;Subroutine to complain about timeout.
+;Must protect T, TT
+rcvpk6:	tlnn f,f%tty
+	 jrst [	type [No response from foreign host, giving up.]
+		jrst etherr]
+	aose xmtcpl
+	 popj p,		;Already complained
+	push p,t
+	type [[No response from foreign host -- type ^S to stop waiting.]
+]
+	setzm ctrls
+	pop p,t
+	popj p,
+
+; Here if random syntax error
+
+synerr:	movei t,[asciz "Command syntax error: "]
+	jrst error			; and continue if allowed to
+
+; Here if cannot open file.
+fnferr:	movei b,device			;Text file
+	skipn fn1			; was an FN1 ever specified?
+	 jrst synerr			; no, then burp
+	move d,[440700,,pfnbuf]
+	pushj p,rfn"pfn			; Put filenames into pfnbuf
+irpc char,,[ - ]
+	movei a,"char			;followed by " - " and the err message.
+	idpb a,d
+termin
+	syscal open,[%climm,,cherr ? [sixbit "ERR"] ? %climm,,1]
+	 .lose %lsfil
+	movei a,100.
+	syscal siot,[%climm,,cherr ? d ? a]
+	 .lose %lsfil
+	.close cherr,
+	setz a,				; The string read from ERR ends with ^L
+	dpb a,d				; Flush it, and make the string asciz.
+	movei t,pfnbuf			; ERROR will output it.
+	jrst error
+
+; Here for invalid command
+
+badcom:	movei t,[asciz "Undefined command: "]
+	jrst error			; and go again if I can
+
+;Type the asciz string T points at.  Clobbers T.  No-op if no TTY to type on.
+outstr:	tlnn f,f%tty
+	 popj p,
+	push p,x
+	hrli t,440700
+outst1:	ildb x,t
+	jumpe x,popxj
+	.iot chtto,x
+	jrst outst1
+
+popxj:	pop p,x
+	popj p,
+
+
+;Type string from bp in B, count in C.
+;Ends by moving to fresh line.
+strout:	jumple c,strou1
+	ildb tt,b
+	caie tt,^M
+	 .iot chtto,tt
+	soja c,strout
+
+strou1:	.iot chtto,[^P]
+	.iot chtto,["A]
+	popj p,
+
+;Type octal number from T
+octout:	idivi t,8
+	hrlm tt,(p)
+	skipe t
+	 pushj p,octout
+	hlrz tt,(p)
+	addi tt,"0
+	.iot chtto,tt
+	popj p,
+
+; Here to type a SIXBIT word in Y, clobbers Y and X
+
+outsix:	setz x,				; clear out garbage from before
+	rotc x,6			; gobble down a SIXBIT character
+	addi x,<" >			; ASCIIify
+	.iot chtto,x			; output it to the queue
+	jumpn y,outsix			; and continue for more
+	popj p,				; done, return
+
+death:	.logout 1,
+	.break 16,160000
+
+; Here when a bug strikes(paranoia code can jump here)
+
+bug:	.suset [.rjpc,,savepc]		; save last jump PC(very useful!)
+	.value [asciz ":Error; :DOVER bug.  Please do :Bug DOVER describing circumstances.
+yDSK:CRASH;DOVER >
+:Vk "]
+
+;Dump self.
+instal:	setzm debug			; this is now a debugged version
+	.value [asciz "yMC:SYS3;TS DOVER"]
+
+; Random end of core stuff
+
+...lit:	variables			; variables
+	constants			; literals
+
+fwidbf:	memend==<.+1777>&<-2000>	; FONTS WIDTHS read in starting here.
+
+	end start			; *** The End ***

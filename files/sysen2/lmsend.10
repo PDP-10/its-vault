@@ -1,0 +1,408 @@
+;;;-*-midas-*-
+title lmsend
+;Things to do:  Fix typeahead so it displays right.
+;Maybe fix the help command so the next character is gobbled, if not a space.
+a=1
+b=2
+c=3
+d=4
+e=5
+bp=7
+t=10
+tt=11
+ch=16
+p=17
+
+ttyich==0
+ttyoch==1
+ttydch==2
+filech==3
+chaich==10
+chaoch==11
+
+$$help==1
+$$multi==1
+$$ffclr=0		;make ^L do the right thing on printing terminals.
+.insrt syseng;rubout
+
+debug:	-1
+npdl==40
+pdlp:	-npdl,,.
+pdl:	block npdl
+rbblck:	block rubout"rb.len
+connam:	ascii /SEND /
+usrnam:	block 10
+hstnam:	block 10
+hstnum:	0			;foreign host number
+
+go:	move p,pdlp
+	.core hstpag
+	 .lose %lssys
+	.call [	setz
+		sixbit /OPEN/
+		movsi .uai
+		movei ttyich
+		setz [sixbit /TTY/]]
+	 .lose %lssys
+	.call [	setz
+		sixbit /OPEN/
+		movsi %tjmor+.uao
+		movei ttyoch
+		setz [sixbit /TTY/]]
+	 .lose %lssys
+	.call [	setz
+		sixbit /OPEN/
+		movsi %tjmor+%tjdis+.uao
+		movei ttydch
+		setz [sixbit /TTY/]]
+	 .lose %lssys
+	.suset [.roption,,t]
+	tlnn t,optcmd
+	 jrst [	movei t,[asciz /Please give recipient in the jcl/]
+		pushj p,outstr
+		jrst die]
+	.break 12,[..rjcl,,ttybuf]
+	move bp,[440700,,ttybuf]
+go1:	ildb ch,bp
+	caie ch,11
+	 cain ch,40		;flush initial spaces
+	 jrst go1
+	add bp,[070000,,0]
+	move t,[440700,,usrnam]
+go2:	ildb ch,bp
+	caie ch,^C
+	 cain ch,^M		;end of command and no luser?
+	 jrst [	movei t,[asciz /Please specify user@site in jcl/]
+		pushj p,outstr
+		jrst die]
+	caie ch,"%
+	 cain ch,"@
+	 jrst go2a
+	cail ch,"a
+	 caile ch,"z
+	 caia
+	 subi ch,"a-"A		;uppercase name for now
+	idpb ch,t
+	jrst go2
+
+go2a:	setz ch,		;make user asciz
+	idpb ch,t
+	move t,[440700,,hstnam]
+go3:	ildb ch,bp
+	caig ch,40
+	 jrst go3a
+	idpb ch,t
+	jrst go3
+
+go3a:	setz a,			;make host asciz
+	idpb a,t
+	movei a,hstpag
+	movei b,filech
+	pushj p,netwrk"hstmap	;load in the hosts2 data base
+	 .value
+	movei a,hstnam
+	pushj p,netwrk"hstlook	;get host number into a, network number into tt
+	 jrst [	movei t,[asciz /Unrecognized host name/]
+		pushj p,outstr
+		jrst die]
+	movem a,hstnum		;stash host number
+
+;;;here we have the address, get the message
+gothst:	movem bp,rbblck+rubout"rb.beg	;save starting bp of message
+	move t,[440700,,ttybuf+2000]
+	movem t,rbblck+rubout"rb.end
+	movei a,ttyoch
+	movei b,rbblck
+	pushj p,rubout"init
+	caia
+	 goths1: ildb ch,bp
+	caie ch,^M		;watch for end of jcl
+	 cain ch,^C
+	 caia
+	 jrst goths1
+	movem bp,rbblck+rubout"rb.ptr	;compensate for jcl part of message
+	caie ch,^M
+	 jrst gotmsg
+;	movei ch,^J
+;	idpb ch,rbblck+rubout"rb.ptr
+;If there is typeahead, we must compute the cursor position or some such
+;grossness.  Don't print "Msg:" if there is any.
+	movei t,[asciz /Msg:
+/]
+	.listen tt,
+	cain tt,0
+	  pushj p,outstr
+msglup:	movei b,rbblck		;rubout processor block
+	pushj p,rubout"read	;read something
+	jumpl a,[aoje a,bufful	;buffer full
+		 aoje a,msglup	;over rubout
+		 movei t,[asciz /Bad value from read./]
+		 pushj p,outstr
+		 jrst die]
+	caie a,%txctl+"C
+	 cain a,^C
+	 jrst gotmsg
+	  jrst msglup
+
+;rubout handler
+rubout"dispatch:
+	cain a,%txctl+"W
+	  jrst wrdrub
+	cain a,%txctl+"D	;This is dangerous.  get rid of it.
+	  jrst rubout"insech
+;	cain a,%txctl+"T
+;	  jrst twiddl
+	jrst rubout"rb$dsp
+	
+
+;rubout operations.
+
+;backward rubout word.
+wrdrub:
+ifn rubout"$$ctlech,pushj p,rubout"ignore	;if ^W echoed, must erase it, too.
+	ldb a,rubout"rb.ptr(b)		;get current character.
+	pushj p,wdelp		;if delimiter, flush all delims until non-delim.
+	  pushj p,flsdel
+;now loop, flushing all characters until a delimiter.  Leave the delimiter.
+wrdrb1:	ldb a,rubout"rb.ptr(b)	;get current character.
+	pushj p,wdelp		;if it is a delimiter, stop.
+	  popj p,
+	pushj p,rubout"rubout	;otherwise rub it out, and loop.
+	jrst wrdrb1
+
+;flush delimiters until a non-delimiter.
+flsdel:	ldb a,rubout"rb.ptr(b)
+	pushj p,wdelp
+	  caia			;if delimiter, flush it and continue.
+	    popj p,		;otherwise exit.
+	pushj p,rubout"rubout
+	jrst flsdel
+
+;return if delimiter, else skip-return.  Only A-Z, 0-9, and a-z are not delimiters.
+wdelp:	caige a,"0
+	  popj p,
+	caig a,"9
+	  jrst popj1
+
+	caige a,"A
+	  popj p,
+	caig a,"Z
+	  jrst popj1
+
+	caige a,"a
+	  popj p,
+	caig a,"z
+	  jrst popj1
+	popj p,
+
+gotmsg:	setz ch,
+	dpb ch,rbblck+rubout"rb.ptr	;make string asciz
+getcon:	movei a,chaich
+	move b,hstnum
+	movei c,connam
+	movei d,5
+	pushj p,netwrk"chacon	;try to open the connection
+	 jrst noconn
+
+gotcon:	.suset [.runame,,tt]	;Send uname, not xuname, so reply can come back here,
+	pushj p,netsix		; this is an interactive message, not mail!
+	move tt,[sixbit /@MIT-/]
+	pushj p,netsix
+	.call [	setz
+		sixbit /SSTATU/
+		movem tt
+		movem tt
+		movem tt
+		movem tt
+		movem tt
+		setzm tt]
+	 .lose %lssys
+	pushj p,netsix
+	.rdate tt,
+	rot tt,12.
+	movei ch,"/
+	pushj p,nettim
+	.rtime tt,
+	movei ch,":
+	pushj p,nettim
+	.iot chaoch,[215]
+	move bp,rbblck+rubout"rb.beg	;start of message
+outmsg:	ildb ch,bp
+	jumpe ch,outms1		;done with message
+	cain ch,12		;lfs are ignored
+	 jrst outmsg
+	caie ch,15
+	 cain ch,11
+	 tro ch,200
+	caie ch,14
+	 cain ch,11
+	 tro ch,200
+	.iot chaoch,ch
+	jrst outmsg
+
+outms1:	.nets chaoch,
+	movsi t,(.byte 8 ? %coeof ? 0)
+	movem t,netwrk"pktbuf
+	.call [	setz
+		sixbit /PKTIOT/
+		movei chaoch
+		setzi netwrk"pktbuf]
+	 .lose %lssys
+	.call [	setz
+		sixbit /FINISH/
+		setzi chaoch]
+	 jfcl
+	jrst passon
+
+;connection failed
+noconn:	movei a,chaich
+	pushj p,netwrk"analyz
+	 .value
+nocon1:	movei t,[asciz /
+Try again? /]
+	pushj p,outstr
+	.iot ttyich,ch
+	caie ch,"y
+	 cain ch,"Y
+	 jrst getcon
+	caie ch,"n
+	 cain ch,"N
+	 jrst nocon2
+	caie ch,"q
+	 cain ch,"Q
+	 jrst die
+	movei t,[asciz / ? /]
+	pushj p,outstr
+	jrst nocon1
+
+nocon2: movei t,[asciz /
+Save text as LMSEND >? /]
+	pushj p,outstr
+	.iot ttyich,ch
+	caie ch,"y
+	 cain ch,"Y
+	 jrst savmsg
+	caie ch,"n
+	 cain ch,"N
+	 jrst die
+	movei t,[asciz / ? /]
+	pushj p,outstr
+	jrst nocon2
+
+savmsg:	.call [	setz
+		sixbit /OPEN/
+		movsi .uao
+		movei filech
+		move [sixbit /DSK/]
+		move [sixbit /LMSEND/]
+		setz [sixbit />/]]
+	 .lose %lsfil
+	move bp,rbblck+rubout"rb.beg	;start of message
+outsav:	ildb ch,bp
+	jumpe ch,outsv1
+	.iot filech,ch
+	jrst outsav
+
+outsv1:	.call [	setz
+		sixbit /CLOSE/
+		setzi filech]
+	 .lose %lsfil
+
+die:	skipe debug
+	 .value
+passon:	.logout 1,
+	 jrst die
+
+rubout"inchr==.
+tyi:	.iot ttyich,a
+	popj p,
+
+rubout"outchr==.
+tyo:	.iot ttyoch,a
+	popj p,
+
+rubout"display==.
+tyod:	.iot ttydch,a
+	popj p,
+
+bufful:	movei t,[asciz /Input buffer full, message truncated/]
+	pushj p,outstr
+	jrst gotmsg
+
+clrscr:	.iot ttydch,[^P]
+	.iot ttydch,["C]
+	popj p,
+
+outstr:	hrli t,440700		;type asciz string out of t
+outst1:	ildb ch,t
+	jumpe ch,cpopj
+	.iot ttyoch,ch
+	jrst outst1
+
+;Give a summary of editing commands. TOP-H gives this from the default rubout handler.
+help:	pushj p,clrscr
+	movei t, [asciz /You are typing a message to be sent to /]
+	pushj p,outstr
+	movei t,usrnam
+	pushj p,outstr
+	movei t,[asciz / at /]
+	pushj p,outstr
+	movei t,hstnam
+	pushj p,outstr
+	movei t,[asciz /.
+The following keyboard commands are available:
+
+^C	 Send message.
+^L	 Redisplay text of message.
+^Q	 Quote the next character, and insert it.
+^U	 Backward delete line.
+^W	 Backward delete word.
+<rubout> Backward delete character.
+
+Press any key to continue.
+/]
+	pushj p,outstr
+	.iot ttyich,t
+	pushj p,clrscr
+	jrst rubout"redisp
+
+netsix:	setz t,			;type sixbit out of tt
+	lshc t,6
+	addi t,40
+	.iot chaoch,t
+	jumpe tt,cpopj
+	jrst netsix
+
+nettim:	.iot chaoch,[" ]
+	setz a,
+nettm1:	setz t,
+	lshc t,6
+	addi t,40
+	.iot chaoch,t
+	jumpe tt,cpopj
+	trne a,1
+	 .iot chaoch,ch
+	aoja a,nettm1
+
+popj1:	aos (p)
+cpopj:	popj p,
+
+putchr:	.iot ttyoch,t
+	popj p,
+
+$$chaos==1
+$$hostnm==1
+$$symlook==1
+$$connect==1
+$$analyze==1
+
+.insrt system;chsdef >
+.insrt syseng;netwrk >
+
+variab ? consta
+pat": patch":
+
+ttybuf==.\1777+1		;place to put text of message
+hstpag==ttybuf_-12+1		;place to map host tables
+
+end go

@@ -1,0 +1,90 @@
+;-*-Midas-*-
+
+	TITLE  BYTPRT - Print JCL (or $Q) as 8-bit ASCII + 4-bit decimal
+
+A=1
+B=2
+C=3
+D=4
+E=5
+T1=6
+T2=7
+
+
+TTYo=9
+
+JClen==10
+
+Define SYSCAL op,args
+	.Call [Setz ? Sixbit /op/ ? Args ((Setz))]
+	Termin
+
+Jclbuf:	Block Jclen
+	-1
+
+Comma:	0
+LH:	0
+
+;;;
+;;;	Ahem
+;;;
+
+Begin:	Syscal OPEN,[%Clbit,,.uao
+		     %Climm,,TTYo
+		      [Sixbit /TTY/]]
+	  .Lose %LsFil
+	.Break 12,[..rJCL,,Jclbuf]
+	Skipn Jclbuf
+	  Jrst GetQ
+	Move B,[440700,,Jclbuf]
+ gchar:	Ildb C,B
+	Caie C,^C
+	  Cain C,^M
+	    Jrst Output
+	Caie C,",
+	  Jrst NotC
+	Skipe Comma
+	  Jrst gchar
+	Movem A,LH
+	Setz A,
+	Setom Comma
+	Jrst gchar
+NotC:	Cail C,"0
+	  Caile C,"7
+	    Jrst gchar
+	Subi C,"0
+	Lsh A,3
+	Add A,C
+	Jrst gchar
+
+GetQ:	.Suset [.rOption,,A]
+	Tlnn A,10000
+	  .lose
+	.Value [Asciz "1/1QîP"]
+
+Output:	Skipe Comma
+	  Hrl A,LH
+	Move B,[441000,,A]
+	Movei D,4
+Loop:	Ildb C,B
+	Cail C,128.
+	  .Iot TTYo,["]
+	Andi C,127.
+	.Iot TTYo,C
+	.Iot TTYo,[" ]
+	Sojn D,Loop
+
+	Andi A,15.
+	Jumpe A,Die
+	Idivi A,10.
+	Addi B,"0
+	.Iot TTYo,["+]
+	Skipe A
+	  .Iot TTYo,["1]
+	.Iot TTYo,B
+	.Iot TTYo,[".]
+	.Iot TTYo,[" ]
+
+Die:	.value [asciz / :kill /]
+
+	END BEGIN

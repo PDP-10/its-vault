@@ -1,0 +1,371 @@
+;-*-Midas-*-
+
+	Title :DEMAIL - Clean up lost mail.
+
+A=1	;G. Porp.
+B=2
+C=3
+D=4
+E=5
+
+T1=6
+T2=7
+T3=10
+
+S=11	;Snames AOBJN
+U=12	;Offset into UFD page
+I=13	;Interrupt char
+
+P=17
+
+ TTYi==1
+ TTYo==2
+ DSKi==3
+ UFDi==4
+ LSRi==5
+MAILo==6
+
+  Call=<PUSHJ P,>
+Return=<POPJ P,>
+
+PDLen==30
+nLSRps==20
+
+ ;;;
+;;;;;
+ ;;;
+
+.INSRT KP;MACROS >
+
+ ;;;
+;;;;;
+ ;;;
+
+PDList:	-PDLen,,.
+	Block PDLen
+
+MC:	Sixbit /GUEST0/
+	Sixbit /GUEST1/
+	Sixbit /GUEST2/
+	Sixbit /GUEST3/
+	Sixbit /GUEST4/
+	Sixbit /GUEST5/
+nMCs==.-MC
+
+AI:	Sixbit /USERS0/
+	Sixbit /USERS1/
+	Sixbit /USERS2/
+	Sixbit /USERS3/
+	Sixbit /USERS4/
+	Sixbit /USERS5/
+nAIs==.-AI
+
+DM:	Sixbit /USERS1/
+	Sixbit /USERS2/
+nDMs==.-DM
+
+ML:	Sixbit /USERS1/
+	Sixbit /USERS2/
+	Sixbit /USERS3/
+nMLs==.-ML
+
+Openp:	0
+nBadie:	0
+Uname:	0
+SOK:	0
+
+TObuf:	Block 20
+
+
+Tsint:	Loc 42
+	-TsintL,,Tsint
+Loc Tsint
+	<2,,P>+<T1_6,,0>		;Save T1, T2 on stack.
+	0 ? 1_TTYi ? 0 ? 1_TTYo ? Flush
+	0 ? 1_TTYo ? 0 ? 0 ? More
+TsintL==.-Tsint
+
+ ;;;
+;;;;;
+ ;;;
+
+Begin:	Move P,PDList
+	.Suset [-3,,[.rUNAME,,Uname
+		     .sOPTION,,[Optint,,]
+		     .sMSK2,,[1_TTYi\1_TTYo]]]
+	Syscal OPEN,[%Clbit,,.uao\%TJDIS
+		     %Climm,,TTYo
+		     [Sixbit /TTY/]]
+	  .Lose %LsFil
+	Syscal OPEN,[%Clbit,,.uai
+		     %Climm,,TTYi
+		     [Sixbit /TTY/]]
+	  .Lose %LsFil
+	Move T1,[424242,,424242]
+	Move T2,[434242,,420242]
+	Syscal TTYSET,[%Climm,,TTYi
+		       T1 ? T2]
+	  .Lose %LsSys
+	Syscal SSTATU,[Repeat 5,%Clout,,T1
+		       %Clout,,A]
+	  .Lose %LsSys
+	Camn A,[Sixbit /MC/]
+	  Jrst [Move S,[-nMCs,,MC]
+		Jrst MBuff]
+	Camn A,[Sixbit /AI/]
+	  Jrst [Move S,[-nAIs,,AI]
+		Jrst MBuff]
+	Camn A,[Sixbit /DM/]
+	  Jrst [Move S,[-nDMs,,DM]
+		Jrst MBuff]
+	Camn A,[Sixbit /ML/]
+	  Jrst [Move S,[-nMLs,,ML]
+		Jrst .+1]
+MBuff:	Syscal CORBLK,[%Climm,,%Cbndr
+		       %Climm,,%JSelf
+		       %Climm,,UFDpag
+		       %Climm,,%JsNew]
+	  .Value [Ascii /: Can't make UFD buffer? KILL /]
+	Movei A,LSRi
+	Move B,[-nLSRps,,LSRpag]
+	Call LSRTNS"LSRMAP
+	  .Value [Ascii /: LSRMAP failed? KILL /]
+	Type ,"Type '?' or 'H' for Help"
+
+SLoop:	.Iot TTYo,[^M]
+	.Iot TTYo,["[]
+	Move T1,(S)
+	Call 6Type
+	.Iot TTYo,["]]
+	Syscal OPEN,[%Clbit,,.uii
+		     %Climm,,UFDi
+		     [Sixbit /DSK/]
+		     [Sixbit /.FILE./]
+		     [Sixbit /(DIR)/]
+		     (S)]
+	  Jrst [Type ," Can't open UFD"
+		Jrst NextS]
+	Move T1,[444400,,UFDbuf]
+	Movei T2,2000
+	Syscal SIOT,[%Climm,,UFDi ? T1 ? T2]
+	  Jrst [Type ," Can't read in UFD"
+		Jrst NextS]
+	.Close UFDi,
+	Move U,UFDbuf+1		;Pointer to top of name area
+	Cail U,2000
+	  Jrst [Type ," Empty directory"
+		Jrst NextS]
+	Setzm nBadie
+
+ULoop:	Move T2,<UFDbuf+1>(U)	;FN2
+	Came T2,[Sixbit /MAIL/]
+	  Jrst NextU
+	Movei A,LSRi
+	Move B,UFDbuf(U)
+	Call LSRTNS"LSRUNM
+	  Skipa
+	    Jrst NextU
+	Aos nBadie
+	Setzm Openp
+
+Bad:	Setzm SOK
+	.Iot TTYo,[^P]
+	.Iot TTYo,["A]
+	Move T1,UFDbuf(U)
+	Call 6Type
+	.Iot TTYo,["?]
+	.Iot TTYo,[" ]
+
+Ask:	.Iot TTYi,C
+	Caig C,40
+	  Jrst Bad
+	Cail C,"a
+	  Trz C,40
+	Caie C,"?
+	  Cain C,"H
+	    Jrst [Type ," Commands are:
+?, H	List this Help.
+D	Delete this mail file.
+F, M	Mail (Forward) this file to someone.
+N	Leave file alone, and go to Next.
+P, V	View file (print on TTY).
+S	Skip to next Sname
+Q	Quit"
+		  Jrst Bad]
+	Cain C,"Q
+	  Jrst Die
+	Cain C,"N
+	  Jrst NextU
+	Cain C,"S
+	  Jrst NextS
+	Cain C,"D
+	  Jrst [Call MOpen
+		Syscal DELEWO,[%Climm,,DSKi]
+		  Jrst [Type ," Can't delete"
+			Jrst Bad]
+		Type ," Deleted"
+		Jrst NextU]
+	Caie C,"V
+	  Cain C,"P
+	    Skipa
+	      Jrst Mailp
+	.Iot TTYo,[^M]
+	Setom SOK
+	Call MOpen
+	.Access DSKi,[0]
+VChar:	.Iot DSKi,A
+	Camn A,[-1,,^C]
+	  Jrst Bad
+	.Iot TTYo,A
+	Jrst VChar
+
+Mailp:	Caie C,"M
+	  Cain C,"F
+	    Skipa
+	      Jrst [Type ," What?"
+		    Jrst Bad]
+	Type ,"ÓMail to? "
+	Move A,[440700,,TObuf]
+	Setz B,
+ToGet:	.Iot TTYi,T1
+	Caie T1,^D
+	  Cain T1,^G
+	    Jrst Bad
+	Cain T1,177
+	  Jrst [Jumpe B,ToGet
+		Dpb 0,A
+		.Iot TTYo,[^P]
+		.Iot TTYo,["X]
+		Soja B,ToGet]
+	Caie T1,^M
+	  Cain T1,^C
+	    Jrst MailIt
+	Idpb T1,A
+	Aoja B,ToGet
+
+MailIt:	Jumpe B,Bad
+	Syscal OPEN,[%Clbit,,.uao
+		     %Climm,,MAILo
+		     [Sixbit /DSK/]
+		     [Sixbit /MAIL/]
+		     [Sixbit />/]
+		     [Sixbit /.MAIL./]]
+	  Jrst [Type ," Can't open output mail file"
+		Jrst Bad]
+	Type MAILo,"FROM-PROGRAM:DEMAIL
+AUTHOR:Dead Mail Reaper/deerMAIL
+FROM-UNAME:"
+	Move T1,Uname
+	Call 6MType
+	Type MAILo,"
+HEADER-FORCE:RFC733
+SUBJECT:Lost mail (filed in DSK:"
+	Move T1,(S)
+	Call 6MType
+	.Iot MAILo,[";]
+	Move T1,UFDbuf(U)
+	Call 6MType
+	Type MAILo," MAIL)
+RCPT:("
+	Move T1,[440700,,TObuf]
+	Ildb T2,T1
+	.Iot MAILo,T2
+	Sojn B,.-2
+Text:	Type MAILo,")
+TEXT;-1
+Text of abandoned file follows:
+-------
+"
+	Call MOpen
+	.Access DSKi,[0]
+Text2:	.Iot DSKi,A
+	Camn A,[-1,,^C]
+	  Jrst [.Close MAILo,
+		Type ,"Mailed"
+		Jrst Bad]
+	.Iot MAILo,A
+	Jrst Text2
+
+NextU:	.Close DSKi,
+	Addi U,5
+	Caie U,2000
+	  Jrst ULoop
+	Skipn nBadie
+	  Jrst [Type ," Clean"
+		Jrst .+1]
+
+NextS:	Aobjn S,SLoop
+	Type ,"ÓAll done."
+
+Die:	.Logout 1,
+
+ ;;;
+;;;;;
+ ;;;
+
+6Type:	Setz T2,
+	Rotc T1,6
+	Addi T2,40
+	.Iot TTYo,T2
+	Jumpn T1,6Type
+	Return
+
+6MType:	Setz T2,
+	Rotc T1,6
+	Addi T2,40
+	.Iot MAILo,T2
+	Jumpn T1,6MType
+	Return
+
+MOpen:	Skipe Openp
+	  Return
+	Syscal OPEN,[%Clbit,,.uai
+		     %Climm,,DSKi
+		     [Sixbit /DSK/]
+		     UFDbuf(U)
+		     [Sixbit /MAIL/]
+		     (S)]
+	  Jrst [Type ," Can't open file!"
+		Pop P,T1
+		Jrst NextU]
+	Setom Openp
+	Return
+
+Flush:	Skipn SOK
+	  Jrst [Syscal DISMIS,[P]
+		  .Lose %LsSys]
+	.Reset TTYo,
+NoMore:	Type ,"Flushed"
+	.Reset TTYi,
+	Syscal DISMIS,[%Clbit,,2+<T1_6>
+			P ? %Climm,,Bad]
+	  .Lose %LsSys
+
+More:	Type ,"--More--"
+	.Iot TTYi,I
+	Caie I,40
+	  Jrst NoMore
+	.Iot TTYo,[^M]
+	Syscal DISMIS,[%Clbit,,2+<T1_6>	;Restore T1, T2
+		       P]
+	  .Lose %LsSys
+
+ ;;;
+;;;;;
+ ;;;
+
+Variables
+Constants
+
+$$ULNM==0
+$$ULNP==0
+$$UNAM==0
+$$HSNM==0
+
+.INSRT SYSENG;LSRTNS >
+
+UFDpag==._-12+1
+UFDbuf=UFDpag*2000
+LSRpag==UFDpag+1
+
+	END Begin

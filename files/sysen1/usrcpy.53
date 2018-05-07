@@ -1,0 +1,630 @@
+; -*- MIDAS -*-
+
+TITLE USRCPY -- moves files around on USERSn and GUESTn directories
+
+
+a=1
+b=2
+c=3
+d=4
+e=5
+t=6				;must be consecutive
+tt=7				;must be following t
+t1=10
+t2=11
+t3=12
+p=17
+
+chdiri=10
+chdski=11
+chdsko=12
+tyoc=13
+tyic=14
+lsrc=15				   ;channel for LSRTNS to hack
+dsko=16
+
+.insrt SYSENG;FSDEFS >
+
+$$HSNM==1			   ;We want the HSNAME routines
+$$ULNM==0			   ;don't want last name hackery
+$$ULNP==0			   ;or lastt name prefix hackery
+$$UNAM==0			   ;In fact, no name hacking at all!!
+$$OVLY==0			   ;And don't overlay, we'll do a lot!
+.insrt SYSENG;LSRTNS >
+
+$$RFN==1				   ;we want the filename reader
+.insrt SYSENG;RFN >
+
+define SYSCAL op,args
+       .CALL  [setz ? sixbit /op/ ? args((setz))]  
+termin
+
+define type &string
+       push p,t
+       push p,tt
+       movei t,<.length string>
+       move tt,[440700,,[ascii string]]
+       syscal SIOT,[%climm,,tyoc ? tt ? t]
+         .lose %lsfil
+       pop p,tt
+       pop p,t
+termin
+
+
+go:    move p,pdl
+       pushj p,ttyopn		;open the terminal
+       type \CWarning:  This program redistributes files on either the
+USERSn or GUESTn directories.  Do not use it unless you know what you are
+doing.  Serious damage may result if this program is misused.  
+
+Do you really wish to proceed?  (yes/no):  \
+       pushj p,read6
+       came a,[sixbit /YES/]
+         .logout 1,
+go1:   type /AHave you assembled a new DIRS BIN file yet?  /
+       pushj p,read6
+       came a,[sixbit /YES/]
+         jrst [.break 16,100000
+	       jrst go1]
+
+       pushj p,inqmap		;map in the INQUIR database
+       pushj p,rodbf		;read in the old DIRS BIN file
+       pushj p,rddirs		;read in the directories in old DIRS BIN
+       pushj p,rndbf		;read in the new DIRS BIN file
+       pushj p,prsdrs		;go through each dir in inverse order
+       type /AAll Done./
+       .logout 1,
+
+;;; open the TTY
+ttyopn:	 syscal OPEN,[ %clbit,,.uao\%tjdis ? %climm,,tyoc ? [sixbit /TTY/]]
+ 	   .lose %lsfil
+	 syscal OPEN,[ %clbit,,.uai ? %climm,,tyic ? [sixbit /TTY/]]
+	   .lose %lsfil
+	 popj p,
+
+;;; map in INQUIRE database
+inqmap:	 movei a,lsrc		   ;channel to hack file on
+	 move b,[-<300-lsrpag>,,lsrpag]  ;pages to map file into
+	 pushj p,lsrtns"lsrmap	;map in inquire database.
+	   jrst [type /ACan't map in INQUIR database!A/
+		 .break 16,100000
+		 jrst inqmap]
+	 popj p,
+
+;;; read in active DIRS BIN file on INQUIR;
+rodbf: syscal OPEN,[%clbit,,.uii  ;open our magic file
+		     %climm,,chdski
+		     [sixbit /DSK/]
+		     [sixbit /DIRS/]
+		     [sixbit /BIN/]
+		     [sixbit /INQUIR/]]
+	  jrst [type /ADSK:INQUIR;DIRS BIN -- not found.  Create it
+and then $p to continue.A/
+	       .break 16,100000	;quit temporarily
+	       jrst rodbf]	;and go back and try again
+         movei t,2000		;get length of buffer
+	 move tt,[444400,,odbbuf]  ;and a byte pointer to it
+	 syscal SIOT,[%climm,,chdski  ;read it in
+		      tt
+		      t]
+	    .lose %lsfil
+         .close chdski		;close channel
+	 syscal SSTATU,[%clout,,t  ;find out what machine we're on
+			%clout,,t
+			%clout,,t
+			%clout,,t
+			%clout,,t
+			%clout,,a]
+	    .lose
+
+;;; a has machine name.  odbbuf buffer has the old dirs bin data
+
+         movem a,machin		;save machine name for later us
+         move t,odbbuf		;get num of machine entries in left half
+				;and length of each entry in right half
+	 hrri t,odbbuf+1	;t now has address of first machine entry
+				;in right half
+	 hrrz tt,odbbuf		;get length of entries in tt
+	 hrli tt,1		;put 1 in left half so we can increment
+				;properly
+macchk:  camn a,lsrtns"hx$mch(t)  ;is this the right machine
+	   jrst gotmch		;yes, get rest of data
+	 add t,tt		;point to next machine
+	 jumpl t,macchk		;and go back and check unless done
+	 type /ASomething's wrong.  Machine not specified in old 
+dirs bin data.A/
+         .lose
+
+;;; t has absolute address of block of dirs bin data for this machine
+
+gotmch:  skipn lsrtns"hx$tur(t)	;is there no GUEST data?
+	   jrst [move a,lsrtns"hx$nrm(t)  ;assume he wants USERSs
+	         setzm guestp	;and remember this fact
+	         jrst gotdhk]	; and get data for USERS
+gotmc1:  type /AIs this to be the USERS series or the GUEST series?  /
+	 pushj p,read6		;ask him which one he wants
+         camn a,[sixbit /USERS/]	   ;if users
+	   jrst [move a,lsrtns"hx$nrm(t)  ;"normal" series
+	         setzm guestp	;and remember this fact
+		 jrst gotdhk]	;and get data for USERS
+	 camn a,[sixbit /GUEST/]	;if guest
+	   jrst [move a,lsrtns"hx$tur(t)	 ;"turist" series
+	         setom guestp	;and remember this fact
+	         jrst gotdhk]	;and get data for GUEST
+	 type /AHuh?  Try again.A/	;he mistyped
+	 jrst gotmc1		;and try again
+
+;;; a now has offset to dirs bin data for either USERS or GUEST data
+
+gotdhk:  move tt,odbbuf(a)	;get number of entries in left half
+				;and entry length in right half
+	 hrrzm tt,odbinc	;save entry length
+	 hlrem tt,tt		;get number of entries (negative)
+	 movnm tt,odbcnt	;save number of entries
+	 movei tt,odbbuf+1(a)	;get address of first entry
+	 movem tt,odbptr	;save as start of old hsname table
+	 move t,odbcnt		;get number of entries
+	 subi t,1		;we want last one
+	 imul t,odbinc		;how far away is it?
+	 add t,tt		;and point to last entry
+	 movem t,odblst		;and save as last entry
+	 popj p,		;and return
+	
+;;; read in the directories specified in the old DIRS BIN file.
+rddirs:  move t,odbptr		;get location of first entry in old DIRS
+				;BIN 
+	 movem t,a		;save for later use
+	 move t,1(t)		;get directory name for this entry
+	 movem t,indir		;and save as first one to look at
+	 movei tt,drpgst	;get starting page for directories
+	 movem tt,dirpag	;and save in updated loc
+	 imuli tt,2000		;make into an address
+	 movem tt,dirstr	;and starting loc of dirs
+	 movem tt,dirloc	;and save as current dir
+
+rddir1:  syscal CORBLK,[%clbit,,%cbndw	;allocate a page for directory
+			%climm,,0  
+			%climm,,%jself	;for this job
+			%clin,,dirpag  ;this is where it should go
+			%climm,,%jsnew	;new memory
+			%climm,,0]
+	    .lose
+	 syscal OPEN,[%clbit,,.uii  ;open directory for reading
+		      %climm,,chdiri
+		      [sixbit /DSK/]
+		      [sixbit /.FILE./]
+		      [sixbit /(DIR)/]
+		      indir]
+	    .lose %lsfil
+	 move t,dirloc		;get address of this directory
+	 hrli t,444400		;make into a "byte" pointer
+	 movei tt,2000		;get length of block
+	 syscal SIOT,[%climm,,chdiri  ;and read in directory
+		      t
+		      tt]
+	   .lose %lsfil
+	 .close chdiri		;close the channel
+
+;;; a should have location of last dir done
+nxtdir:  camn a,odblst		;are we at last one yet
+	   jrst [move t,dirloc	;get current directory address
+		 movem t,dirlst	;save as last address
+		 popj p,]	;and we are done
+	 add a,odbinc		;address of next directory to read in
+	 move t,1(a)		;get directory name for this entry
+	 movem t,indir		;and save as first one to look at
+	 move tt,dirpag		;get previous page
+	 addi tt,1		;make it next page
+	 movem tt,dirpag	;and save as previous page
+	 imuli tt,2000		;make into an address
+	 movem tt,dirloc	;and save as starting address for next dir
+	 jrst rddir1		;and go back for more
+
+rndbf:  .close chdiri		;close the directory channel if not done
+rndbf1: type /AWhere's the new DIRS BIN file?  /
+	pushj p,getlin		;read in a line
+	.suset [.rsname,,dirdir]  ;set default directory to SNAME
+	movei b,dirdev		;address of filename block
+	move d,[440700,,linbuf]	;Byte Pointer to input line
+	pushj p,rfn"rfn		;parse the filename
+	syscal OPEN,[ %clbit,,.uii ? %climm,,chdski  ;open the file
+		      dirdev
+		      dirfn1
+		      dirfn2
+		      dirdir]
+	  jrst [type /ACouldn't open that file, try again!A/
+		jrst rndbf1]	;and try again
+	 movei t,2000		;length of buffer
+	 move tt,[444400,,ndbbuf]  ;36 bit byte pointer to directory buffer
+	 syscal SIOT,[ %climm,,chdski ? tt ? t]	;read in the directory
+	   .lose %lsfil
+	 .close chdski		;and close the channel
+	 move a,machin		;get machine name in a
+
+;;; a has machine name.  ndrbnb buffer has the new dirs bin data
+
+         move t,ndbbuf		;get num of machine entries in left half
+				;and length of each entry in right half
+	 hrri t,ndbbuf+1	;t now has address of first machine entry
+				;in right half
+	 hrrz tt,ndbbuf		;get length of entries in tt
+	 hrli tt,1		;put 1 in left half so we can increment
+				;properly
+
+macch2:  camn a,lsrtns"hx$mch(t)  ;are we pointing to right machine
+	   jrst gotmc2		;yes
+	 add t,tt		;no, point to the next
+	 jumpl t,macch2		;and try again unless done
+	 type /ASomething's wrong.  Machine not specified in new
+dirs bin data.A/
+         .lose
+
+;;; t has address of data block for this machine from new dirs bin
+
+gotmc2:  skipe guestp		;do we want USERS series
+	   jrst [move a,lsrtns"hx$tur(t)  ;yes get address of this block
+		 jrst gotdh2]	;and continue
+	 skipn guestp		;do we want GUEST series
+	   jrst [move a,lsrtns"hx$nrm(t)	 ;yes get address of this
+						 ;block  
+	         jrst gotdh2]	;and continue
+
+;;; a now has address of block of data for this machine.  
+
+gotdh2:  move tt,ndbbuf(a)	;get number of entries in left half
+				;and entry length in right half
+	 hrrzm tt,ndbinc	;save entry length
+	 hlrem tt,tt		;get number of entries (negative)
+	 movnm tt,ndbcnt	;save number of entries
+	 movei tt,ndbbuf+1(a)	;get address of first entry
+	 movem tt,ndbptr	;save as start of old hsname table
+	 move t,ndbcnt		;get number of entries
+	 subi t,1		;we want last one
+	 imul t,ndbinc		;how far away is it?
+	 add t,tt		;and point to last entry
+	 movem t,ndblst		;and save as last entry
+	 popj p,		;and return
+	
+prsdrs:  move e,dirlst		;get location of last dir
+	 movem e,dirloc		;and save as one to hack next
+chkdir:	 move d,udnamp(e)	;get offset of name area
+         add d,dirloc		;make absolute
+chkfil:	 move tt,dirloc
+	 addi tt,2000
+	 caml d,tt		;are we at the end yet?
+	   jrst nxdir
+	 move tt,unrndm(d)	;get random flag word for this file
+	 tlne tt,unigfl\unlink	;ignored or link?
+	   jrst nxtfil
+	 move a,unfn1(d)	;get fn1 for this file
+	 pushj p,odbchk		;see if it was on the correct one
+				;for the old DIRS BIN data 
+           jrst incdir
+getdir:  move a,unfn1(d)	;get fn1 again as UNAME
+	 pushj p,ndbchk		;get new dir in b
+	 move t,indir		;get the directory we are hacking
+	 camn t,b		;are they the same
+	   jrst nxtfil
+	 movem b,outdir
+	 pushj p,cpyfil		;copy the file to its new home
+	    jrst [type /AError while copying file.  Skipping./
+	          jrst nxtfil]
+	 jrst nxtfil		;and go to next file
+
+incdir: type /File:  DSK:/
+	move a,udname(e)  ;get dir
+	pushj p,type6
+	.iot tyoc,[";]
+	move a,unfn1(d)  ;get fn1
+	pushj p,type6
+	.iot tyoc,[" ]
+	move a,unfn2(d)  ;get fn2
+	pushj p,type6
+	.iot tyoc,[" ]
+	.iot tyoc,[" ]
+	type /is not on correct directory.A/
+rddirc:	type /AMove it to which directory (CR to leave alone): /
+	pushj p,read6
+	jumpe a,nxtlog	;don't move (or I'll shoot)
+	syscal OPEN,[%clbit,,.uai
+		     %climm,,chdski
+		     [sixbit /DSK/]
+		     [sixbit /.FILE./]
+		     [sixbit /(DIR)/]
+		     a]
+	   jrst [type /Error:  Non existant directory.  Try again./
+	         jrst rddirc]
+	movem a,outdir	;this is the destination dir
+	pushj p,cpyfil	;copy the file to its new home
+		    jrst [type /AError while copying file.  Skipping./
+		          jrst nxtfil]
+
+nxtlog:  pushj p,logfil
+nxtfil:  addi d,lunblk		;go to next file
+	 jrst chkfil
+
+nxdir:   subi e,2000		;go to next directory
+	 movem e,dirloc		;and save for later
+	 caml e,dirstr		;have we gone past first directory
+	   jrst [move t,udname(e)
+		 movem t,indir
+		 jrst chkdir]		;and check this directory
+	 popj p,		;else return
+
+ndbchk:	 tlc a,400000		;complement high bit
+ 	 move t,ndbptr		;get pointer to new DIRS BIN name buffer
+	 move tt,ndbcnt		;get length of each entry
+ndbch1:	 camge a,lsrtns"hs$unm(t)  ;check out this entry
+	   jrst ndbch2		;we got it
+	 add t,ndbinc		;no, next entry
+	 subi tt,1		;update count
+	 jumpn tt,ndbch1	;and try again if not finished.
+ndbch2:  sub t,ndbinc		;undo the overrun
+	 move b,lsrtns"hs$hsn(t)  ;get the directory to use
+	 tlc a,400000		;and reset a to what it was
+	 popj p,		;and return
+
+odbchk:  movei b,lsrtns"hx$tur	;initially say we're doing GUEST
+	 skipn guestp		;unless we've not set this
+	   movei b,lsrtns"hx$nrm  ;then we're doing USERSn
+	 movei c,0		;site is local
+	 pushj p,lsrtns"lsrhtl	;get the hsname in B
+	   popj p,		;error return
+	 move t,indir		;get directory it was on
+	 camn t,b		;is it correct?
+	   aos (p)		;yes, skip return
+	 popj p,
+
+cpyfil:  syscal OPEN,[%clbit,,.uii\10  ;and don't set reference date
+	              %climm,,chdski
+		      [sixbit /DSK/]
+		      unfn1(d)
+		      unfn2(d)
+		      udname(e)]
+	   jrst [type /Error:  Can't open file.  Skipping it./
+	         aos (p)
+		 popj p,]
+	ldb a,[unpkn+unrndm(d)]
+	cain a,secpak		;are we on pack 13?
+  	  jrst [move a,secdev
+	        movem a,cpydev
+		jrst cpyfix]
+	cain a,thdpak		;are we on pack 14?
+	  jrst [move a,thddev
+	        movem a,cpydev
+		jrst cpyfix]
+	move a,pridev
+	movem a,cpydev
+
+cpyfix:	syscal OPEN,[%clbit,,.uio
+		     %climm,,chdsko
+		     cpydev
+		     [sixbit /_USRCP/]
+		     [sixbit /OUTPUT/]
+		     outdir]	     
+	  .lose %lsfil
+cpyfi1:	move tt,[444400,,filbuf]
+	movei t,2000
+	syscal SIOT,[%climm,,chdski ? tt ? t]
+	  .lose %lsfil
+	move tt,[444400,,filbuf]
+	movei c,2000		   ;full buffer
+	subi c,(t)		   ;minus part not used
+	syscal SIOT,[%climm,,chdsko ? tt ? c]
+	  .lose %lsfil
+	jumpe t,cpyfi1
+	move t,unrndm(d)	   ;get random flag word
+	tlnn t,unreap		   ;no-reap flag on?
+	  jrst rnm		   ;  no, on with the show
+	syscal SREAPB,[%climm,,chdsko ? %climm,,1]  ;set the bit!
+	  .lose %lsfil
+rnm:	syscal RENMWO,[%climm,,chdsko ? unfn1(d) ? unfn2(d)]
+	  .lose %lsfil
+	syscal SFDATE,[%climm,,chdsko ? undate(d)]
+	  .lose %lsfil
+	hllz t,unref(d)
+	syscal SRDATE,[%climm,,chdsko ? t]
+	  .lose %lsfil
+	syscal RAUTH,[%climm,,chdski ? %clout,,t]
+	  .lose %lsfil
+	camn t,udname(e)
+	  move t,outdir
+	syscal SAUTH,[%climm,,chdsko ? t]
+	  .lose %lsfil
+	move t,debug
+	jumpn t,clsfil
+	syscal DELEWO,[%climm,,chdski]
+	  .lose %lsfil
+clsfil:	.close chdsko,
+	.close chdski,
+	aos (p)			;skip return
+	popj p,
+
+
+
+	 ;;auxiliary routine for RFN package.
+
+RSIXTP:	cain a,^M		   ;carriage return?
+	  aos (p)		   ;  yes, skip return
+	popj p,
+
+;; READ6 reads a line, and converts it to sixbit.
+
+read6:	push p,t
+	push p,tt
+	push p,b
+	push p,c
+read6a:	pushj p,getlin		   ;read in a line, with rubout processing
+	move t,a		   ;get character count into T
+	caile t,6		   ;six character limit
+	  movei t,6		   ;  rigidly enforced
+	move tt,[440700,,linbuf]   ;input pointer
+	move c,[440600,,a]	   ;output pointer
+	setz a,			   ;initially " "
+read6b:	ildb b,tt		   ;get a character
+	cain b,15		;if only a carriage return
+	  jrst read6c		;return
+	caig b,40		   ;control-char of some sort?
+	  jrst [ type /AIllegal character in filename, re-enter.A/
+		 jrst read6a]
+	cail b,140		   ;convert to upper case
+	  subi b,40
+	subi b,40		   ;convert to sixbit
+	idpb b,c		   ;output in our output word
+	sojg t,read6b		   ;read another unless we've reached our limit
+read6c:	pop p,c
+	pop p,b
+	pop p,tt
+	pop p,t
+	popj p,			   ;returning word in A
+
+getlin:	push p,t
+	push p,tt
+	movei t,linlen		   ;free-space count
+	move tt,[010700,,linbuf-1] ;buffer pointer
+getl0:	.iot tyic,a		   ;get the character
+	cain a,^M		   ;return?
+	  jrst [ idpb a,tt	   ;mark the end of the line
+		 movei a,linlen	   ;  size of full line
+		 sub a,t	   ;  - unused part
+				   ;  = size of line.  Return it to caller
+		 pop p,tt
+		 pop p,t
+		 popj p,]
+	cain a,^?		   ;rubout?
+	  jrst getrub		   ;  go rub out
+
+	skipg t			   ;if we have overflow
+	  .iot tyoc,[^G]	   ;  beep at him
+	skiple t		   ;unless we have overflow
+	  idpb a,tt		   ;  save the character in the buffer
+	soja t,getl0		   ;loop, counting
+
+getrub:	cail t,linlen		   ;is buffer empty?
+	  jrst [ .iot tyoc,[^G]	   ;  yes, beep at him
+		 jrst getl0]	   ;  and continue with the loop
+	type /X/		   ;erase from screen (assume display!)
+	add tt,[070000,,0]	   ;previous character
+	jumpg tt,getl0		   ;if not backed over word boundary, all done
+	sub tt,[430000,,1]	   ;back over the word boundary
+	jrst getl0		   ;and onwards to end-of-line!
+
+logfil: syscal open,[%clbit,,.uao+100000	;open in write-over mode
+		%climm,,dsko
+		[sixbit /DSK/]	;DEV
+        	[sixbit /ON WRO/]
+	        [sixbit /NG DIR/]
+		[sixbit /INQUIR/]]
+	jrst [syscal open,[%clbit,,.uao	;this time we'll create it
+			%climm,,dsko
+		        [sixbit /DSK/]	;DEV
+                  	[sixbit /ON WRO/]
+ 		        [sixbit /NG DIR/]
+			[sixbit /INQUIR/]]
+		  popj p,		;something's screwed, oh well
+              jrst barfln]	;go continue barfing
+
+barfln:	push p,a
+	syscal fillen,[%climm,,dsko	;find length
+		%clout,,a]		;in a
+	 .lose 1000
+	syscal access,[%climm,,dsko	;and go to end of file
+		a]		;(which is in a)
+	 .lose 1000
+        move a,udname(e)
+	pushj p,dtype6
+	.iot dsko,[";]
+	move a,unfn1(d)
+	pushj p,dtype6
+	.iot dsko,[" ]
+	move a,unfn2(d)
+	pushj p,dtype6
+	.iot dsko,[^M]
+	.iot dsko,[^J]
+	.close dsko,
+	pop p,a
+	popj p,
+
+dtype6: push p,t
+	push p,tt
+	setzb t,tt		;clear both out
+	move tt,a		;get our own copy of a
+dtyp6a:	lshc t,6		;concat t1,t2 and lsh 6
+	addi t,40
+	.iot dsko,t
+	jumpe tt,dtyp6b		;if done, return
+	setz t,
+	jrst dtyp6a		;and go back for more
+dtyp6b: pop p,tt
+	pop p,t
+	popj p,			;and return
+
+
+;type6 assumes that a contains the sixbit to type out
+type6:  push p,t
+	push p,tt
+	setzb t,tt		;clear both out
+	move tt,a		;get our own copy of a
+type6a:	lshc t,6		;concat t1,t2 and lsh 6
+	addi t,40
+	.iot tyoc,t
+	jumpe tt,type6b		;if done, return
+	setz t,
+	jrst type6a		;and go back for more
+type6b: pop p,tt
+	pop p,t
+	popj p,			;and return
+
+
+pdl:	-20,,.
+	block 20
+
+linlen=100.
+linbuf:	block linlen+4/5
+filbuf: block 2000		;buffer for file during copy
+
+odbbuf:  block 2000		;buffer for old dirs bin data
+odbinc:  0			;length of entries in old dirs bin
+odbcnt:  0			;number of entries in old dirs bin
+odbptr:  0			;address of first old dirs bin entry
+odblst:  0			;address of last old dirs bin entry
+
+ndbbuf:  block 2000		;buffer for new dirs bin data
+ndbinc:  0			;length of entries in new dirs bin
+ndbcnt:  0			;number of entries in new dirs bin
+ndbptr:  0			;address of first new dirs bin entry
+ndblst:  0			;address of last new dirs bin entry
+
+guestp:  0			;-1 if we are doing GUESTS, else 0
+machin:  0			;contains the sixbit for the machine we are
+				;on
+
+dirpag:  0			;page number for current directory
+dirloc:  0			;address of current directory
+dirstr:  0			;address of first directory
+dirlst:  0			;address of last directory
+
+indir:   0			;name of directory being hacked
+outdir:  0			;directory to which file is to be copied
+secpak==15			;pack 13 is our second: device
+thdpak==16			;pack 14 is our third: device
+pridev:  sixbit /DSK/
+secdev:  sixbit /SECOND/
+thddev:  sixbit /THIRD/
+cpydev:  0
+
+dirdev:	sixbit /DSK/		;file name block for new dirs bin
+dirfn1:	sixbit /DIRS/
+dirfn2:	sixbit /BIN/
+dirdir:	0
+
+debug:  0
+constants
+variables
+
+ochk==pushj p,odbchk
+nchk==pushj p,ndbchk
+
+lsrpag==<.+1777>/2000
+drpgst==<<.+1777>+<300-lsrpag>*2000>/2000
+       end go

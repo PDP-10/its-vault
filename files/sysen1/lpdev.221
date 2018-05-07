@@ -1,0 +1,1257 @@
+; -*- Midas -*-
+
+title LPDEV -- Foreign Lineprinter Device
+
+; Things to do:
+;
+;	Use namespace service to determine who to contact instead of crufty
+;	built-in table.
+;
+;	LPT:<printer>; --- use directory to name the printer to use?  This
+;	kludge with the trailing digits doesn't really cut it.  What do we
+;	do about eventually specifying fonts etc.?  Put -that- in the
+;	digits following the device name?
+;
+;	Should have a :LP command that eats a filename and perhaps some
+;	switches?
+;
+;	Handle "<" and ">" filenames by gensyming up a number?  What
+;	happens if the guy opens "LP7:> >"?  What good does "<" do him
+;	anyway?  I guess the idea is to compensate for the fact that EMACS
+;	likes to offer "FOO >" as the default filename, so perhaps we can
+;	do something better than just a gensym...
+
+; Modification history:
+;
+; Alan 5/26/89		All AI Lab printers now spool thought Hephaestus
+;			(The last working AI Lab Chaosnet Unix...)
+;
+; Maeda 24-May-89	LP7 and LR7 now spool through Hermes.
+;
+; MAP	20-Jan-89	LCS now spools through KNIPT.
+;
+; Alan 1/17/89		When a hostname in the table here disappears from
+;			the host table (as NUTMEG just did), we now return
+;			%EBDLK error (LINK TO NON-EXISTENT FILE).
+;			Flushed BYELIB because it was broken.
+;
+; MAP  25-Apr-88	Added SPAM as LR5:
+;
+; Alan 8/30/87		Salami moved from 5 to 4.  Appropriate adjustments.
+;
+; Alan 7/16/87		Setting 10 bit when opening now puts you in "Raw
+;			mode" so that you can talk to the printer in its
+;			native tongue (usually PostScript).
+;
+; SWA  5/12/87		Moved LCS spooling over from BORAX-CHAOS to NUTMEG
+;
+; SWA  3/26/87		Added LP2: as alias for LR2:, LR4: as an alias for LP4:
+;			I also found that Adobe's Transcript software
+; 			bombs with certain input files that ITS sends.
+;			I will have to fix this at the UNIX end of things,
+;			but I thought I'd document the lossage here.
+;			(this currently affects LR5: and LP3:).
+;
+; SWA  3/25/87		Created the following entries:
+;			LR9: (for "The Wall Street Journal")
+;			LP5: (for "GI")
+;			LR5: (for "SALAMI")
+;			LP4: (for "OVAL")
+;			LP3: (for "HAM")
+;			LR3: (for "CHARMIN")
+;			LR2: (for "PULP")
+;
+; Alan 10/8/86		Moved LP8: to HEPHAESTUS.
+;			Created LR8: for The-Washington-Post (on HERMES).
+; Alan 10/7/86		Now returns %ENSMD if asked to supply image mode
+;			directory or MFD.  (To keep FILE job from crashing...)
+;			(Note that although ACT1 printer is now gone, it
+;			remains in the tables here.)
+; Alan 8/7/86		Created ACT: device to use ACT1 printer (on PREP).
+; Alan 6/3/86		Moved LP8: to GUTENBERG.  Made all host names be
+;			domain style.  LPTEST: now uses AI.
+; Alan 1/16/86		Arranged for name of local host to appear as part
+;			of the filename.  This way when you list the queue,
+;			or look at a header or trailer page, you can tell
+;			what machine the file was sent from.
+; Alan 12/6/85		DAILY-PLANET (LP8:) moved from HTVAX to HERMES.
+; Alan 11/23/85		Reading LP7:.CMD. FOO sends the command "foo" to
+;			the LGP-CONTROL server.  The device name LPTEST: is
+;			recognized to connect back to MC to facilitate
+;			debugging.
+; Alan 11/12/85		"MIT|" => "AI|" throughout.
+; Alan 11/8/85		DAILY-PLANET moved to HTVAX.  Bug fixes.
+; Alan 10/28/85		Added support for 8th and 9th floor printers.
+;			Changed device naming scheme to put digit last.
+; Alan 9/4/85		Changed contact name strings.
+; Alan 7/26/85		7LR device prints on laserwriter.  Added DEVTRN
+;			routine to translate device names into printer
+;			service names.  Added support for DELETE.
+; Gumby 21/5/85		Trailer page is now more useful
+; Alan 5/20/85		Added RFDATE and SFDATE to make EMACS Write File
+;			command happy.
+; Alan 3/16/85		Restored backspace hacks since CJL went to the
+;			trouble to support it!
+; Alan 2/20/85		Added USRNAM routine to make a better guess at the
+;			user's user-name.
+; Alan 2/4/85		Flushed usage of backspace to cause clever
+;			overstriking, since the simple server we use
+;			stopped supporting backspace.
+; Alan 1/1/85		Now uses JOBSTS to maintain filenames as set by
+;			RENMWO.  Also now outputs a trailer page to give
+;			the LN01 something to eat if it feels like it...
+; Alan 12/27/84		Installed 7LP on SYSEN1;
+
+; Accumulators
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+t=:6
+tt=:7
+x=:10
+y=:11
+z=:12
+
+ct=:16		; Always contains state of BOJ connection
+p=:17
+
+; Channels
+
+ttyo==:1			; for debugging
+boj==:2				; for talking to the user
+chai==:3			; input from the network
+chao==:4			; output to the network
+utilch==:5			; utility channel
+
+; Flags
+
+%f==:0,,525252			; Flags in RH(0)
+		;; OPEN mode preserved in place:
+%foout==:%doout			; 000001
+%foblk==:%doblk			; 000002
+%foimg==:%doimg			; 000004
+%foraw==:000010			; Raw mode
+		;; Others:
+%fdbug==:000100			; Being debugged as an OJB server under DDT
+%fdata==:000200			; GET is expecting another data packet
+%fval==: 000400			; BOJ interrupts clear this "valid" bit
+%fiot==: 001000			; User last seen in an IOT
+%fsiot==:002000			; User last seen in a SIOT
+%fclos==:004000			; User has closed his output channel
+%fcrlf==:010000			; INCH is in the middle of a CRLF
+
+; Instructions
+
+call=:pushj p,
+return=:popj p,
+save=:push p,
+rest=:pop p,
+pause=:.break 16,100000
+tyo=:.iot ttyo,
+
+quit=:call .
+$quit:	trne %fdbug
+	 pause
+	.logout 1,
+
+; Macros
+
+define syscall name,args
+	.call [setz ? sixbit /name/ ? args(400000)]
+termin
+
+define report &text&
+	call [	trnn %fdbug
+		 return
+		call $report
+		.length text
+		ascii text]
+termin
+
+$repor:	exch t,(p)
+	save tt
+	move tt,0(t)
+	movei t,1(t)
+	hrli t,440700
+	tyo [^P]
+	tyo ["A]
+	syscall siot,[movei ttyo ? t ? tt]
+	 .lose %lssys
+	tyo [^P]
+	tyo ["A]
+	rest tt
+	rest t
+	return
+
+format"erri==:utilch
+.insrt dsk:syseng;format >
+
+define format &text&,locs
+	pushj p,[
+	pushj p,fmtin
+.frmt.==-1
+irp loc,,[locs]
+	push p,loc
+.frmt.==.irpcnt
+termin
+	hrroi a,[ascii text]
+	movei b,.length text
+	movni c,.frmt.+1
+	jrst format"format]
+termin
+
+fmtin:	push p,a
+	push p,b
+	push p,c
+	push p,[fmtout]
+	jrst @-4(p)
+
+fmtout:	pop p,c
+	pop p,b
+	pop p,a
+	pop p,(p)
+	popj p,
+
+; ; for byelib:
+; byelib"f==13
+; byelib"cnt==15
+; byelib"linch==6
+; byelib"idxch==7
+; byelib"odxch==8
+; .insrt syseng;byelib >
+
+lpdl==:50.
+.vector pdl(lpdl)
+
+go:	setzb 0,ct		; clear flags and state
+	move p,[-lpdl,,pdl-1]
+	.suset [.roption,,a]
+	tlnn a,%opddt
+	 jrst noddt
+	tro %fdbug
+	tlo a,%opojb
+	.open ttyo,[.uao\%tjdis,,'tty ? setz ? setz]
+	 .lose %lssys
+	.value [asciz ""]
+noddt:	tlo a,%opint\%opopc
+	move tt,[-4,,[	.soption,,a
+			.smask,,[%pipdl\%piioc]
+			.smsk2,,[1_chai\1_boj]
+			.sdf2,,[1_boj]
+			]]
+	.suset tt
+	report "Ready..."
+	.open boj,[.bai,,'boj ? setz ? setz]
+	 quit
+	move tt,[-loargs,,oargs]
+	.call jobcal
+	 quit
+	tlne t,%jgcls		; Why does this happen?
+	 quit
+	move a,t
+	call devtrn
+	 jrst oensdv
+	jrst @otable(a)
+oerror:	 .lose
+
+otable:	offset -.
+%joopn::	open		; .open
+%joiot::	oerror		; .iot (?)
+%jolnk::	mlink		; mlink
+%jorst::	oerror		; .reset (?)
+%jorch::	oerror		; .rchst (?)
+%joacc::	oerror		; .access (?)
+%jornm::	delrnm		; .fdele (delete or rename)
+%jorwo::	oerror		; .fdele (renmwo) (?)
+%jocal::	oerror		; .call (?)
+	offset 0
+
+delrnm:	skipe oxfn1
+	 jrst rename
+delete:	report "Delete"
+	call rfcdel
+	 jrst oenadv
+	;; Should read the reply and barf if nothing deleted...
+	.call jobrt0
+	 quit
+	quit
+
+oensdv:	movsi tt,%ensdv ? jrst obarf
+
+oenadv:	movsi tt,%enadv ? jrst obarf
+
+oensmd:	movsi tt,%ensmd ? jrst obarf
+
+oebdlk:	movsi tt,%ebdlk ? jrst obarf
+
+oebddv:	movsi tt,%ebddv
+obarf:	.call joberr
+	 quit
+	quit
+
+rename==:oebddv
+mlink==:oebddv
+
+.scalar xuname
+.scalar uname
+.scalar jname
+.scalar qdate
+
+open:	move tt,[-3,,[	.rxuname,,xuname
+			.runame,,uname
+			.rjname,,jname
+			]]
+	.uset boj,tt
+	syscall rqdate,[movem qdate]
+	 setom qdate
+	hrrz t,omode
+	trne t,#<%foraw\%foout\%foblk\%foimg>	; All we support at the moment.
+	 jrst oensmd
+	movem t,stsmod		; Remember as OPEN mode
+	dpb t,[060300,,stssts]	; Remember in status bits
+	tro (t)			; Set mode in the flags.
+irp foo,,[dev,dir,fn1,fn2]
+	move tt,o!foo
+	movem tt,sts!foo
+termin
+	.call jobsts		; Set the status
+	 .lose %lssys
+	syscall sstatu,[repeat 6,[ ? movem stshst]]
+	 .lose %lssys
+	call bufini		; Initialize buffer
+	trne %foout
+	 jrst output
+input:	trne %foimg\%foblk	; 36 bits?
+	 jrst [	.open boj,[.bao,,'boj ? setz ? setz]
+		 quit
+		jrst input1]
+	.open boj,[.uao,,'boj ? setz ? setz]
+	 quit
+input1:	move t,ofn1
+	camn t,[sixbit /.CMD./]
+	 jrst cmdlst
+	move tt,ofn2
+	camn t,[sixbit /.FILE./]
+	 came tt,[sixbit /(DIR)/]
+	  jrst oensmd
+dirlst:	trne %foimg		; We don't support image mode directories
+	 jrst oensmd
+	call rfclpq
+	 jrst oenadv
+	jrst input2
+
+cmdlst:	call rfccmd
+	 jrst oenadv
+input2:	.call jobrt0
+	 quit
+	.suset [.sdf2,,[0]]	; Enable BOJ interrupts
+	call inch
+	came t,[-1,,%codat]
+	 call ioclos
+	jrst inlop1
+
+inloop:	idpb t,bufbp
+	sosg bufrm
+	 call bufout
+inlop1:	call inch
+	jumpge t,inloop
+	came t,[-1,,%coeof]
+	 call ioclos
+	movei t,^L
+	idpb t,bufbp
+	sosg bufrm
+	 call bufout
+	jrst bojeof
+
+output:	call rfclgp
+	 jrst oenadv
+	.call jobrt0
+	 quit
+	.suset [.sdf2,,[0]]	; Enable BOJ interrupts
+outptl:	call bufin
+	skipg b,bufct
+	 jrst outpt2
+	move a,bufbp
+	call outstr
+	jrst outptl
+
+outpt2:	trne %foraw
+	 jrst outpt3
+	format "~5%That was ~S: ~S: ~S; ~S ~S~@
+		",[stshst,stsdev,stsdir,stsfn1,stsfn2,a]
+; 	save a
+; 	save b
+; 	call byelib"getmsg
+; 	format "~5%That was ~S: ~S: ~S; ~S ~S~%~A
+; 		",[stshst,stsdev,stsdir,stsfn1,stsfn2,a]
+; 	rest b
+; 	rest a
+outpt3:	call eof
+	trnn %fclos
+	 .hang
+	quit
+
+lbuffer==:2000
+.vector buffer(lbuffer+1)	; BOJ buffer
+.scalar bufbp			; Byte pointer into BUFFER
+.scalar bufrm			; Room in buffer in bytes for output
+.scalar bufct			; Count of bytes in buffer for input
+.scalar bufhak			; Aobjn pointer for -next- buffer refill
+
+; CALL BUFINI:  Initialize buffer for input or output
+bufini:	move tt,[440700,,buffer]
+	movem tt,bufbp
+	movei tt,5*lbuffer
+	movem tt,bufrm
+	setzm bufct
+	move tt,[-lbuffer,,buffer]
+	movem tt,bufhak
+	return
+
+; CALL BUFIN:  Get a buffer full of data from the user and initialize for
+; input.
+bufin:	report "Inputting"
+	move tt,buffer+<lbuffer-1>
+	movem tt,buffer+0	; Old last word becomes new first word
+	move tt,[440700,,buffer]
+	movem tt,bufbp		; Restore buffer pointer
+	move t,bufhak
+	.iot boj,t
+	tlce t,700000
+	 jrst bufin2
+	movei tt,5*<lbuffer-1>	; Don't allow last word to be read yet
+	movem tt,bufct
+	move tt,[1-lbuffer,,buffer+1]
+	movem tt,bufhak
+	return
+
+bufin2:	trnn %foimg\%foblk
+	 jrst bufin3
+	movei tt,-buffer(t)
+	jumpe tt,bufin4
+	imuli tt,5
+	ldb z,[010700,,-1(t)]
+	caie z,^C
+	 jrst bufin4
+	ldb z,[100700,,-1(t)]
+	caie z,^C
+	 soja tt,bufin4
+	subi tt,3
+	ldb z,[170700,,-1(t)]
+	caie z,^C
+	 aoja tt,bufin4
+	ldb z,[260700,,-1(t)]
+	caie z,^C
+	 jrst bufin4
+	soja tt,bufin4
+
+bufin3:	ldb tt,[410300,,t]
+	movei t,-buffer(t)
+	imuli t,5
+	add tt,t
+bufin4:	movem tt,bufct		; set byte count
+	move tt,[-lbuffer,,buffer]
+	movem tt,bufhak
+	return
+
+; CALL BUFOUT:  Give buffer to user and reinitialize for more output
+bufout:	save a
+	trne %foimg\%foblk	; Dispatch on byte size
+	 jrst 36out
+7out:	report "Outputting (7)"
+	movei a,5*lbuffer
+	subm a,bufrm
+	exch a,bufrm		; A: # bytes to output, reset room
+	skipn tt,a
+	 jrst bfoutx
+	tlo tt,400000
+	add ct,tt		; update state, indicate correction in A
+	move tt,[440700,,buffer]
+	movem tt,bufbp
+	syscall siot,[movei boj ? tt ? a]
+	 .lose %lssys
+	tlz ct,400000		; correction off
+bfoutx:	rest a
+	return
+
+36out:	report "Outputting (36)"
+	movei t,5*lbuffer
+	sub t,bufrm
+	idivi t,5		; T: # words to output
+	skipn tt,t
+	 jrst bfoutx
+	movn a,t
+	hrl a,a
+	hrri a,buffer		; A: aobjn into buffer
+	tlo tt,400000
+	add ct,tt		; update state, indicate correction in A
+	.iot boj,a
+	tlz ct,400000		; correction off
+	move tt,bufbp
+	sub tt,t
+	movem tt,bufbp		; reset buffer pointer
+	move tt,buffer(t)
+	movem tt,buffer+0	; save trailing characters
+	imuli t,5
+	addm t,bufrm		; reset room
+	rest a
+	return
+
+.scalar iot.ct			; Saved CT at last IOT
+.scalar iot.a			; Saved A at last IOT
+
+; JRST BOJEOF:  Output last buffer to user and give him EOF.
+bojeof:	trnn %foimg\%foblk
+	 jrst bjeof1
+	movei c,^C
+	idpb c,bufbp
+	sosg bufrm
+	 jrst bjeof1
+	idpb c,bufbp
+	sosg bufrm
+	 jrst bjeof1
+	idpb c,bufbp
+	sosle bufrm
+	 idpb c,bufbp
+bjeof1:	call bufout
+eoflp:	trne %fval		; Do we understand the situation?
+	 .hang			; Yes:  Twiddle thumbs
+	report "EOF check"
+	tro %fval		; Set valid flag
+	trnn %fiot\%fsiot	; User last seen in IOT or SIOT?
+	 jrst eoflp		; No:  Loop
+	move a,iot.ct		; Get saved count
+	tlzn a,400000		; Correction needed?
+	 jrst gotct		; No
+	hlre b,iot.a		; Correction in words in 36 bit mode
+	trnn %foimg\%foblk
+	 movn b,iot.a		; Correction in bytes in 7 bit mode
+	add a,b			; Make correction
+gotct:	subm ct,a		; A: Number of words we have given user
+				; since he (S)IOT'd.
+	hlre b,iotptr		; Find out how many words he was asking for
+	trnn %foblk		; on that occasion.
+	 movn b,iotptr
+	add a,b			; A: number of additional words he would be
+				; left waiting for.
+	trnn %fval		; Still valid after looking at ARGS?
+	 jrst eoflp
+	jumpe a,eoflp		; He got what he wanted
+	trnn %fsiot		; SIOT and block mode just return
+	 trne %foblk
+	  jrst wakeup
+	trne %foimg		; .UII gets IOC if you IOT beyond EOF
+	 jrst eofioc
+	trnn %fval		; Still valid after all this?
+	 jrst eoflp
+	;; Suppose he PCLSRs and does a SIOT instead?  He gets a ^C.
+	.iot boj,[-1,,3]
+	jrst eoflp
+
+wakeup:	.call jobrt0
+	 jrst eoflp
+	jrst eoflp
+
+eofioc:	movei t,2		; EOF error.  This should have a symbolic name.
+	trnn %fval		; still valid after all this?
+	 jrst eoflp
+	;; Suppose he PCLSRs and does a SIOT instead?  He gets an error anyway.
+	.call jobioc
+	 .lose %lssys
+	jrst eoflp
+
+netwrk"$$hstmap==:1
+netwrk"$$hostnm==:1
+netwrk"$$symlook==:1
+netwrk"$$chaos==:1
+netwrk"$$hst3==:1
+.insrt dsk:syseng;netwrk >
+
+; CALL PREPPY:  Return chaosnet address of server.
+; A (val): address
+preppy:	save b
+	movei a,ffpage
+	movei b,utilch
+	call netwrk"hstmap
+	 .lose
+	move a,srvhst
+	call netwrk"hstlook
+	 jrst oebdlk
+	rest b
+	return
+
+lsrtns"$$ulnm==:0		; Don't need last name searching
+lsrtns"$$ulnp==:0		; or the abbreviated version
+.insrt dsk:syseng;lsrtns
+
+.vector lsrbuf(50.)		; Anybody have a 250. character name?
+
+; CALL FULNAM:  To look up XUNAME's full name.
+; A (val): byte pointer to ASCIZ string
+; Skips if a name can be found.
+fulnam:	save b
+	movei a,utilch
+	move b,[ffpage-400,,ffpage]	; Use as much as you want...
+	call lsrtns"lsrmap
+	 jrst flnmlz
+	movei a,utilch
+	move b,xuname		; Hack this user
+	call lsrtns"lsrunm
+	 jrst flnmlz
+	movei a,lsrtns"i$name	; Get his full name
+	call lsrtns"lsritm
+	 jrst flnmlz
+	move b,[440700,,lsrbuf]	; Permute it into here
+	call lsrtns"lsrnam
+	 .lose
+	move a,[440700,,lsrbuf]	; Return it
+	aos -1(p)
+flnmlz:	.close utilch,
+	rest b
+	return
+
+; CALL USRNAM:  To guess a user name based on UNAME and XUNAME
+; A (val): sixbit user name
+usrnam:	move a,uname		; Probably use UNAME
+	camn a,xuname		; Same?
+	 return			; Yes:  Return it.
+	move tt,uname
+	move t,uname
+	xor t,xuname
+	jrst usrnm2
+
+usrnm1:	lsh t,6
+	lsh tt,6
+usrnm2:	tlnn t,770000		; Find first difference
+	 jrst usrnm1
+usrnm3:	setzi t,
+	lshc t,6		; T: next difference
+	cail t,'0		; Digit?
+	 caile t,'9
+	  jrst usrnm4		; No:  use XUNAME
+	jumpe tt,[return]	; Yes:  return UNAME if last one
+	jrst usrnm3		; else look at next difference
+
+usrnm4:	move a,xuname
+	return
+
+.insrt dsk:system;chsdef >
+$cpkbp==:440800,,%cpkdt
+.vector pkt(%cpmxw)		; Packet
+.scalar pktbp			; Byte pointer into PKT
+.scalar chast			; Current state of connection
+
+.scalar pktrm			; Room left in PKT in bytes
+.scalar charm			; Room left for sending packets
+
+.scalar pktct			; Count of available bytes in PKT
+.scalar chact			; Count of available packets
+
+; .CALL PKTIN:  Receive packet into PKT
+pktin:	setz
+	sixbit /pktiot/
+	movei chai
+	setzi pkt
+
+; .CALL PKTOUT:  Transmit packet in PKT
+pktout:	setz
+	sixbit /pktiot/
+	movei chao
+	setzi pkt
+
+; CALL CHASTS:  Update status of network connection
+chasts:	syscall whyint,[movei chai
+			movem t		; %WYCHA
+			movem chast	; %CS...
+			movem t]	; available,,room
+	 .lose %lssys
+	hlrm t,chact
+	hrrm t,charm
+	return
+
+; Handle interrupt on network connection
+chaint:	report "Chaos interrupt"
+	call chasts
+	.call dismis
+	 .lose %lssys
+
+; CALL CHABEG:  Open network connection and prepare PKT for RFC
+chabeg:	save a
+	syscall chaoso,[movei chai ? movei chao ? movei 3]
+	 .lose %lssys
+	call preppy
+	dpb a,[$cpkda pkt]
+	movei tt,%corfc
+	dpb tt,[$cpkop pkt]
+	move tt,[$cpkbp pkt]
+	movem tt,pktbp
+	movei tt,%cpmxc
+	movem tt,pktrm
+	setzm pktct
+	rest a
+	return
+
+; CALL GET:  Get next packet and set up for input
+; T (val): opcode
+; Skips if this is just another data packet
+get:	call chasts		; Make sure CHACT is valid
+	skipg chact
+	 .hang
+	.call pktin
+	 .lose %lssys
+	ldb tt,[$cpknb pkt]
+	movem tt,pktct
+	move tt,[$cpkbp pkt]
+	movem tt,pktbp
+	ldb t,[$cpkop pkt]
+	caie t,%codat		; Data packet?
+	 trza %fdata		; No:  Don't skip (remember it)
+	  tron %fdata		; Yes:  Were we expecting one? (remember it)
+	   return		; No:  Don't skip
+	aos (p)			; Yes:  Skip
+	return
+
+; CALL INCH:  Read a character from network
+; T (val): character  or  -1,,opcode
+inch:	trze %fcrlf
+	 jrst inch3
+	sosge pktct
+	 jrst inch1
+	ildb t,pktbp
+	andi t,177
+	cain t,^M
+	 tro %fcrlf
+	return
+
+inch1:	call get
+	 jrst [hrro t,t ? return]
+	jrst inch
+
+inch3:	movei t,^J
+	return
+
+; CALL OUTCH:  Write a character to network
+; CALL OUTCH1:  Write a character to network without translation
+; T (arg): character
+;
+; CALL PUT:  Send packet and reinitialize for more output
+outch:	xct trans(t)
+outch1:	idpb t,pktbp
+	sosle pktrm
+	 return
+put:	move tt,[$cpkbp pkt]
+	movem tt,pktbp
+	movei tt,%cpmxc
+	subm tt,pktrm
+	exch tt,pktrm
+	jumpe tt,[return]
+	dpb tt,[$cpknb pkt]
+	.call pktout
+	 .lose %lssys
+	return
+
+; CALL OUTSTR:  Write a string to network
+; A: source BP
+; B: source length
+outstr:	jumple b,[return]
+outst1:	ildb t,a
+	xct trans(t)
+	idpb t,pktbp
+	sosg pktrm
+	 call put
+	sojg b,outst1
+	return
+
+; CALL EOF:  Finish output to network
+eof:	call put		; Flush the buffer
+	movei tt,%coeof		;  before changing opcode
+	dpb tt,[$cpkop pkt]
+	setzi tt,
+	dpb tt,[$cpknb pkt]
+	.call pktout
+	 .lose %lssys
+	syscall finish,[movei chao]
+	 jfcl			; If network won't cooperate, punt
+	.close chai,
+	.close chao,
+	return
+
+; XCT TRANS(T):  Translate character on output
+trans:	repeat 40, call ctltrn
+	repeat 140, cai
+
+; Format effectors just get passed through as is
+irp ch,,[^H,^I,^J,^M,^L]
+loc trans+ch
+	cai
+termin
+
+loc trans+177			; Rubout
+	call ctltrn
+
+loc trans+33			; Altmode
+	call alttrn
+
+loc trans+200
+
+; Prefix control character with uparrow formed by overstriking "|" with "^".
+ctltrn:	trne %foraw
+	 return			; Unless raw mode
+	xori t,100
+	save t
+	movei t,"|
+	call outch1
+	movei t,^H
+	call outch1
+	movei t,"^
+	call outch1
+	rest t
+	return
+
+; Print altmode as cent sign formed by overstriking "c" with "/"
+alttrn:	trne %foraw
+	 return			; Unless raw mode
+	movei t,"c
+	call outch1
+	movei t,^H
+	call outch1
+	movei t,"/
+	return
+
+.scalar srvnam		; Service name ("AI|PRAVDA" for LP7:)
+
+.scalar srvhst		; Host ("PREP.AI.MIT.EDU" for PRAVDA)
+
+; these are the definitions of the printers that exist
+devtbl:	lp9srv,,lp9srv
+	lr9srv,,lr9srv
+	lp8srv,,lp8srv
+; note that lr8 refers to "The Washington Post", which is actually the
+; second laserwriter on the 7th floor.  Barf, Barf, but I'm leaving 
+; it this way.  --SWA
+	lr8srv,,lr8srv
+	lp7srv,,lp7srv
+	lr7srv,,lr7srv
+	lp5srv,,lp5srv
+	lr5srv,,lr5srv
+	lr4srv,,lr4srv
+	lp4srv,,lp4srv
+	lp3srv,,lp3srv
+	lr3srv,,lr3srv
+	lr2srv,,lr2srv
+	actsrv,,actsrv  ; this printer doesn't exist any more.
+	tstsrv,,tstsrv
+; these are aliases.  
+	[sixbit /7LR/],,lr7srv
+	[sixbit /7LP/],,lp7srv
+	[sixbit /8LP/],,lp8srv
+	[sixbit /9LP/],,lp9srv
+	[sixbit /LW7/],,lr7srv
+	[sixbit /7LW/],,lr7srv
+;temporary alias, to be deleted if an lp2 appears
+	[sixbit /LP2/],,lr2srv
+	[sixbit /ACT1/],,actsrv
+ldevtbl==:.-devtbl
+
+lp9srv:	sixbit /LP9/
+	[asciz "HEPHAESTUS.AI.MIT.EDU"],,[asciz "AI|NATIONAL-ENQUIRER"]
+	0,,0
+
+lr9srv: sixbit  /LR9/
+	[asciz "HEPHAESTUS.AI.MIT.EDU"],,[asciz "AI|THE-WALL-STREET-JOURNAL"]
+	0,,0
+
+lp8srv:	sixbit /LP8/
+	[asciz "HEPHAESTUS.AI.MIT.EDU"],,[asciz "AI|DAILY-PLANET"]
+	0,,0
+
+lr8srv:	sixbit /LR8/
+	[asciz "HEPHAESTUS.AI.MIT.EDU"],,[asciz "AI|THE-WASHINGTON-POST"]
+	0,,0
+
+lp7srv:	sixbit /LP7/
+	[asciz "HEPHAESTUS.AI.MIT.EDU"],,[asciz "AI|PRAVDA"]
+	0,,0
+
+lr7srv:	sixbit /LR7/
+	[asciz "HEPHAESTUS.AI.MIT.EDU"],,[asciz "AI|LE-MONDE"]
+	0,,0
+
+lp5srv:	sixbit /LP5/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|GI"]
+	0,,0
+
+lr5srv:	sixbit /LR5/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|SPAM"]
+	0,,0
+
+lr4srv:	sixbit /LR4/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|SALAMI"]
+	0,,0
+
+lp4srv:	sixbit /LP4/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|OVAL"]
+	0,,0
+
+lp3srv:	sixbit /LP3/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|HAM"]
+	0,,0
+
+lr3srv:	sixbit /LR3/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|CHARMIN"]
+	0,,0
+
+lr2srv:	sixbit /LR2/
+	[asciz "KNIPT.LCS.MIT.EDU"],,[asciz "LCS|PULP"]
+	0,,0
+
+; this printer seems to no longer exist --SWA
+actsrv:	sixbit /ACT/
+	[asciz "PREP.AI.MIT.EDU"],,[asciz "AI|ACT1"]
+	0,,%foraw
+
+tstsrv:	sixbit /LPTEST/
+	[ascii "AI.AI.MIT.EDU"],,[asciz "LPTEST"]
+	0,,%foraw
+
+; CALL DEVTRN:  Translate device name to service description.
+; Skips if device name was found.
+devtrn:	movsi t,-ldevtbl
+dvtrn1:	hlrz tt,devtbl(t)
+	move tt,(tt)
+	came tt,odev
+	 aobjn t,dvtrn1
+	jumpge t,[return]
+	hrrz t,devtbl(t)
+	move tt,(t)
+	movem tt,odev
+	hlrz tt,1(t)
+	movem tt,srvhst
+	hrrz tt,1(t)
+	movem tt,srvnam
+	tdo 2(t)
+	aos (p)
+	return
+
+; CALL RFCDEL:  Connect to LGP-CANCEL server.
+rfcdel:	save a
+	save b
+	call chabeg
+	format "LGP-CANCEL ~A ~S",[srvnam,ofn1]
+	call put		; Flush the buffer to send RFC
+	jrst rfcfin
+
+; CALL RFCLPQ:  Connect to LGP-QUEUE server.
+; Skips on success
+rfclpq:	save a
+	save b
+	call chabeg
+	format "LGP-QUEUE ~A",srvnam
+	call put		; Flush the buffer to send RFC
+	jrst rfcfin
+
+; CALL RFCCMD:  Connect to LGP-CONTROL server.
+; Skips on success
+rfccmd:	save a
+	save b
+	call chabeg
+	format "LGP-CONTROL ~A ~:S",[srvnam,ofn2]
+	call put		; Flush the buffer to send RFC
+	jrst rfcfin
+
+; CALL RFCLGP:  Connect to LGP server
+; Skips on success
+rfclgp:	save a
+	save b
+	call chabeg
+	;; Filename (printed on cover)
+	format "LGP ~S: ~S: ~S; ~S ~S",[stshst,stsdev,stsdir,stsfn1,stsfn2]
+	call rfcrlf
+	format "~A",srvnam
+	trnn %foraw
+	 format "-ASCII"
+	call rfcrlf
+	;; User name (appears in the queue)
+	call usrnam
+	format "~S",a
+	call rfcrlf
+	;; Full name (printed on cover)
+	call fulnam
+	 jrst nofull
+	format "~A (Sent by ~S ~S)",[a,uname,jname]
+	jrst didnam
+
+nofull:	format "~S (Sent by ~S ~S)",[xuname,uname,jname]
+didnam:	call rfcrlf
+	;; Date (printed on cover) (NIL lets PREP time it)
+	format "NIL"
+	call rfcrlf
+	;; Banner (currently ignored)
+	format "~S ~S",[stsfn1,stsfn2]
+	call rfcrlf
+	call put		; Flush the buffer to send RFC
+	movei tt,%codat		;  and before changing opcode
+	dpb tt,[$cpkop pkt]
+rfcfin:	movei tt,10.*30.	; 10 seconds
+	trne %fdbug		; Unless debugging
+	 movei tt,10.*60.*30.	; 10 minutes
+	syscall netblk,[movei chao
+			movei %csrfs
+			move tt
+			movem t]
+	 .lose %lssys
+	rest b
+	rest a
+	cain t,%csopn
+	 aos (p)
+	return
+
+rfcrlf:	movei t,212		; Note that this is theoretically the wrong
+	jrst outch1		; character, but this is what the server
+				; looks for...
+
+tsint:
+loc 42
+	-ltsint,,tsint
+loc tsint
+	intacs,,p
+	%piioc ? 0 ? %piioc ? 0 ? iocint
+	0 ? 1_boj ? %piioc ? 1_boj ? bojint
+	0 ? 1_chai ? 0 ? 1_chai ? chaint
+ltsint==:.-tsint
+
+intacs==:400002+t_6		; 3 things plus T and TT
+
+; .CALL DISMIS:  Dismiss an interrupt
+dismis:	setz
+	sixbit /dismis/
+	movsi intacs
+	setz p
+
+; Handle IOC interrupt
+iocint:	.suset [.rbchn,,t]
+	caie t,chao		; Better be network lossage
+	 cain t,chai
+	  skipa
+	   syscall lose,[movei 0 ? movei .]
+	call ioclos
+
+; CALL IOCLOS:  Crap out maximally on the poor user.
+; Never returns, the CALL is just for tracing.
+ioclos:	tro %fval
+	trne %fclos		; Are we supposed to be closed?
+	 quit
+	movei t,3		; Non-recoverable data error
+	.call jobioc
+	 .lose %lssys
+	trne %fval		; Keep doing it if he comes back again.
+	 .hang
+	jrst ioclos
+
+; Handle interrupt on the BOJ channel
+bojint:	report "BOJ interrupt"
+	trz %fiot\%fsiot\%fval
+	move tt,[-largs,,args]
+	.call jobcal
+	 jrst disint
+	tlne t,%jgcls		; .close
+	 jrst close
+	jrst @caltbl(t)
+caldie:	 .lose
+	
+caltbl:	offset -.
+%joopn::	caldie		; .open (?)
+%joiot::	iot		; .iot 
+%jolnk::	caldie		; mlink (?)
+%jorst::	calwtd		; .reset 
+%jorch::	rchst		; .rchst 
+%joacc::	calwtd		; .access
+%jornm::	caldie		; .fdele (delete or rename) (?)
+%jorwo::	renmwo		; .fdele (renmwo) 
+%jocal::	docall		; .call 
+	offset 0
+
+close:	report "Close"
+	trnn %foout		; User outputting?
+	 quit			; No:  Just die
+	tro %fclos		; Yes:  Set a flag
+	.call dismis		; and finish up at main program level
+	 .lose %lssys
+
+iot:	report "IOT"
+	tlnn t,%jgsio
+	 troa %fiot
+	 tro %fsiot
+	movem a,iot.a
+	movem ct,iot.ct
+disint:	.call dismis
+	 .lose %lssys
+
+.vector vals(5)			; For values returned from .CALLs
+
+; ATSIGN -insists- on being able to RENMWO...
+renmwo:	report "Rename while open"
+	.call jobrt0
+	 jrst disint
+	move tt,xfn1
+	movem tt,stsfn1
+	move tt,xfn2
+	movem tt,stsfn2
+	.call jobsts
+	 .lose %lssys
+	.call dismis
+	 .lose %lssys
+
+rchst:	report "Read channel status"
+	move tt,stsdev
+	movem tt,vals+0
+	move tt,stsfn1
+	movem tt,vals+1
+	move tt,stsfn2
+	movem tt,vals+2
+	move tt,stsdir
+	movem tt,vals+3
+	setom vals+4
+	move tt,[-5,,vals]
+	.call jobret
+	 jfcl
+	.call dismis
+	 .lose %lssys
+
+docall:	.suset [.ssname,,calnam]
+	move t,calnam
+	camn t,[sixbit /lnkedp/]
+	 jrst lnkedp
+	camn t,[sixbit /rfdate/]
+	 jrst rfdate
+	camn t,[sixbit /sfdate/]
+	 jrst sfdate
+	report "Random .CALL"
+calwtd:	report "%EBDDV"
+	movsi tt,%ebddv
+	.call joberr
+	 jfcl
+	.call dismis
+	 .lose %lssys
+
+lnkedp:	report "Linked?"
+	setzm vals+0		; We are never a link
+	move tt,[-1,,vals]
+	.call jobret
+	 jfcl
+	.call dismis
+	 .lose %lssys
+
+rfdate:	report "Read date"
+	move tt,qdate
+	movem tt,vals+0
+	move tt,[-1,,vals]
+	.call jobret
+	 jfcl
+	.call dismis
+	 .lose %lssys
+
+sfdate:	report "Set date"
+	.call jobrt0
+	 jrst disint
+	move tt,arg2
+	movem tt,qdate
+	.call dismis
+	 .lose %lssys
+
+; .CALL JOBCAL:  Get system call and arguments
+; TT (arg): aobjn to args area
+; T (val): opcode
+jobcal:	setz
+	sixbit /jobcal/
+	movei boj
+	move tt
+	setzm t
+
+; .CALL JOBRET:  Return values from system call
+; TT (arg): aobjn to values
+jobret:	setz
+	sixbit /jobret/
+	movei boj
+	movei 1
+	setz tt
+
+; .CALL JOBRT0:  Return no values from system call
+jobrt0:	setz
+	sixbit /jobret/
+	movei boj
+	setzi 1
+
+; .CALL JOBERR:  Return error from system call
+; TT (arg): <error code>,,0
+joberr:	setz
+	sixbit /jobret/
+	movei boj
+	setz tt
+
+; .CALL JOBSTS:  Set device status
+jobsts:	setz
+	sixbit /jobsts/
+	movei boj
+	move stssts
+	move stsdev
+	move stsfn1
+	move stsfn2
+	move stsdir
+	setz stsmod
+
+; .CALL JOBIOC:  Cause IOC error
+; T (arg): error code
+jobioc:	setz
+	sixbit /jobioc/
+	movei boj
+	setz t
+
+constants
+variables
+
+; Device status
+stssts:	22			; RH of .STATUS value
+stsmod:	0			; OPEN mode
+stshst: 0			; local host
+stsdev:	0			; device
+stsdir:	0			; directory
+stsfn1:	0			; first name
+stsfn2:	0			; second name
+
+oargs::	;; Arguments provided to initial OPEN, MLINK, DELETE or RENAME
+oxfn1:	0			; OX... Second set of filenames
+ofn1:	0			; O... First set of filenames
+ofn2:	0
+odir:	0
+odev:	0
+oxfn2::
+omode:	0			; 18 bit open mode in right half
+oxdir:	0
+optr:	0			; String arguments if given.
+oxptr:	0
+loargs==:.-oargs
+
+args::	;; Arguments provided to subsequent calls
+xfn1::				; RENMWO first file name
+acesptr::			; ACCESS pointer
+iotptr::			; IOT pointer
+calnam:	0			; .CALL sixbit name
+calbts:	0			; .CALL control bits
+callen:	0			; .CALL argument count
+arg1:	0			; .CALL arg 1
+arg2:	0			; .CALL arg 2
+xfn2::				; RENMWO second file name
+arg3:	0			; .CALL arg 3
+arg4:	0			; .CALL arg 4
+arg5:	0			; .CALL arg 5
+xptr::				; RENMWO string argument
+arg6:	0			; .CALL arg 6
+largs==:.-args
+
+ffpage==:<.+1777>_-12		; First free page
+
+end go

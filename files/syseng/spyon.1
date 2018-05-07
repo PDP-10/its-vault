@@ -1,0 +1,273 @@
+;-*-Midas-*-
+
+	TITLE  Watch - Watch for users logging in/out
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;	Format:
+;;;
+;;;	:WATCH <uname1>,<uname2>, . . . ,<unameN>
+;;;
+;;;	Output:
+;;;
+;;;	[Here is FOOMAN]		or, if two logins,
+;;;	[Here are FOO and AHEM] 	or, for polylogins,
+;;;	[Here are JOE, ED and LOUISE]
+;;;
+;;;	For departures: Change "Here is/are" to "There goes"
+;;;
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+A=1	;General porpoise
+B=2
+C=3
+D=4	;Departures
+E=5	;Errivals (ho)
+J=10	;Pointer to JCL
+Q=11	;Counter for various loops
+N=12	;Number of unames in JCL
+P=17	;Pointer to PDL
+
+PDLEN==20	;Length of PDL
+JCLEN==20	;Reserved for JCL. 20*5=80. characters
+MAXUSR==12	;Max # users allowed to look for (10.)
+TTYI==6		;Input chnl for the TTY directory listing
+CLIC==7		;CLI chnl to be used to send you messages
+
+PDLIST:	-PDLEN,,PDLIST	;The usual.  Make room for PDL
+	BLOCK PDLEN
+
+JCLBUF:	BLOCK JCLEN	;Again, blase stuff.
+	-1
+
+USERS:	BLOCK 62	;Room for list of logged in users. (50.)
+
+UNAME:	0		;Your uname will go here
+NUMUSR:	0		;Number of current users
+
+ARRIVE:	BLOCK MAXUSR	;List of people arrived since last check
+DEPART:	BLOCK MAXUSR	;List of people who've departed.
+SEARCH:	BLOCK MAXUSR	;List of unames supplied from JCL
+SEEN:	BLOCK MAXUSR	;Flags as to if we have seen a user (and notified
+			;you of his presense). 1 = Yes, 0 = No.
+
+CR:	^M	;Carriage-Return
+LF:	^J	;Line-Feed
+CB:	135	;Close Bracket
+OB:	133	;Open Bracket
+DEL:	177	;Delete/Rubout
+
+DEFINE SYSCAL OP,ARGS
+	.CALL [SETZ ? SIXBIT /OP/ ? ARGS ((SETZ))]
+	TERMIN
+
+DEFINE ADVANCE NCHARS
+	MOVEI A,NCHARS
+	PUSHJ J,READCH
+	TERMIN
+
+DEFINE 6TYPE LOC
+	MOVE A,LOC
+	SETZ B,		;Zero B in prep...
+	ROTC A,6	;Shift a char from A into B
+	ADDI B,40	;Make it full ASCII
+	.IOT CLIC,B	;output it,
+	JUMPN A,.-4	;and get another if there is some.
+	TERMIN
+
+DEFINE TYPE &STRING
+	MOVEI A,<.LENGTH STRING>
+	MOVE B,[440700,,[ASCII STRING]]
+	SYSCAL SIOT,[%CLIMM,,CLIC ? B ? A]
+	  .LOSE %LSFIL
+	TERMIN
+
+DEFINE OUTCHR LOCS
+	IRP FOO,,[LOCS]
+	.IOT CLIC,FOO
+	TERMIN TERMIN
+
+;;;
+;;;	T H E   *-A-C-T-U-A-L-*   P R O G R A M ! !   (Assorted cheeers)
+;;;
+
+BEGIN:	.BREAK 12,[..RJCL,,JCLBUF]	;Load jcl starting at JCLBUF
+	MOVE J,[440700,,JCLBUF]		;and make pointer to the same
+	.SUSET [.RUNAME,,UNAME]		;Get your uname into UNAME
+
+MAKEC:	MOVE C,[440600,,SEARCH(Q)]	;Make pointer to the Qth word of
+					;SEARCH.  0th to start.
+
+GETJCL:	ILDB A,J	;Get a char from JCL into A
+	JUMPE A,GOTOIT	;A space (null) is final terminator
+	CAIL A,140	;Is this a lowercase character?
+	  SUBI A,40	;  Yup, so make it caps
+	CAIN A,^C	;This a ^C? (Semi-final terminator (next to last))
+	  JRST STORE	;  Yup
+	CAIN A,^M	;No, so a ^M perhaps? (Another semi-)
+	  JRST STORE	;  Yup!
+	CAIG A,37	;Is this some other random control char?
+	  ADDI A,100	;  Sho nuf.  Normalify it.
+	CAIN A,54	;No.  What about a comma?  (Uname delimiter)
+	  JRST STORE	;  Sho nuf, fiddle pointers &tc...
+	AOS B		;Nope. Add 1 to # chars read of this uname
+	CAIL B,7	;Is this the 6th or less?
+	  JRST GETJCL	;  No, can't save more, so ignore these
+	SUBI A,40	;Yep.  Change to 6bit,
+	IDPB A,C	;poke it into the appropriate place in SEARCH,
+	JRST GETJCL	;and keep reading chars
+
+STORE:	JUMPE B,GETJCL	;If no letters in uname, keep reading (,,)
+	AOS N		;Add 1 to # unames fully read
+	CAIL N,MAXUSR	;This less than the last allowed?
+	  JRST GOTOIT	;  Nope, so no need to continue reading
+	SETZ B,		;Yup.  Reset # chars in uname,
+	AOS Q		;and the pointer to where in SEARCH to save,
+	JRST MAKEC	;and re-create another C-pointer (then read)
+
+GOTOIT:	JUMPE N,DIE	;If no unames to look for, die.
+
+;;;
+;;;	Ok.  JCL has been read in, and unames have been edited and
+;;;	stored in the SEARCH locations.  Total # entiries in ac N
+;;;
+
+RUNRUN:	.VALUE [ASCIZ /:PROCEDî:FORGETî/]
+
+GETLST:	SYSCAL OPEN,[%CLBIT,,.UAI
+		     %CLIMM,,TTYI	;Open the TTY device on
+		     [SIXBIT /TTY/]	;chnl TTYI so we can read
+		     [SIXBIT /.FILE./]
+		     [SIXBIT /(DIR)/]]
+	  .LOSE %LSFIL
+	PUSHJ J,READLN	;Skip 1st blank line,
+	PUSHJ J,READLN	;and then the header.
+	SETZB Q,NUMUSR	;Zero pointer to USERS list and # logged-in users
+
+SKPTHR:	ADVANCE [3]	;Skip the Txx
+	CAIN B,105	;Was that line the bottom header? (Txx = 'FRE')
+	  JRST CANDC	;  Yep. Close file and check
+	.IOT TTYI,A	;Skip dat extra space.
+	MOVE C,[440600,,USERS(Q)]	;Make pointer to Qth word of USERS
+	MOVEI B,6	;# chars to read.
+
+GETUNM:	.IOT TTYI,A	;Get a char
+	SUBI A,40	;Make it 6bit
+	IDPB A,C	;Stuff char into USERS,
+	SOJN B,GETUNM	;and get another (unless this was last)
+
+SKPRST:	AOS NUMUSR	;Add 1 to number of users online,
+	PUSHJ J,READLN	;then skip rest of line,
+	AOS Q		;add 1 to Qth  (USERS pointer),
+	JRST SKPTHR	;and do next line.
+
+CANDC:	.CLOSE TTYI,	;Close this down.
+
+;;;
+;;;	The list of logged in unames has been yanked from TTY:.FILE. (DIR)
+;;;	and saved in USERS locations.  # users is in NUMUSR
+;;;
+
+CHECK:	SETZ Q,		;Zero pointer to SEARCH
+	SETZB D,E	;Zero Departures and Errivals counters
+
+UNMTOB:	MOVE B,SEARCH(Q)	;Get Qth entry in SEARCH into ac B,
+	SETZ C,			;and point to top or USERS list
+
+COMPAR:	CAME B,USERS(C)		;Is this the Cth entry in USERS list?
+	  JRST NEXTC		;  No, so increment C (and...)
+	SKIPE SEEN(Q)		;Yes! SEARCH(Q) is logged in! Do we know this?
+	  JRST NEXTQ		;  We already know, so look at next target.
+	SETOM SEEN(Q)		;We didn't know this. Set flag that we now do,
+	MOVEM B,ARRIVE(E)	;save this uname in the ARRIVE list,
+	AOS E			;add one to number of new arrivals,
+	JRST NEXTQ		;and check next target.
+
+NEXTC:	AOS C			;Increment pointer to USERS list
+	CAME C,NUMUSR		;Are we at the bottom?
+	  JRST COMPAR		;  Naw, so compare this to taget..
+	SKIPN SEEN(Q)		;Target not logged in. Do we know this?
+	  JRST NEXTQ		;  Yep, so next target
+	SETZM SEEN(Q)		;No, we didn't.  Set flag that we now do,
+	MOVEM B,DEPART(D)	;save this unames in the departures list,
+	AOS D			;and add one to # departures.
+
+NEXTQ:	AOS Q		;Increment pointer to SEARCH (targets) list.
+	CAME Q,N	;At bottom on list?
+	  JRST UNMTOB	;  No, so...
+
+;;;
+;;;	All comparing done.  # arrivals in E, # departures in D
+;;;
+
+SENDP:	JUMPN E,OPEN	;Errivals? Yeah -> OPEN
+	JUMPN D,OPEN	;No errivals.  Departures? Yea verily -> OPEN
+
+SLEEP:	MOVEI A,702	;15 seconds time into ac A
+	.SLEEP A,	;and then sleep that long.
+	JRST GETLST	;Have another look.
+
+OPEN:	SYSCAL OPEN,[%CLBIT,,.UAO
+		     %CLIMM,,CLIC	;Open your CLI so I can report
+		     [SIXBIT /CLI/]	;what has heppened.
+		     UNAME
+		     [SIXBIT /HACTRN/]]
+	  JRST DIE			;If cannot, die.
+	OUTCHR [DEL]			;Send Delete so nice notheader
+
+REPORT:	JUMPE E,DEPREP	;If no arrivals, do departures.
+	TYPE "[Here "
+	CAIE E,1	;Only one errival?
+	  JRST PLURAL	;  No, more than one.
+	TYPE "is "	;Singular,
+	6TYPE ARRIVE	;and then the uname.
+	JRST ENDLNA	;Finally, do the close bracket.
+
+PLURAL:	TYPE "are "
+
+SAYIT:	SOJ E,		;Subtract one from # of arrivals,
+	6TYPE ARRIVE(E)	;Print one arrival,
+	JUMPE E,ENDLNA	;Last one on line?  (Nothing follows)
+	CAIG E,1	;Nope. E=1 do "and" else ","
+	  JRST ANDIFY
+	TYPE ", "
+	JRST SAYIT
+
+ANDIFY:	TYPE " and "
+	JRST SAYIT
+
+ENDLNA:	OUTCHR [CB,CR,LF]	;Close Bracket, CR/LF
+
+DEPREP:	JUMPE D,YAWNER	;If no departures, sleep.
+	TYPE "[There goes "
+
+SENDIT:	SOJ D,		;Pare one off Dep's
+	6TYPE DEPART(D)	;Print it,
+	JUMPE D,ENDLNB	;Last one?  Close
+	CAIE D,1
+	  JRST COMIFY
+	TYPE " and "
+	JRST SENDIT
+
+COMIFY:	TYPE ", "
+	JRST SENDIT
+
+ENDLNB:	OUTCHR [CB,CR,LF]
+
+YAWNER:	.CLOSE CLIC,	;Would be fatal to leave this open
+	JRST SLEEP
+
+DIE:	.LOGOUT 1,	;Suicide noisily
+
+READCH:	.IOT TTYI,B	;Read a characer from the TTY file
+	SOSE A		;-1 from # chars to read. Are we done? (# Left = 0)
+	  JRST READCH	;  No, so keep reading.
+	POPJ J,		;All done.  Return
+
+READLN:	.IOT TTYI,A	;Get a char
+	CAIE A,^J	;This EOL? (Assuming last char in line is ^M)
+	  JRST READLN	;  No (sigh).  Keep reading
+	POPJ J,		;Yup.  Return
+
+	END BEGIN

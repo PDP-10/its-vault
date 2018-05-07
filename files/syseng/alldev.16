@@ -1,0 +1,179 @@
+
+	 title ALL  directory device on all machines
+	 subttl Definitions
+
+ ; Mark Crispin, AI, September, 1976; Last updated: MRC November 14, 1976
+
+ ; Insert my macro library, defining all sorts of goodies.
+
+	.insrt MRC;MACROS >
+
+;  AC definitions
+
+acdef. [x y ch ch1 a b c]
+
+;  I/O channels.  BOJ is the channel for the BOJ pipeline.
+; DSK is the channel to read the directory.
+
+acdef. [boj dsk]
+
+; Assembly switches
+
+nd. pdllen==5.		; length of PDL(hardly ever used at all)
+nd. patlen==100.	; length of patch area
+
+	subttl Data area
+
+	loc 100				; where almost everything begins
+
+tmploc 42,jsr tsint			; address of interrupt server
+
+pdl:	block pdllen			; pushdown list
+args:	block 12			; arguments passed to JOBCAL
+argblk==args(,,-12)			; argument block pointer
+opcode:	block 1				; JOBDEV opcode
+havwon:	%fword				; -1 := haven't won yet
+test:	%fword				; -1 := I'm not finished yet
+pat:	block patlen			; patch area
+patch=pat				; beginning of free patch area
+
+mchtab:					; machines in the world
+irps mach,,[AI MC ML DM]
+	sixbit/!mach!/
+termin
+mchlen==.-mchtab
+
+	subttl Startup
+
+; Initialize BOJ pipeline, insure request was for "directory"
+
+alldev:	movx ch,%zeros			; clear character counter
+	movx p,<iowd pdllen,pdl>	; load pdp
+	syscal OPEN,[clctl. .uao\10	; open in unit ASCII output mode
+		     clarg. boj		; channel for BOJ pipeline
+		     clarg. ('BOJ)]	; BOJ pipeline device
+	 jsr lose			; lossage!
+	useti MSK2,1_boj		; want interrupts on BOJ channel
+	syscal JOBCAL,[clarg. boj	; information over BOJ pipeline
+		       clarg. argblk	; argument block
+		       %clval opcode]	; instruction that created me
+	 jsr lose			; lossage!
+	move x,args+1			; gobble down FN1
+	caxe x,'.FILE.			; insure directory
+	 jrst illfnm			; claim illegal file name
+	move x,args+2			; gobble down FN2
+	caxe x,sixbit/(DIR)/		; insure directory
+	 jrst illfnm			; claim illegal file name
+	movx y,mchtab(,,-mchlen)	; get pointer to machines
+
+; Open up the directory
+
+nxtdev:	hrrz x,args+4			; get device name user wants
+	lsh x,6.			; allow space for machine
+	add x,(y)			; and form device to hack
+	syscal OPEN,[clctl. .uai	; open in unit ASCII input
+		     clarg. dsk		; disk channel
+		     %clarg x		; machine to read it on
+		     clarg. '.FILE.	; directory FN1
+		     clarg. sixbit/(DIR)/; directory FN2
+		     %clarg args+3]	; SNAME
+	 jrst [	move x,$ercod		; get reason for lossage
+		caxn x,%efldv		; device full?
+		 jrst [	movx x,60.	; yup, load delay
+			.sleep x,	; and go to sleep
+			jrst nxtdev]	; woke up, now try again
+		aobjn y,nxtdev		; try for another machine
+		skipl havwon		; have we ever won?
+		 jrst alldun		; yes, all done
+		jrst nonexd]		; not known on any machines
+	aose havwon			; have we told luser we won?
+	 jrst alllup			; yup, don't do it again
+	syscal JOBRET,[clarg. boj	; value return to BOJ channel
+		       clarg. 1]	; tell other end it's winning
+	 jsr lose			; PCLSR'd out probably
+alllup:	.iot dsk,x			; get a character from dir
+	caxe x,^C			; ignore ^C's
+	 caxn x,^L			; ignore form feeds
+	  jrst dirdun			; flush dat!
+	jumpl x,dirdun			; done?
+	.iot boj,x			; nope, send it then
+	aoja ch,alllup			; and loop for more
+dirdun:	.close dsk,			; close off channel
+repeat 2,[
+	.iot boj,[^M]			; tack in a carriage return
+	.iot boj,[^J]			; and a linefeed
+]
+	addx ch,4			; and count them in
+	aobjn y,nxtdev			; and continue for next device
+
+; Send termination codes, and sit around until flushed
+
+alldun:	.iot boj,[^L]			; write a terminating form feed
+	addx ch,1			; bump character counter
+	idivx ch,5			; get # of chars to fill out this word
+	subx ch1,5			; compute how many to write
+	.iot boj,[-1,,^C]		; that's all folks!
+	aojl ch1,.-1			; more to go maybe
+	aose test			; claim to be finished
+	 jrst hang			; hang around now
+	syscal JOBRET,[clarg. boj	; value return over the BOJ pipeline
+		       clarg. 1]        ; tell the IOTs that they've won
+	 jfcl				; so what?
+hang:	jfcl				; hang forever
+	.hang				; ...zzz...
+
+	subttl Interrupt server
+
+;  Handle interrupts on the BOJ pipeline.  If a CLOSE happens, commit suicide.
+; If an IOT, and the listing is still being generated, then ignore the
+; interrupt, because the data is being sent along the pipeline anyway.  If
+; the listing is done, send an okay return to the IOT, even though nothing
+; actually is getting sent, and wait for the program at the other end to realize
+; that there is nothing more for it.  Otherwise, just send an okay return, and
+; hope for the best.
+
+tsint:	0				; interrupt bits
+	0				; PC
+	skipge a,tsint			; expect bit 0 on
+	 txne a,%infin#<1_boj>		; expect only my bit on
+	  .lose				; huh???
+	hrroi a,c			; only one word
+	syscal JOBCAL,[clarg. boj	; get information from the BOJ pipeline
+		       %clarg a		; information pointer
+		       %clval b]	; return value in B
+	 jsr lose			; moby lossage
+	txne b,(60000)			; want to close?
+	 jsr lose			; all right, then go die
+	hrrzs b				; remove left half
+	caxn b,1			; IOT?
+	 skipl test			; finished with my stuff?
+	  syscal JOBRET,[clarg. boj	; value return over the BOJ pipeline
+			 clarg. 1]	; not IOT or finished, claim to win
+	   jfcl				; ...sigh...
+	.dismiss tsint+1		; dismiss interrupt
+
+	subttl Random subroutines, literals, etc.
+
+; Here to punt out after winning or losing
+
+lose:	jfcl				; for JSR debugging information
+	.logout				; suicide
+	.lose				; in case not top level
+
+; Here to complain if file name not .FILE. (DIR)
+
+illfnm:	syscal JOBRET,[clarg. boj	; value return over the BOJ channel
+		       clarg. (%ebdfn)]	; illegal file name
+	 jsr lose			; and die
+	jsr lose			; no matter what happens
+
+; Here to complain if directory not found
+
+nonexd:	syscal JOBRET,[clarg. boj	; value return over the BOJ channel
+		       clarg. (%ensdr)]	; no such directory
+	 jsr lose			; and die
+	jsr lose			; no matter ...
+
+...lit:	constants
+
+	end alldev

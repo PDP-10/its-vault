@@ -1,0 +1,1832 @@
+;-*-MIDAS-*-
+
+	title	DVRDEV - DOVER device handler
+	subttl	Definitions
+
+;  Prints a queue status listing when a directory is taken of the DVR:
+; device (i.e., DVR^F in DDT).  Is run only on the MC machine; other
+; machines use device MCDVR:.  Uses status information from the DOVER
+; queue, and detects the (non) existence of a spooler job (the
+; UNAME-JNAME is in .DOVR.;%SPOOL UNAME).
+
+;  Prints the true status of the Dover if a directory listing of the DVS:
+; device is requested.  This device will run on MC and AI; other sites
+; can use MCDVS: or AIDVS:.
+
+;  The program is further generalized to use either the BOJ device (as
+; explained above), or to be a server.  The server can be used on the
+; CHAOS net with contact names DVR, DOV, DVS, DOS, DVQ, and DOQ.  The
+; last two are for the DVRSND server, a special thing for other sites to
+; use when queueing items for the Dover.  The server will use the
+; ARPAnet, too, with only the DVQ function supplied (only one socket
+; number was allocated).
+
+; This code originally snarfed from XGPDEV, by EBM.
+
+if1	.insrt	syseng;$call macro
+
+; Insert the file structure definitions file, CHAOS symbols
+
+if1	.insrt	system;fsdefs >
+if1	.insrt	system;chsdef >
+
+;  AC definitions.  CH and CH1 are used for output; CH is the byte
+; pointer into the buffer, and CH1 has the count of remaining slots.  A,
+; B, and C are interrupt level AC's and are not to be used for any other
+; purpose.  I is an index into the queue directory.  X, Y, and Z are
+; temporary AC's, as are the t's.  U1 is for UUO handling only.
+
+i==	 1
+x==	 2
+y==	 3
+z==	 4
+ch==	 5
+ch1==	 6
+a==	 7
+b==	10
+c==	11
+t1==	12
+t2==	13
+t3==	14
+t4==	15
+u1==	16
+p==	17
+
+;  I/O channels.  BOJCH is the channel for the BOJ pipeline.  QCH is the
+; channel to read the queues, and DSK is a scratch channel.  XCH is for
+; opening the spooler job and other scratch things.  There are two CHAOS
+; channels, CHSIN and CHSOUT, for querying the Dover, and two more for a
+; server, SRVIN and SRVOUT.
+
+bojch==	  1
+qch==	  2
+xch==	  3
+dsk==	  4
+chsin==   5
+chsout==  6
+srvin==	  7
+srvout== 10
+icpch==	 11
+
+; Assembly parameters
+
+pdllen== 100			; length of PDL (not used much)
+patlen== 100.			; length of patch area
+spldir=  sixbit /.DOVR./	; spooling directory
+pdovrp== sixbit /.DOVR./	; some short names for some sixbits
+dsksix== sixbit /DSK/
+netsix== sixbit /NET/
+
+if1,[
+
+; Macro to output an ASCII string.
+; It may not have unbalanced brackets in the string argument.
+;	type [<string>]
+
+define	type	string
+	outstr	[asciz \string\]
+	termin
+
+]; end if1
+
+; UUOs (mainly for outputting)
+
+outchr= 1_27.		; output char in eff. addr.
+outstr= 2_27.		; ASCIZ output string starting in eff. addr.
+
+
+	subttl Data area
+
+	loc	40
+uuoins:	0			; UUO save loc
+	pushj	p, uuohnd	; UUO caller
+	jsr	tsint		; interrupt instruction (old-style simplest)
+
+	loc	100
+
+debug:	0			; -1 => .value if any lossage happens.
+
+pdl:	block	pdllen		; pushdown list
+
+qlen==	2000
+qdir:	block	qlen		; the sorted subset of the queue directory
+nument:	block	1		; number of entries
+
+qdir2:	block	qlen		; the original queue directory
+
+mfdbuf:	block	qlen		; the mfd
+mfdin:	0			; is it in ?
+
+temp:	block	lunblk		; temporary holder for an entry while sorting
+
+qelen==	1000
+qentry:	block	qelen		; for individual -QUEUE files
+
+arglen== 12
+args:	block	arglen		; arguments passed to JOBCAL
+
+opcode:	block	1		; JOBDEV opcode
+test:	-1			; -1 => I'm not finished yet
+closed:	block	1		; -1 => ok close, die even if debug set
+
+device:	block	1		; device being read
+sname:	block	1		; sname
+fn1:	block	1		; file name 1
+fn2:	block	1		; file name 2
+edev:	block	1		; entry device
+edir:	block	1		; entry dir
+efn1:	block	1		; entry FN1
+efn2:	block	1		; entry FN2
+eauth:	block	1		; entry author
+efdate:	block	1		; entry date/time
+elen:	block	1		; entry length (words)
+emode:	block	1		; 0 = normal, >0 = queue
+eldev:	block	1		; "real" dev
+eldir:	block	1		; link dir (0 ==> same dir)
+elfn1:	block	1		; link fn1 (0 ==> no link)
+elfn2:	block	1
+totsiz:	block	1		; total length of files
+numlin:	block	1		; number of files listed
+
+suname:	block	1		; UNAME of spooler
+sjname:	block	1		; JNAME of spooler
+smaybe:	block	1		; flag for spooler existence
+
+filflg:	block	1		; -1 => /FILE: seen in -queue entry
+
+lnkdep:	-10.			; -number of links OK to follow
+
+lstsnt:	block	1		; date/time last file sent to Dover
+ex.not:	block	1		; .DOVR. NOTICE exists ?
+ex.brk:	block	1		; .DOVR. BROKEN exists ?
+spidle:	block	1		; Spooler idle ?
+
+chaosp:	block	1		; -1 => CHAOS, 0 => ARPA (server only)
+servep:	block	1		; -1 => server, 0 => BOJ job
+finshp:	block	1		; -1 => should FINISH when closing
+frnhst:	block	1		; foreign host and socket (for ARPA code)
+frnskt:	block	1
+lclskt:	block	1		; local socket (for ARPA code)
+
+obuf:	block	%cpmxw		; output buffer
+pktcod:	%codat			; opcode for outgoing packet
+sndpkt:	block	%cpmxw		; for cons'ing a send packet to Dover
+rcvpkt:	block	%cpmxw		; for receiving (from anybody)
+
+chslcl:	block	1		; value of CHSLCL in system
+lconn:	block	1		; local host and index
+rexmit:	block	1		; time at which to retransmit
+timout:	block	1		; time at which to give up
+rspcod:	block	1		; response code (saved for DVRSND)
+respnd:	0			; -1 => DVRSTS should send response
+
+pat:	block	patlen		; patch area
+patche:	-1
+patch= pat			; beginning of free patch area
+
+	subttl	Pure Tables, etc.
+
+keytab:	ascii /FILE/		; queue entry keyword table
+	ascii /USER/
+	ascii /NOTIF/
+	ascii /ERROR/
+keylen==.-keytab
+
+hndtab:	filhnd			; queue entry keyword handler addresses
+	usrhnd
+	nothnd
+	errhnd
+
+	subttl	UUO handler
+
+uuohnd:	ldb	u1, [331100,,uuoins]	; get opcode
+	caie	u1, 0
+	 caile	u1, 2
+	  .value
+	jrst	@uuotab-1(u1)
+
+uuotab:	uuochr
+	uuostr
+
+uuochr:	move	u1, @uuoins
+uuoch1:	idpb	u1, ch
+	sosle	ch1			; fall through to flush
+	 popj	p,
+
+flush:	skipe	servep
+	 jrst	flssrv
+	movei	ch, 5*%cpmxw
+	subi	ch, (ch1)
+	caie	ch, 0
+	 jrst [	move	u1, [440700,,obuf]	; not server - use bojch
+		$call	siot,[#bojch, u1, ch]
+		 jsr	giveup
+		jrst	.+1 ]
+	move	ch, [440700,,obuf]
+	movei	ch1, 5*%cpmxw
+	popj	p,
+
+flssrv:	movei	ch, %cpmxc
+	subi	ch, (ch1)
+	jumpe	ch, flssv1
+	skipn	chaosp
+	 jrst	flssva
+	dpb	ch, [$cpknb+obuf]	; CHAOS - just PKTIOT
+	move	u1, pktcod
+	dpb	u1, [$cpkop+obuf]
+	$call	pktiot,[#srvout, #obuf]
+	 jsr	giveup
+	jrst	flssv1
+
+flssva:	.iot	srvout, pktcod		; ARPA - send "opcode"
+	ldb	u1, [101000,,ch]	; send length bytes
+	.iot	srvout, u1
+	.iot	srvout, ch
+	move	u1, [440800,,obuf+%cpkdt]
+	$call	siot,[#srvout, u1, ch]	; send data
+	 jsr	giveup
+flssv1:	move	ch, [440800,,obuf+%cpkdt]
+	movei	ch1, %cpmxc
+	popj	p,
+
+uuostr:	move	u1, uuoins
+	hrli	u1, 440700
+	push	p, u1
+	caia
+uuost1:	 pushj	p, uuoch1
+	ildb	u1, (p)
+	jumpn	u1, uuost1
+	pop	p, u1
+	popj	p,
+
+	subttl	Startup
+
+; Initialize BOJ pipeline, ensure request was for "DVR directory"
+; or "DVS directory".  For server, do similar actions.
+
+dvrdev:	move	p, [-pdllen,,pdl]
+	.suset	[.smask,,[%piioc]]	; enable IOC errs
+	.suset	[.rjname,,x]		; see what kind of job we are
+	setzm	servep
+	setzm	finshp
+	came	x, [sixbit /CHAOS/]	; CHAOS server ?
+	 camn	x, [sixbit /NETRFC/]	; ARPA server ?
+	  jrst	dvrsrv
+	move	ch, [440700,,obuf]
+	movei	ch1, 5*%cpmxw
+	$call	open,[#bojch, [sixbit /BOJ/]],[#.uao\10]
+	 .lose	%lssys			; open in unit ASCII output mode
+	$call	jobcal,[#bojch, [-arglen,,args]][opcode]
+	 .lose	%lssys
+	move	x, opcode
+	tlne	x, 60000	; If creator PCLSR'd out of OPEN already,
+	 jsr	giveup		; that's no bug.
+	andi	x, 17		; If operation isn't an OPEN,
+	cain	x, 1		; tell creator that's impossible.
+	 .value			; he isn't supposed to be able to TRY to IOT.
+	jumpn	x, illop
+	move	x, args+1	; gobble down FN1
+	move	y, args+2	; and FN2
+	camn	x, [file]	; queue directory ?
+	 came	y, [dir]
+	  jrst	illfnm
+	push	p, [done]	; return address for routines
+	move	y, args+4	; check device name
+	came	y, [sixbit /DVR/]
+	 camn	y, [sixbit /DOV/]	; (for debugging)
+	  jrst	dqueue
+	came	y, [sixbit /DVS/]
+	 camn	y, [sixbit /DOS/]	; (for debugging)
+	  jrst	dstat
+	jrst	illfnm
+
+dvrsrv:	setom	servep
+	move	ch, [440800,,%cpkdt+obuf]
+	movei	ch1, %cpmxc
+	came	x, [sixbit /CHAOS/]
+	 jrst	arpicp
+	.close	1,			; close channel used to load us
+	setom	chaosp
+	$call	chaoso,[#srvin, #srvout, #15]
+	 jsr	giveup
+	move	x, [.byte 8 ? %colsn ? 0 ? 0 ? 3]
+	movem	x, sndpkt
+	hlrz	y, 0			; get first 3 chars of contact name
+	movei	x, 0
+	cain	y, (sixbit /DVR/)
+	 move	x, [.byte 8 ? "D ? "V ? "R]
+	cain	y, (sixbit /DOV/)
+	 move	x, [.byte 8 ? "D ? "O ? "V]
+	cain	y, (sixbit /DVS/)
+	 move	x, [.byte 8 ? "D ? "V ? "S]
+	cain	y, (sixbit /DOS/)
+	 move	x, [.byte 8 ? "D ? "O ? "S]
+	cain	y, (sixbit /DVQ/)
+	 move	x, [.byte 8 ? "D ? "V ? "Q]
+	cain	y, (sixbit /DOQ/)
+	 move	x, [.byte 8 ? "D ? "O ? "Q]
+	cain	x, 0
+	 jrst	close
+	movem	x, sndpkt+%cpkdt
+	$call	pktiot,[#srvout, #sndpkt]	; start listening
+	 .lose	%lssys
+	movei	x, 60.*60.			; wait a minute
+	skipe	debug				; unless debugging, then
+	 hrloi	x, 177777			; wait forever
+	$call	netblk,[#srvin, #%cslsn, x][y]
+	 .lose	%lssys
+	caie	y, %csrfc
+	 jsr	giveup
+	$call	pktiot,[#srvin, #rcvpkt]	; grab the RFC
+	 .lose	%lssys
+	movei	x, %coopn
+	dpb	x, [$cpkop+sndpkt]
+	$call	pktiot,[#srvout, #sndpkt]
+	 jsr	giveup
+	skipe	debug			; debugging?
+	 jrst	chjnam			; yes ==> don't login
+	.suset	[.runame,,x]		; already logged in ?
+	hlro	x, x
+	aojn	x, chjnam		; yep - don't try again!
+	ldb	x, [$cpksa+rcvpkt]	; get src host addr
+	move	y, [sixbit /000C00/]	; insert host number into this
+	dpb	x, [220300,,y]		; drop in an octal digit
+	lsh	x, -3			; get next digit
+	dpb	x, [300300,,y]		; etc.
+	lsh	x, -3
+	dpb	x, [360300,,y]
+	.suset	[.ruind,,x]		; user index too
+	dpb	x, [000300,,y]
+	lsh	x, -3
+	dpb	x, [060300,,y]
+	movei	z, 20.			; try up to 20 times ...
+	skipa	x, y			; x = xuname, y = uname
+	 aoj	y,
+	$call	login,[y, [sixbit /CHAOS/], x]
+	 sojg	z, .-2			; error, try another uname
+	$call	detach,[],[#3]		; system demon, non-disowned, etc.
+	 jsr	giveup
+chjnam:	hlrz	y, 0			; set jname, branch
+	caie	y, (sixbit /DVR/)
+	 cain	y, (sixbit /DOV/)
+	  move	z, [sixbit /DVRQUE/]
+	caie	y, (sixbit /DVS/)
+	 cain	y, (sixbit /DOS/)
+	  move	z, [sixbit /DVRSTS/]
+	caie	y, (sixbit /DVQ/)
+	 cain	y, (sixbit /DOQ/)
+	  move	z, [sixbit /DVRSND/]
+	ldb	y, [300600,,0]		; get second letter
+	caie	y, 'O			; FINISH on V, don't on O
+	 setom	finshp
+	skipn	debug		   	; don't hack if debugging
+	 $call	usrvar,[#%jself,#.sjname, z]
+	  jfcl				;  (since jname unique, shouldn't fail?)
+	push	p, [done]		; push return address for routines
+	camn	z, [sixbit /DVRQUE/]
+	 jrst	dqueue
+	camn	z, [sixbit /DVRSTS/]
+	 jrst	dstat
+	camn	z, [sixbit /DVRSND/]
+	 jrst	dvrsnd
+	jsr	giveup
+
+icpskt== 133		; as assigned by Postel, Dec. 1980.
+arpicp:	setzm	chaosp
+	setzm	finshp	;don't FINISH on Arpanet, it doesn't work and is unnecessary
+	$call	open,[#icpch, [netsix], #icpskt],[#.uio\40060]
+	 .lose	%lssys	; 32-bit, image, listen
+lsnwat:	$call	whyint,[#icpch][x, x]
+	 .lose	%lssys
+	movei	x, (x)
+	cain	x, %nsrfc
+	 jrst	icpcnt
+	.logout			; try to go away
+	movei	y, 377777
+	$call	netblk,[#icpch, x, y][x]
+	 .lose	%lssys
+	jrst	lsnwat
+icpcnt:	$call	netac,[#icpch]		; accept the connection
+	 jsr	giveup
+	$call	rfname,[#icpch][x, x, x, y]	; get frn socket and host
+	 .lose	%lssys
+	andi	y, 777		; mask out all but host
+	movem	y, frnhst
+	addi	x, 3		; save frn socket
+	movem	x, frnskt
+	$call	open,[#srvin, [netsix], 0, frnskt, frnhst],[#.uii\10050]
+	 jsr	giveup		; 8-bit, image, assign socket #
+	$call	rfname,[#srvin][x, lclskt, x, x]
+	 jsr	giveup
+	.iot	icpch, lclskt	; send socket # back
+	.close	icpch,
+	aos	lclskt
+	sos	frnskt
+	$call	open,[#srvout, [netsix], lclskt, frnskt, frnhst],[#.uio\10040]
+	 jsr	giveup		; 8-bit, image, use given socket #
+	movei	y, 30.*60.
+	$call	netblk,[#srvin, #%nsrfs, y][x]
+	 jsr	giveup
+	movei	x, (x)
+	cain	x, %nsrfs
+	 jsr	giveup
+	$call	netblk,[#srvout, #%nsrfs, y][x]
+	 jsr	giveup
+	movei	x, (x)
+	cain	x, %nsrfs
+	 jsr	giveup
+	.suset	[.runame,,x]
+	hlro	x, x
+	aojn	x, arpnlg	; already logged in!
+	.suset	[.ruind,,x]
+	hrli	x, -20.		; Try 20 times to login ...
+	move	z, [sixbit /000J00/]
+	move	y, frnhst
+	dpb	y, [220300,,z]
+	lsh	y, -3
+	dpb	y, [300300,,z]
+	lsh	y, -3
+	dpb	y, [360300,,z]
+arplog:	movei	y, (x)
+	dpb	y, [000300,,z]
+	lsh	y, -3
+	dpb	y, [060300,,z]
+	$call	login,[z, #0]
+	 aobjn	x, arplog
+arpnlg:	pushj	p, dvrsnd
+	jrst	done
+
+; a little subroutine for the BOJ job to call to accept the OPEN
+
+bojret:	.suset	[.smsk2,,[1_bojch]]
+	$call	jobret,[#bojch, #1]
+	 jsr	giveup			; PCLSR'd out - that's ok.
+	popj	p,
+
+	subttl	Status printer code start
+
+; Open up the CHAOS connections to the Dover and ship out the query
+
+dstat:	setom	respnd			; actually send response ?
+dstat1:	setom	rspcod			; entry for DVRSND server
+	skipn	servep
+	 pushj	p, bojret
+	move	x, [squoze 0,CHSLCL]
+	.eval	x,
+	 .lose	%lssys
+	hrlzm	x, chslcl
+	$call	chaoso,[#chsin, #chsout, #1]
+	 jsr	giveup
+	.suset	[.rioc+chsout,,x]
+	add	x, chslcl		; have index, add table base
+	hrri	x, x			; read into x
+	.getloc	x,
+	movem	x, lconn
+	setzm	sndpkt
+	move	x, [sndpkt,,sndpkt+1]
+	blt	x, sndpkt+%cpmxw-1
+
+	; fill in Chaosnet UNC header, words 0 - 3
+dhost==  <2_8.>+2
+dport==  21
+rqtype== 200
+pupid==	 0
+puplen== 22.	;Just header and checksum
+	move	x, [.byte 8 ? %counc ? 0 ? 0 ? puplen]
+	movem	x, sndpkt
+	move	x, [.byte 16. ? dhost ? dport]	; Dover, spruce port
+	movem	x, sndpkt+1
+	move	x, lconn			; Source host, index
+	movem	x, sndpkt+2
+	move	x, [.byte 16. ? pupid ? 100001]	; seq #, PUP protocol
+	movem	x, sndpkt+3
+
+	; fill in PUP header, words 4 - 10
+	move	x, [.byte 16. ? puplen ? rqtype]	; length, request type
+	movem	x, sndpkt+4
+	movei	x, pupid			; seq #
+	dpb	x, [044000,,sndpkt+5]
+	move	x, [.byte 16. ? dhost ? dport/0200000]
+	movem	x, sndpkt+6			; dest host, port high
+	movei	x, dport&177777
+	dpb	x, [242000,,sndpkt+7]		; dest port low
+	ldb	x, [242000,,lconn]
+	dpb	x, [042000,,sndpkt+7]		; src host
+	ldb	x, [042000,,lconn]
+	dpb	x, [044000,,sndpkt+10]		; src port high, low
+
+	movei	x, <puplen-1>/2		; form checksum of PUP
+	move	y, [442000,,sndpkt+4]
+	movei	z, 0
+chksum:	ildb	i, y
+	addi	z, (i)
+	trze	z, 200000
+	 addi	z, 1
+	lsh	z, 1
+	trze	z, 200000
+	 addi	z, 1
+	sojg	x, chksum
+	cain	z, 177777
+	 movei	z, 0
+	idpb	z, y			; deposit checksum at end
+
+	$call	pktiot,[#chsout, #sndpkt]	; ship it out!
+	 jrst	nostat
+
+	.rdtime	x,
+	move	y, x
+	addi	y, 30.
+	movem	y, rexmit		; set re-xmit time
+	move	y, x
+	addi	y, 10.*30.		; set time-out time
+	movem	y, timout
+tstchs:	$call	whyint,[#chsin][z, z, z]
+	 jrst	nostat
+	tlnn	z, -1				; any received packets ?
+	 jrst	notyet
+	$call	pktiot,[#chsin, #rcvpkt]	; yep!
+	 jrst	nostat
+	ldb	x, [242000,,rcvpkt+4]		; verify checksum
+	subi	x, 1
+	lsh	x, -1
+	move	y, [442000,,rcvpkt+4]
+	movei	z, 0
+chksm2:	ildb	i, y
+	addi	z, (i)
+	trze	z, 200000
+	 addi	z, 1
+	lsh	z, 1
+	trze	z, 200000
+	 addi	z, 1
+	sojg	x, chksm2
+	cain	z, 177777
+	 movei	z, 0
+	ildb	i, y
+	caie	i, (z)
+	 cain	i, 177777
+	  caia
+	   jrst	resend				; bad packet
+	ldb	x, [041000,,rcvpkt+4]		; examine code
+	cain	x, 4
+	 jrst [	skipn	respnd
+		 popj	p,
+		type	[PUP error: ]
+		ldb	x, [242000,,rcvpkt+4]	; get error message
+		subi	x, puplen+24.		; 24 bytes down the pike
+		move	y, [441000,,rcvpkt+13+4]
+		jrst	stsmsg ]
+	caie	x, 201			; better be 201
+	 jrst	nostat
+	ldb	x, [242000,,rcvpkt+4]	; get length of string
+	subi	x, puplen+2		; skip headers, pup code
+	ldb	z, [242000,,rcvpkt+11]	; get and save PUP code
+	movem	z, rspcod
+	move	y, [241000,,rcvpkt+11]	; 8-bit byte pointer
+	skipn	respnd
+	 popj	p,
+stsmsg:	ildb	z, y
+	outchr	z
+	cain	z, ^M
+	 outchr	[^J]
+	sojg	x, stsmsg
+	popj	p,
+
+notyet:	.rdtime	x,
+	caml	x, timout	; timeout ?
+	 jrst	noresp
+	caml	x, rexmit	; time to re-xmit ?
+	 jrst	resend
+sleep:	movei	x, 6		; sleep a little
+	.sleep	x,
+	jrst	tstchs
+
+resend:	$call	pktiot,[#chsout, #sndpkt]
+	 jrst	nostat
+	.rdtime	x,
+	addi	x, 30.
+	movem	x, rexmit
+	jrst	sleep
+
+noresp:	sos	rspcod
+	skipe	respnd
+	 type	[Dover query timed out (10 seconds).
+]
+	popj	p,
+
+nostat:	skipe	respnd
+	 type	[Error while querying Dover.
+]
+	popj	p,
+
+	subttl	Queue info subroutine
+
+; Open up the DOVER queue directory, subset and sort it
+
+file==	sixbit /.FILE./
+dir==	sixbit /(DIR)/
+
+qsetup:	$call	open,[#qch, [dsksix], [file], [dir], [spldir]],[#.bii]
+	 .lose	%lsfil
+	move	x, [-qlen,,qdir2]
+	$call	iot,[#qch, x]
+	 .lose	%lsfil
+	.close	qch,
+
+; Now sort queue entries -- we do it instead of using the DIR device
+; for speed and efficiency.  First, subset, discarding entries not
+; used; we keep only those with first name -QUEUE or first letter of
+; first name in A-Z.  Also skip files that are being written and those
+; to be deleted when closed.
+
+	setom	lstsnt		; init variables
+	setzm	ex.not
+	setzm	ex.brk
+	setzm	spidle
+	setzm	nument
+
+	move	i, qdir2+udnamp
+	addi	i, qdir2-lunblk		; i scans qdir2
+	movei	y, qdir			; y points to next slot in qdir
+subset:	addi	i, lunblk
+	cail	i, qdir2+qlen
+	 jrst	subdun
+	move	t1, unrndm(i)		; check for entries to be ignores
+	tlne	t1, unigfl
+	 jrst	subset
+	move	t1, unfn1(i)
+	move	t2, unfn2(i)
+	camn	t1, [sixbit /-QUEUE/]	; -QUEUE ?
+	 jrst	submov
+	camn	t1, [sixbit /.DOVR./]	; notice or broken ?
+	 jrst [	camn	t2, [sixbit /NOTICE/]
+		 setom	ex.not
+		camn	t2, [sixbit /BROKEN/]
+		 setom	ex.brk
+		jrst	subset ]
+	camn	t1, [sixbit /%LAST/]
+	 came	t2, [sixbit /SENT/]
+	  caia
+	   jrst [move	t1, undate(i)
+		movem	t1, lstsnt
+		jrst	subset ]
+	camn	t1, [sixbit /%SPOOL/]
+	 came	t2, [sixbit /IDLE/]
+	  caia
+	   setom spidle
+	rot	t1, 6
+	andi	t1, 77
+	cail	t1, 'A
+	 caile	t1, 'Z
+	  jrst	subset
+submov:	hrli	z, (i)
+	hrri	z, (y)
+	blt	z, lunblk-1(y)
+	addi	y, lunblk
+	aos	nument
+	jrst	subset
+subdun:
+
+; Having subsetted, now sort.  We use bubble sort since the number of
+; entries will generally be small and the sort method is simple.
+
+	move	x, nument
+	imuli	x, lunblk
+outer:	subi	x, lunblk
+	jumple	x, cpopj
+	movei	y, (x)		; y starts at one before x
+inner:	subi	y, lunblk
+	jumpl	y, outer
+	move	t1, qdir+undate(x)	; compare dates
+	caml	t1, qdir+undate(y)
+	 jrst	inner
+	hrli	z, qdir(x)	; swap to get in order
+	hrri	z, temp
+	blt	z, temp+lunblk-1
+	hrli	z, qdir(y)
+	hrri	z, qdir(x)
+	blt	z, qdir+lunblk-1(x)
+	hrli	z, temp
+	hrri	z, qdir(y)
+	blt	z, qdir+lunblk-1(y)
+	jrst	inner
+
+	subttl	Doversend server (mainly for the local TOPS-20's)
+
+;  This works by receiving and sending CHAOS net packets of a rather
+; simple format (ARPAnet stuff is explained below).  The interesting
+; packet opcodes are 200 (for data transfer, i.e., contents of files)
+; and 201 (for commands).  A command packet starts with a single letter
+; (A through Z) which discriminates commands.  A table of the possible
+; commands is presented below.  The EOF opcode is also used (and does
+; NOT indicate that the channel is to be closed, but is and end of file
+; marker).
+
+; The ARPAnet works by mimicing the CHAOS net.  Each "packet" is a
+; sequence of 8-bit bytes.  First comes the opcode, and then 2 bytes
+; containing the length of the "packet" (high order byte first) and
+; lastly N bytes, where N was the length previously given.  These
+; pseudo-packets are used in both directions.
+
+; Table of commands:
+;
+;	A - abort current file transfer, if any.  Otherwise ignored (no
+;	    response).
+;	C - close the connection and go away (no response).
+;	D - delete a file: the name follows as a sequence of 24
+;	    characters, 6 each for the device, directory, fn1, and fn2,
+;	    in that order.  The chars are ASCII and are converted to
+;	    sixbit by this program.  Response is Y (ok), or N followed
+;	    by an error message.
+;	N - notice: copies .DOVR.;.DOVR. NOTICE back (packets with
+;	    opcode 200), and then an EOF.  Sends no data packets, but
+;	    EOF, if file does not exist.
+;	P - transfer a PRESS file.  6 characters should be supplied,
+;	    giving the fn1 (fn2 = ">").  Then send data packets and an EOF.
+;	    At the end, a response will be sent with the real fn1 and
+;	    fn2 (12 characters).  Data will be interpreted as
+;	    8-bit binary to be stored as such.  Otherwise, this is like
+;	    the W command.
+;	Q - provide a queue listing.  It will come as a series of data
+;	    packets (opcode 200) and will be followed by an EOF packet.
+;	R - the actual status of the Dover is queried and a byte
+;	    returned indicating its readiness.  The possible values are:
+;		2 - ready
+;		376 - error
+;		377 - timeout
+;	S - status: provides some status info about spooling, etc.  A
+;	    sequence of characters is returned, as follows:
+;		Y or N - .DOVR.;.DOVR. NOTICE exists
+;		Y or N - .DOVR.;.DOVR. BROKEN exists
+;		Y or N - .DOVR.;%SPOOL IDLE exists
+;	T - types the status of the Dover
+;	W - write a queue entry file.  The fn1 is "-QUEUE", and the
+;	    fn2 ">", with directory ".DOVR.".  Data is copied until an
+;	    EOF, or an abort or other command is received (which aborts
+;	    the transfer).  The data is assumed to be ASCII and is
+;	    written as a text file.  After the transfer, a response is
+;	    sent with the true FN2 in it (6 characters).  If there are
+;	    any problems, the connection is closed with a CLS packet and
+;	    a reason.
+;
+; Commands not in the above table, and packets of other kinds, are
+; treated like "A" command packets.
+
+; Subroutine to get a packet into rcvpkt.
+; Leaves opcode in x, length in y, byte ptr to data in z.  Skips if it wins.
+
+getpkt:	skipe	chaosp
+	 jrst [	$call	pktiot,[#srvin, #rcvpkt]
+		 jrst	cpopj
+		jrst	getpl1 ]
+	.iot	srvin, x
+	jumpl	x, cpopj
+	dpb	x, [$cpkop+rcvpkt]
+	.iot	srvin, x
+	jumpl	x, cpopj
+	.iot	srvin, y
+	jumpl	y, cpopj
+	lsh	x, 8.
+	addi	y, (x)
+	dpb	y, [$cpknb+rcvpkt]
+	jumpe	y, getpl1
+	move	z, [440800,,%cpkdt+rcvpkt]
+getplp:	.iot	srvin, x
+	jumpl	x, cpopj
+	idpb	x, z
+	sojg	y, getplp
+getpl1:	ldb	x, [$cpkop+rcvpkt]
+	ldb	y, [$cpknb+rcvpkt]
+	move	z, [440800,,%cpkdt+rcvpkt]
+	jrst	popj1
+
+; Subroutine for sending EOF packet
+
+sndeof:	skipe	chaosp
+	 jrst [	setzm	obuf
+		movei	x, %coeof
+		dpb	x, [$cpkop+obuf]
+		$call	pktiot,[#srvout, #obuf]
+		 jsr	giveup
+		popj	p, ]
+	.iot	srvout, [%coeof]
+	.iot	srvout, [0]
+	.iot	srvout, [0]
+	popj	p,
+
+; Subroutine for fetching sixbits from a packet.
+; Source byte ptr in Z, dest byte ptr in T1.
+; Source count in Y, dest count in T2.  Skips if OK.
+
+getsix:	sojl	y, cpopj
+	ildb	x, z
+	cail	x, "a
+	 caile	x, "z
+	  caia
+	   subi	x, "a-"A
+	subi	x, 40
+	idpb	x, t1
+	sojg	t2, getsix
+	jrst	popj1
+
+dvrsnd:	pushj	p, getpkt		; get a packet
+	 jsr	giveup			; failure -- punt
+dvrsn1:	cain	x, 201			; ignore other than command packets
+	 caig	y, 0			; ignore empty commands too
+	  jrst	dvrsnd
+	movei	x, %codat
+	movem	x, pktcod		; reset nominal packet opcode
+	ildb	x, z			; what command ?
+	cail	x, "A
+	 caile	x, "Z
+	  jrst	dvrsnd
+	soja	y, @cmdtab-"A(x)
+
+cmdtab:	dvrsnd			; A - abort operation (no-op)
+	dvrsnd			; B - none
+	close			; C - close connection
+	s.del			; D - delete file
+	dvrsnd			; E - none
+	dvrsnd			; F - none
+	dvrsnd			; G - none
+	dvrsnd			; H - none
+	dvrsnd			; I - none
+	dvrsnd			; J - none
+	dvrsnd			; K - none
+	dvrsnd			; L - none
+	dvrsnd			; M - none
+	s.ntc			; N - print notice file
+	dvrsnd			; O - none
+	s.prs			; P - write PRESS file
+	s.lst			; Q - print queue
+	s.rdy			; R - get Dover's ready status
+	s.sts			; S - status (of spooler and files)
+	s.dvr			; T - type Dover's status
+	dvrsnd			; U - none
+	dvrsnd			; V - none
+	s.wrq			; W - write queue entry
+	dvrsnd			; X - none
+	dvrsnd			; Y - none
+	dvrsnd			; Z - none
+
+; DELETE command - deletes named file
+
+s.del:	move	t1, [440600,,device]	; read 24 sixbits
+	movei	t2, 24.
+	pushj	p, getsix
+	 jrst [	type	[NBad format delete request.]
+		jrst	s.done ]
+	$call	delete,[device, fn1, fn2, sname]
+	 jrst [	type	[NDelete call failed.]
+		jrst	s.done ]
+	outchr	["Y]
+s.done:	pushj	p, flush
+	jrst	dvrsnd
+
+; NOTICE command - send notice file
+
+notice== sixbit /NOTICE/
+s.ntc:	$call	open,[#dsk, [dsksix], [pdovrp], [notice], [pdovrp]],[#.uai]
+	 jrst	s.ntc2
+s.ntc0:	move	x, [440700,,qdir]
+	movei	y, qlen*5
+	$call	siot,[#dsk, x, y]
+	 jrst	s.ntc2
+	movn	y, y
+	addi	y, qlen*5
+	move	x, [440700,,qdir]
+	jumpe	y, s.ntc1
+s.ntcx:	ildb	z, x
+	cain	z, ^C
+	 jrst	s.ntc1
+	outchr	z
+	sojg	y, s.ntcx
+	jrst	s.ntc0
+
+s.ntc1:	.close	dsk,		; close input file
+s.ntcf:	pushj	p, flush
+s.ntc2:	pushj	p, sndeof	; send EOF and loop
+	jrst	dvrsnd
+
+; PRESS - write press file
+
+s.prs:	move	t1, [440600,,fn1]	; read eventual FN1 and FN2
+	movei	t2, 6.
+	pushj	p, getsix
+	 jrst [	type	[Bad format request to write PRESS file.]
+		jrst	s.ecls ]
+udvrsu== sixbit /_DVRS_/	; initial names for output file
+output== sixbit /OUTPUT/
+	$call	open,[#dsk, [dsksix], [udvrsu], [output], [pdovrp]],[#.bio]
+	 jrst [	type	[Could not open PRESS file.]
+		jrst	s.ecls ]
+	move	t3, [441000,,qdir]	; init byte pointer and count
+	movei	t4, qlen*4
+s.plup:	pushj	p, getpkt
+	 jsr	giveup
+	caie	x, %codat
+	 jrst [	cain	x, %coeof
+		 jrst	s.pend
+		jrst	s.wabt ]
+	jumpe	y, s.plup
+s.plp1:	ildb	x, z
+	idpb	x, t3
+	sojle	t4, [
+		move	t3, [-qlen,,qdir]
+		.iot	dsk, t3
+		jumpl	t3, s.perr
+		move	t3, [441000,,qdir]
+		movei	t4, qlen*4
+		jrst	.+1 ]
+	sojg	y, s.plp1
+	jrst	s.plup
+s.pend:	subi	t4, qlen*4+3	; get number of full and partial words
+	movn	t4, t4
+	lsh	t4, -2
+	movni	t4, (t4)	; form aobjn pointer
+	hrli	t4, (t4)
+	hrri	t4, qdir
+	jumpl	t4, [
+		.iot	dsk, t4
+		jumpl	t4, s.perr
+		jrst	.+1 ]
+gt== sixbit />/
+	$call	renmwo,[#dsk, fn1, [gt]]
+	 jrst	s.perr
+s.fend:	$call	rfname,[#dsk][x, fn1, fn2]
+	 .lose	%lssys
+	movei	y, fn1
+	pushj	p, osixbt
+	movei	y, fn2
+	pushj	p, osixbt
+	.close	dsk,
+	jrst	s.done
+
+s.wabt:	pushj	p, s.dabt	; abort file
+	jrst	dvrsn1		; and loop on current packet
+
+s.dabt:	$call	delewo, [#dsk]	; here to abort writing to DSK
+	 jsr	giveup
+	.close	dsk,
+	popj	p,
+
+s.perr:	pushj	p, s.dabt	; abort file
+	type	[Problem writing or renaming PRESS file.]
+;	jrst	s.ecls		; fall through
+
+s.ecls:	movei	x, %cocls	; here for CLS with error message
+	movem	x, pktcod
+	pushj	p, flush
+	jrst	close
+
+; QUEUE - list the spooler queue
+
+s.lst:	pushj	p, dqueue
+	jrst	s.ntcf
+
+; READY - return Dover status code
+
+s.rdy:	setzm	respnd
+	pushj	p, dstat1
+	outchr	rspcod
+	jrst	s.done
+
+; STATUS - return status info
+
+s.sts:	pushj	p, qsetup
+	move	x, [-3,,ex.not]
+s.sts1:	movei	y, "Y
+	skipn	(x)
+	 movei	y, "N
+	outchr	y
+	aobjn	x, s.sts1
+	jrst	s.done
+
+; TYPE - status of Dover
+
+s.dvr:	pushj	p, dstat
+	jrst	s.done
+
+; WRITE - queue entry file
+
+s.wrq:	jumpn	y, [
+		type	[Bad format write queue entry request.]
+		jrst	s.ecls ]
+	$call	open,[#dsk, [dsksix], [udvrsu], [output], [pdovrp]],[#.uao]
+	 jrst [	type	[Could not open queue entry file.]
+		jrst	s.ecls ]
+	move	t3, [440700,,qdir]
+	movei	t4, 5*qlen
+s.wlup:	pushj	p, getpkt
+	 jsr	giveup
+	caie	x, %codat
+	 jrst [	cain	x, %coeof
+		 jrst	s.wend
+		jrst	s.wabt ]
+	jumpe	y, s.wlup
+s.wlp1:	ildb	x, z
+	idpb	x, t3
+	sojle	t4, [
+		move	t3, [440700,,qdir]
+		movei	t4, 5*qlen
+		$call	siot,[#dsk, t3, t4]
+		 jrst	s.werr
+		jumpg	t4, s.werr
+		move	t3, [440700,,qdir]
+		movei	t4, 5*qlen
+		jrst	.+1 ]
+	sojg	y, s.wlp1
+	jrst	s.wlup
+s.wend:	movni	t4, (t4)
+	addi	t4, 5*qlen
+	move	t3, [440700,,qdir]
+	jumpg	t4, [
+		$call	siot,[#dsk, t3, t4]
+		 jrst	s.werr
+		jumpg	t4, s.werr
+		jrst	.+1 ]
+	move	x, [sixbit /-QUEUE/]
+	skipe	debug
+	 move	x, [sixbit /-TEST/]
+	$call	renmwo,[#dsk, x, [gt]]
+	 jrst	s.werr
+	jrst	s.fend
+
+s.werr:	pushj	p, s.dabt
+	type	[Problem writing queue entry file.]
+	jrst	s.ecls
+
+	subttl	Queue lister code
+
+dqueue:	pushj	p, qsetup		; setup queue info
+	skipn	servep
+	 pushj	p, bojret		; let the open win
+
+; Now start typing data out at him.
+; Display Spooler status by checking its existence
+
+pspool== sixbit /%SPOOL/
+uname==  sixbit /UNAME/
+	setzm	smaybe
+	$call	open,[#dsk, [dsksix], [pspool], [uname], [spldir]],[#.uai]
+	 jrst [	move	x, [sixbit /TARAKA/]	; no UNAME file, so
+		movem	x, suname		; try TARAKA DVRSPL
+		move	x, [sixbit /DVRSPL/]
+		movem	x, sjname
+		setom	smaybe			; say spooler info might be
+		jrst	pstat1 ]		; flaky
+	move	y, [440600,,z]			; accumulate sixbits to z
+	tdza	z, z
+pstat2:	 idpb	x, y
+	.iot	dsk, x
+	subi	x, 40			; change to sixbit (upper case always)
+	jumpn	x, pstat2		; space found ?
+	movem	z, suname		; save uname
+	move	y, [440600,,z]
+	tdza	z, z
+pstat3:	 idpb	x, y
+	.iot	dsk, x
+	subi	x, 40
+	jumpg	x, pstat3		; found CR yet?
+	movem	z, sjname
+	setzm	smaybe
+	.close	dsk,
+pstat1:	type	[Dover spooler ]
+	move	y, suname
+	pushj	p, sixdis		; print uname
+	outchr	[40]
+	move	y, sjname		; jname
+	pushj	p, sixdis
+	type	[ is ]
+	$call	open,[#xch, [sixbit /USR/], suname, sjname],[#.bii\10]
+	 jrst [	skipe	smaybe		; definitely dead ?
+		 type	[probably ]
+		type	[not ]
+		jrst	.+1]
+	.close	xch,
+	type	[in operation.
+Last file sent to Dover at ]
+	move	x, lstsnt
+	camn	x, [-1]
+	 jrst [	type	[???]
+		jrst	.+2 ]
+	pushj	p, pdate
+	type	[.
+]
+
+; Any notice file ?
+
+notice== sixbit /NOTICE/
+	skipe	ex.not
+	 $call	open,[#dsk, [dsksix], [pdovrp], [notice], [spldir]],[#.uai]
+	  jrst	chkbrk			; no notice, so go on
+	type	[----------------------------------------
+]
+	caia
+noterd:	 outchr	x
+	.iot	dsk, x			; copy to output
+	jumpl	x, notedn
+	caie	x, ^C
+	 jrst	noterd
+notedn:	.close	dsk,
+	type	[----------------------------------------
+]
+
+chkbrk:	skipe	ex.brk
+	 type	[Spooling is off because someone thinks the Dover is broken.
+]
+
+	type	[The current time is ]
+	$call	rqdate,[][x]
+	 .lose	%lssys
+	pushj	p, pdate
+	type	[.
+]
+
+; Start actual file lines now
+
+	movei	i, qdir			; form pointer to name blocks
+	setzm	numlin			; count number of lines
+	setzm	totsiz			; zero size and counter
+	skipn	nument
+	 jrst	shdun
+doline:	move	x, unfn1(i)		; get name1
+	camn	x, [sixbit /-QUEUE/]	; -queue file ?
+	 jrst	pdashq
+	move	x, unfn1(i)
+	movem	x, efn1
+	move	x, unfn2(i)
+	movem	x, efn2
+	move	x, [dsksix]
+	movem	x, edev
+	move	x, [spldir]
+	movem	x, edir
+	setzm	eauth
+	setzm	emode
+	move	x, unrndm(i)
+	tlne	x, unlink
+	 jrst [	push	p, edir		; save names if is a link
+		push	p, efn1
+		push	p, efn2
+		jrst	.+1 ]
+	pushj	p, gfinfo		; get length, author info (from i)
+	 jrst [	sub	p, [3,,3]	; problems -- flush stuff
+		jrst	qnext ]
+	setzm	elfn1
+	move	x, unrndm(i)
+	tlne	x, unlink
+	 jrst [	move	x, edir
+		camn	x, [spldir]
+		 movei	x, 0
+		movem	x, eldir
+		move	x, efn1
+		movem	x, elfn1
+		move	x, efn2
+		movem	x, elfn2
+		pop	p, efn2
+		pop	p, efn1
+		pop	p, edir
+		jrst	.+1 ]
+	move	x, undate(i)		; always use date in dir
+	movem	x, efdate
+	pushj	p, pline		; really do it
+	jrst	qnext
+
+queue== sixbit /-QUEUE/
+pdashq:	$call	open,[#qch, [dsksix], [queue], unfn2(i), [spldir]],[#.bai]
+	 jrst	qnext
+	move	z, [-qelen,,qentry]
+	$call	iot,[#qch, z]		; read it
+	 .lose	%lsfil
+	.close	qch,
+
+; scan for flags and handle them -- this code assumes that
+; flags are unique in the first five characters, that each
+; starts with a / and ends with a :, space, ^M/^J, or ^C (eof).
+; The terminator is left in a register, and a subroutine is called.
+; unknown flags are ignored.
+
+	move	t2, [440700,,qentry]	; use t2 as byte pointer
+	setzm	filflg			; seen a /FILE: line ?
+	setzm	eauth			; reset author
+qsrch1:	ildb	y, t2
+	caie	y, "/
+	 jrst	qskipf			; skip this line (no / at start)
+	move	t3, [440700,,z]		; put first 5 chars in Z
+	movei	z, 0
+qsrch3:	ildb	y, t2
+	caie	y, ^C			; end of line things
+	 cain	y, ^M
+	  jrst	qsrch4
+	caie	y, ":			; regular terminators
+	 cain	y, 40
+	  jrst	qsrch4
+	trz	y, 40			; change to upper case
+	tlne	t3, 760000		; only first 5 bytes, please
+	 idpb	y, t3
+	jrst	qsrch3
+
+; get here with up to 5 chars in Z, and terminator in Y
+
+qsrch4:	movsi	t3, -keylen		; get aobjn pointer to keywords
+qsrch5:	camn	z, keytab(t3)
+	 jrst	@hndtab(t3)		; jump to matching handler
+	aobjn	t3, qsrch5
+qskipf:	cain	y, ^C			; EOF ?
+	 jrst	qesdun			; done hacking flags
+	cain	y, ^M			; end of line ?
+	 jrst [	ibp	t2		; skip ^J
+		jrst	qsrch1 ]	; try new line
+	ildb	y, t2
+	jrst	qskipf			; go on to end of line
+
+; FLAG HANDLERS: Z has first 5 chars, Y has terminator, T3 points to
+; entry in keyword table.
+
+; /FILE: handler  -- gets and parses a file name
+filhnd:	cain	y, ":		; must start with :
+	 skipe	filflg		; must be only one!
+	  jrst	qnext
+	setom	filflg
+	move	y, [dsksix]	; initial names
+	movem	y, edev
+	setzm	edir
+	setzm	efn1
+	setzm	efn2
+qfn1:	movei	z, 0		; z will accumulate a name
+	move	t3, [440600,,z]
+qfn2:	ildb	y, t2		; skip leading spaces
+	caie	y, ^C
+	 cain	y, ^M
+	  jrst	qfnen2		; end of line, etc.
+	cain	y, 40		; skipping leading spaces
+	 jrst	qfn2
+qfn3:	cail	y, 140		; to upper case
+	 trz	y, 40
+	subi	y, 40		; to sixbit
+	tlne	t3, 770000	; room for more?
+	 idpb	y, t3
+	ildb	y, t2
+	cain	y, ":		; look for terminators, esp. : ;
+	 jrst [	movem	z, edev
+		jrst	qfn1 ]
+	cain	y, ";
+	 jrst [	movem	z, edir
+		jrst	qfn1 ]
+	caie	y, 40
+	 cain	y, ^M
+	  jrst	qfnend
+	caie	y, ^C
+	 jrst	qfn3
+qfnend:	skipe	efn1		; FN1, or FN2 ?
+	 jrst [	movem	z, efn2
+		jrst	.+2]
+	  movem	z, efn1
+	cain	y, 40		; keep going ?
+	 jrst	qfn1
+qfnen2:	skipn	edir		; all necessary fields defined ?
+	 jrst	qnext
+	skipn	efn1
+	 jrst	qnext
+	skipn	efn2
+	 jrst	qnext
+	jrst	qskipf		; skip to end of line
+
+; /USER handler -- get user name into variable as sixbit
+
+usrhnd:	caie	y, ":
+	 jrst	qnext
+qusr1:	ildb	y, t2		; skip spaces
+	caie	y, ^C
+	 cain	y, ^M
+	  jrst	qskipf
+	cain	y, 40
+	 jrst	qusr1
+	movei	z, 0
+	move	t3, [440600,,z]
+qusr2:	cail	y, 140		; convert to upper case
+	 trz	y, 40
+	subi	y, 40		; to sixbit
+	tlne	t3, 770000	; not too many!
+	 idpb	y, t3
+	ildb	y, t2
+	caie	y, ^C
+	 cain	y, ^M
+	  jrst	qusrdn
+	caie	y, 40
+	 jrst	qusr2
+qusrdn:	movem	z, eauth
+	jrst	qskipf
+
+; /NOTIFY handler -- skip to ^M after ^L
+; if EAUTH not set, set user name
+
+nothnd:	caie	y, ":
+	 jrst	qnext
+nothn1:	ildb	y, t2	; skip spaces
+	caie	y, ^C
+	 cain	y, ^L
+	  jrst	qskipf
+	cain	y, 40
+	 jrst	nothn1
+	movei	z, 0
+	move	t3, [440600,,z]	; do chars up through next space, @, or ^M
+nothn2:	cail	y, 140		; convert to upper case
+	 trz	y, 40
+	subi	y, 40		; to sixbit
+	tlne	t3, 770000
+	 idpb	y, t3
+	ildb	y, t2
+	caie	y, ^C
+	 cain	y, ^L
+	  jrst	nothdn
+	caie	y, 40
+	 cain	y, ^M
+	  jrst	nothdn
+	caie	y, "@
+	 jrst	nothn2
+nothdn:	skipn	eauth
+	 movem	z, eauth
+nothd2:	caie	y, ^C
+	 cain	y, ^L
+	  jrst	qskipf
+	ildb	y, t2
+	jrst	nothd2
+
+; /ERROR handler
+; if EAUTH not set, set user name
+
+errhnd:	caie	y, ":
+	 jrst	qnext
+errhn1:	ildb	y, t2	; skip spaces
+	caie	y, ^C
+	 cain	y, ^M
+	  jrst	qskipf
+	cain	y, 40
+	 jrst	errhn1
+	movei	z, 0
+	move	t3, [440600,,z]	; do chars up through next space, @, or ^M
+errhn2:	cail	y, 140		; convert to upper case
+	 trz	y, 40
+	subi	y, 40
+	tlne	t3, 770000
+	 idpb	y, t3
+	ildb	y, t2
+	caie	y, ^C
+	 cain	y, ^M
+	  jrst	errhdn
+	caie	y, 40
+	 cain	y, ^M
+	  jrst	errhdn
+	caie	y, "@
+	 jrst	errhn2
+errhdn:	skipn	eauth
+	 movem	z, eauth
+errhd2:	caie	y, ^C
+	 cain	y, ^L
+	  jrst	qskipf
+	ildb	y, t2
+	jrst	errhd2
+
+; Here after have scanned -QUEUE file
+
+qesdun:	skipn	filflg			; must have a /FILE line
+	 jrst	qnext
+	move	x, unfn2(i)
+	movem	x, emode
+	pushj	p, gfinfo
+	 jrst	qnext
+	pushj	p, pline
+
+; Here when done with one name entry
+
+qnext:	addi	i, lunblk
+	sosle	nument
+	 jrst	doline
+
+shdun:	type	[Number of files = ]
+	move	x, numlin
+	pushj	p, dpt
+	type	[; Total size = ]
+	move	x, totsiz
+	addi	x, 1023.
+	lsh	x, -10.
+	pushj	p, dpt
+	type	[K.
+]
+	popj	p,
+
+	subttl	Finish up
+
+done:	skipe	servep
+	 jrst	done1
+	outchr	[^L]		; write a terminating form feed
+	movei	x, (ch1)
+	pushj	p, flush	; flush output
+	idivi	x, 5
+	subi	y, 5
+	.iot	bojch, [-1,,^C]
+	aojl	y, .-1
+	aos	test			; claim to be finished
+	$call	jobret,[#bojch, #1]	; make his IOTs win now
+	 jfcl				; so what?
+hang:	jfcl				; hang forever
+	 .hang
+
+done1:	pushj	p, flush
+	pushj	p, sndeof
+	jrst	close
+
+	subttl	Subroutine to print a file line in queue list
+
+; Here to print a line, as follows:
+;	FN1 FN2 from efn1, efn2
+;	lenK    from elen
+;	time/date from efdate
+;	author from eauth
+;	special info as per mode and eldir, elfn1, elfn2
+
+pline:	movei	y, efn1			; do FN1
+	pushj	p, osixbt
+	outchr	[40]
+	movei	y, efn2			; FN2
+	pushj	p, osixbt
+	outchr	[40]
+	move	x, elen			; get number of blocks
+	addm	x, totsiz		; add into total
+	addi	x, 1023.		; round up
+	lsh	x, -10.
+	idivi	x, 10.			; push ones
+	push	p, y
+	idivi	x, 10.			; push tens
+	push	p, y
+	idivi	x, 10.			; have hundreds and thousands
+	push	p, y
+	skipa	y, [4]			; count
+qesp:	 pop	p, x
+	jumpn	x, qedigs
+	outchr	[40]
+	sojg	y, qesp
+	jrst	qek
+qedig1:	pop	p, x
+qedigs:	addi	x, 60
+	outchr	x
+	sojg	y, qedig1
+qek:	type	[K ]
+	move	x, efdate
+	pushj	p, pdate
+	outchr	[40]
+	movei	y, eauth
+	skipn	eauth
+	 movei	y, [sixbit /???/]
+	pushj	p, osixbt
+	skipn	emode		; queue entry ?
+	 jrst	pnotqx		; print extra stuff for non-queue entries
+	type	[ -QUEUE ]
+	move	y, emode	; display right justified
+rjqnum:	trne	y, 77
+	 jrst	pdqnum
+	rot	y, -6
+	jrst	rjqnum
+pdqnum:	pushj	p, sixdis
+	move	x, edev
+	came	x, [dsksix]
+	 camn	x, [sixbit /MC/]
+	  trna
+	   jrst	pextra
+	move	x, edir
+	camn	x, [spldir]
+	 jrst	qedun
+pextra:	type	[ (]
+	move	y, edev
+	came	y, [dsksix]
+	 camn	y, [sixbit /MC/]
+	  jrst	pdir
+	pushj	p, sixdis
+	outchr	[":]
+pdir:	move	y, edir
+	camn	y, [spldir]
+	 jrst	pclose
+	pushj	p, sixdis
+	outchr	[";]
+pclose:	outchr	[")]
+	jrst	qedun
+
+pnotqx:	skipn	elfn1			; more only if link
+	 jrst	qedun
+	type	[ Link to ]
+	skipe	y, eldir
+	 jrst [	pushj	p, sixdis
+		outchr	[";]
+		jrst	.+1 ]
+	move	y, elfn1
+	pushj	p, sixdis
+	outchr	[40]
+	move	y, elfn2
+	pushj	p, sixdis
+qedun:	pushj	p, crlf
+	aos	numlin
+	popj	p,
+
+	subttl	Get-file-info subroutine
+
+	; at entry edev, edir, efn1, efn2 have a file name; we wish to get
+	; author in eauth, length in elen, and creation date/time in efdate
+
+	; can use any regular ACs except for i or t1, which must be preserved
+
+	; Returns: .+1 if bad name, etc.; .+2 if name ok but other info bad;
+	; .+3 if everything OK
+
+gfinfo:	move	x, edev		; standardize device to DSK
+	move	y, [dsksix]
+	camn	x, [sixbit /MC/]
+	 movem	y, edev
+	move	x, edev			; check device
+	came	x, [dsksix]
+	 jrst	gfinf2
+	move	x, edir			; check dir
+	came	x, [spldir]
+	 jrst	gfinf2
+	move	y, efn1
+	move	z, efn2
+	skipa	x, qdir2+udnamp		; scan for right name
+gfsrch:	 addi	x, lunblk
+	cail	x, qdir2+qlen
+	 popj	p,			; non-existent!
+	camn	y, qdir2+unfn1(x)
+	 came	z, qdir2+unfn2(x)
+	  jrst	gfsrch
+	move	y, qdir2+unrndm(x)	; ignore ?
+	tlne	y, unigfl
+	 popj	p,			; yep!
+	tlne	y, unlink		; link ?
+	 jrst	gflink
+	move	y, qdir2+undate(x)	; date is easy
+	movem	y, efdate
+	skipn	eauth			; do author ?
+	 jrst [	ldb	y, [qdir2+unref+unauth(x)]	; get author code
+		pushj	p, rmfd		; get mfd, if necessary
+		sub	y, mfdbuf+mdnuds
+		jumpge	y, .+1
+		imuli	y, lmnblk
+		move	y, mfdbuf+qlen(y)
+		movem	y, eauth
+		jrst	.+1 ]
+	pushj	p, gfmptr	; cons descriptor byte pointer
+	skipa	t2, [-1]
+gfladd:	 addi	t2, (z)
+gfllup:	ildb	z, y		; get a descriptor byte
+	jumpe	z, gfldun
+	caig	z, udtkmx
+	 jrst	gfladd		; a "take-n" code (z = n)
+	caige	z, udwph
+	 aoja	t2, gfllup	; a "skip-n, take-1" code
+	cain	z, udwph	; ignore this
+	 jrst	gfllup
+repeat	nxlbyt,ibp	y	; skip disk address
+	aoja	t2, gfllup	; "take-1"
+gfldun:	ldb	y, [qdir2+unrndm+unwrdc(x)]	; "extra" words
+	cain	y, 0
+	 movei	y, qlen
+	imuli	t2, qlen
+	addi	t2, (y)
+	movem	t2, elen
+	jrst	popj1
+
+gflink:	pushj	p, gfmptr	; get byte pointer to descriptor
+	pushj	p, gflscn	; scan and store names
+	movem	z, edir
+	pushj	p, gflscn
+	movem	z, efn1
+	pushj	p, gflscn
+	movem	z, efn2
+	move	z, edir
+	aosg	lnkdep		; recurse
+	pushj	p, gfinfo
+	 caia			; failure, or too many links
+	aos	(p)
+	sos	lnkdep
+	popj	p,
+
+gfinf2:	$call	open,[#qch, edev, efn1, efn2, edir],[#.bii]
+	 popj	p,
+	$call	fillen,[#qch][elen]
+	 jrst	gfbad2
+	skipn	eauth
+	 jrst [	$call	rauth,[#qch][eauth]
+		 jrst	gfbad2
+		jrst	.+1 ]
+	$call	rfdate,[#qch][efdate]
+	 jrst	gfbad2
+	$call	rfname,[#qch][edev, efn1, efn2, edir]
+	 jrst	gfbad2
+popj1:	aos	(p)
+	popj	p,
+
+gfbad2:	.close	qch,
+	popj	p,
+
+; scan a link name in the descriptor area of a UFD
+
+gflscn:	move	t2, [440600,,z]		; deposit to z
+	movei	z, 0
+gfscn1:	ildb	t3, y
+	cain	t3, ';			; end with ';' ?
+	 popj	p,
+	cain	t3, ':			; quoted char ?
+	 ildb	t3, y
+	idpb	t3, t2
+	tlne	t2, 770000		; word is full ?
+	 jrst	gfscn1
+	popj	p,
+
+; insure MFD has been read in
+
+mfd==	 sixbit /M.F.D./
+pfilep== sixbit /(FILE)/
+rmfd:	skipe	mfdin
+	 popj	p,
+	$call open,[#xch, [dsksix], [mfd], [pfilep], [spldir]],[#.bii]
+	 .lose	%lsfil
+	$call	iot,[#xch, [-qlen,,mfdbuf]]
+	 .lose	%lsfil
+	.close	xch,
+	setom	mfdin
+	popj	p,
+
+; make byte pointer into descriptor area
+; x points to name entry, want pointer in y
+
+gfmptr:	ldb	y, [qdir2+unrndm+undscp(x)]	; get desc "pointer"
+	idivi	y, ufdbpw			; get words and bytes
+	addi	y, qdir2+uddesc			; point to real word
+	movni	z, -ufdbyt(z)			; cons byte pointer
+	imuli	z, ufdbyt
+	lsh	z, 12.
+	hrli	y, ufdbyt*100(z)
+	popj	p,
+
+	subttl	Interrupt handler
+
+;  Handle interrupts on the BOJ pipeline.  If a CLOSE happens, commit
+; suicide.  If an IOT, and the queue report is still being generated,
+; then ignore the interrupt, because the data is being sent along the
+; pipeline anyway.  If the queue report is done, send an okay return to
+; the IOT, even though nothing actually is getting sent, and wait for
+; the program at the other end to realize that there is nothing more for
+; it.  Otherwise, just send an okay return, and hope for the best.
+
+tsint:	0				; interrupt bits
+	0				; PC
+	move	a, tsint
+	tlzn	a, 400000		; first or second word ?
+	 jrst [	caie	a, %piioc	; IOC only reasonable one
+		 .lose
+		jsr	giveup ]
+	caie	a, 1_bojch		; only my interrupt, please!
+	 .lose
+	hrroi	a, c			; only one word
+	$call	jobcal,[#bojch, a][b]
+	 jrst	dismis			; PCLSR'ed
+	tlne	b, %jgcls		; want to close?
+	 jrst	close
+	andi	b, 17			; only opcode is interesting
+	trnn	b, 17			; restarting, without %JGFPD, or with,
+	 jrst	dismis			; is OK, and we shouldn't JOBRET
+	cain	b, 10			; .CALL FILLEN ?
+	 came	c, [sixbit /FILLEN/]	; make it fail
+	  jrst	tsint1
+	$call	jobret,[#bojch, [(%ebddv)]]	; wrong type device
+	 jfcl				; (He PCLSR'ed out of the FILLEN?  OK).
+	jrst	dismis			; and dismiss int
+tsint1:	cain	b, 1			; IOT?
+	 skipl	test			; finished with my stuff?
+	  $call	jobret,[#bojch, #1]	; claim to win
+	   jfcl
+dismis:	.dismis	tsint+1			; dismiss interrupt
+
+	subttl Random subroutines, literals, etc.
+
+; Here to display a SIXBIT word in Y.  Both X and Y are clobbered.
+
+sixds1:	movei	x, 0			; clear out any junk
+	rotc	x, 6			; load a SIXBIT character
+	addi	x, 40			; convert to ASCII
+	outchr	x
+sixdis:	jumpn	y, sixds1
+	popj	p,
+
+; prints all 6 chars of word pointed at by Y
+; clobbers Y and Z
+
+osixbt:	hrli	y, 440600		; turn into byte pointer
+osixb2:	ildb	z, y
+	addi	z, 40
+	outchr	z
+	tlne	y, 770000
+	 jrst	osixb2
+	popj	p,
+
+; Print number in X in decimal, clobbering X and Y.
+
+dpt:	idivi	x, 10.
+	hrlm	y, (p)
+	skipe	x
+	 pushj	p, dpt
+	hlrz	y, (p)
+	addi	y, "0
+	outchr	y
+	popj	p,
+
+; Print disk format date in X; clobbers X and Y
+
+pdate:	camn	x, [-1]
+	 jrst [	type	[unknown]
+		popj	p, ]
+	push	p, x
+	movei	x, (x)		; get just half-secs
+	idivi	x, 120.		; get minutes
+	idivi	x, 60.		; hours and minutes
+	push	p, x		; save hours (for AM/PM thing)
+	push	p, y		; save minutes
+	caile	x, 12.
+	 subi	x, 12.
+	cain	x, 0
+	 movei	x, 12.
+	idivi	x, 10.
+	cain	x, 0
+	 skipa	x, [40]
+	  addi	x, 60
+	outchr	x
+	addi	y, 60
+	outchr	y
+	outchr	[":]
+	pop	p, x		; get minutes
+	idivi	x, 10.
+	addi	x, 60
+	outchr	x
+	addi	y, 60
+	outchr	y
+	pop	p, x		; get hours back
+	movei	y, "a
+	cail	x, 12.
+	 movei	y, "p
+	outchr	y
+	type	[m ]
+	hlrz	x, (p)		; get and extract month
+	lsh	x, -5
+	andi	x, 17
+	idivi	x, 10.
+	cain	x, 0
+	 skipa	x, [40]
+	  addi	x, 60
+	outchr	x
+	addi	y, 60
+	outchr	y
+	outchr	["/]
+	pop	p, x		; get and extract day
+	hlrz	x, x
+	andi	x, 37
+	idivi	x, 10.
+	addi	x, 60
+	outchr	x
+	addi	y, 60
+	outchr	y
+	popj	p,
+
+; Here to output a carriage return
+
+crlf:	type	[
+]
+cpopj:	popj	p,
+
+; Here to punt out after winning or losing
+
+close:	skipn	finshp
+	 jrst	close1
+	$call	finish,[#srvout]
+	 jsr	giveup
+close1:	setom	closed
+giveup:	jfcl				; for JSR debugging information
+	skipe	debug
+	 skipe	closed
+	  caia
+	   .value
+	.logout				; suicide
+	.lose				; in case not top level
+
+; Here to complain if file name not .FILE. (DIR)
+
+illfnm:	$call	jobret,[#bojch, [(%ebdfn)]]	; bad file name
+	 jsr	giveup			; and die
+	jsr	giveup			; no matter what happens
+
+; Complain to creator who tries to rename or delete us.
+
+illop:	$call	jobret,[#bojch, [(%ebddv)]]	; wrong type device
+	 jsr	giveup
+	jsr	giveup
+
+...lit:	constants
+
+	end	dvrdev

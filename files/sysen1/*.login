@@ -1,0 +1,12 @@
+
+..GENJFL/0
+..CLOBRF/-1
+..DELWARN/3
+..C.ZPRT/0
+..LINKP/0
+..SENDRP/-2
+:INQUIR;INQCHK
+:DATE
+:Welcome to ITS
+intest
+

@@ -1,0 +1,2332 @@
+; -*-MIDAS-*-
+
+.symtab 2500.,4000.	; allocate lots of space for symbols
+title TN52
+subttl Definitions, etc.
+
+; Mark Crispin, MIT AI Lab, February 1978
+; Alan Snyder added some VT52 hackery in 1978
+; Eliot Moss added more (including Heath support) in 1980
+
+if1 .insrt AI:MRC;MACROS
+
+; Assembly parameters
+
+nd. nprskt==23.		; default ICP socket
+nd. icptmt==30.*30.	; time out time
+nd. linmor==6.		; lines of output before **More** not inhibited
+nd. hstnln==10.		; length of host name string
+nd. patlen==50.		; length of patch area
+nd. jclbfl==10.		; length of JCL buffer
+nd. ntibfl==200.	; length of net input buffer
+nd. ttobfl==600.	; length of TTY output buffer
+nd. pdllen==500.	; length of push-down stack
+nd. linbfl==50.		; length of line editor buffer
+
+; AC definitions
+
+acdef. [a b c d x y z xx yy zz j tp]
+
+hiac==j			; highest AC to be saved in an interrupt
+
+; I/O channels
+
+acdef. [icp tti tto nti nto wal htb err]
+.hkill icp,tti,tto,nti,nto,wal,htb,err
+
+; Macro to output an ASCII string for command level
+
+define type string
+  move a,[440700,,[ascii\string\]]
+  movei b,.length\string\
+  syscal SIOT,[	clarg. tto
+		a ? b]
+   .lose %lssys
+termin
+
+; Macro to do a cursor hack for command level
+
+define csrmov code
+ .iot tto,[^P] ? .iot tto,["code] termin
+
+; Macro to do a cursor hack for network transmission
+
+define csrmv1 code
+ movx a,^P
+ call ttoc
+ movx a,"code
+ call ttoc
+termin
+
+; Macro to send a TELNET command
+
+define telcmd cmdlst
+ irps cmd,,[cmdlst]
+  .iot nto,[cmd]
+ termin
+ .nets nto,
+termin
+
+; Macro to output an ASCII string to the foreign host
+
+define netype string
+ move a,[440700,,[ascii\string\]]
+ movei b,.length\string\
+ syscal SIOT,[	clarg. nto
+		a ? b]
+  .lose %lssys
+termin
+
+; Macro to generate a string word for SIOT
+
+define strwrd string
+ .length\string\,,[ascii\string\]
+termin
+
+subttl Format of the HOSTS1 host table
+
+;  TELNET uses the ITS HOSTS1 binary host table file.  This file has the
+; following format:
+
+; word 0	SIXBIT /HOSTS1/
+; word 1	SIXBIT /HOSTS/
+; word 2	FN2 of HOSTS file which this was compiled from
+; word 3	UNAME of person who compiled this generation of the host table
+; word 4	Date of compilation as sixbit YYMMDD
+; word 5	Time of compilation as sixbit HHMMSS
+; word 6	Address in file of NAME table
+; word 7	Address in file of NUMBER table
+
+
+; NUMBERS table:
+
+; word 0	Number of entries in this table
+; word 1	Number of words per entry (currently 3)
+
+;  followed by three word entries, in order by host number.
+; Each entry looks like this:
+
+;  word 0	host number
+;  word 1	LH  pointer to system name (ITS, TIP, TENEX, etc.)
+;		 May be 0  not known
+;		RH  pointer to official name of host
+;  word 2	LH  flags:
+;		    4.9 1  server site (according to the NIC)
+;		RH  pointer to machine name (PDP10, etc)
+;		 May be 0  not known
+
+
+; NAMES table:
+
+; word 0	Number of entries
+
+; followed by one word entries, sorted by the host name treated as a vector of
+; signed integers, looking like:
+
+;  word 0	LH  address in file of host entry in NUMBERS table
+;		RH  pointer to host name
+
+
+; Host, system and machine names are ASCIZ strings, all letters upper case.
+; The strings are stored before, after and between the NAME and NUMBER tables.
+
+subttl Data area
+
+cmdesc:	"				; escape character ([BREAK] for TV's)
+hstadr:	block 1				; host address for foreign host
+ttyst1:	block 1				; this job's TTYST1 variable
+ttyst2:	block 1				; TTYST2 variable
+ttysts:	block 1				; TTYSTS variable
+tcmxv:	block 1				; vertical screen size
+tcmxh:	block 1				; horizontal screen size
+tctyp:	block 1				; TCTYP variable
+ttycom:	block 1				; TTYCOM variable
+ttyopt:	block 1				; TTYOPT variable
+ttytyp:	block 1				; TTYTYP variable
+morep:	block 1				; -1  **More** on
+morep2:	block 1				; temp save for morep
+twinp:	block 1				;  0  has i/d, -1  SAIL graphics too
+corbeg==.				; beginning of data area
+10tabp:	block 1				; -1  using 10 tabs (Multix TELNET)
+openp:	block 1				; -1  connection open
+servrp:	block 1				; -1  seen a server in search
+nprotp:	block 1				; -1  using new protocol
+killp:	block 1				; -1  suicide if ICP loses
+scclrp:	block 1				; -1  clear screen before output
+ttyop:	block 1				; -1  silence output
+echop:	block 1				; -1  foreign host is echoing
+logoup:	block 1				; -1  silly logout option nobody handles
+supgap:	block 1				; -1  host is winning with GA's
+linedp:	block 1				; -1  line editor enabled
+wallp:	block 1				; -1  enable wallpaper
+lquotp:	block 1				; -1  line editor quote
+trbinp:	block 1				; -1  can send bucky bits
+rcbinp:	block 1				; -1  can receive binary
+morinh:	block 1				;  0  **More** inhibited
+xsave:	block 1				; scratch location to save AC X
+asave:	block 1				; scratch location to save AC A
+inipos:	block 1				; initial cursor position
+hpos:	block 1				; horizontal position (line editor)
+icpskt:	block 1				; foreign socket to ICP on
+axttop:	block 1				; auxillary TTY output glitcher
+bkybts:	block 1				; bucky bits on character
+linbuf:	block linbfl			; line editor input buffer
+linptr:	block 1				; line editor pointer
+linctr:	block 1				; line editor counter
+ntibuf:	block ntibfl			; network input buffer
+ntiptr:	block 1				; network input pointer
+ntictr:	block 1				; network input counter
+ttobuf:	block ttobfl			; TTY output buffer
+ttoptr: block 1				; TTY output pointer
+ttoctr:	block 1				; TTY output counter
+lclrcv:	block 1				; ITS  host socket
+lcltrn:	block 1				; ITS  host socket
+forrcv:	block 1				; host  ITS socket
+fortrn:	block 1				; host  ITS socket
+hstnam:	block hstnln			; host name string in ASCII
+hstsnm:	block 3				; host sixbit name ( who line)
+vthpos:	block 1				; hpos (for VT52 simulator)
+vtvpos:	block 1				; vpos (for VT52 simulator)
+vtidcp:	block 1				; in insert char mode (Heath sim)
+vt52p:	block 1				; VT52 vs. Heath mode
+ansip:	block 1				; Heath ANSI mode ?
+rollp:	block 1				; scrolling on ?
+state:	block 1				; state for next input char
+arg1:	block 1				; save area for first/partial esc seq
+jclbuf:	block jclbfl+1			; JCL buffer
+corend==.-1				; end of data area
+pdl:	block pdllen			; push down stack
+tabpdl:	block 5*linbfl			; tab pdl(urk!)
+pat:	block patlen			; patch area
+patch==pat				; beginning of free patch area
+
+subttl TELNET commands for the new protocol
+
+trnbin==0				; transmit binary
+echo==1					; echo
+rcp==2					; prepare to reconnect
+suprga==3				; suppress go ahead
+nams==4					; negotiate approx. message size
+status==5				; status option
+timmrk==6				; timing mark
+rcte==7					; remote controlled tran/echo
+naol==8.				; negotiate line width
+naop==9.				; negotiate page size
+naocrd==10.				; negotiate output cr disposition
+naohts==11.				; negotiate output hor. tabs
+naohtd==12.				; negotiate output hor. tab disp.
+naoffd==13.				; negotiate output form feed disp.
+naovts==14.				; negotiate output ver. tabs
+naovtd==15.				; negotiate output ver. tab disp.
+naolfd==16.				; negotiate output lf disposition
+extasc==17.				; extended ASCII
+logout==18.				; log out foreign job
+bm==19.					; byte macro
+det==20.				; data entry terminal option
+supdup==21.				; moby supdup option
+exopl==255.				; extended options
+
+se==240.				; subnegotiation end
+nop==241.				; no operation
+dm==242.				; data mark
+brk==243.				; break
+ip==244.				; interrupt process
+ao==245.				; abort output
+ayt==246.				; are you there
+ec==247.				; erase character
+el==248.				; erase line
+ga==249.				; go ahead
+sb==250.				; subnegotiation
+will==251.				; sender will perform operation
+wont==252.				; sender wont perform operation
+do==253.				; receiver asked to perform operation
+dont==254.				; receiver must not perform operation
+iac==255.				; interpret as command
+
+subttl Initialization, etc.
+
+telnet:	movx p,pdl(-pdllen)		; load push down pointer
+	store %zeros,corbeg,corend	; clear data area
+	store %fword,hstadr		; not at any host
+	uget OPTION,x			; get my options
+	txo x,(%opint)			; enable new style interrupts
+	uset OPTION,x			; and reset my .OPTION variable
+	store ^C_1,jclbuf+jclbfl	; ensure that JCL ends
+	txne x,(%opcmd)			; any alleged JCL?
+	 .break 12,[..rjcl,,jclbuf]	; read in JCL
+	syscal OPEN,[	clctl. .uio\%tjdis; enable cursor P codes
+			clarg. tto	; TTY output channel
+			clarg. ('TTY)]	; device TTY
+	 .lose %lsfil			; can't open TTY output?
+	syscal TTYGET,[	clarg. tto	; get TTY status variables
+			repeat 2,%clval x; ignore current TTYST1 and TTYST2
+			%clval ttysts]	; TTY control status
+	 .lose %lssys			; can't read TTY status
+	syscal CNSGET,[	clarg. tto	; get console parameters
+			%clval tcmxv	; vertical size
+			%clval tcmxh	; horizontal size
+			%clval tctyp	; TCTYP variable
+			%clval ttycom	; TTYCOM variable
+			%clval ttyopt	; TTYOPT variable
+			%clval ttytyp]	; TTYTYP variable
+	 .lose %lssys			; huh???
+	store %fword,twinp		; assume that it's a winner
+	movx y,.uii			; assume just unit image input
+	move x,ttyopt			; get TTY options
+	txnn x,(%tosai)			; does it have SAIL graphics?
+	 movns twinp			; nope, only semi-winning
+	txnn x,(%tofci)			; does this frob have bucky bits?
+	 jrst nobcky			; nope, no [BREAK] key then
+	store %txtop\"B,cmdesc		; yes, intercept char  [BREAK]
+	txo y,%tiful			; full char set mode
+nobcky:	andx x,(%tocid\%tolid)		; mask out all but i/d bits
+	caxe x,(%tocid\%tolid)		; is this a winning terminal?
+	 store %zeros,twinp		; no, it's a loser so no hairy SAIL mode
+	syscal OPEN,[	%clctl y	; open input console
+			clarg. tti	; on TTY input channel
+			clarg. ('TTY)]	; device TTY
+	 .lose %lsfil			; can't open TTY input?
+	movx x,131313131313		; all chars are activation+interrupt
+	movem x,ttyst1			; ...but no echoing
+	movx x,130313131313		; similar, but image output...
+	movem x,ttyst2			; ...is off for I, J
+	move x,ttysts			; get TTYSTS variable
+	txo x,%tsmor(%tsrol)
+	movem x,ttysts			; start in scroll mode
+	useti MSK2,1_tto		; enable interrupt for MORE
+	store %fword,rollp
+	syscal TTYSET,[	clarg. tto	; set TTY status variables
+			%clarg ttyst1	; first set of character groups
+			%clarg ttyst2	; second set of character groups
+			%clarg ttysts]	; TTY control status
+	 .lose %lssys			; can't set TTY status
+	move x,ttytyp			; get terminal type bits
+	txnn x,%tysty			; alter ego of a STY?
+	 jrst notsty			; nope, can't be a net hopper
+	syscal STLGET,[	clarg. tto	; check up on the STY's mother
+			%clval x]	; in particular mother's XJNAME
+	 .lose %lssys			; ???
+	caxe x,'TELSER			; is this a TELSER?
+	 caxn x,'SUPSER			; or a SUPSER?
+	  jrst nhpcfm			; yes, demand net hop confirmation
+; (continued on next page)
+
+; Output TELNET's greeting message
+
+notsty:	type [TN52.]
+	movx y,%version			; get our version
+vrsout:	movx x,%zeros			; clear where a digit goes
+	lshc x,wid. '_			; siphon off a digit
+	addx x,"A-'A			; ASCIIify
+	.iot tto,x			; output the digit
+	jumpn y,vrsout			; and continue until done
+	csrmov A			; now a blank line
+	peek x,IMPUP			; look at location IMPUP in ITS
+	jumpe x,maphtb			; winning if IMPUP=0
+	type [Our Network Control Program is down.
+]
+
+; Map DSK:SYSBIN;HOSTS1 > (the host table) in.
+
+maphtb:	syscal OPEN,[	clctl. .bai	; block ASCII input
+			clarg. htb	; host table channel
+			clarg. ('DSK)	; device
+			clarg. 'HOSTS1	; fn1
+			clarg. sixbit/>/; fn2
+			clarg. 'SYSBIN]	; sname
+	 .lose %lsfil			; must have host table!
+	move x,[-100,,hsttab_-10.]	; 100 pages starting at HSTTAB
+	syscal CORBLK,[	clarg. %cbndr	; map pages, fail if can't get it all
+			clarg. %jself	; this job
+			x		; pointer to pages to get loaded
+			clarg. htb]	; channel
+	 skipl x,hsttab			; got it all?
+	  .lose				; if you think that was paranoid,...
+	caxe x,'HOSTS1			; ...look at this...
+	 .lose				; host table does not begin with HOSTS1?
+	.close htb,			; free up channel
+
+; Job name and JCL hacking stuff
+
+	skipn jclbuf			; got JCL?
+	 jrst chkjnm			; no, check JNAME
+	ldb x,[350700,,jclbuf]		; get first character
+	caxn x,"?			; question mark?
+	 jrst [	call help		; yes, help cruft
+		jrst notcon]		; and enter main loop
+	store %fword,killp		; flag death
+	jrst notcon			; no JNAME checking
+chkjnm:	uget XJNAME,x			; get XJNAME
+	caxn x,'TN52
+	 jrst notcon			; yes, ignore this
+	move y,x			; copy job name
+	txz y,sixbit/_/			; zap out first character
+	caxn y,sixbit/ TN52/		; is it xTN52
+	 jrst notcon			; then no hacking again
+	movx z,jclbuf(440700)		; load pointer to JCL buffer
+	store %fword,killp		; flag suicide if lossage
+jnmhst:	movx y,%zeros			; clear frob where char will go
+	rotc x,6.			; snarf off a character
+	addx y,"A-'A			; ASCIIify
+	idpb y,z			; fake in JCL buffer
+	jumpn x,jnmhst			; and loop for more
+	movx y,^M			; zap in an M
+	idpb y,z			; shove in buffer
+	useti WHO1,<.byte 8 ? 166 ? 0 ? 366 ? 0>; two SIXBIT words together
+
+; Top level not connected loop
+
+notcon:	useti WHO2,sixbit/NOT IN/	; message when not connected
+	useti WHO3,sixbit/ COMM/	; . . .
+	call cmprmt			; get a command
+	 jrst notcon			; not connected
+	.break 16,100000		; back to DDT
+	jrst notcon			; got continued
+
+subttl ICP to foreign host
+
+; Final pre-ICP initialization
+
+goicp:	store %fword,scclrp		; clear screen when winning
+	store %fword,linedp		; line editor on if half duplex host
+	movx tp,tabpdl(-5*linbfl)	; load up tab pdp
+	store %zeros,linctr		; clear line editor counter
+	store linbuf(440700),linptr	; initialize line editor pointer
+
+; Set up who line
+
+	move xx,hsttab+7		; get rel addr of numbers table
+	movei z,2(xx)			; load rel addr of numbers entries
+	move y,hsttab(xx)		; get number of table entries
+getwhn:	move x,hsttab(z)		; get this host number
+	camn x,hstadr			; got a match?
+	 jrst gotwhn			; got it!
+	add z,hsttab+1(xx)		; go to next entry
+	sojg y,getwhn			; and try again
+	store sixbit/RANDOM/,hstsnm	; host name not in table
+	store sixbit/-PLACE/,hstsnm+1	; so invent a name
+	jrst setwvr			; and set it
+gotwhn:	hlrz x,hsttab+1(z)		; get rel addr of system name
+	move y,hsttab+1(x)		; get second 5 chars of system name
+	move x,hsttab(x)		; and first 5 chars
+	caxn x,ascii/MULTI/		; Multix?
+	 caxe y,ascii/CS/		; . . .
+	  caxa				; nope
+	   store %fword,10tabp		; yes, indicate 10 tabs
+	hrrz x,hsttab+1(z)		; get rel addr to host name
+	add x,[440700,,hsttab]		; make byte pointer
+	movx y,hstsnm(440600)		; load pointer to sixbit name
+getwvr:	ildb z,x			; get a character
+	jumpe z,setwvr			; set who vars when done
+	subx z,"A-'A			; sixbitify
+	idpb z,y			; save in sixbit name frob
+	skipn hstsnm+2			; done as much as I can?
+	 jrst getwvr			; no, continue for more
+setwvr:	uset WHO2,hstsnm		; set first half of who line thing
+	uset WHO3,hstsnm+1		; second half now
+	useti IMSK2,1_tti		; enable TTY ints so can abort
+; (continued on next page)
+
+; Open ICP connection, get socket number from logger
+
+	syscal OPEN,[	clctl. .uii\40050; open on gensymmed socket, 32 bits
+			clarg. icp	; on ICP channel
+			clarg. ('NET)	; NET: device
+			clarg. %fword	; let ITS pick local socket
+			%clarg icpskt	; initial foreign socket
+			%clarg hstadr]	; foreign host address
+	 jrst icpluz			; can't, say why and die
+	movx xx,%nsrfs			; socket state when starting up
+	movx y,icptmt			; load up time out time
+goicp1:	syscal NETBLK,[	clarg. icp	; hang for ICP channel
+			%clarg xx	; until condition not this
+			%clarg y	; or if timeout exceeded
+			%clval z	; new socket state
+			%clval x]	; time left on the clock
+	 .lose %lssys			; huh???
+	jumple x,icptmo			; yup, lose big
+	jumpe z,[	syscal WHYINT,[	clarg. icp; ICP channel status
+					repeat 4,%clval c]; reason for close
+			 .lose %lssys	; ???
+			jrst closed]	; and report this lossage
+	caxn z,%nsopn			; just opened?
+	 jrst [	movx xx,%nsopn		; yes, wait until something
+		jrst goicp1]		;  else to avoid lossage
+	caxe z,%nscli			; CLS w/input?
+	 caxn z,%nsinp			; input?
+	  caxa				; winning
+	   jrst badskt			; losing
+	syscal RFNAME,[	clarg. icp	; socket status on ICP channel
+			repeat 2,%clval x]; the local socket number
+	 .lose %lssys			; huh???
+	addx x,2			; compute receive end
+	movem x,lclrcv			; save for open
+	addx x,1			; compute local transmit end
+	movem x,lcltrn			; save for open
+	.iot icp,x			; find out foreign receive socket
+	movem x,forrcv			; save for open
+	addx x,1			; compute foreign send socket
+	movem x,fortrn			; save for open
+
+; Open network connections
+
+	syscal OPEN,[	clctl. 40\.uai	; open in single ASCII mode
+			clarg. nti	; on net input channel
+			clarg. ('NET)	; NET: device
+			%clarg lclrcv	; local receive socket
+			%clarg fortrn	; socket to me!
+			%clarg hstadr]	; foreign host's host address
+	 jrst icpluz			; can't, say why
+	syscal OPEN,[	clctl. 40\.uao	; open in single ASCII mode
+			clarg. nto	; on net output channel
+			clarg. ('NET)	; NET: device
+			%clarg lcltrn	; local tranmission socket
+			%clarg forrcv	; foreign receipt socket
+			%clarg hstadr]	; foreign host address
+	 jrst icpluz			; can't, say why
+	.close icp,			; close off ICP socket
+; (continued on next page)
+
+; Wait until connections are opened
+
+	movx y,icptmt			; load up time out time
+	syscal NETBLK,[	clarg. nti	; net input channel
+			clarg. %nsrfs	; wait until not "RFC sent"
+			%clarg y	; time out time
+			repeat 2,%clval x]; time left on clock
+	 .lose %lssys			; huh???
+	jumple x,icptmo			; yup
+	syscal WHYINT,[	clarg. nti	; channel status on net input
+			repeat 2,%clval y; socket state
+			repeat 2,%clval c]; reason for CLS
+	 .lose %lssys			; ???
+	txz y,%lhalf			; flush left half
+	jumpe y,closed			; punt if closed
+	caxe y,%nsopn			; connection open?
+	 caxn y,%nsinp			; or input available?
+	  jrst goicp2			; still winning
+	caxn y,%nscli			; CLS but input?
+	 jrst badskt			; losing totally
+goicp2:	movx y,icptmt			; load up time out time
+	syscal NETBLK,[	clarg. nto	; net output channel
+			clarg. %nsrfs	; wait until not "RFC sent"
+			%clarg y	; time out time
+			repeat 2,%clval x]; time left on clock
+	 .lose %lssys			; huh???
+	jumple x,icptmo			; yup
+	syscal WHYINT,[	clarg. nto	; status of net output
+			repeat 2,%clval y; socket state
+			repeat 2,%clval c]; reason for CLS
+	 .lose %lssys			; ???
+	txz y,%lhalf			; clear left half
+	jumpe y,closed			; and punt if closed
+	caxe y,%nsopn			; connection open?
+	 caxn y,%nsrfn			; or RFNM wait?
+	  caxa				; winning
+	   jrst badskt			; lost
+; (continued on next page)
+
+; Initial negotiations
+
+	move x,icpskt			; get socket # for ICP
+	caxe x,nprskt			; new protocol socket?
+	 jrst opened			; nope, maybe old protocol
+	store %fword,nprotp		; definitely new protocol
+
+;  For new TELNET we try to get remote echo and have GA's flushed.  We'll
+; ignore any GA's we get and never send any anyway.
+
+	telcmd [IAC DO ECHO IAC DO SUPRGA]
+	store %fword,echop		; remember I want echo hacked
+	store %fword,supgap		; remember I want no host GA's
+
+; ICP negotiations finished, tell user so and enter main program
+
+opened:	store %fword,openp		; flag connection open
+	type [ Open]
+	useti IMSK2,1_nto		; enable ints
+	store %zeros,ntictr		; and zap net input buffer
+;	jrst ntimpg			; and enter net main program
+
+subttl Network input main program
+
+ntimpg:	call ntic			; gobble a character
+	caxn a,IAC			; got an IAC?
+	 jrst iacsrv			; yes, service it
+	txne a,200			; 8 bit character?
+	 skipge nprotp			; yes, new protocol?
+	  caia				; new protocol or not command
+	   jrst [	caxn a,200	; old style datamark?
+			 jrst @dmkser	; yes
+			caxn a,203	; no echo?
+			 store %fword,echop; yes
+			caxn a,204	; echo?
+			 store %zeros,echop; yes
+			jrst ntimpg]	; and next character
+	skipge wallp			; wallpaper enabled?
+	 .iot wal,a			; output character
+ttoout:	skipge ttyop			; TTO enabled?
+	 jrst ntimpg			; no, flush it then
+	skipge scclrp			; clear screen?
+	 jrst [	csrmov C
+		store %zeros,scclrp	; flag that screen has been cleared
+		store %zeros,vthpos
+		store %zeros,vtvpos
+		jrst .+1 ]
+;	jrst vtsim			; fall through
+
+subttl Normal console display
+
+vtsim:	move b,state			; branch to correct state handler
+	jrst @vtstab(b)
+
+vtstab:	vts0				; normal char
+	vts1				; escape seen
+	vts2				; <esc>Y
+	vts3				; <esc>Y<vert>
+	vts4				; <esc>[ (ANSI only)
+	vts5				; <esc>[? (ANSI)
+	vts6				; <esc>[?2 (ANSI)
+
+vts0:	caxn a,33			; escape ?
+	 jrst [	aos state
+		jrst ntimpg ]
+	caxn a,177			; rubout from a loser?
+	 jrst ntimpg			; yup, flush flush flush
+	jumpe a,ntimpg			; flush nulls from losers
+	skipn trbinp			; in bucky bit mode?
+	 jrst vts01			; no, don't do this cruft
+	caxn a,"			; up arrow?
+	 jrst [	csrmv1 I		; yes, prefix with image
+		movx a,177		; image rubout is integral sign for ITS
+		jrst vts01]		; now continue
+	caxe a,<">			; lambda?
+	 caxn a,"			; or pi?
+	  jrst [save a			; save the character
+		csrmv1 I		; imageify the next character
+		retr a			; restore character
+		jrst vts01]		; and continue
+	caxn a,"^			; caret?
+	 movx a,"			; yes, remap to up arrow
+	caxn a,"_			; underscore?
+	 jrst [	movx a,"		; yes, remap into left arrow
+		jrst vts01]		; and display
+	caxn a,"			; left arrow?
+	 movx a,"_			; yes, remap into underscore
+vts01:	caxn a,177
+	 jrst vts02
+	caxl a,40			; only interested in control chars
+	 jrst [	aos b,vthpos
+		caxl b,tcmxh
+		 sos vthpos
+		skipl vtidcp		; in insert char mode ?
+		 jrst vts02
+		save a
+		movx a,^P
+		call ttoc
+		movx a,"^
+		call ttoc
+		retr a
+		jrst vts02 ]
+	caxn a,^J			; line feed?
+	 jrst [	sos morinh		; yes, one line closer to **More**!!
+		aos b,vtvpos
+		caxl b,tcmxv
+		 sos vtvpos
+		jrst vts02 ]
+	caxn a,^M
+	 jrst [	setzm vthpos
+		jrst vts02 ]
+	caxn a,^H
+	 jrst [	sosge vthpos
+		 setzm vthpos
+		jrst vts02 ]
+	caxe a,^I
+	 jrst vts02
+	move b,vthpos
+	addi b,8.
+	trz b,7
+	caxl b,tcmxh
+	 jrst [	move b,tcmxh
+		subi b,1
+		jrst .+1 ]
+	movem b,vthpos
+vts02:	call ttoc			; display character on TTY
+	caxe a,"			; did foreign host send a P?
+	 jrst ntimpg			; no, try for another character
+	movx a,"P			; yes, get ready to complete
+	call ttoc			; complete the character
+	jrst ntimpg			; and go again
+
+; Come here when an escape previously seen
+
+vts1:	skipe ansip
+	 jrst [	caxe a,133		; square bracket ?
+		 trza a,-1		; no, go to state 0
+		movx a,4		; yes, state 4
+		movem a,state
+		store %zeros,arg1	; clear arg just in case
+		jrst ntimpg ]
+	caxn a,"A	; move up
+	 jrst vtA
+	caxn a,"B	; move down
+	 jrst vtB
+	caxn a,"C	; move right
+	 jrst vtC
+	caxn a,"D	; move left
+	 jrst vtD
+	caxn a,"H	; home
+	 jrst vtH
+	caxn a,"I	; reverse index
+	 jrst vtI
+	caxn a,"J	; kill to end of screen
+	 jrst vtJ
+	caxn a,"K	; kill to end of line
+	 jrst vtK
+	caxn a,"Y	; absolute pos
+	 jrst vtY
+
+	skipl vt52p	; Heath mode ?
+	 jrst vtzero
+	caxn a,074	; enter ANSI mode ($<) (sigh)
+	 jrst htLS
+	caxn a,"@	; enter insert char mode
+	 jrst htAT
+	caxn a,"E	; clear and home
+	 jrst htE
+	caxn a,"L	; insert line
+	 jrst htL
+	caxn a,"M	; delete line
+	 jrst htM
+	caxn a,"N	; delete char
+	 jrst htN
+	caxn a,"O	; leave insert char mode
+	 jrst htO
+vtzero:	store %zeros,state
+	jrst ntimpg
+
+vtA:	sosge vtvpos			; move up ?
+	 jrst [	store %zeros,vtvpos
+		jrst vtzero ]
+	csrmv1 U
+	jrst vtzero
+
+vtB:	aos a,vtvpos			; move down ?
+	caml a,tcmxv
+	 jrst [	sos vtvpos
+		jrst vtzero ]
+	csrmv1 D
+	jrst vtzero
+
+vtC:	aos a,vthpos			; move forward
+	caxle a,tcmxh
+	 jrst [	sos vthpos
+		jrst vtzero ]
+	csrmv1 F
+	jrst vtzero
+
+vtD:	sosge vthpos			; move back
+	 jrst [	store %zeros,vthpos
+		jrst vtzero ]
+	csrmv1 B
+	jrst vtzero
+
+vtH:	csrmv1 T			; home up
+	store %zeros,vthpos
+	store %zeros,vtvpos
+	jrst vtzero
+
+vtI:	skipe vtvpos			; reverse index
+	 jrst vtA			; move up, unless at top
+	move a,ttyopt			; can insert line ?
+	txnn a,(%tolid)
+	 jrst [	movx a,33		; send real <esc>I
+		call ttoc
+		movx a,"I
+		call ttoc
+		jrst vtzero ]
+	movx a,^P
+	call ttoc
+	movx a,133			; [ character
+	call ttoc
+	jrst vtzero
+
+vtJ:	csrmv1 E			; erase rest-of-screen
+	jrst vtzero
+
+vtK:	csrmv1 L			; erase rest-of-line
+	jrst vtzero
+
+vtY:	aos state			; go to state 2
+	jrst ntimpg
+
+htLS:	store %fword,ansip
+	jrst vtzero
+
+htAT:	store %fword,vtidcp		; enter insert char mode
+	jrst vtzero
+
+htE:	csrmv1 C			; clear and home
+	store %zeros,vthpos
+	store %zeros,vtvpos
+	jrst vtzero
+
+htL:	movx a,^P			; insert line
+	call ttoc
+	movx a,133
+	call ttoc
+	jrst vtzero
+
+htM:	movx a,^P			; delete line
+	call ttoc
+	movx a,"\
+	call ttoc
+	jrst vtzero
+
+htN:	movx a,^P			; delete char
+	call ttoc
+	movx a,"_
+	call ttoc
+	jrst vtzero
+
+htO:	store %zeros,vtidcp		; leave insert char mode
+	jrst vtzero
+
+vts2:	caxge a,40
+	 jrst vtzero			; not in range -- punt
+	subi a,40
+	movem a,arg1
+	aos state
+	jrst ntimpg
+
+vts3:	caxge a,40
+	 jrst vtzero			; not in range -- punt
+	subi a,40
+	movem a,vthpos
+	exch a,arg1
+	movem a,vtvpos
+	save a
+	csrmv1 V
+	retr a
+	addi 1,8.
+	call ttoc
+	csrmv1 H
+	move a,arg1
+	addi a,8.
+	call ttoc
+	jrst vtzero
+
+vts4:	caxl a,"0		; get numeric arg ?
+	 caxle a,"9
+	  jrst vts41
+	move b,arg1
+	imuli b,10.
+	addi b,-"0(a)
+	movem b,arg1
+	jrst ntimpg
+vts41:	caxn a,"?
+	 jrst vtnext
+	caxn a,"L
+	 jrst [	movx a,133
+		jrst vts42 ]
+	caxn a,"M
+	 jrst [	movx a,"\
+		jrst vts42 ]
+	caxn a,"P
+	 jrst [	movx a,"_
+		jrst vts42 ]
+	jrst vtzero
+vts42:	skipn b,arg1
+	 movx b,1
+vts43:	save a
+	movx a,^P
+	call ttoc
+	retr a
+	call ttoc
+	sojg b,vts43
+	jrst vtzero
+
+vts5:	caxe a,"2
+	 jrst vtzero
+vtnext:	aos state
+	jrst ntimpg
+
+vts6:	caxe a,"h
+	 jrst vtzero
+	store %zeros,state
+	store %zeros,ansip
+	jrst ntimpg
+
+subttl Network input  TTY output buffering
+
+;  Input a character from the network, either from the net or from a buffer.
+; If nothing in the buffer or the net, then go to sleep.  This also dumps out
+; the old TTY output buffer if the net input buffer is empty.
+; (Shades of 10/50!!!!!!!!)
+
+ntic:	sosg ntictr			; anything in this buffer?
+	 call ntic1			; nope, get a new buffer
+	ildb a,ntiptr			; get a character
+	return				; and return
+
+ntic1:	store ttobuf(440700),ttoptr,,d	; reset TTY output pointer
+	skipn ttoctr			; any TTY output to do?
+	 jrst ntic3			; nope
+	syscal SIOT,[	clarg. tto	; output the buffer to TTY
+			d ? ttoctr]	; and reset counter
+	 .lose %lssys			; huh???
+ntic3:	syscal NETBLK,[	clarg. nti	; net input channel
+			clarg. %nsopn]	; open with no input
+	 .lose %lssys			; ???
+	syscal WHYINT,[	clarg. nti	; something happened...
+			repeat 2,%clval d; socket state
+			%clval j	; # of characters to do
+			%clval c]	; reason for CLS
+	 .lose %lssys			; ???
+	txze d,%minfi			; clear any left half
+	 jrst [	store ttobuf(440700),ttoptr; reset buffer pointer
+		store %zeros,ttoctr	; zap output buffer too
+		aosle axttop		; maybe output flush
+		 store %fword,ttyop	; turn off the TTY for good measure
+		.reset nti,		; and bop off the network interrupt state
+		jrst .+1]		; so output resets happen reasonably soon
+	jumpn j,ntic2			; make sure read what's left
+	jumpe d,closed			; connection randomly closed?
+	jrst badskt			; socket entered illegal state!
+ntic2:	caxle j,4*ntibfl		; more came than can take now?
+	 movx j,4*ntibfl		; yes, then size down to what can take
+	movem j,ntictr			; save input counter
+	store ntibuf(441000),ntiptr,,d	; load pointer to net buffer
+	syscal SIOT,[	clarg. nti	; gobble down the buffer
+			d ? j]		; from network input
+	 .lose %lssys			; ???
+	return				; and return
+
+; TTY character output routine when coming from the net
+
+ttoc:	aosle zz,ttoctr			; bump TTY counter
+	 caxle zz,5*ttobfl		; filled up buffer?
+	  .lose				; foo!
+	idpb a,ttoptr			; shove character in buffer
+	return				; and return
+
+subttl IAC service
+
+iacsrv:	store %fword,nprotp		; definitely new protocol now!
+	call ntic			; get command character
+	caxn a,IAC			; quoted IAC?
+	 jrst ttoout			; yes, output it then
+	caxn a,WILL			; is this a WILL code?
+	 jrst [	call ntic		; yes, get code
+		caxn a,ECHO		; saying it will echo?
+		 jrst [	skipe echop	; is echoing on already?
+			 jrst ntimpg	; yes, ignore it
+			store %fword,echop; no, I don't have to echo now
+			telcmd [IAC DO ECHO]
+			jrst ntimpg]	; no, respond to random request
+		caxn a,SUPRGA		; suppress GA?
+		 jrst [	skipe supgap	; really confirming or new?
+			 jrst ntimpg	; no, I asked for it
+			store %fword,supgap
+			telcmd [IAC DO SUPRGA]
+			jrst ntimpg]	; yes, confirm it
+		caxn a,TRNBIN		; cretin Twenices?
+		 jrst [	skipe rcbinp	; avoid protocol loop
+			 jrst ntimpg	; loser
+			store %fword,rcbinp
+			telcmd [IAC DO TRNBIN]
+			jrst ntimpg]	; set and confirm
+		caxn a,LOGOUT		; logout foreign job?
+		 jsp a,[skipn logoup	; did I ask to logout?
+			 jrst (a)	; foo, what's happening?
+			type [SZL Logout request acceptedR]
+			jrst ntimpg]	; now return
+		telcmd [IAC DONT]	; refuse to accept this option
+		.iot nto,a		; send what I refuse
+		.nets nto,		; and send it out
+		jrst ntimpg]		; and continue
+	caxn a,WONT			; is this a WONT?
+	 jrst [	call ntic		; yes, get code
+		caxn a,ECHO		; turn off echo?
+		 jrst [	skipn echop	; flush my request
+			 jrst ntimpg	; I asked for it and got it
+			store %zeros,echop; sigh, I have to echo!
+			telcmd [IAC DONT ECHO]; I didn't, must confirm
+			jrst ntimpg]	; and return
+		caxn a,TRNBIN		; losey Twenices?
+		 jrst [	skipn rcbinp	; avoid protocol loops
+			 jrst ntimpg	; loser
+			store %zeros,rcbinp
+			telcmd [IAC DONT TRNBIN]
+			jrst ntimpg]	; and return
+		caxn a,LOGOUT		; logout foreign job?
+		 jrst [ skipn logoup	; did I ask to logout?
+			 jrst ntimpg	; huh?
+			store %zeros,logoup
+			telcmd [IAC DONT LOGOUT]
+			type [SZL Logout request rejectedR]
+			jrst ntimpg]	; now return
+		caxn a,SUPRGA		; suppress GA?
+		 skipl supgap		; protocol violator
+		  jrst ntimpg		; loser either way
+		telcmd [IAC DONT SUPRGA]; must confirm
+		jrst ntimpg]		; and return
+; (continued on next page)
+
+; (continued from previous page)
+	caxn a,DO			; requesting me to DO something?
+	 jrst [	call ntic		; what does it want?
+		caxn a,TIMMRK		; nebbish timing mark?
+		 jrst [	telcmd [IAC WILL TIMMRK]
+			jrst ntimpg]	; and continue
+		caxn a,TRNBIN		; transmit binary?
+		 jrst [	skipe trbinp	; am already doing this?
+			 jrst ntimpg	; yes, then ignore this
+			store %fword,trbinp; yes, good, I can
+			telcmd [IAC WILL TRNBIN]
+			jrst ntimpg]	; no, random, win anyway
+		telcmd [IAC WONT]	; well, I won't do it!
+		.iot nto,a		; so there.
+		.nets nto,		; and force it out
+		jrst ntimpg]		; and continue
+	caxn a,DONT			; DONT do something?
+	 jrst [	call ntic		; what doesn't it want me to do?
+		caxn a,TRNBIN		; transmit binary?
+		 skipn trbinp		; check for already
+		  jrst ntimpg		; already
+		store %zeros,trbinp	; yes, turn it off
+		telcmd [IAC WONT TRNBIN]
+		jrst ntimpg]		; and return
+	caxn a,DM			; data mark?
+dmkser:	 jrst [	sosg axttop		; should TTY go on?
+		 store %zeros,ttyop	; bop on TTY
+		jrst ntimpg]		; and let's continue
+	caxe a,SB			; subnegotiation?
+	 jrst ntimpg			; no, return
+	type [SZLForeign host is violating network protocolR]
+	jrst ntimpg			; and just return with garbage
+
+subttl Connection error messages
+
+; Tables of network error messages
+
+errtab:	strwrd [ Connection never opened]
+	strwrd [ Closed by user]
+	strwrd [ Closed by host]
+	strwrd [ Reset by host]
+	strwrd [ Host died]
+	strwrd [ Incomplete transmission]
+	strwrd [ Byte size mismatch]
+	strwrd [ Local Network Control Program down]
+	strwrd [ Refused]
+maxerr==.-errtab
+
+icperr:	strwrd [random network lossage]
+	strwrd [system down]
+	strwrd [foreign Network Control Program down]
+	strwrd [host does not exist to the knowledge of the NCC]
+	strwrd [foreign Network Control Program initialization]
+	strwrd [scheduled maintenance]
+	strwrd [scheduled hardware work]
+	strwrd [scheduled software work]
+	strwrd [emergency restart]
+	strwrd [power failure]
+	strwrd [software breakpoint]
+	strwrd [hardware error]
+	strwrd [scheduled downtime]
+	strwrd [undefined reason - 13]
+	strwrd [undefined reason - 14]
+	strwrd [host coming up now]
+
+esstab:	strwrd [CLS received.]
+	strwrd [listening for RFC.]
+	strwrd [RFC received.]
+	strwrd [CLS received after RFC.]
+	strwrd [RFC sent.]
+	strwrd [open.]
+	strwrd [RFNM wait.]
+	strwrd [waiting for matching CLS.]
+	strwrd [CLS with input available.]
+	strwrd [input available.]
+maxess==.-esstab
+
+; Here when ICP loses.  Say why
+
+icpluz:	move a,$ercod			; get socket state
+	caxn a,%efldv			; all sockets taken?
+	 jrst [	type [ No free network sockets]
+		jrst reset]		; restart
+	caxn a,%enrdv			; network crash?
+	 jrst [	type [ Local Network Control Program down]
+		jrst reset]		; restart
+	caxe a,%enapp			; host down?
+	 caxn a,%ensdr			; . . .
+	  jrst hstded			; yup, say so and when back
+	save $ercod			; save this value
+	type [ ICP failure -- ]
+	retr a				; get connection error code
+	syscal OPEN,[	clarg. err	; open on error channel
+			clarg. ('ERR)	; magical error reporting device
+			clarg. 4	; this is a .CALL error
+			%clarg a]	; this is the code it was
+	 .lose %lssys			; goddam bagbiting system
+	.iot err,a			; get a character of the message
+	jumpg [	caxe a,^L		; flush form feeds
+		 .iot tto,a		; if still more type it
+		jrst .-1]		; and get more
+	.close err,			; flush error channel
+rnderr:	type [
+This is not supposed to happen; please report this via :BUG TELNET.
+]
+	jrst reset			; oh well
+
+; Here if no response from foreign host
+
+icptmo:	type [ Time out]
+	jrst reset			; losing time outs!
+
+; Here when connection closed on me
+
+closed:	skipl openp			; ICP done?
+	 jrst clsd1			; no, no header
+	type [
+Connection closed;]
+clsd1:	caxl c,maxerr			; greater than largest error?
+	 jrst random			; yes, random error
+	movx a,(440700)			; byte pointer
+	hrr a,errtab(c)			; to proper error message
+	hlrz b,errtab(c)		; and counter
+	syscal SIOT,[	clarg. tto	; output the string to the TTY
+			a ? b]		; point in A, count in B
+	 .lose 1000			; argh
+	caxn c,%ncded			; host dead?
+	 jrst hstwhy			; yes, say why
+	caxe c,%ncnto			; never opened?
+	 caxn c,%ncusr			; or I closed it?
+	  jrst rnderr			; this ain't supposed to happen!
+	jrst reset			; restart 	
+
+random:	type [ unknown code - ]
+	idivx c,8.			; split close reason up
+	addx c,"0			; ASCIIify
+	.iot tto,c			; output
+	addx d,"0			; ASCIIify low order
+	.iot tto,d			; output it too
+	jrst rnderr			; and restart
+
+; Here when host dead, say so and when it will be back up
+
+hstded:	type [ Host dead]
+hstwhy:	syscal NETHST,[	%clarg hstadr	; get status of this host
+			%clval x]	; into a convenient place
+	 .lose %lssys			; huh???
+	move y,x			; make an extra copy
+	andx x,17			; just get state
+	type [ due to ]
+	movx a,(440700)			; byte pointer
+	hrr a,icperr(x)			; get pointer to error
+	hlrz b,icperr(x)		; counter
+	syscal SIOT,[	clarg. tto	; type on TTY
+			a ? b]		; with count and pointer
+	 .lose 1000			; argh
+	andx y,177760			; get time back
+	jumpe y,reset			; flush if nothing
+	caxn y,177740			; -2 means unknown future time
+	 jrst reset			; which is flushed make Moon happy
+	type [.
+  Host is expected back up ]
+	caxn y,177760			; -1 means more than a week
+	 jrst [	type [over a week from now.]
+		jrst reset]		; and reset the world
+	ldb a,[150300,,y]		; get day of week
+	move a,[strwrd [on Monday at ]
+		strwrd [on Tuesday at ]
+		strwrd [on Wednesday at ]
+		strwrd [on Thursday at ]
+		strwrd [on Friday at ]
+		strwrd [on Saturday at ]
+		strwrd [on Sunday at ]
+		strwrd [on April Fool's Day at ]](a)
+	hlrz b,a			; get counter
+	hrli a,440700			; make into a byte pointer
+	syscal SIOT,[	clarg. tto	; output to TTY
+			a ? b]		; pointer and counter
+	 .lose 1000			; argh
+	ldb a,[100500,,y]		; get hours time
+	idivx a,10.			; split high and low order
+	addx a,"0			; ASCIIify
+	.iot tto,a			; output high order
+	addx b,"0			; ASCIIify low order
+	.iot tto,b			; output it too
+	.iot tto,[":]			; delimit
+	ldb a,[040400,,y]		; get minutes/5
+	imulx a,5.			; make into real minutes
+	idivx a,10.			; split up
+	addx a,"0			; ASCIIify
+	.iot tto,a			; output
+	addx b,"0			; ASCIIify
+	.iot tto,b			; output
+	type [ GMT.]
+	jrst reset			; and reset the world
+
+subttl Interrupt service
+
+	tmploc 42,intvec(,,-intvcl)	; set up interrupt addr
+
+; Interrupt service vector
+
+intvec:	hiac+1,,p			; AC's to save, pdl stack
+	0 ? 1_tti ? 0 ? 1_tti ? ttiser	; TTY input interrupts
+	0 ? 1_tto ? 0 ? 1_tti ? ttoser	; TTY **More** interrupts
+	0 ? 1_nto ? 0 ? 1_nto ? ntoser	; net output interrupts
+intvcl==.-intvec			; length of interrupt vector
+
+; Here to return from an interrupt
+
+tsret:	syscal DISMIS,[	%clcti hiac+1	; number of AC's to restore
+			%clarg p]	; dismiss interrupt
+	 .lose %lssys			; argh!
+
+subttl Handle ints on TTI channel
+
+; Gobble down character
+
+ttiser:	syscal WHYINT,[clarg. tti]	; acknowledge the interrupt
+	 jfcl				; ignore fail return
+	syscal IOT,[	clctl. %tiint\%tinwt; read character if any
+			clarg. tti	; from TTY input
+			%clval a]	; into A
+	 .lose %lssys			; huh???
+	jumpl a,tsret			; return when no more
+	txz a,<%txsft_1>\%txsft		; lose shift bits
+	camn a,cmdesc			; user wants a command?
+	 jrst [	call cmprmt		; yes, do a command
+		 jrst ttiser		; and try for another character
+		.value [asciz/:Vk /]
+		useti AIFPIR,1_tti	; lost the TTY, lose this int too
+		jrst tsret]		; dismiss int
+ttisr5:	skipl openp			; connection opened?
+	 jrst ttiser			; nope, flush this frob then
+	ior a,bkybts			; stick in bucky bits
+	store %zeros,bkybts		; and flush the bits
+	move b,a			; cons up a copy
+	txz b,%txmta\%txctl\<"a-"A>	; without bucky bits or case
+	caxn b,%txtop\"H		; [HELP]?
+	 jrst [	call help		; give the guy some help
+		jrst ttiser]		; and get another character
+	store linmor,morinh		; reset **More** inhibit count
+
+; Map bucky bits to SAIL equivalences
+
+	skipn trbinp			; in bucky bit mode?
+	 jrst ttisr1			; no, no funny conversions
+	move b,a			; use another AC for this cruft
+	txz b,%txctl\%txtop		; turn off control and top
+	caxn b,"			; ?
+	 jrst [	.iot nto,[%zeros] ? jrst ttisr3]; yes, send [ESCAPE]
+	caxe b,"			; OR sign?
+	 caxn b,"			; equivalance?
+	  jrst [.iot nto,[%zeros] ? jrst ttisr3]; yes, send [ESCAPE] or [ESCAPE]
+	move b,a			; get it back again
+	txz b,%txctl\%txmta		; now this time turn off double bucky
+	caxe a,%txtop\%txctl\"A		; [BREAK]?
+	 caxn a,%txtop\%txctl\"B	; [CLEAR]?
+	  movx b,"			; map both to [HOLD] (happy DD users)
+	caxn b,"			; [BS]?
+	 iorx a,177			; yes, want [RUB OUT] not 
+	caxe b,%txtop\"_		; ignore topification
+	 caxn b,"_			; underscore?
+	  subx a,"_-"			; yes, convert to left arrow
+	caxe b,%txtop\"		; ignore topification
+	 caxn b,"			; left arrow?
+	  addx a,"_-"			; yes, map to underscore
+	caxn b,%txtop\"		; uparrow?
+	 addx a,"^-"			; yes, ensure uparrow, not integral sign
+	caxn b,"			; [HOLD]?
+	 movx a,"			; yes we win
+	caxn b,%txtop\"A		; [ESCAPE]?
+	 jrst [	.iot nto,[%zeros] ? .nets nto, ? jrst ttiser]; yes
+	caxn b,%txtop\"B		; [BREAK]?
+	 jrst [	.iot nto,[%zeros] ? .iot nto,["-] ? .nets nto, ? jrst ttiser]; yes
+	caxn b,%txtop\"C		; [CLEAR]?
+	 movx a,"			; yes, convertify
+	caxe a,"			; [CALL]?
+	 caxn a,%txmta\"		; [CALL]?
+	  movx a,"			; yes, make it SAIL's [CALL]
+	caxe a,%txctl\"		; [CALL]
+	 caxn a,%txmta\%txctl\"	; [CALL]?
+	  movx a,%txctl\"		; yes, send SAIL's [CALL]
+	txz a,%txtop			; lose top bit
+	jrst ttisr2			; now send the frob
+
+; Not in bucky bit mode, so fold down to ASCII
+
+ttisr1:	move b,a			; copy the character
+	txz b,%txmta\%txctl		; lose bucky bits
+	caxe b,%txtop\"A		; [ESCAPE]?
+	 caxn b,%txtop\"B		; [BREAK]?
+	  jrst [skipn echop		; in local echo mode?
+		 skipn linedp		; no, in line editor?
+		  jrst ttiser		; nope, no line editor to work with
+		movx a,^B		; yes, load line editor BREAK
+		jrst .+1]		; and continue
+	caxn b,%txtop\"C		; [CLEAR]?
+	 jrst [	skipn echop		; in local echo mode?
+		 skipn linedp		; no, in line editor?
+		  jrst ttiser		; nope, no line editor to work with
+		movx a,^U		; yes, load line editor clear command
+		jrst .+1]		; and continue
+	caxn b,"			; [CALL]?
+	 jrst [	skipn echop		; in local echo mode?
+		 skipn linedp		; in line editor?
+		  jrst ttisr2		; nope, no line editor
+		movx a,^A		; yes, make it an ATTN
+		jrst .+1]		; and continue
+	txz a,%txtop\%txmta		; lose top and meta bits
+
+;  Canonical ITS mapping for <CONTROL> to standard ASCII.  [SPACE]
+; mapping to @ is taken from the usual ASCII keyboard.
+
+	txzn a,%txctl			; control bit on?
+	 jrst ttisr2			; nope, a-okay
+	caxn a,<" >			; space?
+	 movx a,^@			; yes, become null
+	caxl a,"?			; ? is [RUB OUT]
+	 caxn a,177			; [RUB OUT] is not hacked
+	  jrst ttisr2			; not hacking character
+	caxle a,"_			; lower case?
+	 subx a,"a-"A			; uppercaseify
+	xorx a,100			; controlify
+
+; Now send the character; metize if necessary (SAIL protocol)
+
+ttisr2:	skipl echop			; half duplex mode?
+	 jrst hlfdpx			; yup
+chrsnd:	skipl trbinp			; can I send bucky bits?
+	 jrst ttisr3			; no, send it out
+ttisr4:	txze a,%txmta			; got a meta character?
+	 .iot nto,[200]			; yes, send the extra bucky char
+ttisr3:	.iot nto,a			; send character to foreign host
+	caxn a,IAC			; sending [BS]?
+	 .iot nto,a			; gotta send it again!
+	caxn a,^M			; got a <CR>?
+	 jrst [	movx a,^J		; yes, fake an LF
+		skipge trbinp		; if a DM,...
+		 jrst chrsnd		; then don't echo
+		jrst ttisr1]		; and make it "input" from kbd
+	.nets nto,			; force sending buffer
+	jrst ttiser			; and try for more
+
+; Input a character from the TTY when at TTY interrupt level
+
+inpchr:	syscal IOT,[	clctl. %tiint	; read char always
+			clarg. tti	; from device TTY
+			%clval a]	; into ac A
+	 .lose %lssys			; huh???
+	return				; and return
+
+subttl Half duplex local echoing, etc.
+
+hlfdpx:	skipge wallp			; wall paper on?
+	 .iot wal,a			; yes, put in wallpaper
+	skipge linedp			; in line editor?
+	 skipe linctr			; first character on this line?
+	  jrst hlfdx1			; nope
+	syscal SCPOS,[	clarg. tto	; get cursor position
+			repeat 2,%clval inipos]
+	 .lose %lssys			; ???
+	move b,inipos ? movem b,hpos	; set hpos count
+hlfdx1:	caxn a,^I			; tab?
+	 jrst [	push tp,hpos		; save this hpos
+		skipge 10tabp		; Multix tabs?
+		 jrst [	movx b,10.	; to next tab stop
+			add b,hpos	; add in current position
+			idivx b,10.	; now flush modulo
+			imulx b,10.	; to get real position
+			movem b,hpos	; and remember it
+			csrmov H	; set horizontal position
+			addx b,8.	; add in ITS offset
+			.iot tto,b	; and move there
+			jrst hlfdx3]	; and continue on
+		movx b,8.		; to next tab stop
+		addm b,hpos		; add in tab
+		movx b,7		; mask for extraneous cruft
+		andcam b,hpos		; flush the cruft
+		jrst hlfdx4]		; and continue
+	caxn a,177			; rubout?
+	 jrst hlfdx3			; yes, flush flush flush
+	caxn a,^H			; backspace?
+	 jrst [	sos hpos		; yes, decrement horizontal position
+		jrst hlfdx4]		; and win
+	caxn a,^M			; terpri?
+	 jrst hlfdx4			; yes, win
+	caxge a,<" >			; or printing character?
+	 jrst [	skipe linedp		; line editor command?
+		 jsp b,[skipge lquotp	; line editor quote?
+			 jrst (b)	; yes, no echo suppress
+			caxe a,^J	; yes, line feed?
+			 caxn a,^W	; word wipe?
+			  jrst hlfdx3	; never are echoed
+			caxe a,^A	; same for the ATTN
+			 caxn a,^C
+			  jrst hlfdx3	; ATTN
+			caxe a,^O	; and output abort commands
+			 caxn a,^S
+			  jrst hlfdx3
+			caxe a,^L	; redisplay
+			 caxn a,^R
+			  jrst hlfdx3	; don't echo either
+			caxe a,^Q	; quoting
+			 caxn a,^U	; and line erase
+			  jrst hlfdx3	; don't echo
+			caxe a,^B	; finally BREAK
+			 caxn a,^T	; and AYT commands
+			  jrst hlfdx3	; which never come out
+			jrst 2(b)]	; else echo the character
+		caxn a,^J		; line feed?
+		 jrst hlfdx4		; never bumps HPOS
+		skipge twinp		; SAIL terminal?
+		 skipa b,["]		; yes, use TV uparrow
+		  movx b,"^		; no, use ASCII caret
+		.iot tto,b		; print the control indication
+		movei b,"@(a)		; get ASCII form
+		.iot tto,b		; output the character
+		aos hpos ? aos hpos	; allow for character
+		jrst hlfdx3]		; and continue
+	aos hpos			; bump the horizontal position
+hlfdx4:	.iot tto,a			; output character
+hlfdx3:	skipl linedp			; in the line editor?
+	 jrst chrsnd			; finally can send
+;	jrst lined			; yes, hack time
+
+subttl Hairy line editor
+
+lined:	caxn a,177			; rubout?
+	 jrst [ call delch		; yes, erase a character
+		jrst ttiser]		; and continue
+	caxe a,^I			; tab?
+	 caxl a,<" >			; printing character?
+	  jrst lnechs			; yes, send character
+	aosn lquotp			; line editor quote?
+	 jrst lnechs			; yes, send it
+	caxe a,^C			; C is ATTN too
+	 caxn a,^A			; send ATTN?
+	  jrst [store ttobuf(440700),ttoptr; reset buffer pointer
+		store %zeros,ttoctr	; zap output buffer
+		.netint nto,		; complete synch
+		telcmd [IAC IP IAC DM]	; send command + part of synch
+		jrst ttiser]		; and continue
+	caxn a,^B			; send break?
+	 jrst [	.netint nto,		; complete synch
+		telcmd [IAC BRK IAC DM]	; send command + part of synch
+		jrst ttiser]		; and continue
+	caxe a,^O			; O is an alias for silence
+	 caxn a,^S			; silence?
+	  jrst [.netint nti,		; send an interrupt
+		telcmd [IAC AO IAC DM]
+		store %zeros,ttoctr	; empty buffer
+		store ttobuf(440700),ttoptr; reset pointer
+		jrst ttiser]		; and continue
+	caxn a,^Q			; quote next character
+	 jrst [	store %fword,lquotp	; yes, quoted
+		jrst ttiser]		; and continue
+	caxn a,^T			; print status?
+	 jrst [	telcmd [IAC AYT]
+		jrst ttiser]		; yes, get host to send a wholine
+	caxn a,^U			; flush entire line?
+	 jrst [	store linbuf(440700),linptr; load pointer
+		store %zeros,linctr	; clear line counter
+		store %zeros,hpos	; initialize horizontal position
+		move b,ttyopt		; get terminal options
+		txne b,(%toovr)		; glass TTY? (might as well)
+		 txne b,(%toers)	; display?
+		  jrst [csrmov H
+			move a,inipos	; get initial cursor position
+			movem a,hpos	; reset it for us
+			addx a,8.	; offset
+			.iot tto,a	; restore cursor
+			csrmov L
+			jrst ttiser]	; and try again
+		csrmov A
+		jrst ttiser]		; restart again
+	caxn a,^W			; wipe out word?
+	 jrst delwrd			; yes, flush the word
+	caxn a,^J			; line feed?
+	 jrst sndbfr			; yes, send buffer
+; (continued on next page)
+
+; (continued from previous page)
+
+;  The Incomparable Incredibly Bletcherous Retype Routine!!!
+; ...bringing you the very worst in program readability, the lowest in
+; taste and the ultimate(?) in hair.
+
+	caxe a,^L			; zap and redisplay?
+	 caxn a,^R			; redisplay?
+	  jrst [move b,ttyopt		; get this console's option variable
+		txne b,(%toovr)		; glass TTY?
+		 txne b,(%toers)	; or display?
+		  jsp b,[	caxn a,^L; zap screen too?
+				 jrst [	csrmov C
+					jrst 2(b)]; yes, zap then fall through
+				csrmov H
+				move c,inipos; initial cursor position
+				movei a,8.(c); offset
+				.iot tto,a; restore cursor
+				csrmov L
+				jrst 3(b)]; and continue
+		csrmov A
+		setzb c,inipos		; cursor at BOL
+		movx a,linbuf(440700)	; if you thought that was bad,
+		movx tp,tabpdl(-5*linbfl); look at the crocks coming up!
+		move linctr		; how many characters to do
+		jsp b,[	sojl ttiser	; all done yet?
+			ildb d,a	; get character
+			caxge d,<" >	; control character?
+			 jrst [	caxn d,^I; tab?
+				 jrst [	push tp,c; save current position
+					skipn 10tabp; screwy Multix 10 tabs?
+					 jrst [	addx c,8.; no, go to next stop
+						txz c,7; make sure at a real stop
+						.iot tto,d; output an 8. tab
+						aoja c,@-1(b)]; now try next
+					addx c,10.; go to Multix tab stop
+					idivx c,10.; but flush modulo
+					imulx c,10.; in the canonical way
+					csrmov H
+					movei d,8.(c); PH offset
+					.iot tto,d; now put cursor there
+					jrst @-1(b)]; and try next character
+				caxn d,^J; line feed?
+				 jrst [	.iot tto,d; yes, just output it
+					jrst ttiser]; without bumping position
+				caxn d,^H; backspace?
+				 jrst [	.iot tto,d; yes, output it
+					soja c,@-1(b)]; but SOS position!
+				save d	; save old character
+				skipge twinp; winning terminal?
+				 skipa d,["]; uparrow
+				  movei d,"^; no, caret
+				.iot tto,d; output the control prefix
+				retr d	; and get the character back
+				movei d,"@(d); get ASCII name
+				.iot tto,d; output it
+				aoja c,@-1(b)]; and try next
+			.iot tto,d	; no, output the character (sigh)
+			aoja c,@-1(b)]]	; and try next character
+; (continued on next page)
+
+; (continued from previous page)
+lnechs:	aosle b,linctr			; update counter
+	 caxl b,5*linbfl		; too long line?
+	  jrst [type [ALine too long!A]
+		movx tp,tabpdl(-5*linbfl); reinitialize line editor variables
+		store %zeros,linctr	; counter...
+		store linbuf(440700),linptr; and pointer
+		jrst ttiser]		; and return
+	idpb a,linptr			; save character in buffer
+	caxe a,^M			; CR?
+	 jrst ttiser			; no, return
+	movx a,^J			; get a LF too
+	aos linctr			; bump buffer pointer again
+	idpb a,linptr			; save character
+	skipge wallp			; wallpaper file enabled?
+	 .iot wal,a			; yes, stick the LF in (thanx Moon)
+	skipl trbinp			; if not a bucky bit DM
+	 .iot tto,a			; then echo to make a terpri
+sndbfr:	store linbuf(440700),linptr,,a	; load pointer
+	movx tp,tabpdl(-5*linbfl)	; reset tab pdl
+	syscal SIOT,[	clarg. nto	; network output
+			a ? linctr]	; output the line
+	 .lose %lssys			; huh????
+	.nets nto,			; force it out
+	jrst ttiser			; and continue
+
+; Here to flush an alphanumeric word.
+
+delwrd:	skipg linctr			; line empty?
+	 jrst ttiser			; yes all done
+	ldb a,linptr			; get current character
+	call alpnmp			; alphanumeric?
+	 jrst [	call delch		; no, flush it
+		jrst delwrd]		; and go again
+delwd1:	call delch			; flush this character
+	skipg linctr			; any more?
+	 jrst ttiser			; nope
+	ldb a,linptr			; get new current char
+	call alpnmp			; alphanumeric?
+	 jrst ttiser			; nope, all done
+	jrst delwd1			; yes, flush it too
+
+; Here to skip if alphanumeric character in A.
+
+alpnmp:	caxl a,"a			; lower case?
+	 subx a,"a-"A			; yes, uppercaseify
+	caxl a,"0			; too low?
+	 caxle a,"Z			; too high?
+	  return			; yes, rejected!
+	caxle a,"9			; numeric?
+	 caxl a,"A			; alphabetic?
+	  aos (p)			; yes, bump return PC
+	return				; and return
+
+;  Here to flush a single character from the screen or echo it
+; back if a printing console.
+
+delch:	sosge linctr			; rubout, drop buffer
+	 jrst [	store %zeros,linctr	; buffer already empty
+		return]			; get another character
+	move a,linptr			; get line editor pointer
+	addx a,(70000)			; decrement pointer
+	txne a,%minfi			; back a full word?
+	 subx a,430000000001		; yes, decrement word
+	movem a,linptr			; store updated pointer
+	ildb a,a			; get character deleted
+	move b,ttyopt			; get status of this terminal
+	txne b,(%toovr)			; glass teletype?
+	 txne b,(%toers)		; or display?
+	  jrst [caxn a,^I		; tabs are special
+		 jrst [	pop tp,a	; get last tab pos
+			movem a,hpos	; set new position
+			csrmov H	; set horizontal position
+			addx a,8.	; offset
+			.iot tto,a	; fix cursor
+			return]		; and return
+		caxn a,^J		; line feed
+		 jrst [	csrmov U	; just moves cursor up
+			return]		; now return
+		caxn a,^H		; backspace
+		 jrst [	aos hpos	; bumps the cursor forward
+			csrmov F	; this can't win all the time,
+			return]		; but we'll try...
+		caxge a,<" >		; for all other controls...
+		 jsp b,[sos hpos	; erase the ASCII part
+			csrmov X	; account for it
+			jrst (b)]	; and erase the ^
+		sos hpos		; get the current horizontal pos
+		csrmov X		; erase character
+		return]			; and continue
+	sos hpos			; account for character
+	.iot tto,a			; echo character deleted
+	return				; and continue
+
+subttl Command process and dispatch
+
+define cmnd code,server
+ loc cmdtab+code-<" >
+ server
+termin
+
+cmprmt:	skipe jclbuf			; any JCL?
+	 jrst open			; yes, fake an O command right away
+	skipge x,hstadr			; connection open or opening?
+	 jrst cmprm1			; no, no bottom of screen
+	csrmov S			; save cursor pos
+	csrmov Z			; bottom of screen
+	csrmov L			; clear line
+cmprm1:	type [TN52>]
+commnd:	call inpchr			; and hang for it
+	camn a,cmdesc			; escape character again?
+	 jumpge x,[	csrmov R	; restore cursor position
+			retr (p)	; reset stack down
+			jrst ttisr5]	; send it to foreign host
+cmmnd1:	andx a,%txctl\%txasc		; only want char plus bucky bit
+	caxl a,"a			; lower case alphabetic?
+	 subx a,"a-"A			; yes, uppercaseify
+	txnn a,%txctl			; control character?
+	 caxge a,<" >			; . . .
+	  jrst cmdnop			; yes, flush the command
+	jrst @cmdtab-<" >(a)		; otherwise dispatch on command
+
+cmdtab:	repeat 100,cmdnop		; default to nothing
+
+	cmnd "1,10tabs			; Multix type tabs
+	cmnd "?,help			; alternate help cruft
+	cmnd "A,sndatt			; ATTN
+	cmnd "B,sndbrk			; break
+	cmnd "C,close			; close connection
+	cmnd "E,echotg			; echo toggle
+	cmnd "H,help			; help cruft
+	cmnd "I,escset			; interrupt character
+	cmnd "J,jtglce			; just toggle crufty echo
+	cmnd "K,kiljob			; kill foreign job
+	cmnd "L,linedt			; line editor toggle
+	cmnd "M,mortog			; **More** processing toggle
+	cmnd "O,open			; open connection
+	cmnd "P,proced			; DDT
+	cmnd "Q,quit			; quit
+	cmnd "R,rolltg			; toggle scrolling
+	cmnd "S,wholin			; do a wholine at foreign host
+	cmnd "T,ttyotg			; TTY output toggle
+	cmnd "V,vt52tg			; VT52 mode toggle
+	cmnd "W,walltg			; wallpaper toggle
+	cmnd "X,togsts			; toggle status
+	cmnd "^,ctrlfy			; controllifier
+	cmnd "_,metize			; metizer
+	loc cmdtab+100			; to end of table again
+
+cmdnop:	.iot tto,[^G]			; barf at bad command
+	skipl hstadr			; connection open?
+	 jrst cmdret			; yes, return
+	jrst commnd			; no, just ask for something else
+cmdfls:	.iot tto,[^G]			; here when a command flushed
+	store %zeros,jclbuf		; just in case
+	jrst cmdret			; and return
+
+subttl Help text
+
+define htxgen string
+ hlptxt: ascii\!string!\
+ htxlen==.length\!string!\
+termin
+
+	htxgen [
+User TELNET commands:
+
+A *	Send ATTN (interrupt process at foreign host).
+B *	Send Break (whatever host wants it to be).
+C * +	Close connection or abort an incomplete O command.
+E *	Request foreign host to toggle the echo mode; toggling to local
+	 echo will always work.  The echo state is initially remote
+	 echo if the host accepts it.  The foreign host may forbid the
+	 toggle, in which case the J command can be used.
+H or ?	Display help message (this text).  The [HELP] key does this too.
+I	Set the intercept character (defaults to <CONTROL>^ on non-TV's;
+	 [BREAK] on TV's).
+J *	Toggle TELNET's echo mode without telling the foreign host or
+	 asking it for permission.
+K * +	Request foreign host to kill the foreign job.
+L	Toggle the line editor; normally on, but only works in local
+	 echo mode.  Hence if the foreign host forbids remote echo mode
+	 you automatically get the line editor (such as in Multics).
+	 Line editor commands:
+	 <CONTROL>A	send ATTN.
+	 <CONTROL>B	send Break.
+	 <CONTROL>C	send ATTN.
+	 <CONTROL>L	clear screen and redisplay line.
+	 <CONTROL>O	abort output.
+	 <CONTROL>Q	quotes next character.
+	 <CONTROL>R	redisplay line.
+	 <CONTROL>S	abort output.
+	 <CONTROL>T	ask host for a status message.
+	 <CONTROL>U	delete line.
+	 <CONTROL>W	delete last word.
+	 [LINE FEED]	activate line (send it to the foreign host),
+	 [RETURN]	insert a CRLF and activate line.
+	 [FORM FEED]	clear screen and redisplay line.
+	 [RUB OUT]	delete last character.
+	 <META>[BREAK]	send Break.
+	 [CLEAR]	delete line.
+	 <META>[CALL]	send ATTN.
+M	Toggle **More** processing; initially off.
+O	Open connection to SOCKET,HOST.  The socket number is optional
+	 and defaults to 27 for new TELNET.  The host specification may
+	 be a name or a number; "?" lists the available hosts at that
+	 point in the scan.  Numbers are octal unless followed by a
+	 decimal point or an 8 or 9 appears in the number.
+P	Proceed TELNET and return the console to DDT.
+Q +	Quit (exit from TELNET and kill the job).
+R	Toggle scrolling (initially on; should be on to win with display
+	editors at foreign site).
+S *	Ask host to give some sort of status message.
+T	Toggle TTY output; initially enabled.
+V	Toggle VT52/Heath mode; initially VT52.  Note that Heath
+	mode requires insert/delete line/char.  VT52 mode
+	requires that you have insert/delete line, or be using a
+	real VT52.  These conditions are not checked.
+W	Toggle wallpaper file; initially disabled.  The file is written
+	 as DSK:NETOUT > on the default directory.
+X	Lists status of all of TELNET's toggles.
+1	Toggle Multics-style tab processing (ie, 10. column tab stops).
+	 This only happens in local echo.  Connecting to a Multics host
+	 sets this mode automatically.
+^	Controllify the next character (for sending bucky bits on a
+	 non-bucky bit terminal).
+_	Metize the next character (for sending bucky bits).
+
+   * = open connection required, + = confirmation required if open
+
+ The intercept character as a command sends that character to the host.
+]
+
+subttl Help and toggle status commands
+
+define toggle tognam,togdsc/
+ type [    togdsc ]
+ .iot tto,["O]
+ ifse tognam,TTYOP,skipge tognam
+ .else skipl tognam
+  jrst [type [ff]
+	jrst .+2]
+ .iot tto,["n]
+ csrmov A
+termin
+
+help:	type [Help text]
+	csrmov C
+	save morep			; save **More** status
+	store %fword,morep		; must have **More** processing now
+	store %fword,morinh		; don't allow inhibition of **More**
+	movx x,hlptxt(440700)		; load pointer to help text
+	movx y,htxlen			; load length of text
+	syscal SIOT,[	clarg. tto	; output to console
+			x ? y]		; using pointer and count
+	 .lose %lssys			; ???
+	retr morep			; restore **More** state
+	store %zeros,jclbuf		; zap JCL buffer
+	jrst hlpret
+togsts:	type [Toggle status]
+	move a,morep			; save **More** state
+	movem a,morep2
+	store %fword,morep		; turn on **More** processing
+	skipge hstadr			; connection open?
+	 jrst togst1			; no, no cursor hacking
+	csrmov R
+togst1:	type [
+]
+	toggle 10TABP,Multics-style tab processing
+	toggle ECHOP,Remote echo
+	toggle LINEDP,Line editor
+	toggle MOREP2,**More** processing
+	toggle NPROTP,New protocol
+	toggle OPENP,Host communication
+	toggle TRBINP,Bucky bit transmission
+	toggle TTYOP,TTY output
+	toggle WALLP,Wallpaper file
+	toggle ROLLP,Scrolling
+	toggle VT52P,VT52 mode
+	move a,morep2
+	movem a,morep			; restore **More** state
+hlpret:	skipl hstadr			; connection open?
+	 jrst [	csrmov Z		; bottom of screen
+		csrmov L		; wipe line
+		jrst .+1]
+	jrst cmprm1			; and get a command
+
+subttl Open command
+
+open:	skipl hstadr			; are we connected?
+	 jrst cmdnop			; yes, must close first!
+	skipe jclbuf			; got JCL?
+	 movx j,jclbuf(440700)		; load pointer to JCL buffer
+	type [Open connection to ]
+	store %zeros,icpskt		; initialize initial socket
+gethst:	setzb a,c			; start off with zero
+open1:	call opnchr			; get a command character
+	caxn b,177			; rubout?
+	 jrst cmdfls			; yes, flush comman
+	caxn b,<"?>			; want help?
+	 jumpe a,hnmprc			; yes, host name hackery!
+	caxe b,"@			; socket number?
+	 caxn b,<",>			; . . .
+sktprc:	  jumpn a,[	skipe icpskt	; got a socket already?
+			 jrst [	.iot tto,[^G]
+				jrst open1]; yup, too bad
+			.iot tto,b	; echo that comma!
+			caxge c,%zeros	; got an octal value?
+			 move c,a	; no, use decimal value
+			movem c,icpskt	; store initial socket #
+			jrst gethst]	; and get host #
+	caxn b,".			; force decimal?
+	 jumpg c,[	movx c,%fword	; flush octal value
+			.iot tto,b	; echo the decimalizer
+			skipe icpskt	; got a socket before this?
+			 jrst [	movx b,^M; yes, can start right away
+				jrst .+1]; so kludge...
+			jsp d,[	call opnchr; get a character
+				caxn b,177; rubout?
+				 jrst cmdfls; yes, flush command
+				caxe b,"@; socket delimiter?
+				 caxn b,<",>; . . .
+				  jrst [skipe icpskt; got a socket?
+					 jrst @-1(d); no, loop back
+					jrst @sktprc]; yup
+				caxn b,^M; it a CR?
+				 jrst .+1; yup, go go go!
+				.iot tto,[^G]
+				jrst -1(d)]]; try again
+	caxn b,^M			; CR yet?
+	 jumpn a,[	movx b,nprskt	; default ICP socket #
+			skipn icpskt	; have I gotten one?
+			 movem b,icpskt	; nope, got one now!
+			caxle c,%zeros	; octal value?
+			 move a,c	; yes, flush decimal
+			store %zeros,jclbuf; clear JCL buffer
+			movem a,hstadr ? type [ ATrying...] ? jrst goicp]
+	caxl b,"A			; alphabetic?
+	 jumpe a,hnmprc			; yes, do moby host name crap
+	caxe b,"8			; decimal?
+	 caxn b,"9			; . . .
+	  movx c,%fword			; yes, then no octal allowed
+	caxl b,"0			; decimal?
+	 caxle b,"9			; . . .
+	  jrst [.iot tto,[^G]
+		jrst open1]		; no, ignore this char
+	.iot tto,b			; echo it
+	imulx a,10.			; shove old value over
+	addi a,-"0(b)			; add in new value
+	jumpl c,open1			; no octal cruft if -1
+	lsh c,wid. 7			; shove old value over
+	addi c,-"0(b)			; add in new value
+	jrst open1			; and continue
+
+; Host name processing
+
+hnmprc:	caxe b,<"?>			; don't zap question marks
+	 txz b,<" >			; convert case if necessary
+	movx d,hstnam(440700)		; save pointer to accumulated host name
+	store %zeros,hstnam,hstnam+hstnln-1; clear up host name
+	call search			; search for host like this
+	 jrst [	caxe b,<"?>		; don't barf at checkers
+		 .iot tto,[^G]		; lost, barf at loser
+		jrst gethst]		; and forget being a host name
+	.iot tto,b			; echo character verifying winnage
+hnmchr:	call opnchr			; get a character
+	caxn b,^M			; got a CR to go go go?
+	 jumpg a,[	subx d,hstnam	; compute as byte pointer offset
+			move x,xsave	; get pointer to host table entry
+			move x,(x)	; get pointer to string
+			addi d,hsttab(x); make pointer to rest of host name
+			jsp x,[	ildb b,d; get a character
+				jumpe b,(x); return when done
+				.iot tto,b; else output character
+				jrst @-1(x)]; and loop back
+			movx b,nprskt	; default ICP socket #
+			skipn icpskt	; got one yet?
+			 movem b,icpskt	; no, must use this one
+			store %zeros,jclbuf; clear JCL buffer
+			movem a,hstadr ? type [A Trying...] ? jrst goicp]
+	caxn b,"			; got an altmode?
+	 jumpg a,[	move b,d	; copy pointer for bopping
+			subx b,hstnam	; compute as byte pointer offset
+			move x,xsave	; get pointer to host table entry
+			move x,(x)	; get pointer to string
+			addi b,hsttab(x); make pointer to rest of host name
+			jsp x,[	ildb b	; get a character
+				jumpe (x); return when done
+				idpb d	; pack it away
+				.iot tto,; output
+				aoja c,@-1(x)]; and loop back
+			jrst hnmchr]	; happy DLW
+	caxn b,177			; rubout?
+	 jrst [	sojl c,cmdfls		; rubout flushes empty host name
+		move b,ttyopt		; what kind of terminal?
+		txne b,(%toovr)		; glass teletype?
+		 txne b,(%toers)	; or display?
+		  jsp b,[	csrmov X; yes, erase
+				jrst 2(b)]; and continue past repeater
+		ldb b,d			; else get character we're flushing
+		.iot tto,b		; repeat it back
+		movx b,%zeros		; null
+		dpb b,d			; flush character
+		addx d,(70000)		; decrement pointer
+		txne d,%minfi		; back a full word?
+		 subx d,430000000001	; yes, decrement word
+		call search		; search to reset things
+		jrst hnmchr]		; now continue; always fails
+	caxle b,<"_>			; lower case?
+	 subx b,"a-"A			; yes, convert to upper case
+	caxg b,<" >			; control frob?
+	 jrst [	.iot tto,[^G]		; yes, barf at it
+		jrst hnmchr]		; and try again
+	movem a,asave			; save old value of A
+	call search			; will this character go in?
+	 jrst [	move a,asave		; get the old value of A back
+		caxe b,<"?>		; don't barf at checkers
+		 .iot tto,[^G]		; barf at crufty character
+		jrst hnmchr]		; no, ignore it
+	.iot tto,b			; yes, verify by echoing
+	jrst hnmchr			; and continue for more
+
+subttl Host name search, close command
+
+search:	move x,hsttab+6			; NAMES table pointer
+	movn y,hsttab(x)		; get length of name table
+	hrl x,y				; put it in left half
+	hrri x,hsttab+1(x)		; complete AOBJN pntr
+	setzb a,servrp			; clear host, server flag
+nxthst:	hrrz y,(x)			; get relative address of host name
+	movei z,1(c)			; length of name when this char in
+	skipe b				; just search?
+	 caxn b,<"?>			; list frobs?
+	  move z,c			; yes, don't try to add in new ones
+	movx zz,%zeros			; clear index to my name
+serch1:	jumpe z,serch2			; if null, then always win
+	subx z,5.			; word already completed?
+	move xx,hstnam(zz)		; get this word
+	jumpg z,[	camn xx,hsttab(y); match with this host?
+			 aoja y,[aoja zz,serch1]; yes, WIN, try next word
+			jrst srhctn]	; lost with this one, try next
+	hll yy,d			; copy from input byte pointer
+	ibp yy				; bump to next byte
+	hrri yy,xx			; and the address too
+	caxe b,<"?>			; if listing frobs, don't insert "?"
+	 dpb b,yy			; put proposed character in name
+	move yy,hsttab(y)		; get name from table
+	and yy,[.byte 7 ? 177 ? 000 ? 000 ? 000 ? 000
+		.byte 7 ? 177 ? 177 ? 000 ? 000 ? 000
+		.byte 7 ? 177 ? 177 ? 177 ? 000 ? 000
+		.byte 7 ? 177 ? 177 ? 177 ? 177 ? 000
+		.byte 7 ? 177 ? 177 ? 177 ? 177 ? 177]+4(z); mask out cruft
+	came xx,yy			; still a match?
+	 jrst srhctn			; nope, damn, after all that!
+serch2:	caxn b,<"?>			; list frobs?
+	 jrst [	csrmov A		; yes, go to next line
+		hrrz z,(x)		; get relative address of string
+		add z,[hsttab(440700)]	; make a byte pointer
+		jsp y,[	ildb xx,z	; get a character
+			jumpe xx,srhctn	; done, try next host
+			.iot tto,xx	; no, output character
+			jrst @-1(y)]]	; and continue for more
+	hlrz z,(x)			; get this host's number table rel adr
+	move yy,hsttab+2(z)		; get system status
+	move z,hsttab(z)		; get this host's number
+	camn xx,hsttab(y)		; is this an exact match?
+	 jrst [	txne xx,<.byte 7 ? 000 ? 000 ? 000 ? 000 ? 177>; last a null?
+		 skipn hsttab+1(y)	; no, better check for more
+		  jrst [move a,z	; no more, WIN WIN WIN
+			movem x,xsave	; remember this X too...
+			jrst srhrtn]	; and return winnitude
+		jrst .+1]		; didn't get exact match
+	jumpl a,srhctn			; if lost before, well, still charge on
+	txnn yy,%minfi			; if this is a user,...
+	 jrst [	jumpe a,serch3		; if no previous
+		skipl servrp		; or if no server seen
+		 jrst serch3		; then continue
+		jrst srhctn]		; win, don't cruft this one
+	skipl servrp			; was there a previous server?
+	 jrst [	store %fword,servrp	; no, now there is
+		move a,z		; flush any user there
+		movem x,xsave		; save this pointer
+		jrst srhctn]		; and win
+serch3:	exch a,z			; get the new index
+	hrrzm x,xsave			; save this position for later
+	jumpe z,srhctn			; if old was zero, win win win
+	came z,a			; but always win if equal
+	 movns a			; well, at least a non-unique frob
+;	jrst srhctn			; and try next host
+
+srhctn:	aobjn x,nxthst			; try for next host
+srhrtn:	jumpe b,cpopj			; rubbing out wins
+	caxn b,<"?>			; list frob?
+	 jrst [	csrmov A
+		type [Open connection to host ]
+		movx a,hstnam(440700)	; load pointer to host name
+		move b,c		; get character count
+		syscal SIOT,[	clarg. tto; TTY output channel
+				a ? b]	; output parameters
+		 .lose %lssys		; huh???
+		movx b,<"?>		; make sure no barf on checker
+		return]			; and return
+	jumpe a,cpopj	 		; return if this one lost
+	addx c,1			; won, update character counter
+	idpb b,d			; insert in host name
+	aos (p)				; bump return PC
+cpopj:	return				; and return
+
+; Open input character routine (either from TTY or JCL)
+
+opnchr:	skipn jclbuf			; any JCL?
+	 jrst [	.iot tti,b		; no, get a character from console
+		andx b,%txasc		; only want ASCII part
+		return]			; and return
+	ildb b,j			; yes, get a character from JCL
+	caxn b,^C			; end of buffer?
+	 movx b,^M			; yes, fake a M
+	caxn b,^M			; is it end of command?
+	 store %zeros,jclbuf		; yes, flush JCL forever
+	jumpe b,opnchr			; flush nulls
+	return				; got a JCL character all okay
+
+; Close command and reset routine if connection closed on us
+
+close:	skipge hstadr			; ever got opened?
+	 jrst cmdnop			; nope, no-op
+	type [Close connection]
+	skipe openp			; don't need confirm if not open
+	 jsp c,confrm			; get confirmation
+	store %zeros,killp		; no death if this way
+reset:	skipe killp			; shall I suicide?
+	 .break 16,160000		; yup
+	csrmov A			; advance to NL
+	irps chnl,,[icp nti nto]
+	 .close chnl,			; close all net channels
+	termin
+	store %zeros,corbeg,corend	; reset all flags
+	store %fword,hstadr		; clear host to get to
+	useti MSK2,1_tto		; clear interrupts pending
+	useti IFPIR,%zeros		; . . .
+	useti DF2,%zeros		; . . .
+	movx p,pdl(-pdllen)		; reset stack pointer
+	jrst notcon			; and become not connected
+
+subttl Host level commands
+
+echotg:	skipl openp			; ICP done?
+	 jrst cmdnop			; no, not ready yet
+	type [Echo request at ]
+	skipl echop			; full duplex?
+	 jrst [	type [remote host]
+		store %fword,echop
+		skipl nprotp		; new protocol?
+		 jrst [.iot nto,[204] ? jrst cmdret]; old protocol ECHO
+		telcmd [IAC DO ECHO]
+		jrst cmdret]		; and return
+	type [local host]
+	store %zeros,echop
+	skipl nprotp			; new protocol?
+	 jrst [.iot nto,[203] ? jrst cmdret]; old protocol NO ECHO
+	telcmd [IAC DONT ECHO]
+	jrst cmdret			; and return
+
+ctrlfy:	skipn trbinp			; in bucky bit mode?
+	 jrst cmdnop			; nope, you lose
+	type [Controllify]
+	movx x,%txctl			;  bit
+	iorm x,bkybts			; remember this bit
+	jrst cmdret			; and return
+
+metize:	skipn trbinp			; in bucky bit mode?
+	 jrst cmdnop			; nope, you lose
+	type [Metize]
+	movx x,%txmta			;  bit
+	iorm x,bkybts			; remember this bit
+	jrst cmdret			; and return
+
+wholin:	skipge nprotp			; new protocol?
+	 skipl openp			; ICP done?
+	  jrst cmdnop			; no, not ready yet
+	type [Status]
+	telcmd [IAC AYT]
+	jrst cmdret			; and return
+
+sndatt:	skipl openp			; ICP done?
+	 jrst cmdnop			; no, not ready yet
+	type [ATTN]
+	.netint nto,			; send an interrupt
+	skipl nprotp			; new protocol?
+	 jrst [	telcmd [201 200]
+		jrst cmdret]		; old protocol break
+	telcmd [IAC IP IAC DM]
+	store %zeros,ttoctr		; and buffer count
+	store ttobuf(440700),ttoptr	; reset buffer pointer
+	jrst cmdret			; and return
+
+kiljob:	skipge nprotp			; new protocol?
+	 skipl openp			; connection open?
+	  jrst cmdnop			; nope, lose
+	type [Kill job request at foreign host]
+	jsp c,confrm			; demand confirmation!
+	telcmd [IAC DO LOGOUT]
+	store %fword,logoup		; remember this was asked for
+	jrst cmdret			; and return
+
+sndbrk:	skipge nprotp			; new protocol?
+	 skipl openp			; ICP done?
+	  jrst cmdnop			; no, not ready yet
+	type [Break]
+	.netint nto,			; send network interrupt (INS)
+	telcmd [IAC BRK IAC DM]
+	jrst cmdret			; and return
+
+subttl Local level commands, confirmations, etc.
+
+proced:	type [Proceed, return TTY to DDT]
+	aos (p)				; bump return PC
+	return				; and return
+
+quit:	type [Quit]
+	skipe openp			; connection open?
+	 jsp c,confrm			; yes, require confirmation
+	.break 16,160000		; suicide now
+
+nhpcfm:	uget XUNAME,x			; get my name
+	caxe x,('RWG)			; is it Bill?
+	 caxn x,('MRC)			; is it Mark?
+	  jrst notsty			; yes, don't bother them!
+	caxn x,('KLH)			; same for Ken
+	 jrst notsty
+	hllos x				; check for not logged in
+	aoje x,[type [Login Please]
+		.break 16,160000]	; you lose
+	type [
+ You are logged into ITS over the ARPAnet.  It is a waste of ITS'
+system resources (jobs, network channels) to go back again over
+the ARPAnet to another site.  It also slows down response to you.
+
+ You should not do this unless you have a good reason to do so.  If
+you have any questions, typing :LUSER to DDT will request a systems
+programmer to assist you.
+
+ Are you sure you want to run TELNET now?]
+	.iot tti,x			; get a character
+	andx x,%txasc			; only want character, no bucky bits
+	caxe x,"Y			; Yes?
+	 caxn x,"y			; . . .
+	  jrst [type [Yes
+]
+		jrst notsty]		; claims to know what (s)he's doing
+	type [No
+Thank you for your co-operation.
+]
+	.break 16,160000		; and suicide
+
+confrm:	type [ [Confirm]]
+	call inpchr			; get a character
+	andx a,%txasc			; only want character
+	caxe a,<" >			; how about a space?
+	 caxn a,^M			; is it a CR?
+	  movx a,"Y			; yes, fake a Yes
+	caxe a,"y			; yes?
+	 caxn a,"Y			; . . .
+	  caxa				; yup, prepare to die...
+	   jrst [	type [No]
+			jrst cmdfls]	; deconfirmed
+	type [Yes]
+	jrst (c)			; return to do whatever
+
+escset:	type [Intercept character=]
+	call inpchr			; get new interrupt character
+	.iot tto,a			; echo it
+	movem a,cmdesc			; set it
+	jrst cmdret			; and return from command
+
+linedt:	aosn linedp			; line editor on?
+	 jrst [	type [Line editor off]
+		jrst cmdret]		; yes, turn off with no problems
+	type [Line editor on]
+	store %fword,linedp		; yes, enable line editor
+	movx tp,tabpdl(-5*linbfl)	; load up tab pdp
+	store %zeros,linctr		; clear line editor counter
+	store linbuf(440700),linptr	; initialize line editor pointer
+	jrst cmdret			; and return
+
+10tabs:	type [10 character tabs o]
+	setcmb a,10tabp			; complement Multix tabs
+	jumpl a,[.iot tto,["n] ? jrst cmdret]; on
+	type [ff]
+	jrst cmdret			; and return from command
+
+mortog:	type [More processing o]
+	setcmb a,morep			; complement **More** hacking
+	jumpl a,[.iot tto,["n] ? jrst cmdret]; **More** on now
+	type [ff]
+	jrst cmdret			; and return from command
+
+vt52tg:	type [Now in ]
+	setcmb a,vt52p
+	jumpge a,[
+		type [VT52 mode]
+		store %zeros,ansip
+		jrst cmdret ]
+	type [Heath mode]
+	jrst cmdret
+
+rolltg:	type [Scrolling o]
+	setcmb a,rollp
+	jumpge a,[
+		type [ff]
+		movx a,(%tsrol)
+		andcam a,ttysts
+		jrst rollt1 ]
+	type [n]
+	movx a,(%tsrol)
+	iorm a,ttysts
+rollt1:	syscal TTYSET,[	clarg. tto	; set TTY status variables
+			%clarg ttyst1	; first set of character groups
+			%clarg ttyst2	; second set of character groups
+			%clarg ttysts ]	; TTY control status
+	 .lose %lssys			; can't set TTY status
+	jrst cmdret
+
+walltg:	type [Wallpaper file ]
+	setcmb a,wallp			; toggle wallpaper flag
+	jumpge a,[	type [closed]
+			.close wal,	; close off wallpaper
+			jrst cmdret]	; and return
+	.open wal,[.uao,,'DSK ? sixbit/NETOUT>/]; try to make wallpaper file
+	 jrst [	type [cannot be opened]
+		store %zeros,wallp	; remember can't do!
+		jrst cmdret]		; and return
+	type [opened]
+	jrst cmdret			; and continue
+
+jtglce:	skipl openp			; connection open?
+	 jrst cmdnop			; nope, lose lose
+	type [Just toggle crufty echo o]
+	setcmb a,echop			; togglify it (hack hack)
+	jumpl a,[	type [ff]
+			jrst cmdret]	; echo off
+	.iot tto,["n]
+	jrst cmdret			; echo on
+
+ttyotg:	.reset tto,			; flush output
+	type [TTY output o]
+	setcmb a,ttyop			; toggle TTY output
+	jumpge a,[	.iot tto,["n]	; nope, indicate on
+			jrst cmdret]	; and return
+	type [ff]
+	store %zeros,ttobuf		; flush TTY output buffer
+	store ttobuf(440700),ttoptr	; and reset buffer pointer
+;	jrst cmdret			; and return
+
+; Here to restore cursor position after a command
+
+cmdret:	skipge hstadr			; connected?
+	 jrst [	csrmov A		; advance to new line
+		return]
+	csrmov R			; restore cursor position
+	return				; and return
+
+subttl Handle ints on NTO and TTO channels
+
+; Network output interrupt
+
+ntoser:	syscal WHYINT,[	clarg. nto	; get status of net output channel
+			repeat 2,%clval c]; socket state
+	 .lose %lssys			; huh???
+	txz c,%lhalf			; flush any left half
+	caxe c,%nsopn			; socket open?
+	 caxn c,%nsrfn			; RFNM wait?
+	  jrst tsret			; okay, ignore that
+	store %zeros,openp		; zap open status
+	jumpe c,tsret			; and ignore until NTI closed too
+badskt:	type [
+Socket entered illegal state -- ]
+	caxl c,maxess			; greater than maximum?
+	 jrst random			; yes, barf with number
+	movx a,(440700)			; make a byte pointer
+	hrr a,esstab(c)			; get message
+	hlrz b,esstab(c)		; and counter
+	syscal SIOT,[	clarg. tto	; output to TTY
+			a ? b]		; pointer and counter
+	 .lose 1000			; argh
+	jrst rnderr			; and continue to barf
+
+; TTY **More** interrupt
+
+ttoser:	syscal WHYINT,[clarg. tto]	; acknowledge the int
+	 .lose %lssys			; huh???
+	skipge openp			; open connection (meaningful MORINH)?
+	 skipge morinh			; **More**'s inhibited?
+	  skipn morep			; taking **More**'s?
+	   jrst tsret			; nope, flush the int
+	type [**More**]
+	syscal IOT,[	clctl. %tiint\%tipek; peek ahead, but wait
+			clarg. tti	; on TTY input channel
+			%clval a]	; to AC a
+	 .lose %lssys			; huh???
+	caxn a,<" >			; a space?
+	 call inpchr			; yes, flush it
+	type [
+]
+	jrst tsret			; and flush it
+
+; Generate constants
+
+	variab				; variables
+...lit:	consta				; constants
+
+hsttab=<.+1777>&-2000			; start of HSTTAB mapped pages
+
+end TELNET

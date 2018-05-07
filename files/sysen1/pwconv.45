@@ -1,0 +1,289 @@
+;-*-MIDAS-*-
+
+title CONVERT old PWORD database format to new
+
+x=:0				   ;super temporary
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+ct=:6
+t=:7				   ;temporary arithmetic register
+tt=:10				   ;temporary arithmetic register, T+1
+
+dski=:11
+dsko=:12
+lsrc==13			   ;channel for LSRTNS
+
+sp=:17
+p==:sp
+
+call=:pushj sp,
+
+lsrpag==20			   ;first page for LSRTNS to hack
+lsrpgc==300			   ;# of pages to allow LSRTNS
+
+
+DEFINE SYSCAL A,B
+	.CALL [SETZ ? SIXBIT/A/ ? B ((SETZ))] TERMIN
+
+loc 2000
+
+buffer:	block 2000
+
+pwpage==buffer/2000
+
+.insrt SYSEN1;PWFILE >
+;; some moved items
+opwcnt=:pwpage*2000+20		   ; ***
+opwrbp=:pwpage*2000+21		   ;*** pointer into buffer
+
+  %poapl==:400000		   ;* Has applied for an account
+  %posys==:200000		   ;* a name reserved for the system
+  %ponew==:100000		   ;  This account has never logged in
+  %podil==:040000		   ;  is permitted to use dialups.
+  %poday==:020000		   ;  cannot use it in the daytime
+  %porfs==:010000		   ;* Means we've turned him down, and should
+				   ;    print ACOUNT;REFUSE <uname> for reason
+  %pohld==:004000		   ;* Means we've put this account on hold.
+				   ;    generally means, more info desired.
+				   ;	print ACOUNT;HOLD <uname>
+  %pobad==:002000		   ;  Means that this name shouldn't be able to
+				   ;    log in from loser sites.
+  %pooff==:001000		   ;* Like refuse, but not final.  Print
+				   ;    ACOUNT;OFF <uname>
+
+
+pdata:				   ;block of data containing info for one user
+pdunam:	0			   ;temporary for encoded uname word
+pdpass:	0			   ;temporary for encoded password word
+pdflag:	0			   ;temporary for database flag word
+pdmore:	0			   ;temporary for database extra word
+
+pndata:
+pnunam:	0			   ; encoded UNAME
+pnpass:	0
+pnflag:	0
+pninfo:	0
+pndate:	0
+0 ? 0 ? 0
+
+$$ulnp==0			   ;don't assemble in last-name prefix-matcher
+$$ulnm==0			   ;Don't assemble in last-name finder
+$$hsnm==0			   ; DO assemble in HSNAME hackery
+$$unam==0
+$$ovly==0			   ;Don't overlay
+
+.insrt syseng;lsrtns >
+
+pdl:	-100,,pdl
+	block 100
+
+go:	move sp,pdl
+	movei a,lsrc		   ;A <- channel for LSRTNS
+	move b,[-lsrpgc,,lsrpag]   ;AOBJN ptr to pages for LSRTNS
+	call lsrtns"lsrmap	   ;map in the INQUIR database
+	  .lose
+	syscal OPEN,[ %clbit,,.uii ? %climm,,dski ? [sixbit /DSK/]
+		      [sixbit /   BIG/] ? [sixbit /   DAT/] ? [sixbit /RAT/] ]
+	  .lose %lsfil
+	syscal OPEN,[ %clbit,,.uio ? %climm,,dsko ? [sixbit /DSK/]
+		      [sixbit /_PWCNV/] ? [sixbit /OUTPUT/] ? [sixbit /RWK/] ]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dski ? t ? tt]
+	  .lose %lsfil
+	move a,opwcnt		   ; Update the count part
+	move ct,a		   ; We'll use this to count later
+	idivi ct,4		   ; Get # of entries
+	imuli a,2		   ; Get # of words in new format
+	movem a,pwcnt
+	setom atoapl		   ; We allow applications
+	setom pwordt		   ; Set no date override
+	setom pwordt+1
+	setom pwordt+2
+	setom pwinit
+	setom pwdone
+	move x,opwrbp
+	movem x,pwrbfp
+	setom pwgrdm
+	setom pwgrdm+1
+	setom pwgrdm+2
+	setom pwgrdm+3
+	setom pwgrdm+4
+	setom pwgrdm+5
+	setom pwgrdm+6
+	setom pwgrdm+7
+	setom pwgrdm+10
+	setom pwgrdm+11
+	setom pwgrdm+12
+	setom pwgrdm+13
+	setom pwgrdm+14
+	setom pwgrdm+15
+	setom pwgrdm+16
+	setom pwgrdm+17
+..foo==0
+irp gr,,[USER,DAY,DIAL,TURIST,NCNSRT,GRP.05,GRP.06,GRP.07,GRP.08,GRP.09,GRP.10,GRP.11,GRP.12,GRP.13,GRP.14,GRP.15] 
+	move x,[sixbit /gr/]
+	movem x,pwgnam+..foo
+  ..foo==..foo+1
+TERMIN
+
+	.suset [.runame,,pwuhak]
+	.suset [.rjname,,pwjhak]
+
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	setzm buffer		   ; Clear the buffer
+	move x,[buffer,,buffer+1]
+	blt x,buffer+1777
+	move t,[444400,,buffer]	   ; Write 6 blank pages to disk
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+pwloop:	move t,[444400,,pdata]	   ; Read a password into our buffer
+	movei tt,4
+	syscal SIOT,[%climm,,dski ? t ? tt]
+	  .lose %lsfil
+	move x,pdunam		   ; The PWUNAM part is the same
+	movem x,pnunam
+	move x,pdpass		   ; So is the PWPASS part
+	movem x,pnpass
+
+	move b,pdunam
+	sub b,[742532,,732643]	   ;Will oddities never cease?
+	rot b,-13
+	movei a,lsrc
+	call lsrtns"lsrunm	   ;Find his INQUIR entry
+	  jrst goo1		   ;  No there, determine group from flags
+	movei a,lsrtns"i$grp	   ;Let's get his group
+	call lsrtns"lsritm
+	  jrst goo1		   ;  He doesn't have one
+	ildb x,a		   ;Get the item
+	cain x,"N		   ;Is he an N?
+	  jrst [ movei d,4
+		 setzb a,c
+		 move x,pdflag
+		 tlze x,%poday\%podil  ;If funny flags set
+		   jrst goo1	   ;don't pay attention to INQUIR
+		 jrst goo2]
+goo1:	setz d,			   ; D gets the group
+	setz a,			   ; A gets the new flags
+	setz c,			   ; C gets the state
+	move x,pdflag		   ; The FLAGS word needs some work
+	tlze x,%podil
+	  jrst [ movei d,1	   ; Group one
+		 tlze x,%poday
+		   movei d,3	   ; Group 3
+		 jrst .+1]
+	tlze x,%poday
+	  movei d,2		   ;Group 2
+goo2:	tlze x,%ponew
+	  tlo a,%pfnew
+	tlze x,%pobad
+	  tlo a,%pfbad
+	movei c,ps%ok
+	tlze x,%posys
+	  jrst [movei c,ps%sys ? jrst flgsto]
+	tlze x,%porfs
+	  jrst [movei c,ps%rfs ? jrst flgsto]
+	tlze x,%pohld
+	  jrst [movei c,ps%hld ? jrst flgsto]
+	tlze x,%poapl
+	  jrst [ movei c,ps%apl ? jrst flgsto]
+
+	tlzn x,%pooff
+	  jrst flgsto
+	  
+	movei t,[asciz /: A %PFOFF was encountered!
+/]
+	jrst losage
+
+flgsto:	movei t,[asciz /:Illegal flags encountered!
+/]
+	jumpn x,losage
+
+
+	movem a,pnflag
+	setzm pninfo
+	dpb c,[pi$sta pninfo]
+	dpb d,[pi$grp pninfo]
+	setz x,
+	dpb x,[pi$crt pninfo]	   ; We don't know who created this
+	setom pndate		   ; We don't know creation and reference times
+	move t,[444400,,pndata]
+	movei tt,10
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	sojg ct,pwloop
+
+	move t,[444400,,buffer]	   ; Provide 8 pages of emptyness
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+	move t,[444400,,buffer]
+	movei tt,2000
+	syscal SIOT,[ %climm,,dsko ? t ? tt]
+	  .lose %lsfil
+
+
+	syscal RENMWO,[%climm,,dsko ? [sixbit /FOO/] ? [sixbit /DAT/]]
+	  .lose %lsfil
+	.close dsko,
+	.logout 1,
+
+losage:	move tt,pdunam
+	sub tt,[742532,,732643]	   ;Will oddities never cease?
+	rot tt,-13
+
+	.value (t)		   ; Report the error, TT has UNAME
+	jrst flgsto
+end go

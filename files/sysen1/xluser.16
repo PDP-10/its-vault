@@ -1,0 +1,212 @@
+; -*- MIDAS -*-
+
+Title	XLUSER -- LUSER for MC (cross network sends)
+
+;; This is a quick and dirty hack.
+;; Feel free (nay, encouraged) to improve it.
+;; --sra 22 August 1986
+
+p==:17
+call=:<pushj p,>
+ret=:<popj p,>
+
+.insrt	ai:system;t20mac >
+
+tty==:0
+cli==:1
+
+h==10					; helper table pointer
+
+define	tmsg	&msg
+	dmove	1,[440700,,[ascii msg] ? <.length msg>]
+	.call	ttysio
+	 .lose
+termin
+
+ttysio:	setz ? sixbit 'SIOT' ? movei tty ? 1 ? setz 2
+
+cliopn:	setz ? sixbit 'open' ? movsi .uao ? movei cli
+	hlpdev(h) ? hlpfn1(h) ? hlpfn2 ? setz hlpsnm
+
+clisio:	setz ? sixbit 'siot' ? movei cli ? 1 ? setz 2
+
+.scalar	pdl(pdllen==200),msgbuf(200),msgptr(2),nhlprs
+
+start:	move	p,[-pdllen,,pdl-1]
+	.open	tty,[.uao\%tjdis,,'tty ? setz ? setz]
+	 .lose	%lssys
+	tmsg	"AAttempting to summon help..."
+	call	makmsg			; cons up the message
+	setzm	nhlprs			; no helpers found yet
+	movei	h,hlptab		; helper table
+	do.				; for all nice people
+	  .call	cliopn			; try to get a connection
+	  ifskp.			; got one
+	    dmove 1,msgptr		; get message pointer and count
+	    .call clisio		; try to send the message
+	  anskp.			; that has to win too
+	    aos	nhlprs			; it did, count another person notified
+	  endif.
+	  .close cli,			; close cli channel in any case
+	  addi h,hlpinc			; next helper
+	  caige h,hlpmax		; unless done them all
+	   loop.
+	enddo.
+	skipn	nhlprs			; did we find anybody?
+	ifskp.				; yep
+	  tmsg	".
+Help has been summoned.  Since these people are probably on other
+machines I can't tell if they are at their terminals.  Wait a few
+minutes to see if somebody is awake, then give up or try again after
+a reasonable period (half hour or so).
+"
+	else.				; nope
+	  tmsg	".
+Sorry, I can't find anybody to help you.
+Try again at some later date.
+"
+	endif.
+	.logout	1,			; bye
+	jrst	.-1			; paranoia
+
+
+;; Helper table is two words per entry.  We use MLDEV to use foreign
+;; CLI: devices to do the actual sending.  Addresses look like normal
+;; network mail addresses.  Eg, to put FOOBAR@AI on the helper list,
+;; add a line like
+;;
+;;	FOOBAR@AI		;Joe Foobar
+;;
+;; after the IRPW.  If the machine name is left off it defaults to the
+;; local machine, as you would expect.  Keep it simple, the parser is
+;; a screenful down from here and is not very smart.
+;;
+;; Yes, you have to add a seperate entry for each ITS if you are
+;; willing to help from any of them.  I think this is a feature but I
+;; could be wrong.  It does simplify the code, and the theory is that
+;; this way you can leave out ITS machines that you never use to cut
+;; down on MLDEV overhead.
+;;
+;; Table construction is done at compile time.  Internals are not for
+;; the faint at heart.
+
+hlpinc==:2				; two words per entry
+hlpfn1==:0				; uname is word zero
+hlpdev==:1				; machine-CLI device name is word one
+hlpsnm:	sixbit	'XLUSER'		; sillyness
+hlpfn2:	sixbit	'HACTRN'		; want this person's HACTRN job
+
+hlptab:	irpw	x1,x2,[
+					; Table of helpful people
+;	SRA@XX				; 20X doesn't have CLI:!
+	SRA@AI
+	SRA@MC
+	SRA@MX
+;	ALAN@AI
+;	CSTACY@MC
+	CENT@AI
+	CENT@MC
+	CENT@ML
+	CENT@MX
+	CENT@MD
+
+]					; You don't want to mess with
+	irps	y1,y2,[x1]		; the rest of this, honest.
+		ifg .irpcnt-1,.fatal Too many arguments in FOOTAB
+		ife .irpcnt,{
+			sixbit 'y1'
+			ifsn	y2,@, sixbit 'CLI'
+		} .else {		; except maybe to add a new
+					; ITS name on the next line
+			irp	z1,z2,[MC,AI,ML,MX,MD]
+				ifse y1,z1,{.istop}
+				ifb z2,.fatal y1 is not an MIT ITS machine!
+			termin
+			sixbit	'y1!CLI'
+		}
+	termin
+termin
+
+hlpmax::				; end of helper table
+
+
+;; Cons up the message we are going to send.  Much code stolen from
+;; RKW's LUSER program (a much better example of good programming than
+;; this crock).
+
+sstatu:	setz ? sixbit 'SSTATU'
+	movem 2 ? movem 2 ? movem 2 ? movem 2 ? movem 2
+	setzm 2
+
+makmsg:	move	1,[440700,,msgbuf]
+	movem	1,msgptr
+	move	2,[440700,,[asciz "ÛMessage from "]]	; ]
+	call	ascout
+	.suset	[.runame,,2]
+	call	sixout
+	movei	2,"@
+	idpb	2,1
+	.call	sstatu
+	 .lose	%lssys
+	txne	2,<000077,,777777>
+	 .lose
+	call	sixout
+	move	2,[440700,,[asciz " (T"]]
+	call	ascout
+	.suset	[.rcnsl,,3]
+	ldb	2,[030300,,3]
+	addi	2,"0
+	idpb	2,1
+	ldb	2,[000300,,3]
+	addi	2,"0
+	idpb	2,1
+	move	2,[440700,,[asciz ") "]]
+	call	ascout
+	move	3,[440700,,[asciz "// ::"]]
+	.rdatim	5,
+	exch	5,6
+	rot	5,14
+	move	4,[440600,,5]
+	do.
+	  ildb	2,4
+	  addi	2,40
+	  idpb	2,1
+	  ildb	2,4
+	  addi	2,40
+	  idpb	2,1
+	  ildb	2,3
+	  jumpe	2,endlp.
+	  idpb	2,1
+	  loop.
+	enddo.				; [
+	move	2,[440700,,[asciz "]
+Help me -- I am a luser.
+"]] ?	call	ascout
+
+	move	1,msgptr
+	setz	2,
+	do.
+	  ildb	3,1
+	  skipe	3
+	   aoja	2,top.
+	enddo.
+	movem	2,msgptr+1
+r:	ret
+
+ascout:	ildb	3,2
+	jumpe	3,r
+	idpb	3,1
+	jrst	ascout
+
+sixout:	jumpe	2,r
+	setz	3,
+	rotc	2,6
+	addi	3,40
+	idpb	3,1
+	jrst	sixout
+
+
+...lit:	consta
+...var::variab
+
+	end	start

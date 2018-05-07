@@ -1,0 +1,907 @@
+;-*-Midas-*-
+
+ITS==0 ? 10X==0 ? 20X==0
+IFE .OSMID-<SIXBIT "ITS">,    ITS==1
+IFE .OSMID-<SIXBIT "TENEX">,  10X==1
+IFE .OSMID-<SIXBIT "TWENEX">, 20X==1
+TNX==10X\20X
+
+IFN TNX,Title Remote @WEBSTER for T(W)ENEX
+IFN ITS,Title Remote :WEBSTER for ITS
+
+IFN ITS, CS==1 ? IS==0		;ITS only has Chaosnet version (now).
+IFN TNX,[
+IFNDEF CS, CS==0
+IFNDEF IS, IS==0
+];TNX has both Chaosnet and Internet versions.
+IFN CS, CS==1 ? PRINTX "(Chaosnet version)
+"
+IFN IS, IS==1 ? PRINTX "(Internet version)
+"
+IFE CS+IS,   .FATAL Set CS for Chaosnet version, IS for Internet version
+IFG CS+IS-1, .FATAL Can't be both Chaosnet and Internet version!
+
+A=5
+B=6
+C=7
+D=10
+E=11
+T=12
+TT=13
+J=14
+X=15
+P=17
+
+IFN ITS,[
+TTYi==1
+TTYo==2
+NETi==3
+NETo==4
+HSTi==5
+];ITS
+
+PDLen==40
+JCLen==40
+MaxRef==100.
+BufLen==1000
+
+IFN TNX,[
+.DECSAV
+GeeChn==0
+];TNX
+
+Width1==80./4
+Width2==80./5
+
+IFN CS, NL==200\^M		;Newline on Chaosnet is LM NL character,
+IFN IS, NL==^M			;for Internet it's CR + LF
+
+Call=<PUSHJ P,>
+Return=<POPJ P,>
+
+IFN ITS,[
+Define SYSCAL op,args
+	.Call [Setz ? Sixbit /op/ ? args ((Setz))]
+Termin
+
+Define CTYPEL loc
+	.Iot TTYo,loc
+Termin
+
+Define CTYPE #char
+	.Iot TTYo,[char]
+Termin
+
+Define NewLin
+	CType ^M
+Termin
+
+Define TYPE chnl=TTYo,&string
+	Movei T,<.Length string>
+	Move TT,[440700,,[Ascii string]]
+	Syscal SIOT,[%Climm,,chnl ? TT ? T]
+	  .Lose %LsSys
+Termin
+
+Define TYPECR chnl=TTYo,*string
+	TYPE chnl,ïstring!îŠTermin
+
+Define OUTSTR chnl=TTYo,loc,len
+	Move A,[440700,,loc]
+	Move B,len
+	Syscal SIOT,[%Climm,,chnl ? A ? B]
+	  .Lose %lsSys
+Termin
+
+Define DBP loc			;Decrement Byte Pointer (7bit)
+ifge loc-20,ac==1 ? Push P,ac ? Move ac,loc
+.else ac==loc
+	Add ac,[70000,,]
+	Skipge ac
+	  Sub ac,[430000,,1]
+ifge loc-20, Movem ac,loc ? Pop P,ac
+Termin
+
+IntOn=<.Suset [.sMSK2,,[1_TTYi\1_TTYo]]>
+IntOff=<.Suset [.sMSK2,,[0]]>
+];ITS
+
+IFN TNX,[
+.INSRT MID:MACROS
+
+IFN IS,$SIN=SIN ? $BIN=BIN
+IFN CS,.INSRT MID:CHSDEF
+
+Define TYPE jfn=PIO,&string
+IFE jfn-PIO,[
+	Hrroi 1,[Asciz string]
+	PSOUT
+];to primary output
+.ELSE [
+	Move 1,jfn
+	Hrroi 2,[Asciz string]
+	Setz 3,
+	SOUT
+];to generic JFN
+Termin
+
+Define TYPECR jfn=PIO,*string
+	TYPE jfn,ïstring!
+ŠTermin
+
+Define OUTSTR jfn=PIO,loc,len
+	Skipg len
+	  Jrst .+5
+	Move 1,jfn
+	Hrroi 2,loc
+	Movn 3,len
+	SOUT
+Termin
+
+Define CTYPEL loc
+	Move 1,loc
+	PBOUT
+Termin
+
+Define NewLin
+	Hrroi 1,[Asciz "
+"] ?	PSOUT
+Termin
+
+Define IntOn
+	Move 1,[.TICCG,,GeeChn]
+	ATI
+Termin
+
+Define IntOff
+	Movei 1,.TICCG
+	DTI
+Termin
+];TNX
+
+Define SIMPLE *string
+	Type NETo,"string! "
+	Call TypWrd
+	Call EndLin
+	Call GetAns
+Termin
+
+PDL:	-PDLen,,.
+	Block PDLen
+
+Once:	0
+Debug:	0
+
+Numsp:	0
+Width:	0
+ColWid:	0
+NumWid:	0
+MatCol:	0
+LeadSp:	0
+WordNo:	0
+
+ArgLen:	0
+Arg:	Block JCLen
+AnsLen:	0
+Answer:	Block JCLen
+
+Openp:	0
+EOF:	0
+
+JCLBC:	0
+JCLbuf:	Block JCLen
+IFN ITS,[
+	-1
+JCLBP:	0
+];ITS
+
+SavedP:	0
+
+nXrefs:	0
+Xrefs:	Block MaxRef
+Xbuf:	Block BufLen
+
+Buffer:	Block BufLen
+
+IFN ITS,[
+Tsint:
+LOC 42
+	-TsintL,,Tsint
+LOC Tsint
+	P
+	0 ? 1_TTYi ? -1 ? 1_TTYo ? Intrup
+	0 ? 1_TTYo ? 0 ? 0 ? More
+TsintL==.-Tsint
+];ITS
+
+IFN TNX,[
+PSIPC1:	0
+PSIPC2:	0
+PSIPC3:	0
+
+LevTab:	PSIPC1 ? PSIPC2 ? PSIPC3
+ChnTab:	2,,Intrup
+	Block 35.
+];TNX
+
+IFN ITS,[
+HostNo:	11406			;OZ (takes too long to look this up)
+Coname:	Asciz "DICTIONARY"
+Chars:	^@,,Ask0		;Ignore nulls
+	^D,,AskD		;Delete line
+	^L,,AskL		;Clear screen and do ^R
+	^M,,AskCR		;EOL
+	^R,,AskR		;Retype line
+	^U,,AskD		;same as ^D
+	^[,,AskESC		;Complete word ]
+	"?,,AskQ		;Show endings
+	177,,AskRub		;Delete character
+nChars==.-Chars
+
+$$CHAOS==1
+$$CONNECT==1
+$$ERRHAN==1
+.INSRT SYSENG;NETWRK
+];ITS
+
+IFN TNX,[
+PIO:	.PRIOU
+
+NETi::
+NETo:	0
+
+NetFil:
+IFN CS,	Asciz "CHA:OZ.DICTIONARY"
+IFN IS,	Asciz "TCP:.NIC-103#;CONNECTION:ACTIVE;PERSIST:30"
+
+TEXTIb:	.RDBRK
+	RD%BEL\RD%CRF\RD%JFN
+	.PRIIN,,.PRIOU
+JCLBP:	0
+	0
+	-1,,JCLbuf
+	-1,,[Asciz "Word: "]
+	BrkMsk
+
+BrkMsk:	Break 0,[33,"?]
+
+.INSRT MID:PRARG
+];TNX
+
+Begin:	Move P,PDL
+	Call Init
+	Call GetJCL		;Get and process JCL
+	  Jrst [Setom Once	;  Yup, was some.
+		Jrst Look]
+Loop:	Call Ask
+	  Jrst Die
+Look:	Call DefWrd
+	Skipn Once
+	  Jrst Loop
+Die:	Skipe Openp		;If connection open,
+	  Call Cloze		;  close it.
+	.Logout 1,
+	Jrst Begin
+
+Cloze:	Setzm Openp
+IFN ITS,.Close NETi, ? .Close NETo,
+IFN TNX,Move 1,NETo ? CLOSF ? Nop
+	Return
+
+IFN ITS,[
+Init:	Syscal OPEN,[%Clbit,,.uai
+		     %Climm,,TTYi
+		     [Sixbit "TTY"]]
+	  .Lose %lsFil
+	Syscal OPEN,[%Clbit,,.uao\%TJDIS
+		     %Climm,,TTYo
+		     [Sixbit "TTY"]]
+	  .Lose %lsFil
+	Move T,[020202,,020202]
+	Move TT,[030202,,020202]
+	Syscal TTYSET,[%Climm,,TTYi ? T ? TT]
+	  .Lose %lsSys
+	Syscal TTYVAR,[%Climm,,TTYo
+		       [Sixbit "WIDTH"]
+		       %Clout,,Width]
+	  .Lose %lsSys
+	.Suset [.sOPTION,,[OptInt,,]]
+	Movei A,NETi
+	Move B,HostNo
+	Movei C,Coname
+	Movei D,5
+	Call NETWRK"CHACON
+	  Jrst Die
+	Setom Openp
+	Return
+
+GetJCL:	Setzm JCLBC
+	.Break 12,[..rJCL,,JCLbuf]
+	Skipn JCLbuf
+	  Jrst Popj1
+	Move A,[440700,,JCLbuf]
+FixJ0:	Ildb B,A
+	Caie B,^M
+	  Cain B,^C
+	    Jrst FixJ1
+	Cain B,^_
+	  Jrst FixJ1
+	Aos JCLBC
+	Jrst FixJ0
+
+FixJ1:	Setz B,
+	Idpb B,A
+	Return
+
+PutChr:	.Iot TTYo,T
+	Return
+];ITS
+
+IFN TNX,[
+Init:	RESET
+	Movx 1,GJ%SHT
+	Hrroi 2,NetFil
+	GTJFN
+	  .Lose
+	Movem 1,NETo
+	Move 2,[Field(8,OF%BSZ)+OF%RD+OF%WR]
+	OPENF
+	  .Lose
+	Setom Openp
+	Movei 1,.PRIOU
+	Movei 2,.MORLW
+	MTOPR
+	Movem 3,Width		;Width of terminal
+	RFCOC			;Get the CCOC words
+	Setz 4,
+	Dpb 4,[200200,,3]	;Make ESCAPE not echo
+	SFCOC
+	Movei 1,.FHSLF
+	Move 2,[LEVTAB,,CHNTAB]
+	SIR
+	EIR
+	Movx 2,Bit(GeeChn)
+	AIC
+	Return
+
+GetJCL:	Movei 1,.RSINI
+	RSCAN
+	  .Lose
+	Setzm JCLBC
+GetJC0:	PBIN
+	Cain 1,^J
+	  Jrst Popj1		;Return saying no JCL
+	Caie 1,40
+	  Jrst GetJC0
+	Movei 1,.PRIIN
+	Hrroi 2,JCLbuf
+	Movei 3,JCLen*5-1
+	Movei 4,^J
+	SIN			;Suck in rest of JCL
+	Setz 4,
+	Dpb 4,2			;Make sure ASCIZ
+	Movei 4,JCLen*5-1
+	Sub 4,3
+	Movem 4,JCLBC
+	Return			;Take has-JCL return
+];TNX
+
+AskIni:	Setzm JCLbuf
+	Setzm JCLBC
+	Move T,[440700,,JCLbuf]
+	Movem T,JCLBP
+IFN TNX,Movei T,JCLen*5-1 ? Movem T,TEXTIb+.RDDBC
+	Type ,"Word: "
+	Return
+
+Ask:	Call AskIni
+IFN ITS,[
+Ask0:	.Iot TTYi,A
+	Movsi C,-nChars
+Ask1:	Hlrz T,Chars(C)
+	Camn A,T
+	  Jrst [Hrrz T,Chars(C)
+		Jrst (T)]
+	Aobjn C,Ask1
+	Caige A,40
+	  Jrst Beep
+	Idpb A,JCLBP
+	.Iot TTYo,A
+	Aos JCLBC
+	Jrst Ask0
+];ITS
+IFN TNX,[
+Ask0:	Movei 1,TEXTIb
+	TEXTI
+	  .Lose
+	Movei 1,JCLen*5-2	;Don't count the delimiter as a character
+	Sub 1,TEXTIb+.RDDBC
+	Movem 1,JCLBC		;# characters in string
+	Ldb 1,JCLBP		;Get the break character
+	Seto 2,			;Backup BP to we'll write over break character
+	Adjbp 2,JCLBP		;next time there's more input
+	Movem 2,JCLBP
+	Aos TEXTIb+.RDDBC
+	Cain 1,^[		;Escape?]
+	  Jrst AskEsc
+	Cain 1,"?
+	  Jrst AskQ
+];TNX
+AskCR:
+IFN ITS,NewLin
+	Skipe JCLBC
+Popj1:	  Aos (P)
+CPopj:	Return
+
+Beep:	CType ^G
+	Jrst Ask0
+
+0ReAsk:	NewLin
+ReAsk:	Type ,"Word: "
+	OutStr ,JCLbuf,JCLBC
+	Jrst Ask0
+
+AskQ:	Skipg JCLBC
+	  Jrst [CType ^G
+		Jrst 0ReAsk]
+IFN ITS,CType "?
+	Simple "ENDINGS"
+	  Jrst Ask
+	Skipe ArgLen
+	  Jrst [TypeCR ," No matches"
+		Jrst ReAsk]
+	Setzm Numsp
+Maybe:	TypeCR ," Maybe you mean:"
+	Movei T,DoWord
+	Call WithInt
+	NewLin
+	Skipn Numsp
+	  Jrst ReAsk
+	Return
+
+DoWord:	Setzm MatCol
+	Setzm WordNo
+	Skipn Numsp
+	  Jrst [Movei A,Width2
+		Setz B,
+		Jrst .+3]
+	Movei A,Width1
+	Movei B,5
+	Movem A,ColWid
+	Movem B,NumWid
+
+DoWor0:	Call GetLin
+	Skipn Answer
+	  Return
+	Skipe Numsp
+	  Jrst [Call AnsArg
+		Movem T,WordNo
+		Jrst .+1]
+	Move T,MatCol
+	IDiv T,ColWid
+	Skipn MatCol
+	  Jrst DoWor2
+	Skipe Numsp
+	  Skipe TT
+	    Sub TT,ColWid
+DoWor2:	Movns TT
+	Movem TT,LeadSp
+	Add TT,NumWid
+	Add TT,ArgLen
+	Move T,TT
+	Add T,MatCol
+	Caml T,Width
+	  Jrst [NewLin
+		Move T,TT
+		Sub T,LeadSp
+		Setzm LeadSp
+		Jrst .+1]
+	Movem T,MatCol
+	Skipg C,LeadSp
+	  Jrst DoWor3
+	CType 40
+	Sojg C,.-1
+
+DoWor3:	Skipe T,WordNo
+	  Call OutNum
+	OutStr ,Arg,ArgLen
+	Jrst DoWor0
+
+OutNum:
+IFN ITS,[
+	Setz A,
+OutNu0:	IDivi T,10.
+	Push P,TT
+	Aos A
+	Jumpg T,OutNu0
+	Cail A,3
+	  Jrst OutNu1
+	Movei T,3
+	Sub T,A
+	CType 40
+	Sojg T,.-1
+
+OutNu1:	Pop P,T
+	Addi T,"0
+	.Iot TTYo,T
+	Sojg A,OutNu1
+];ITS
+
+IFN TNX,[
+	Movei 1,.PRIOU
+	Movei 2,(T)
+	Move 3,[Field(3,NO%COL)+NO%LFL+NO%OOV+10.]
+	NOUT
+	  Nop
+];TNX
+	Type ,". "
+	Return
+
+AskEsc:	Skipg JCLBC
+	  Jrst Beep
+	Simple "COMPLETE"
+	  Jrst Ask
+	Move A,Answer
+	Came A,[Ascii "COMPL"]
+	  Jrst Beep		;Must be ambiguous
+	Move A,[440700,,JCLbuf]
+	Move B,[440700,,Arg]
+	Move C,JCLBC
+AskEs0:	Sojl C,AskEs2
+	Ildb T,A
+	Caie T,"%
+	  Cain T,"*
+	    Jrst AskEs1
+	Ildb T,B
+	Jrst AskEs0
+
+AskEs1:	NewLin
+	Call AskIni
+	Move B,[440700,,Arg]
+AskEs2:	Ildb T,B
+	Jumpe T,[Ctype 40
+		 Jrst Ask0]
+	CTypeL T
+	Idpb T,JCLBP
+	Aos JCLBC
+IFN TNX,Sos TEXTIb+.RDDBC
+	Jrst AskEs2
+
+IFN ITS,[
+AskL:	.Iot TTYo,[^P]
+	.Iot TTYo,["C]
+	Jrst ReAsk
+
+AskR:	Type ,"HL"
+	Jrst ReAsk
+
+AskRUB:	Skipg JCLBC
+	  Jrst Beep
+	.Iot TTYo,[^P]
+	.Iot TTYo,["X]
+	Setz B,
+	DPB B,JCLBP
+	DBP JCLBP
+	Sos JCLBC
+	Jrst Ask0
+
+AskD:	Call AskIni
+	Jrst AskR
+];ITS
+
+DefWrd:	Simple "DEFINE"
+	  Return		;  Error...
+	Move A,Answer
+	Came A,[Ascii "DEFIN"]
+	  Jrst [Skipe ArgLen
+		  Jrst NoFind
+		Camn A,[Ascii "SPELL"]
+		  Call NoFind
+		Setom Numsp
+		Jrst Maybe]
+	Movei T,DefWr0
+	Call WithInt
+	Return
+
+DefWr0:	Call NumArg		;Convert the arg to a # into T
+	Setzm nXrefs
+	Jumpe T,Defin0
+	Movei J,Xbuf
+	Move X,T
+GetXs:	Call GetLin
+	Call AnsArg
+	Aos TT,nXrefs
+	Hrlm T,Xrefs-1(TT)
+	Hrrm J,Xrefs-1(TT)
+	Move A,[440700,,Arg]
+	Hrli J,440700
+GetXs0:	Ildb B,A
+	Idpb B,J
+	Jumpn B,GetXs0
+	Ibp J
+	Movei J,1(J)
+	Sojg X,GetXs
+
+Defin0:
+IFN ITS,[
+	Move A,[440700,,Buffer]
+	Movei B,BufLen*4-1
+	Syscal SIOT,[%Climm,,NETi ? A ? B]
+	  .Lose %lsSys
+	Skipe B
+	  Setom EOF
+	Movei A,BufLen*4-1
+	Sub A,B
+	Move B,[440700,,Buffer]
+	Syscal SIOT,[%Climm,,TTYo ? B ? A]
+	  .Lose %lsSys
+];ITS
+IFN TNX,[
+	Move 1,NETi
+	Hrroi 2,Buffer
+IFN CS,	Movni 3,BufLen*5-1
+IFN IS,	Movei 3,BufLen*5-1 ? Movei 4,200
+	$SIN
+	Skipe T,3
+	  Setom EOF
+	Movei 1,.PRIOU
+	Hrroi 2,Buffer
+IFN CS,	Movns 3 ? Subi 3,BufLen*5-1
+IFN IS,	Movni 3,BufLen*5-1 ? Addi 3,(T)
+	SOUT
+];TNX
+	Skipn EOF
+	  Jrst Defin0
+	Skipg nXrefs
+	  Jrst Popj1
+	NewLin
+	TypeCR ,"Cross-references:"
+	Movs X,nXrefs
+	Movns X
+Defin1:	Hlrz T,Xrefs(X)
+	Call OutNum
+	Hrrz A,Xrefs(X)
+	Hrli A,440700
+Defin2:	Ildb B,A
+	Jumpe B,Defin3
+	CTypeL B
+	Jrst Defin2
+
+Defin3:	NewLin
+	Aobjn X,Defin1
+	Jrst Popj1
+
+NoFind:	CType "'
+	OutStr ,JCLbuf,JCLBC
+	TypeCR ,"' not found."
+	Return
+
+TypWrd:	OutStr NETo,JCLbuf,JCLBC
+	Return
+
+EndLin:
+IFN ITS,[
+	.Iot NETo,[NL]
+	Syscal FORCE,[%Climm,,NETo]
+	  .Lose %lsSys
+];ITS
+IFN TNX,[
+	Move 1,NETo
+	Hrroi 2,[Asciz "
+"] ?	Setz 3,
+	SOUT
+IFN CS,	Movei 2,.MONOP ? MTOPR
+IFN IS,	Movei 2,.TCPSH ? TCOPR%
+];TNX
+	Return
+
+GetAns:	Call GetLin
+	Move A,Answer
+	Came A,[Ascii "ERROR"]
+	  Jrst Popj1
+	Type ,"Error: "
+	Move A,[440700,,Arg]
+GetAn2:	Ildb B,A
+	Caie B,40
+	  Jrst GetAn2
+GetAn3:	Ildb B,A
+	Jumpe B,GetAn4
+	CTypeL B
+	Jrst GetAn3
+
+GetAn4:	NewLin
+	Ldb A,[350700,,Arg]
+	Cain A,"F
+	  Jrst Die		;Fatal error
+	Return
+
+GetLin:	Setzm Answer
+	Setzm AnsLen
+	Setzm ArgLen
+	Move A,[440700,,Answer]
+	Movei C,AnsLen
+
+GetLi0:
+IFN ITS,.Iot NETi,B
+IFN TNX,[
+	Move 1,NETi
+	$BIN
+	Move B,2
+];TNX
+IFN ITS,Came B,[-1,,^C]		;EOF?
+	  Cain B,200		;  (TNX version)
+	    Jrst GetLi1		;    Yep, so end.
+	Cain B,NL		;End of line?
+IFN CS,	  Jrst GetLi2		;  Uh huh.
+IFN IS,	  Jrst [$BIN ? Jrst GetLi2]	;Read in the LF following the CR
+	Cain B,40
+	  Jrst [Skipe ArgLen
+		  Jrst .+1
+		Setz B,
+		Idpb B,A
+		Move A,[440700,,Arg]
+		Movei C,ArgLen
+		Jrst GetLi0]
+	Idpb B,A
+	Aos (C)
+	Jrst GetLi0
+
+GetLi1:	Setom EOF		;Mark that EOF has been read
+GetLi2:	Setz B,
+	Idpb B,A
+	Return
+
+AnsArg:	Skipa A,[440700,,Answer]
+NumArg:	  Move A,[440700,,Arg]
+	Setz T,
+NumAr0:	Ildb TT,A
+	Jumpe TT,CPopj
+	IMuli T,10.
+	Addi T,-"0(TT)
+	Jrst NumAr0
+
+WithIn:	Movem P,SavedP
+	Setzm EOF
+	IntOn
+	Call (T)
+IntDun:	Move P,SavedP
+	IntOff
+	Return
+
+IFN ITS,[
+Ignore:	Move A,[440700,,Buffer]
+	Movei B,BufLen*5-1
+	Syscal SIOT,[%Climm,,NETi ? A ? B]
+	  .Lose %lsSys
+	Jumpe B,Ignore
+	Jrst IntDun
+
+More:	Push P,T
+	Push P,TT
+	Type ,"--More--"
+	.Iot TTYi,T
+	Cain T,40
+	  Jrst JaMore
+	Jrst Flush
+
+JaMore:	NewLin
+	Pop P,TT
+	Pop P,T
+	Syscal DISMIS,[P]
+	  .Lose %lsSys
+
+Intrup:	Push P,T
+	Push P,TT
+	.Iot TTYi,T
+	.Reset TTYo,
+Flush:	TypeCR ," *Flushed*"
+	Skipe Once
+	  Jrst Die
+	Pop P,TT
+	Pop P,T
+	Skipe EOF
+	  Jrst [Syscal DISMIS,[P ? %Climm,,IntDun]
+		  .Lose %lsSys]
+	Syscal DISMIS,[P ? %Climm,,Ignore]
+	  .Lose %lsSys
+];ITS
+
+IFN TNX,[
+Ignore:	Move 1,NETi
+	Hrroi 2,Buffer
+IFN CS,	Movni 3,BufLen*5-1
+IFN IS,	Movei 3,BufLen*5-1 ? Movei 4,200
+	SIN
+IFN CS,	  Erjmp CPopj
+	Jumpe 3,Ignore
+	Return
+
+Intrup:	Movei 1,.PRIOU
+	CFOBF
+	TypeCR ," *Flushed*"
+	Skipe Once
+	  Jrst Die
+	Movx 1,Bit(5)
+	Iorm 1,PSIPC2
+	Movei 1,Ignore
+	Skipe EOF		;If EOF on input,
+	  Movei 1,CPopj		;  then no need to read more.
+	Hrrm 1,PSIPC2
+	DEBRK
+];TNX
+
+IFN TNX*CS,[
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;	Chaosnet stream simulation implemented as packet I/O
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.SCALAR NB			;Number of bytes left in packet
+.SCALAR PACKBP			;BP into packet
+.SCALAR PACKET(%CPMXW)		;Size of one packet
+.SCALAR CHAEOF			;EOF received
+
+$$BIN:	Sosge NB
+	  Jrst NoMore
+	Ildb 2,PACKBP
+	Return
+
+NoMore:	Push P,3
+	Movei 2,.MOPKR
+	Movei 3,Packet
+	MTOPR			;Grab the next packet
+	Ldb 2,[$CPKOP Packet]	;Get the opcode
+	Cain 2,%COEOF		;EOF?
+	  Jrst [Setom CHAEOF
+		Move 2,[-1,,^C]
+		Pop P,3
+		Return]
+	Setzm CHAEOF		;Clear EOF flag
+;	Caie 2,%CODAT		;Data?
+;	  Jrst xxx		;  What now?
+	Move 2,[440800,,Packet+%CPKDT]
+	Movem 2,PACKBP
+	Ldb 2,[$CPKNB Packet]
+	Movem 2,NB
+	Pop P,3
+	Jrst $BIN
+
+$BIN=<Call $$BIN>
+
+.SCALAR DestBP
+
+$$SIN:	Tlce 2,-1		;Canonicalize the BP
+	  Tlcn 2,-1
+	    Hrli 2,440700
+	Movem 2,DestBP		;Where you want the stuff to go.
+	Jumpl 3,$SIN1		;Want an exact # of bytes
+	Jumpe 3,$SIN2		;Read until EOF
+$SIN0:	$BIN
+	Camn 2,[-1,,^C]
+	  Jrst $SIN00
+	Idpb 2,DestBP
+	Camn 2,4
+	  Sosle 3
+	    Jrst $SIN0
+$SIN00:	Move 2,DestBP
+	Return
+
+$SIN1:	$BIN
+	Camn 2,[-1,,^C]
+	  Jrst $SIN00
+	Idpb 2,DestBP
+	Aojl 3,$SIN1
+	Jrst $SIN00
+
+$SIN2:	$BIN
+	Camn 2,[-1,,^C]
+	  Jrst $SIN00
+	Idpb 2,DestBP
+	Jrst $SIN2
+
+$SIN=<Call $$SIN>
+];TNX*CS
+
+	End Begin
