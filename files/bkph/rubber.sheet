@@ -1,0 +1,248 @@
+(comment -*-lisp-*-)
+
+(declare (special n m an ad bn bd count ioff joff scale tracef writef))
+
+(declare (special ce cc cs))
+
+(declare (array* (fixnum zc 2)
+		 (fixnum zo 2)
+		 (fixnum zn 2)))
+	
+;;; Show the darn thing
+
+(defun show ()
+       (do i (1- n) (1- i) (< i  0)
+	   (terpri)
+	   (do j 0 (1+ j) (= j m)
+	       (cond ((zerop (zn i j)) (princ '/ ) (princ '/ ))
+		     (t (princ (zn i j)) (princ '/ ))))))
+
+
+;;; Initialize from contour array
+
+(defun start ()
+       (do i 0 (1+ i) (= i n)
+	   (do j 0 (1+ j) (= j  m)
+	       (cond ((zerop (zc i j)) (store (zo i j) 0))
+		     (t (splots i j))) (store (zo i j) (zc i j)))))))
+
+;;; Repeat the flow until all has been filled
+
+(defun fill ()
+       (prog ()
+	     (setq count 0)
+	     (start)
+	     loop
+	     (flow-four)
+	     (fillarray 'zo 'zn)
+	     (flow-eight)
+	     (fillarray 'zo 'zn)
+	     (cond ((< count (* n m)) (go loop)))
+	     (cond (writef (write-image-file 'zo '(bkph fill dsk muctar) 12.)))))))
+
+;;; Spread intial data outwards -- four neighbours
+
+(defun flow-four ()
+       (do i 1 (1+ i) (= i (1- n))
+	   (do j 1 (1+ j) (= j (1- m))
+	       (cond ((zerop (zo i j)) (cond ((zerop (four-neighbour i j))
+					      (store (zn i j) 0))
+					     (t (store (zn i j)
+						       (intermediate i j)))))
+		     (t (store (zn i j) (zo i j)))))) 
+       (flow-frame))
+
+;;; Spread intial data outwards -- eight neighbours
+
+(defun flow-eight ()
+       (do i 1 (1+ i) (= i (1- n))
+	   (do j 1 (1+ j) (= j (1- m))
+	       (cond ((zerop (zo i j)) (cond ((zerop (eight-neighbour i j))
+					      (store (zn i j) 0))
+					     (t (store (zn i j)
+						       (intermediate i j)))))
+		     (t (store (zn i j) (zo i j))))))
+       (flow-frame))
+
+
+;;; Fill in around the edges
+
+(defun flow-frame ()
+       (do i 1 (1+ i) (= i (1- n))
+	   (cond ((zerop (zo i 0)) (store (zn i 0) (above i 0)))
+		 (t (store (zn i 0) (zo i 0))))
+	   (cond ((zerop (zo i (1- m))) (store (zn i (1- m)) (below i (1- m))))
+		 (t (store (zn i (1- m)) (zo i (1- m))))))
+       (do j 0 (1+ j) (= j m)
+	   (cond ((zerop (zo 0 j)) (store (zn 0 j) (right 0 j)))
+		 (t (store (zn 0 j) (zo 0 j))))
+	   (cond ((zerop (zo (1- n) j)) (store (zn (1- n) j) (left (1- n) j)))
+		 (t (store (zn (1- n) j) (zo (1- n) j))))))
+       
+;;; Find four neighbour if any
+
+(defun four-neighbour (i j)
+       (cond ((not (zerop (zo i (1+ j)))) (splots i j) (zo i (1+ j)))
+	     ((not (zerop (zo (1+ i) j))) (splots i j) (zo (1+ i) j))
+	     ((not (zerop (zo i (1- j)))) (splots i j) (zo i (1- j)))
+	     ((not (zerop (zo (1- i) j))) (splots i j) (zo (1- i) j))
+	     (t 0)))
+
+;;; Find eight-neighbour if any
+
+(defun eight-neighbour (i j)
+       (cond ((not (zerop (zo (1+ i) (1+ j)))) (splots i j) (zo (1+ i) (1+ j)))
+	     ((not (zerop (zo (1- i) (1+ j)))) (splots i j) (zo (1- i) (1+ j)))
+	     ((not (zerop (zo (1- i) (1- j)))) (splots i j) (zo (1- i) (1- j)))
+	     ((not (zerop (zo (1+ i) (1- j)))) (splots i j) (zo (1+ i) (1- j)))
+	     ((not (zerop (zo i (1+ j)))) (splots i j) (zo i (1+ j)))
+	     ((not (zerop (zo (1+ i) j))) (splots i j) (zo (1+ i) j))
+	     ((not (zerop (zo i (1- j)))) (splots i j) (zo i (1- j)))
+	     ((not (zerop (zo (1- i) j))) (splots i j) (zo (1- i) j))
+	     (t 0)))
+
+;;; Average of non-zero neighbours
+
+(defun intermediate (i j)
+       (prog (zsum nsum)
+	     (setq zsum 0 nsum 0)
+       (cond ((not (zerop (zo i (1+ j)))) (setq zsum (+ zsum (zo i (1+ j)))
+						     nsum (1+ nsum))))
+       (cond ((not (zerop (zo (1+ i) j))) (setq zsum (+ zsum (zo (1+ i) j))
+						     nsum (1+ nsum))))
+       (cond ((not (zerop (zo i (1- j)))) (setq zsum (+ zsum (zo i (1- j)))
+						     nsum (1+ nsum))))
+       (cond ((not (zerop (zo (1- i) j))) (setq zsum (+ zsum (zo (1- i) j))
+						     nsum (1+ nsum))))
+       (setq zsum (* zsum 4) nsum (* nsum 4))
+       (cond ((not (zerop (zo (1+ i) (1+ j)))) (setq zsum (+ zsum (zo (1+ i) (1+ j)))
+						     nsum (1+ nsum))))
+       (cond ((not (zerop (zo (1- i) (1+ j)))) (setq zsum (+ zsum (zo (1- i) (1+ j)))
+						     nsum (1+ nsum))))
+       (cond ((not (zerop (zo (1- i) (1- j)))) (setq zsum (+ zsum (zo (1- i) (1- j)))
+						     nsum (1+ nsum))))
+       (cond ((not (zerop (zo (1+ i) (1- j)))) (setq zsum (+ zsum (zo (1+ i) (1- j)))
+						     nsum (1+ nsum))))
+       (return (// zsum nsum))))
+
+(defun above (i j)
+       (cond ((zerop (zo i (1+ j))) 0)
+	     (t (splots i j) (zo i (1+ j)))))
+
+(defun below (i j)
+       (cond ((zerop (zo i (1- j))) 0)
+	     (t (splots i j) (zo i (1- j)))))
+
+(defun right (i j)
+       (cond ((zerop (zo (1+ i) j)) 0)
+	     (t (splots i j) (zo (1+ i) j))))
+
+(defun left (i j)
+       (cond ((zerop (zo (1- i) j)) 0)
+	     (t (splots i j) (zo (1- i) j))))
+
+;;; Plot a circle to mark progress -- scale = 0 disables this
+
+(defun splots (i j)
+       (setq count (1+ count))
+       (cond ((zerop scale))
+	     ((< scale 3) (point (+ (* j scale) joff)
+				 (+ (* i scale) ioff)))
+	     (t (circle (+ (* j scale) joff)
+			(+ (* i scale) ioff)
+			(// scale 3)))))
+
+;;; Average of neighbours
+
+(defun average (i j)
+       (// (+ (* ce (+ (zo (1+ i) j)
+		      (zo i (1+ j))
+		      (zo (1- i) j)
+		      (zo i (1- j))))
+	      (* cc (+ (zo (1+ i) (1+ j))
+		       (zo (1- i) (1+ j))
+		       (zo (1- i) (1- j))
+		       (zo (1+ i) (1- j)))))
+	   cs))
+
+;;; Speed up of progress by prediction
+
+(defun predict (xo xa)
+       (+ xa (// (* (- xa xo) an) ad)))
+
+;;; Stretch towards local average
+
+(defun stretch (xc xa)
+       (+ xc (// (* (- xa xc) bn) bd)))
+
+;;; Smooth until no further change
+
+(defun smooth ()
+       (prog (k)
+	     (setq k 0)
+	     loop
+	     (adjust)
+	     (cond ((zerop (printo k (rms-change))) (return nil)))
+	     (fillarray 'zo 'zn)
+	     (setq k (1+ k))
+	     (go loop)
+	     (cond (writef (write-image-file 'zo '(bkph rubber dsk muctar) 12.)))))))
+
+(defun printo (k x)
+       (cond (tracef (print (list k x)) x)
+	     (t x)))
+
+;;; Apply solution algorithm
+
+(defun adjust ()
+       (do i 1 (1+ i) (= i (1- n))
+	   (do j 1 (1+ j) (= j (1- m))
+	       (cond ((zerop (zc i j)) (store (zn i j) (predict (zo i j)
+								(average i j))))
+		     (t (store (zn i j) (stretch (zc i j) (average i j)))))))
+       (adjust-border))
+
+;;; Do the border 
+
+(defun adjust-border ()
+       (do i 0 (1+ i) (= i n)
+	   (cond ((zerop (zc i 0)) (store (zn i 0) (zn i 1)))
+		 (t (store (zn i 0) (zc i 0))))
+	   (cond ((zerop (zc i (1- m))) (store (zn i (1- m)) (zn i (- m 2))))
+		 (t (store (zn i (1- m)) (zc i (1- m))))))
+       (do j 0 (1+ j) (= j m)
+	   (cond ((zerop (zc 0 j)) (store (zn 0 j) (zn 1 j)))
+		 (t (store (zn 0 j) (zc 0 j))))
+	   (cond ((zerop (zc (1- n) j)) (store (zn (1- n) j) (zn (- n 2) j)))
+		 (t (store (zn (1- n) j) (zc (1- n) j))))))
+
+
+;;; Find r.m.s change
+
+(defun rms-change ()
+       (prog (dsum)
+	     (setq dsum 0)
+	     (do i 1 (1+ i) (= i (1- n))
+		 (do j 1 (1+ j) (= j  (1- m))
+		     (setq dsum (+ dsum (square (- (zn i j) (zo i j)))))))
+	     (return (sqrt (//$ (float dsum) (float (* n m)))))))
+
+(defun square (x) (* x x))
+
+
+(setq base (+ 5 5) ibase (+ 5 5) *nopoint t)
+
+(setq an 2. ad 10. bn 2. bd 10.)
+
+(setq ioff 100. joff 100. scale 10. tracef t writef nil)
+
+;;; Stencil Pattern Coefficients
+
+(setq ce 4 cc 1 cs (* 4 (+ ce cc))))
+
+(defun initialize (i j)
+       (setq n i m j)
+       (array zc fixnum n m)
+       (array zo fixnum n m)
+       (array zn fixnum n m))
+

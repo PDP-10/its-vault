@@ -1,0 +1,315 @@
+(comment -*-lisp-*-)
+
+(setq base (+ 5 5) ibase (+ 5 5) *nopoint t)
+
+(declare (special n m an ad bn bd count blow root2 tracef writef lookupf))
+
+(declare (special ioff joff scale))
+
+(declare (special ce cc cs de dc dee dce dcc ds))
+
+(declare (special offset a-simple b-simple))
+
+(declare (array* (fixnum zc 2)
+		 (fixnum zo 2)
+		 (fixnum zn 2)
+		 (fixnum bright 1)
+		 (fixnum lookup 1)))
+
+;;; Flip about horizontal axis -- initial data re-orientation
+
+(defun flip ()
+       (prog (temporary)
+	     (do i 0 (1+ i) (= i (// n 2))
+		 (do j 0 (1+ j) (= j m)
+		     (setq temporary (zc (- (1- n) i) j))
+		     (store (zc (- (1- n) i) j) (zc i j))
+		     (store (zc i j) temporary)))))
+
+;;; Thin in four passes to avoid stripping effect
+
+(defun thinner ()
+       (print 'SW)
+       (thinner-aux 1 1)
+       (print 'NE)
+       (thinner-aux 2 2)
+       (print 'SE)
+       (thinner-aux 1 2)
+       (print 'NW)
+       (thinner-aux 2 1))
+
+;;; Do one quarter of the points to avoid interference effect
+
+(defun thinner-aux (is js)
+       (do i is (+ i 2) (> i (- n 2))
+	   (do j js (+ j 2) (> j (- m 2))
+	       (cond ((flushp i j) (store (zc i j) 0))))))
+
+;;; Flush cells which are not needed to maintain connectivity
+
+(defun flushp (i j)
+       (not (or (and (zerop (zc (1- i) j))
+		     (zerop (zc (1+ i) j)))
+		(and (zerop (zc i (1+ j)))
+		     (zerop (zc i (1- j)))))))
+
+;;; Thin out contour data to one half (checker-board) -- not used
+
+(defun thin-half ()
+       (do i 0 (1+ i) (= i n)
+	   (do j (mod2 i) (+ j 2) (> j (1- m))
+	       (store (zc i j) 0))))
+
+;;; Thin out contur data to one quarter (flush odd rows and columns)
+
+(defun thin-quarter ()
+       (do i 1 (+ i 2) (> i (- n 2))
+	   (do j 1 (+ j 2) (> j (- m 2)) (store (zc (1- i) j) 0))
+	   (do j 0 (1+ j) (= j m) (store (zc i j) 0)))
+       (do j 1 (+ j 2) (> j (- m 2)) (store (zc (1- n) j) 0)))
+
+(defun mod2 (i) (- i (* (// i 2) 2)))
+
+(defun mod10 (i) (- i (* (// i 10.) 10.)))
+
+;;; New filling method 
+
+(defun fill ()
+       (array zo fixnum n m)
+       (array zn fixnum n m)
+       (augment-boundary)
+       (terpri)
+       (fill-row-wise)
+       (terpri)
+       (fill-column-wise)
+       (terpri)
+       (fill-average)
+       (terpri)
+       (cond (writef (write-image-file 'zo '(bkph fill dsk muctar) 12.))))
+
+;;; Temporarily augment zc by filling in border 
+
+(defun augment-boundary ()
+       (corners)
+       (fill-one-column 0)
+       (fill-one-column (1- m))
+       (fill-one-row 0)
+       (fill-one-row (1- n))
+       (do i 0 (1+ i) (= i n)
+	   (store (zc i 0) (// (zo i 0) (zn i 0)))
+	   (store (zc i (1- m)) (// (zo i (1- m)) (zn i (1- m)))))
+       (do j 0 (1+ j) (= j m)
+	   (store (zc 0 j) (// (zo 0 j) (zn 0 j)))
+	   (store (zc (1- n) j) (// (zo (1- n) j) (zn (1- n) j)))))
+
+;;; Give values to zc in the corners
+
+(defun corners ()
+       (prog (jo ho)
+	     (setq jo (search-row 0 0)
+		   ho (zc 0 jo))
+	     (store (zc 0 0) ho)
+	     (setq jo (reverse-search 0 (1- m))
+		   ho (zc 0 jo))
+	     (store (zc 0 (1- m)) ho)
+	     (setq jo (search-row (1- n) 0)
+		   ho (zc (1- n) jo))
+	     (store (zc (1- n) 0) ho)
+	     (setq jo (reverse-search (1- n) (1- m))
+		   ho (zc (1- n) jo))
+	     (store (zc (1- n) (1- m)) ho))) 
+       
+;;; Column-wise interpolation  --  assumes boundary has been filled in
+
+(defun fill-column-wise ()
+       (do j 0 (1+ j) (= j m)
+	   (cond ((and tracef (zerop (mod10 j))) (princ '/ ) (princ j)))
+	   (fill-one-column j)))
+
+(defun fill-one-column (j)
+       (prog (io in ho hn)
+	     (do i 0 (1+ i) (= i n)
+		 (cond ((zerop (zc i j))
+			(store (zo i j) (+ (zo i j) (* ho (// blow (- i io)))))
+			(store (zn i j) (+ (zn i j) (// blow (- i io)))))
+		       (t (setq io i ho (zc i j))
+			  (store (zo i j) (zc i j))
+			  (store (zn i j) 1))))
+	     (do i (1- n) (1- i) (< i 0)
+		 (cond ((zerop (zc i j))
+			(store (zo i j) (+ (zo i j) (* hn (// blow (- in i)))))
+			(store (zn i j) (+ (zn i j) (// blow (- in i)))))
+		       (t (setq in i hn (zc i j)))))))
+
+;;; Row-wise interpolation  --  assumes boundary has been filled in
+
+(defun fill-row-wise ()
+       (do i 0 (1+ i) (= i n)
+	   (cond ((and tracef (zerop (mod10 i))) (princ '/ ) (princ i)))
+	   (fill-one-row i)))
+
+(defun fill-one-row (i)
+       (prog (jo jn ho hn)
+	     (do j 0 (1+ j) (= j m)
+		 (cond ((zerop (zc i j))
+			(store (zo i j) (+ (zo i j) (* ho (// blow (- j jo)))))
+			(store (zn i j) (+ (zn i j) (// blow (- j jo)))))
+		       (t (setq jo j ho (zc i j))
+			  (store (zo i j) (zc i j))
+			  (store (zn i j) 1))))
+	     (do j (1- m) (1- j) (< j 0)
+		 (cond ((zerop (zc i j))
+			(store (zo i j) (+ (zo i j) (* hn (// blow (- jn j)))))
+			(store (zn i j) (+ (zn i j) (// blow (- jn j)))))
+		       (t (setq jn j hn (zc i j)))))))
+       
+;;; Fill along a line 
+
+(defun fill-a-line (is js inc jnc nn)
+       (prog (i j ko kn ho hn)
+	     (setq i is j js)
+	     (do k 0 (1+ k) (= k nn)
+		 (cond ((zerop (zc i j))
+			(store (zo i j) (+ (zo i j) (* ho (// blow (- k ko)))))
+			(store (zn i j) (+ (zn i j) (// blow (- k ko)))))
+		       (t (setq ko k ho (zc i j))
+			  (store (zo i j) (zc i j))
+			  (store (zn i j) 1)))
+		 (setq i (+ i inc) j (+ j jnc)))
+	     (do k (1- nn) (1- k) (< k 0)
+		 (setq i (- i inc) j (- j jnc))
+		 (cond ((zerop (zc i j))
+			(store (zo i j) (+ (zo i j) (* hn (// blow (- kn k)))))
+			(store (zn i j) (+ (zn i j) (// blow (- kn k)))))
+		       (t (setq kn k hn (zc i j)))))
+	     (cond ((not (and (= i is) (= j js))) (print 'MISMATCH)))))
+
+;;; Averaged result is put in zo
+
+(defun fill-average ()
+       (do i 0 (1+ i) (= i n)
+	   (cond ((and tracef (zerop (mod10 i))) (princ '/ ) (princ i)))
+	   (do j 0 (1+ j) (= j m)
+	       (store (zo i j) (// (zo i j) (zn i j))))))
+
+;;; Search for first non-zero in column
+
+(defun search-column (is j)
+       (prog (i)
+	     (setq i is)
+	     loop
+	     (cond ((= i n) (return n))
+		   ((not (zerop (zc i j))) (return i))
+		   (t (setq i (1+ i)) (go loop)))))
+
+;;; Search for first non-zero in row
+
+(defun search-row (i js)
+       (prog (j)
+	     (setq j js)
+	     loop
+	     (cond ((= j n) (return n))
+		   ((not (zerop (zc i j))) (return j))
+		   (t (setq j (1+ j)) (go loop)))))
+
+(defun reverse-search (i js)
+       (prog (j)
+	     (setq j js)
+	     loop
+	     (cond ((< j 0) (return 0))
+		   ((not (zerop (zc i j))) (return j))
+		   (t (setq j (1- j)) (go loop)))))
+
+;;;	SNAME	ALPHANUMERIC NAME OF DIGITAL TERRAIN MODE<L
+;;;	UNIT	VERTICAL INTERVAL MEASURED IN FEET OR METER
+;;;	UNITS	FEET OR METER (ALPHABETIC FIELD)
+;;;	HORIZON	VERTICAL OFFSET TO BE ADDED TO NUMBER IN MODEL
+;;;	STEP	HORIZONTAL DIVIDED BY VERTICAL INTERVAL (FLOATING)
+;;;	NDIM	NUMBER OF COLUMNS  (I RUNS FROM 1 TO NDIM)
+;;;	MDIM	NUMBER OF ROWS     (J RUNS FROM 1 TO MDIM)
+;;;	MINZ	SMALLEST NUMBER IN MODEL
+;;;	MAXZ	LARGEST NUMBER IN MODEL
+;;;
+;;;	ACTUAL HEIGHT IS (NUMBER IN MODEL + HORIZON) * UNIT
+;;;	POSITION IS X = I * STEP * UNIT, Y = J * STEP * UNIT
+
+(declare (special ndim mdim sname horizon unit units minz maxz step))
+
+(DEFUN get-dtm  (FILE) 
+       (PROG (H) 
+	     (SETQ H (CDDDR (READ-IMAGE-HEADER FILE)) 
+		   NDIM (- (CADDDR H) (CADDR H)) 
+		   MDIM (- (CADR H) (CAR H)))
+	     (SETQ SNAME (CADR FILE) 
+		   HORIZON (GET-HEADER-WORD 64.) 
+		   UNIT (GET-HEADER-WORD 65.) 
+		   UNITS (COND ((ZEROP (GET-HEADER-WORD 66.))
+				'METERS)
+			       (T 'FEET)) 
+		   MINZ (GET-HEADER-WORD 67.) 
+		   MAXZ (GET-HEADER-WORD 68.) 
+		   STEP (*$ 1.0E-3 (FLOAT (GET-HEADER-WORD 69.))))
+	     (setq n (1+ ndim) m (1+ mdim))
+	     (array zc fixnum n m)
+	     (read-image-file 'zc file)))
+
+(DEFUN write-dtm  (FILE) 
+       (SET-HEADER-WORD 64. HORIZON)
+       (SET-HEADER-WORD 65. UNIT)
+       (SET-HEADER-WORD 66.
+			(COND ((EQUAL UNITS 'METERS) 0.) (T 1.)))
+       (SET-HEADER-WORD 67. MINZ)
+       (SET-HEADER-WORD 68. MAXZ)
+       (SET-HEADER-WORD 69. (FIX (*$ 1000.0 STEP)))
+       (write-image-file 'zo file 12.))
+
+;;; Goodies for making shaded images quickly and crudely
+
+(defun shaded-nw (file)
+       (prog ()
+       (cond ((not lookupf) (print 'NO-LOOKUP-TABLE) (return nil)))
+       (open-line-output file 8. (list 1 1 (1- m ) (1- n)))
+       (array bright fixnum (1- m))
+       (do i (1- n) (1- i) (= i 0)
+	   (cond ((and tracef (zerop (mod10 i))) (princ '/ ) (princ i)))
+	   (do j 1 (1+ j) (= j m)
+	       (store (bright (1- j)) (lookup (+ offset (- (zo (1- i) j)
+							   (zo i (1- j)))))))
+	   (write-image-line 'bright i))
+       (close-line-output)))
+
+(defun shaded-ne (file)
+       (prog ()
+       (cond ((not lookupf) (print 'NO-LOOKUP-TABLE) (return nil)))
+       (open-line-output file 8. (list 1 1 (1- m ) (1- n)))
+       (array bright fixnum (1- m))
+       (do i (1- n) (1- i) (= i 0)
+	   (cond ((and tracef (zerop (mod10 i))) (princ '/ ) (princ i)))
+	   (do j 1 (1+ j) (= j m)
+	       (store (bright (1- j)) (lookup (+ offset (- (zo (1- i) (1- j))
+							   (zo i j))))))
+	   (write-image-line 'bright i))
+       (close-line-output)))
+
+;;; Make lookup table for shading output
+
+(defun make-lookup (k)
+       (array lookup fixnum k)
+       (setq offset (// k 2))
+       (do i 0 (1+ i) (= i k)
+	   (store (lookup i) (fix (*$ 256.0 (reflec (slope i))))))
+       (setq lookupf t))
+
+(defun slope (i)
+       (//$ (float (- i offset)) (*$ root2 step)))
+
+(defun reflec (x)
+       (//$ (+$ 1.0 (map-sqrt (+$ x a-simple) b-simple)) 2.0))
+
+(defun map-sqrt (y x) (//$ y (sqrt (+$ (*$ y y) (*$ x x)))))
+
+(setq blow 1000.)
+
+(setq a-simple .25 b-simple (//$ (sqrt 2.0)) root2 (sqrt 2.0))
+
+(setq tracef t writef nil lookupf nil step 82.021)
