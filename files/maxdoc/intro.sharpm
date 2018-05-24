@@ -1,0 +1,139 @@
+[ -*- Text -*- ]
+
+The Macsyma sources contain read-time conditionalizations which are intended
+to control which piece of code is selected for a particular target environment.
+(Note that the target environment is the system which the file will eventually
+run in, not the system in which the compilation is taking place.) This file
+documents the conventions in uses for such conditionalization.
+
+Overview.
+
+  Conditional reading happens after an occurrence of #+ or #- in a normal
+  lisp read (not inside strings, vertical-bar'd symbols, or comments).
+  The general form of the conditional is:
+
+	#+<spec> <form> 
+
+  where <form> will be read iff <spec> is a true condition in the target
+  environment. If it is not, then it should be skipped by the reader. The
+  conditional:
+
+	#-<spec> <form>
+
+  will read <form> if the condition given by <spec> fails for the target
+  environment. The form of <spec> is given as follows:
+
+	<spec> ::=   <symbol>			; <symbol> is a target feature
+		   ! (NOT <spec>)		; negation of <spec>
+		   ! (AND . <specsequence>)	; conjunction of <spec>'s
+		   ! (OR . <specsequence>)	; disjunction of <spec>'s
+
+	<specsequence> ::= ( <spec> . <specsequence> ) ! NIL
+
+   Examples:
+
+	#+(OR ITS LISPM)    (DEFUN F (X) X)     ; On LispM or ITS
+
+	#-(AND MULTICS VAX) (DEFUN F (X) X)     ; Not on Multics or Vax
+
+	#+(AND PDP10 (NOT ITS))	(DEFUN F (X) X) ; On PDP10's other than ITS
+
+	(DEFUN F (X)			    ; Avoid this if possible!
+	  (+ X #+MULTICS 1		     ; On Multics add 1
+	       #-MULTICS #+ITS 2	     ; On ITS add 2
+	                 #-ITS 3 ))	     ; Everywhere else 3
+
+
+
+
+Notes on Style.
+  If you find yourself putting something like:
+
+	#+Franz (FRANZ-NIFTY-FUNCTION)
+	#-Franz (SOMETHING-EQUALLY-NIFTY SOME-WIERD-ARG)
+	
+  all over the place, maybe you want a normal macro or conditionally
+  defined abstract function instead of a read macro. This will make code
+  lots easier to read. Reader macros have their purpose in special case
+  code, but should not be used as quick fixes when the same problem occurs
+  in more than one location. Generalize -- Abstract -- Make life easier on
+  the next guy who has to read the resultant code!
+
+  Sample solutions:
+
+  [1] Let everyone else share the wealth by defining your function 
+      conditionally for them somewhere ...
+
+    #-Franz (DEFUN FRANZ-NIFTY-FUNCTION () ...)
+
+  [2] Make an abstraction macro so that everyone is covered and call 
+      the abstraction all over the place...
+
+      (DEFMACRO NOBODY-HAD-THIS-NAME-BEFORE ()
+	(IF (STATUS FEATURE 'FRANZ)
+	    '(FRANZ-NIFTY-FUNCTION)
+	    '(SOMETHING-EQUALLY-NIFTY SOME-WIERD-ARG)))
+
+
+
+Hardware/MicroCode Conditionalization. 
+  The following conditionalization should be used for features which are 
+  dependent only upon a particular aspect of the target system hardware or 
+  microcode. For example, code dependent upon how the hardware math does
+  round-off might have this sort of read conditional.
+
+ #+H6180	Honeywell H6180 processor. (eg, MIT-MULTICS)
+
+ #+PDP10	DEC PDP-10 processor (eg, MIT-MC, ...)
+
+ #+TOPS-20	DEC TOPS-20 (eg, MIT-XX, MIT-EECS, ...)
+
+ #+LISPM	The MIT LispMachine processor.
+
+ #+VAX		The DEC Vax processor.
+
+
+Dialect Conditionalization.
+  The following conditionalization should be used for features which are
+  dependent only upon a particular aspect of the target Lisp dialect.
+
+ #+FRANZ	The Berkeley Franz dialect (currently on Vax only).
+
+ #+LISPM	The MIT LispMachine dialect (currently on LispM's only).
+
+ #+MACLISP	The MIT Maclisp dialect (currently on ITS, Twenex, Multics).
+
+ #+NIL		The MIT NIL (Non-Ixistent Lisp) dialect (eventually on Vax).
+
+Operating System Conditionalization.
+  The following conditionalization should be used for features which are
+  dependent only upon a particular aspect of the target operating system.
+
+ #+DEC20	The DEC Twenex operating system.
+
+ #+ITS		The MIT ITS operating system.
+
+ #+LISPM	The MIT LispMachine operating system.
+
+ #+MULTICS	The Honeywell Multics operating system.
+
+ #+UNIX		The Bell Labs UNIX operating system or a variant thereof.
+
+
+Site Conditionalization.
+  For the sake of code transportability, site conditionalization should
+  be done via something like:
+				(IF (EQ (STATUS SITE) <site>)
+				    ...special case...
+				    ...normal case...)
+
+
+Miscellaneous Other Conditionalization.
+  The following reader conditionals are in use for miscellaneous reasons 
+  but are discouraged for future use. They are presented here only to
+  documentation their significance.
+
+
+ #+GC		Systems where GC messages make sense and where GCTWA is
+		available to be called from time to time.
+

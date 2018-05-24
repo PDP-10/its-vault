@@ -1,0 +1,1084 @@
+;;; -*- Text -*-
+;;;
+;;; Documentation of Macsyma Internal Routines
+;;;
+;;; (c) Copyright 1981 Massachusetts Institute of Technology **
+;;;
+;;; The following control character conventions are in effect:
+;;;
+;;;	  		= NIL
+;;;	  		= T
+;;;	  		= {undefined-quantity}
+;;;	  ...	= lisp code font
+;;;	  ...	= TeX math mode (italic)
+;;;
+
+Book:		Macsyma Maintenance Manual
+
+;Page 1
+Chapter:	Lisp Utilities
+
+;Page 2
+Begin-Family:	Functional Definition
+
+Begin-Entry:	FSET
+Syntax:		(FSET sym def)
+Args:		2 args
+Type:		SUBR
+Description:	Tries to emulate Lispm/NIL FSET.  Won't work for
+		LSUBRs, FEXPRs, or FSUBRs.
+Example:	(FSET 'KAR 'CAR)		
+		  =>	CAR					; Defines KAR
+Example:	(FSET 'KAR '(LAMBDA (X) (CAR X)))
+		  =>	(LAMBDA (X) (CAR X))			; Defines KAR
+Example:	(FSET 'KAR (GET 'CAR 'SUBR))
+		  =>	#13514					; Defines KAR
+End-Entry:	FSET
+
+End-Family:	Functional Definition
+
+
+Page-Break:
+;Page 3
+
+Begin-Family:	List Manipulation
+
+Begin-Entry:	*MAKE-LIST
+Syntax:		(*MAKE-LIST size [val])
+Args:		1 or 2 args
+Type:		LSUBR
+Description:	Creates a list size long. The object val (default ) is
+		used to fill the lists.
+Example:	(*MAKE-LIST 3)		=>	(  )
+Example:	(*MAKE-LIST 3 'A)	=>	(A A A)
+End-Entry:	*MAKE-LIST
+
+End-Family:	List Manipulation
+
+
+Page-Break:
+;Page 4
+
+Begin-Family:	Mapping
+
+Begin-Entry:	MAP2C
+Syntax:		(MAP2C f l)
+Args:		2 args
+Description:	f is assumed to be a function of two arguments.  It is mapped
+		down l and applied to consequtive pairs of elements of the
+		list. Useful for iterating over property lists.
+End-Entry:	MAP2C
+
+Page-Break:
+;Page 5
+
+Begin-Entry:	ANDMAPC
+Syntax:		(ANDMAPC f l)
+Args:		2 args
+Description:	Predicate returns  if all elements of l answer non- to the 
+		given predicate function f.
+
+		For an open-coded version of this, see EVERY.
+Example:	(ANDMAPC #'FIXP '(1 2 3))	=>	
+Example:	(ANDMAPC #'FIXP '(1 2 A))	=>	
+End-Entry:	ANDMAPC
+
+Begin-Entry:	ORMAPC
+Syntax:		(ORMAPC f l)
+Args:		2 args
+Description:	If any element of l answers non- to the given predicate
+		function f, that value is returned. If no answers are non-,
+		 is returned.
+
+		For an open-coded version of this, see SOME. Note, however,
+		that its return value is slightly different.
+Example:	(ORMAPC  #'FIXP '(1 2 A))	=>	
+Example:	(ORMAPC  #'FIXP '(A B C))	=>	
+End-Entry:	ORMAPC
+
+Begin-Entry:	ANDMAPCAR
+Syntax:		(ANDMAPCAR f l)
+Args:		2 args
+Description:	Like MAPCAR, except if an application of f to any of the
+		elements of l returns , then the function returns 
+		immediately. If all applications of the function return non-
+		values, the list of results is returned.
+Example:	(ANDMAPCAR #'1+ '(1 2 3))	=>	(2 3 4)
+Example:	(ANDMAPCAR #'FIXP '(1 2 A 3))	=>	
+End-Entry:	ANDMAPCAR
+
+End-Family:	Mapping
+
+
+Page-Break:
+;Page 6
+
+Begin-Family:	Lispy Logic
+
+Begin-Entry:	XOR
+Syntax:		(XOR x y)
+Args:		2 args
+Type:		SUBR
+Description:	If one of x and y is non-, and the other is , returns the
+		non- argument. Else returns .
+Example:	(XOR  )	=> 
+Example:	(XOR  )	=> 
+Example:	(XOR 'A )	=> A
+Example:	(XOR  )	=> 
+End-Entry:	XOR
+
+End-Family:	Lispy Logic
+
+
+Page-Break:
+;Page 7
+
+Begin-Family:	Set Membership
+
+Begin-Entry:	AMONG
+Syntax:		(AMONG item l)
+Args:		2 args
+Description:	A MEMQ which works at all levels of a piece of 
+		list structure, returning  if any terminal node of the
+		list structure is eq to item.
+
+		Note that a second arg of  will always return , so it
+		should be avoided.
+Example:	(AMONG 'A '((B A) C))		=>	
+Example:	(AMONG 'B '(((E F) B G) E))	=>	
+Example:	(AMONG  '(A B C))		=>		; Avoid this
+Example:	(AMONG  '(A  B))		=>		; Avoid this
+End-Entry:	AMONG
+
+Begin-Entry:	AMONGL
+Syntax:		(AMONGL items l)
+Args:		2 args
+Description:	Similar to AMONG, but takes a list of items to look for.
+		If any of the items are eq to a terminal node, a non- value
+		is returned, the car of which is the item that was found.
+		If no such terminal is found,  is returned.
+
+		Note that 's will not be seen by AMONGL so they should
+		not be put in the items list.
+Example:	(AMONGL '(A B) '((C D) E))		=>	
+Example:	(AMONGL '(A Z) '((X Y) A B C))		=>	(A Z)
+Example:	(AMONGL '(A Z) '((Z Y X) A B C))	=>	(Z)
+Example:	(AMONGL '( C)  '(A  B))		=>	 ; Avoid this
+End-Entry:	AMONGL
+
+End-Family:	Set Membership
+
+
+Page-Break:
+;Page 8
+
+Begin-Family:	Set Union
+
+Begin-Entry:	RECONC
+Syntax:		(RECONC l1 l2)
+Args:		2 args
+Type:		SUBR
+Description:	Like Lisp's NRECONC, but not destructive. Appends l2 to the
+		reverse of l1.
+Example:	(RECONC '(A B C) '(D E F))	=>	(C B A D E F)
+End-Entry:	RECONC
+
+End-Family:	Set Union
+
+
+Page-Break:
+;Page 9
+
+Begin-Family:	Set Extraction
+
+Begin-Entry:	NXTTOLAST
+Description:	Returns the second-to-last element (not cons) of an
+		even-length list.
+
+		The original intended use of this function was to help
+		determine the lowest degree of polynomials in special
+		representations like CRE form.
+Example:	(NXTTOLAST '(A B))		=> A
+Example:	(NXTTOLAST '(A B C D E F))	=> E
+Example:	(NXTTOLAST '(A B C D E))	=> E ; Sample `bad usage'
+End-Entry:	NXTTOLAST
+
+Begin-Entry:	FIRSTN
+Syntax:		(FIRSTN n l)
+Args:		2 args
+Type:		SUBR
+Description:	Returns the first n elements of l.
+
+		A negative n does harmless things on the pdp10 and in Franz
+		but on the LispM it creates a rather severe error, so should
+		be avoided.
+Example:	(FIRSTN 3 '(A B C D E))	=>	(A B C)
+Example:	(FIRSTN 5 '(A B C D))	=>	(A B C D)
+ErrDisp:	(FIRSTN -2 '(A B C))
+End-Entry:	FIRSTN
+
+End-Family:	Set Extraction
+
+
+Page-Break:
+;Page 10
+
+Begin-Family:	AList Handling
+
+Begin-Entry:	ASSQR
+Syntax:		(ASSQR x l)
+Args:		2 args
+Type:		SUBR
+Description:	Like ASSQ but checks against the CDR instead of 
+		the CAR. Returns first element of l whose cdr is
+		EQ to x, or  if no such element is found.
+Example:	(ASSQR 'A '((A . C) (B . A)))	=>	(C . A)
+Example:	(ASSQR 'A '((B . A) (C . A)))	=>	(B . A)
+Example:	(ASSQR 'A '((B . C) (C . D)))	=>	
+End-Entry:	ASSQR
+
+Begin-Entry:	DOT2L
+Syntax:		(DOT2L l)
+Description:	Takes a list in ``alist'' form and converts it to one in
+		``property list'' form. It is an error if all elements of 
+		the list are not conses.
+Example:	(DOT2L '((A . B) (C . D)))	=>	(A B C D)
+End-Entry:	DOT2L
+
+End-Family:	AList Handling
+
+
+Page-Break:
+;Page 11
+
+Begin-Family:	PList Handling
+
+Begin-Entry:	A-ATOM
+Syntax:		(A-ATOM sym sel val)
+Args:		3 args
+Type:		SUBR
+Description:	Obsolete form of CPUT (a function with the 
+		same functionality but different argument order).
+
+		If val is , the sel property of sym is flushed. Else, if val
+		is non-, it becomes the value of the sel property of sym.
+
+		This function should not be called directly from anywhere
+		in Macsyma. Some of MRG's macros still expand into it, however.
+		The purpose is to make a property list look a bit more like
+		a data structure.
+Synonym:	(CPUT sym val sel)
+End-Entry:	A-ATOM
+
+Begin-Entry:	CPUT
+Syntax:		(CPUT sym val sel)
+Args:		3 args
+Type:		SUBR
+Description:	If val is , the sel property of sym is flushed. Else, if val
+		is non-, it becomes the value of the sel property of sym.
+
+		The purpose is to make a property list look a bit more like
+		a data structure.
+End-Entry:	CPUT
+
+End-Family:	PList Handling
+
+
+Page-Break:
+;Page 12
+
+Begin-Family:	Math Functions
+
+Begin-Entry:	LOG2
+Syntax:		(LOG2 x)
+Args:		1 arg
+Type:		SUBR
+Description:	Returns fix(log2(x)) for positive integers and 
+		fix(log2(-x)) for negative integers. Not defined on other
+		kinds of numbers.
+Example:	(LOG2 3)				=>	1.
+Example:	(LOG2 4)				=>	2.
+Example:	(LOG2 7)				=>	2.
+Example:	(LOG2 1234512345123451234512345.)	=>	80.
+End-Entry:	LOG2
+
+End-Family:	Math Functions
+
+
+Page-Break:
+;Page 13
+
+Begin-Family:	PName Hacking 
+
+Begin-Entry:	CONCAT
+Syntax:		(CONCAT q1 q2 ...)
+Args:		0 or more args
+Type:		LSUBR
+Description:	Puts the printnames of all the args together as an interned
+		symbol.
+
+		Binds *NOPOINT to  and BASE to 10. during the 
+		operation. Otherwise the same as the Lisp function
+		SYMBOLCONC.
+Example:	(CONCAT 'A 'B)			=>	AB
+Example:	(CONCAT $INCHAR $LINENUM)	=>	$C3
+Example:	(CONCAT '$ 'C 13.)		=>	$C13
+Example:	(CONCAT '$A '$B)		=>	$A$B
+End-Entry:	CONCAT
+
+End-Family:	PName Hacking 
+
+
+;Page 14
+Chapter:	Macsyma Utilities
+
+;Page 15
+Begin-Entry:	MEMALIKE
+Syntax:		(MEMALIKE item l)
+Args:		2 args
+Type:		SUBR
+Description:	Like MEMBER in Lisp except uses ALIKE1 instead of
+		EQUAL as the predicate.
+End-Entry:	MEMALIKE
+
+Begin-Entry:	ASSOL
+Syntax:		(ASSOL item l)
+Args:		2 args
+Type:		SUBR
+Description:	Like ASSOC in Lisp except uses ALIKE1 instead of 
+		EQUAL as the predicate.
+End-Entry:	ASSOL
+
+Begin-Entry:	ASSOLIKE
+Syntax:		(ASSOLIKE item l)
+Args:		2 args
+Type:		SUBR
+Description:	Like (CDR (ASSOC ...)) in Lisp except uses ALIKE1
+		instead of EQUAL as the predicate.
+Synonym:	(CDR (ASSOL item l))
+End-Entry:	ASSOLIKE
+
+
+;Page 16
+Chapter:	I/O System
+
+;Page 17
+Begin-Entry:	DISPLA
+Syntax:		(DISPLA mexp)
+Args:		1 arg
+Type:		SUBR
+Description:	Does a left-justified Macsyma display of mexp to the default
+		output stream. To alter where output goes, binding or setting
+		Lisp I/O control variables such as OUTFILES, ^W, 
+		and ^R.
+
+		When given an argument of the form 
+		((MLABLE) label mexp),
+		DISPLA will display mexp centered. If label is non-,
+		it will be displayed left-justified in parentheses. This is how
+		Macsyma C/D/E-line display is implemented.
+
+		Given an argument of the form
+		((MTEXT) spec1 spec2 ...), 
+		DISPLA will attempt to display the text left-justified
+		with each spec touching the next. This is useful for
+		mixing string messages with math expressions. Nested 
+		MTEXT expressions will appear as parenthetical remarks.
+Demo:		(DISPLA '((MPLUS) $X $Y))
+		X + Y
+		
+		(DISPLA '((MLABLE) $C1 ((MPLUS) $X $Y)))
+		(C1)          X + Y
+		
+		(DISPLA '((MLABLE)  ((MPLUS) $A $B $C)))
+		              X + Y
+		
+		(DISPLA '((MTEXT) '|&Answer is | ((MPLUS) $X $Y)))
+		Answer is X+Y
+		
+End-Entry:	DISPLA
+
+
+Page-Break:
+;Page 18
+
+Begin-Entry:	MFORMAT
+SpecialForm:	(MFORMAT stream cstring q1 q2 ...)
+Description:	The preferred Macsyma output routine.
+		Prints several arguments to stream (stream =  defaults to 
+		STANDARD-OUTPUT) according to a control argument,
+		cstring. This is a string which is for the most part just
+		PRINC'd, except that the character "~" starts an escape
+		sequence which directs other actions. A "~" escape sequence
+		has an (optional) numeric parameter followed, optionally,
+		by either or both of the modifiers @ and :, followed finally by
+		a mode character.  These escape actions can use up one or 
+		more of the non-control arguments.
+
+		Possible escape sequences are:
+Display:	Command		Interpretation
+
+		~%     	Insert a newline.
+		~n%	Insert n newlines.
+
+		~&  	Get a fresh line (ie, newline iff not in col 0)
+
+		~M   	Print an expression in display (output) form.
+		~:M  	Print an expression in linear (input) form.
+		~@M  	Print an expression in operand (eg, MTIMES  &*) form. 
+		~:@M	Combination of ":" and "@" modifiers.
+
+		~A   	Lisp PRINC the object.
+
+		~S  	Lisp PRINT the object.
+
+		~<cr>   	Ignore the <cr> and leading whitespace on next line.
+Demo:		(MFORMAT T "~%This is line 1.~
+		              and this is line 2")
+		This is line 1
+		and this is line 2
+		
+		(MFORMAT T "~%The expression ~:M was used." '((MEXPT) $A $B))
+		The expression A^B was used.
+		
+End-Entry:	MFORMAT
+
+
+Page-Break:
+;Page 19
+
+Begin-Entry:	PRINL
+Syntax:		(PRINL l)
+Args:		1 arg
+Type:		SUBR
+Description:	Uses PRINC to type each of the elements of l (which must
+		be a Lisp list) separated by spaces.
+End-Entry:	PRINL
+
+
+;Page 20
+Chapter:	Error System
+
+;Page 21
+Begin-Entry:	MERROR
+SpecialForm:	(MERROR message q1 q2 ...)
+Type:		MACRO
+Description:	message should be a control-string which can be fed to 
+		MFORMAT and args are the arguments to be used by the 
+		control-string.
+
+		MERROR will do a FRESH-LINE operation before
+		calling MFORMAT and a FRESH-LINE afterward, so for
+		single line error messages with no arguments there is no
+		need to put any "~&" or "~%" in the control-string.
+Demo:		;; One might implement FEXPRCHK as follows
+		(DEFUN FEXPRCHK (L FN)
+		  (IF (OR (NULL L) (CDR L))
+		      (MERROR "Wrong number of args to ~:@M~%~M" FN L)))
+End-Entry:	MERROR
+
+
+Page-Break:
+;Page 22
+
+Begin-Family:	Argument Checking
+
+Begin-Entry:	FEXPRCHK
+Syntax:		(FEXPRCHK arglist fname)
+Args:		2 args
+Type:		SUBR
+Description:	Checks to see that arglist (which should be the argument
+		list received by some fexpr, whose name is fname)
+		contains exactly one element.
+		If it does not, an error is signalled.
+End-Entry:	FEXPRCHK
+
+Begin-Entry:	NONSYMCHK
+Syntax:		(NONSYMCHK obj fname)
+Args:		2 args
+Type:		SUBR
+Description:	Checks to see that obj is an atomic symbol. If not, an error
+		is signalled, citing a call to the function fname.
+End-Entry:	NONSYMCHK
+
+Begin-Entry:	NONVARCHK
+Syntax:		(NONVARCHK obj fname consterrp secondp)
+Args:		4 args
+Type:		SUBR
+Description:	Does error checking for a non-variable (ie, signals an error
+		if obj is not variable). If consterrp is non-, 
+		also signals an error for atomic constants. If an error is 
+		signalled, it will refer to a call to fname and if secondp is
+		non-, will refer explicitly to the second argument to that
+		function (eg, for INTEGRATE, DIFF, LIMIT, ...).
+End-Entry:	NONVARCHK
+
+End-Family:	Argument Checking
+
+
+Page-Break:
+;Page 23
+
+Begin-Entry:	ERLIST
+SpecialForm:	(ERLIST message)
+Type:		MACRO
+Description:	Takes an arg of a message. Atomic messages are typed
+		out with PRINC; lists are typed out with PRINL. 
+		Then an error is signalled.
+
+		This form is obsolete. Use MERROR.
+End-Entry:	ERLIST
+
+Begin-Entry:	ERREXP
+Syntax:		(ERREXP)
+Args:		No args
+Description:	Types out "ERREXP contains the offending expression." 
+		Note that ERREXP must be SETQ'd `by hand'. This
+		function does not do that for you.
+End-Entry:	ERREXP
+
+
+;Page 24
+Chapter:	PNames
+
+;Page 25
+Begin-Family:	Explosives
+
+Begin-Entry:	MEXPLODEN
+Syntax:		(MEXPLODEN x)
+Args:		1 arg
+Type:		SUBR
+Description:	Like Lisp's EXPLODEN function, but binds BASE to 10 and
+		*NOPOINT to  during the process.
+End-Entry:	MEXPLODEN
+
+Begin-Entry:	MSTRING
+Syntax:		(MSTRING x)
+Args:		1 arg
+Type:		SUBR
+Description:	A Macsyma-flavored EXPLODEN function which works on arbitrary
+		expressions except MTEXT and MLABLE. Returns a list of the
+		fixnum characters that make up the expressions strung out
+		representation.
+Example:	(MSTRING '((MPLUS SIMP) $X $Y))	=> (#/X #/+ #/Y)
+Example:	(MSTRING '(($F) $A))		=> (#/F #/( #/A #/))
+End-Entry:	MSTRING
+
+Page-Break:
+;Page 26
+
+Begin-Entry:	STRING*
+Syntax:		(STRING* x)
+Args:		1 arg
+Type:		SUBR
+Description:	A Macsyma-flavored EXPLODEN function - for atomic objects
+		only. Returns the list of fixnums that make up the Macsyma
+		printname of the object. Doesn't handle bigfloats.
+
+		Doesn't bind BASE or *NOPOINT. Doesn't do error 
+		checking for non-atoms; result in such case is garbage,
+		but no error is generated.
+Example:	(STRING* '$FOO)		=>	(#/F #/O #/O)
+Example:	(STRING* '$SUBSTITUTE)	=>	(#/S #/U #/B #/S #/T)
+End-Entry:	STRING*
+
+Begin-Entry:	STRING*1
+Syntax:		(STRING*1 x)
+Args:		1 arg
+Type:		SUBR
+Description:	A faster version of STRING*.
+		Expects that NUMBERP and ALIASLIST checks have already
+		been done. Doesn't handle bigfloats.
+
+		Doesn't bind BASE or *NOPOINT. Doesn't do error 
+		checking for non-atoms; result in such case is garbage,
+		but no error is generated.
+End-Entry:	STRING*1
+
+Begin-Entry:	MAKSTRING*
+Syntax:		(MAKSTRING* x)
+Args:		1 arg
+Type:		SUBR
+Description:	Same as STRING* but returns a list of atomic symbols 
+		instead of fixnums.
+Example:	(MAKSTRING* '$FOO)	=>	(F O O)
+End-Entry:	MAKSTRING*
+
+End-Family:	Explosives
+
+
+Page-Break:
+;Page 27
+
+Begin-Family:	Prefix Character Control
+
+Begin-Entry:	DOLLARIFY
+Syntax:		(DOLLARIFY l)
+Args:		1 arg
+Type:		SUBR
+Description:	The argument l should be a Lisp list containing only symbols.
+		Returns a SIMP'd Macsyma list of dollarsigned symbols.
+Example:	(DOLLARIFY '(A B C))	=>	((MLIST SIMP) $A $B $C)
+End-Entry:	DOLLARIFY
+
+Begin-Entry:	STRIPDOLLAR
+Syntax:		(STRIPDOLLAR x)
+Args:		1 arg
+Type:		SUBR
+Description:	Turn a lisp atom or BIGFLOAT form into its Macsyma display
+		form. Strips the "$", "%" or "&" (if any) from
+		the head of the printname of symbols, turns 
+		((BIGFLOAT ...) ...) into a symbol whose printname is the
+		bigfloat's more pretty form.
+Example:	(STRIPDOLLAR '((BIGFLOAT SIMP 56) 54975581388800000 17))
+		  => |1.0B5|
+Example:	(STRIPDOLLAR '$FOO)	=>	FOO
+Example:	(STRIPDOLLAR '%FOO)	=>	FOO
+Example:	(STRIPDOLLAR '&FOO)	=>	FOO
+Example:	(STRIPDOLLAR 'MEXPT)	=>	MEXPT
+Example:	(STRIPDOLLAR '$$FOO)	=>	$FOO
+End-Entry:	STRIPDOLLAR
+
+Page-Break:
+;Page 28
+
+Begin-Entry:	FULLSTRIP1
+Syntax:		(FULLSTRIP1 sym)
+Args:		1 arg
+Type:		SUBR
+Description:	Remove dollarsign (like STRIPDOLLAR) and also do any 
+		inverse aliasing according to defined ALIAS's.
+Example:	(FULLSTRIP1 '$FOO)		=>	FOO
+Example:	(FULLSTRIP1 '$SUBSTITUTE)	=>	SUBST
+End-Entry:	FULLSTRIP1
+
+Begin-Entry:	FULLSTRIP
+Syntax:		(FULLSTRIP l)
+Args:		1 arg
+Type:		SUBR
+Description:	Calls FULLSTRIP1 on each element of its arg, l, which must
+		be a list.
+Example:	(FULLSTRIP '($A $B $C))		=>	(A B C)
+End-Entry:	FULLSTRIP
+
+End-Family:	Prefix Character Control
+
+
+
+Page-Break:
+;Page 29
+
+Begin-Family:	Operators/Operands
+
+Begin-Entry:	GETOP
+Syntax:		(GETOP x)
+Args:		1 arg
+Type:		SUBR
+Description:	Gets the operand form of an operator (the OP property).
+		If x is not a symbol or has no operand form, x is just 
+		returned.
+Example:	(GETOP 'MPLUS)	=>	&+
+Example:	(GETOP '&+)	=>	&+
+Example:	(GETOP '%EXPT)	=>	%EXPT
+Example:	(GETOP '$FOO)	=>	$FOO
+End-Entry:	GETOP
+
+Begin-Entry:	GETOPR
+Syntax:		(GETOPR x)
+Args:		1 arg
+Type:		SUBR
+Description:	Gets the operator form of an operand (the OPR property).
+		If x is not a symbol or has no operator form, x is just 
+		returned.
+Example:	(GETOP 'MPLUS)	=>	MPLUS
+Example:	(GETOP '&+)	=>	MPLUS
+Example:	(GETOP '%EXPT)	=>	%EXPT
+Example:	(GETOP '$FOO)	=>	$FOO
+End-Entry:	GETOPR
+
+End-Family:	Operators/Operands
+
+
+;Page 30
+Chapter:	File System
+
+;Page 31
+Begin-Family:	File Names
+
+Begin-Entry:	FILESTRIP
+Syntax:		(FILESTRIP filespec)
+Args:		1 arg
+Type:		SUBR
+Description:	Converts a Macsyma file specification into a Lisp file 
+		specification. filespec should be a Lisp list of symbols.
+
+		Does not change DEFAULTF.
+Example:	(DEFAULTF '((DSK FOO) FILE >))	 =>	((DSK FOO) FILE >)
+Example:	(FILESTRIP '(&BAR/;))		 =>	(* > DSK BAR)
+Example:	(FILESTRIP '(&BAR/ BAZ))	 =>	(BAR BAZ DSK FOO)
+Example:	(FILESTRIP '($A $B $C $D))	 =>	(A B C D)
+Example:	(FILESTRIP '($A $B $C))		 =>	(A B DSK C)
+Example:	(FILESTRIP '($A $B $DSK))	 =>	(A B DSK FOO)
+Example:	(FILESTRIP '($SUBSTITUTE MEXPT)) =>	(SUBST MEXPT DSK FOO)
+End-Entry:	FILESTRIP
+
+Begin-Entry:	MTRUENAME
+Syntax:		(MTRUENAME fileobj)
+Args:		1 arg
+Type:		SUBR
+Description:	Returns the dollarified Macsyma filespec (as an mlist)
+		which is the truename of fileobj.
+Example:	(MTRUENAME (OPEN '((DSK FOO) BAR >) 'OUT))
+		  => ((MLIST SIMP) $BAR $1 $DSK $FOO)
+Example:	(MTRUENAME TYO)
+		  => ((MLIST SIMP) $* $* $TTY $*)
+End-Entry:	MTRUENAME
+
+Begin-Entry:	TRUEFNAME
+Syntax:		(TRUEFNAME filespec)
+Args:		1 arg
+Type:		SUBR
+Description:	Gets the TRUENAME of filespec, which should be specified in
+		lisp filespec format.
+Example:	(TRUEFNAME '((DSK MAXDOC) UPDATE >))
+		  => ((DSK ALJABR) UPDATE /298)
+Example:	(TRUEFNAME '(UPDATE > DSK MAXDOC))
+		  => ((DSK ALJABR) UPDATE /298)
+End-Entry:	TRUEFNAME
+
+End-Family:	File Names
+
+
+;Page 32
+Chapter:	Mathy Functions
+
+;Page 33
+Begin-Family:	Equality
+
+Begin-Entry:	ALIKE1
+Syntax:		(ALIKE1 x y)
+Args:		1 arg
+Type:		SUBR
+Description:	Predicate returns  if Macsyma objects x and y are equivalent.
+		Use this as you would use EQUAL on Lisp objects.
+		Compares everything in the object except the
+		flags in the CDAR (expression property list) of lists
+		(it does notice though if one object is an ARRAY and
+		another isn't and will return  in that case -- all other
+		flags are ignored).
+End-Entry:	ALIKE1
+
+End-Family:	Equality
+
+
+Page-Break:
+;Page 34
+
+Begin-Family:	Predicates
+
+Begin-Entry:	FREE
+Syntax:		(FREE exp var)
+Args:		2 args
+Type:		SUBR
+Description:	Checks to see if exp is free of var. Both args are assumed to 
+		be Macsyma expressions in general representation.
+End-Entry:	FREE
+
+Begin-Entry:	$BFLOATP
+Syntax:		($BFLOATP x)
+Args:		1 arg
+Type:		SUBR
+Description:	Returns  if its arg is a bigfloat number.
+End-Entry:	$BFLOATP
+
+End-Family:	Predicates
+
+
+;Page 35
+Chapter:	Evaluation/Simplification
+     
+;Page 36
+Begin-Family:	Evaluation
+
+Begin-Entry:	$EV
+SpecialForm:	($EV mexp spec1 spec2)
+Type:		FSUBR
+Description:	This invokes the Macsyma evaluator with evaluation control
+		given by spec1, spec2, etc.
+
+		Should NEVER be used in lisp code.
+End-Entry:	$EV
+
+Begin-Entry:	MEVAL
+Syntax:		(MEVAL mexp)
+Args:		1 arg
+Type:		SUBR
+Description:	A Macsyma flavored EVAL. Does both evaluation and 
+		simplification.
+
+		Any call to the macsyma evaluator not within the evaluator
+		itself has far-ranging effects on the entire system. It
+		should not be used for trivial functionalities such as
+		substitution and simplification. This information is only
+		provided for the sake of reading old code.
+Synonym:	(SIMPLIFYA (MEVAL1 form) )
+Example:	(MEVAL '((MPLUS) 2 2))	=>	4
+End-Entry:	MEVAL
+
+Begin-Entry:	MEVAL1
+Syntax:		(MEVAL1 mexp)
+Args:		1 arg
+Type:		SUBR
+Description:	A Macsyma flavored EVAL that does only evaluation. No final
+		simplification is done on the result.
+Example:	(MEVAL1 '((MPLUS) 2 2))	=>	((MPLUS) 2 2)
+End-Entry:	MEVAL1
+
+End-Family:	Evaluation
+
+
+Page-Break:
+;Page 37
+
+Begin-Family:	Funarg Application
+
+Begin-Entry:	MAPPLY
+Syntax:		(MAPPLY mfun arglist fname)
+Args:		3 args
+Type:		SUBR
+Description:	A Macsyma flavored APPLY. Applies mfun to arglist.
+		fname is used as the function name to refer to if an
+		error occurs during the application.
+End-Entry:	MAPPLY
+
+Begin-Entry:	MCALL
+Syntax:		(MCALL mfun arglist fname)
+Args:		1 or more
+Type:		LSUBR
+Description:	A Macsyma flavored FUNCALL. Calls mfun on the given args.
+		Assumes mfun is a valid name to type out if an error occurs,
+		so mfun should be a symbol.
+
+		(MCALL mfun arg1 arg2 ...) =
+		(MAPPLY mfun (LIST arg1 arg2 ...) mfun).
+End-Entry:	MCALL
+
+
+Begin-Entry:	MBIND
+Syntax:		(MBIND vars fnargs fnname)
+Args:		3 args
+Type:		SUBR
+Description:	Involved with Macsyma variable ``binding''.
+		*** What does this do? ***
+End-Entry:	MBIND
+
+Begin-Entry:	MUNBIND
+Syntax:		(MUNBIND vars)
+Args:		1 arg
+Type:		SUBR
+Description:	Involved with Macsyma variable ``unbinding''.	
+		*** What does this do? ***
+End-Entry:	MUNBIND
+
+;Has this changed its name??
+;
+;Begin-Entry:	FLOAT-GENCALL
+;Syntax:	(FLOAT-GENCALL ...)
+;Args:		??
+;Type:		??
+;Description:	A macro for fast general numerical calls to user supplied
+;		funargs. See LIBMAX;NUMMAC
+;End-Entry:	FLOAT-GENCALL
+
+End-Family:	Funarg Application
+
+
+Page-Break:
+;Page 38
+
+Begin-Family:	Simplification
+
+Begin-Entry:	SIMPLIFY
+Syntax:		(SIMPLIFY mexp)
+Args:		2 args
+Type:		SUBR
+Description:	Invokes the Macsyma expression simplifier on mexp, returning
+		a simplified expression.
+Synonym:	(SIMPLIFYA mexp )
+Example:	(SIMPLIFY '((MPLUS) 2 2))    => 4
+Example:	(SIMPLIFY '((MTIMES) $A $A)) => ((MEXPT SIMP) $A 2)
+End-Entry:	SIMPLIFY
+
+Begin-Entry:	SIMPLIFYA
+Syntax:		(SIMPLIFYA mexp flag)
+Args:		2 args
+Type:		SUBR
+Description:	Simplifies mexp. If flag is non-, the arguments to mexp
+		are assumed to be simplified already and their simp flags
+		are not checked. If flag is , this assumption is not made
+		and the args are checked for simp flags and simplified if no
+		such flags are seen. When in doubt, use a flag of .
+		(See SIMPLIFY.)
+Example:	(SIMPLIFYA '((MPLUS) 2 2)    ) => 4
+Example:	(SIMPLIFYA '((MTIMES) $A $A) ) => ((MEXPT SIMP) $A 2)
+End-Entry:	SIMPLIFYA
+
+End-Family:	Simplification
+
+
+;Page 39
+Chapter:	Miscellania
+
+;Page 40
+Begin-Family:	Information
+
+Begin-Entry:	KILL1
+Syntax:		(KILL1 sym)
+Args:		1 arg
+Type:		SUBR
+Description:	The subr form of Macsyma's KILL command. Kills sym, 
+		which must be a symbol, by doing a MAKUNBOUND and removing
+		all Macsyma-related properties. A number of keywords are 
+		available (eg, FUNCTIONS, VALUES, ALLBUT(...),
+		ALL, ...). For details, see the code.
+End-Entry:	KILL1
+
+Begin-Entry:	ADD2LNC
+Syntax:		(ADD2LNC obj mlist)
+Args:		2 args
+Type:		SUBR
+Description:	If obj is in the given mlist already (according to a
+		MEMALIKE test), it is spliced onto the end of the
+		list with NCONC. If obj is already in mlist, no
+		change occurs.
+End-Entry:	ADD2LNC
+
+End-Family:	Information
+
+
+Page-Break:
+;Page 41
+
+Begin-Family:	Nouns/Verbs
+
+Begin-Entry:	$NOUNIFY
+Syntax:		($NOUNIFY sym)
+Args:		1 arg
+Type:		SUBR
+Description:	Returns the noun form of sym, which must be a symbol.
+
+		If the symbol has a VERB property, uses that.
+		If the thing is a NOUN, it returns its arg.
+		Else strips a leading "M" or "$" from the printname 
+		   and puts a "%" on. Puts the verb form in the NOUN
+		   property of the verb and the noun in the VERB
+	           property of the noun. 
+Example:	($NOUNIFY '$A)		=>	%A
+Example:	($NOUNIFY '%A)		=>	%A
+Example:	($NOUNIFY 'MEXPT)	=>	%EXPT
+End-Entry:	$NOUNIFY
+
+Begin-Entry:	$VERBIFY
+Syntax:		($VERBIFY sym)
+Args:		1 arg
+Type:		SUBR
+Description:	Returns the verb form of sym, which must be a symbol.
+
+		If the symbol has a noun property, uses that.
+		If the arg is a VERB or doesn't start with "%",
+		   just returns it.
+		Else strips the "%", adds a "$". Calls $NOUNIFY 
+		   to set up all the VERB/NOUN properties, and returns 
+		   what's in the thing's NOUN property.
+Example:	($VERBIFY '$A)		=>	$A
+Example:	($VERBIFY '%A)		=>	%A
+Example:	($VERBIFY '%EXPT)	=>	MEXPT
+End-Entry:	$VERBIFY
+
+End-Family:	Nouns/Verbs
+
+
+Page-Break:
+;Page 42
+
+Begin-Family:	Predicates
+
+Begin-Entry:	ALPHABETP
+Syntax:		(ALPHABETP x)
+Args:		1 arg
+Type:		SUBR
+Description:	Predicate returns  if its arg is a fixnum representing an
+		alphabetic character or is in an exceptional character which
+		is a member of the list contained in the variable ALPHABET.
+Example:	(ALPHABETP #/A)	=> 
+Example:	(ALPHABETP #/%)	=> 
+End-Entry:	ALPHABETP
+
+End-Family:	Predicates
+
+
+Page-Break:
+;Page 43
+
+Begin-Family:	MList Hacking
+
+Begin-Entry:	$LISTP
+Syntax:		($LISTP x)
+Args:		1 arg
+Type:		SUBR
+Description:	Returns  if its arg is an mlist.
+Example:	($LISTP '(FOO BAR))		=>	
+Example:	($LISTP '((MLIST) $FOO $BAR))	=>	
+Example:	($LISTP '((MLIST SIMP)))	=>	
+Example:	($LISTP )			=>	
+End-Entry:	$LISTP
+
+Begin-Entry:	$CONS
+Syntax:		($CONS x l)
+Args:		2 args
+Type:		SUBR
+Description:	A Macsyma flavored CONS.
+
+		Makes a Macsyma-style cons, doing the right thing with
+		the (MLIST) in the car of the of the list, l.
+Example:	($CONS '$A '((MLIST)))		=>	((MLIST) $A)
+Example:	($CONS '$A '((MLIST FOO) $B))	=>	((MLIST FOO) $A $B)
+ErrDisp:	($CONS '$A '$B)
+End-Entry:	$CONS
+
+Page-Break:
+;Page 44
+
+Begin-Entry:	$FIRST
+Syntax:		($FIRST mexp)
+Args:		1 arg
+Type:		SUBR
+Description:	A Macsyma flavored CAR.
+
+		Returns the first element of the Macsyma expression, mexp.
+Example:	($FIRST '((MLIST) $A $B))	=>	$A
+Example:	($FIRST '((MPLUS) $A $B))	=>	$A
+ErrDisp:	($FIRST '((MLIST)))
+
+End-Entry:	$FIRST
+
+Begin-Entry:	$REST
+Syntax:		($REST x [n])
+Args:		1 or 2 args
+Type:		LSUBR
+Description:	A Macsyma flavored CDR.
+
+		If n is supplied, then if it is positive the first n elements 
+		are skipped and the rest returned; if n is negative, then the
+		last -n elements are ignored and the rest returned.
+
+		(Removes any flags from the cdar of the form that was
+		its arg, but doesn't care if its arg wasn't an mlist.)
+Example:	($REST '((MLIST) $A $B $C))	=> ((MLIST) $B $C)
+Example:	($REST '((MLIST) $A $B $C) 2)	=> ((MLIST) $C)
+Example:	($REST '((MPLUS SIMP) $A $B))	=> ((MPLUS) $B)
+End-Entry:	$REST
+
+End-Family:	MList Hacking
+
+

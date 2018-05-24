@@ -1,0 +1,246 @@
+ -*- Mode: Text -*-
+
+Data Abstraction in Macsyma -- WGD and CWH  March 1980
+
+>> Motivation
+
+One of the major problems with Macsyma today is that most of the
+mathematical code is written in terms of list-manipulating primitives.  This
+results in code which is difficult to read and data-representations which
+are impossible to modify.
+
+This group has been working on "ultimate" solutions to this problem for
+quite some time.  While we want to continue this work, an intermediate
+solution is needed immediately for further development of the current
+system.  We have written a simple package which provides a modest
+improvement in our coding tools.
+
+This package adopts some of the simpler ideas embodied in the first Barton
+mode package -- ideas which are well established and which the rest of the
+world has been using for years.  It is intended to replace that package and
+one of the first things it will be used for will be to rewrite parts of SOLVE.
+
+>> Architecture
+
+The package is divided into two major parts.  The first is a set of
+primitives for dealing with the Macsyma data representations, and the second
+is an interface to the general rep simplifier similar to that provided by
+OPERS.  This package will replace OPERS/MOPERS.
+
+The macros and functions in this package know specifically about the Macsyma
+data-representations.  It does not provide a general structure-defining
+facility as the current Macsyma representations are too awkward to fit
+nicely into a linear structure world.
+
+The constructor primitives do not take keyword/datum pairs.  This is not
+necessary as the Macsyma structures are so simple as not to require the
+ability to only specify certain slots.  This also enables one to view the
+primitives as "functions" rather than "special forms".
+
+The extractor primitives are also functionally oriented.  This eliminates
+the need for a special syntax, as one writes (DEGREE (LEADING-TERM POLY))
+rather than :POLY:LEADING-TERM:DEGREE.  The other problem with the original
+Barton syntax is its similarity to PL/I -- in that language, A.B.C refers
+to a block of storage, whereas in Lisp, the "A" portion may be the result
+of a function call, as in
+
+               (DEGREE (LEADING-TERM (SQUARE-POLY POLY-1))).
+
+Representing component extraction as a sequence of nested function
+invocations is closer to what is actually happening.
+
+                 :(SQUARE-POLY POLY-1):LEADING-TERM:DEGREE
+
+is awkward, particularly if the SQUARE-POLY form happens to be large and
+complicated, and the analogy with PL/I is incorrect.
+
+
+>> General Representation
+
+The primitives in this package are divided into four groups.  The first
+group may be used with any expression in general representation form.  It
+includes constructor and extractor primitives and tools for working with
+simp-flags and properties on the expression header in a
+representation-independent way.  The second group deals with the most
+frequently used subset of the expressions in the general representation
+form, i.e. those in which the operator is MPLUS, MTIMES, etc.  The third
+group deals with subscripted functions.  The last group deals with CRE form.
+
+These are the constructor and component extractor primitives for general
+representation.  SETF is used modifying a component.  An expression in
+general representation is viewed as having four components -- an operator, a
+list of operands, a simplified "bit", and a list of flags.  The expansions
+are shown for some of the simple primitives below.  [We could use some
+better names here.]
+
+(MAKE-EXP    OPERATOR . OPERANDS)
+(MAKE-EXP!   OPERATOR . OPERANDS)
+(MAKE-EXP-L  OPERATOR OPERANDS &OPTIONAL FLAGS)
+(MAKE-EXP-L! OPERATOR OPERANDS &OPTIONAL FLAGS)
+
+(EXP-OPERATOR EXP)	(CAAR EXP)
+(EXP-OPERANDS EXP)	(CDR EXP)
+
+The "simp" flag is treated differently from other flags which appear on
+expression headers.  Because it is so widely used, and for reasons of speed,
+we view it conceptually as having a slot of its own, containing either T or
+NIL.  Thus, (EXP-GET-SIMP EXP) is used instead of (EXP-GET EXP 'SIMP), or
+(MEMQ 'SIMP (CADR EXP)).
+
+(EXP-FLAGS EXP)
+(EXP-GET   EXP FLAG)
+(EXP-PUT   EXP FLAG &OPTIONAL (VALUE T))
+
+(EXP-GET-SIMP EXP)
+(EXP-PUT-SIMP EXP)
+
+>> Special general representation cases
+
+Writing (MAKE-EXP 'MPLUS (LIST '$X (MAKE-EXP 'MPLUS '($Y $Z))))
+is cumbersome for simply constructing X+Y*Z, so we define a special group of
+functions for dealing with those expressions we use most frequently.
+
+For each operator, we define (1) a recognition predicate, (2) a set of
+constructors, (3) an interface to the simplifier, (4) an optional set of
+extractors.  Note that a very small part of the functionality of (1) and (2)
+was provided by the simplifier, and the functionality of (3) was provided by
+the opers package.  The functionality of (2) and (4) was provided by the
+first Barton mode package.
+
+We have attempted to choose a naming convention which is symmetric and easy
+to remember.
+
+The name of each primitive contains a "kernel" which describes the type of
+expression it deals with.  The kernel for MPLUS expressions is M+.  Thus,
+the recognition predicate is M+P, the constructor is MAKE-M+, the interface
+to the simplifier is M+.
+
+A uniform set of prefixes and suffixes are used to describe the
+functionality of the primitives.
+
+P		is a suffix indicating a predicate.
+MAKE-		is a prefix indicating a constructor
+-L		is a suffix indicating that the argument is a list
+!		is a suffix indicating unsimplified arguments.
+
+The easiest way of defining these primitives is by example.  Below is the
+full set for MPLUS.
+
+(M+P X)			(EQ (CAAR X) 'MPLUS)
+
+(MAKE-M+! X Y)		(LIST '(MPLUS) X Y)
+(MAKE-M+ X Y)		(LIST '(MPLUS SIMP) X Y)
+(MAKE-M+L! L)		(CONS '(MPLUS) L)
+(MAKE-M+L L)		(CONS '(MPLUS SIMP) L)
+
+(M+! X Y)		(SIMPLIFYA (MAKE-M+! X Y) NIL)
+(M+ X Y)		(SIMPLIFYA (MAKE-M+! X Y) T)
+(M+L! L)		(SIMPLIFYA (MAKE-M+L! L) NIL)
+(M+L L)			(SIMPLIFYA (MAKE-M+L! L) T)
+
+Below are the kernels for other frequently used operators.
+
+MMINUS		M-
+MTIMES		M*
+MQUOTIENT	M//
+MEXPT		M^
+MNCTIMES	M/.
+MNCEXPT		M^^
+MEQUAL		M=
+MLIST		MLIST   ;naming conflict here (MLISTP)
+RAT		RAT
+MRAT		MRAT	;naming conflict here (MRATP)
+%LOG		MLOG
+%SIN		MSIN
+...		...
+
+Special case constructors.  The corresponding versions for simplified
+arguments will also be defined.
+
+(M1+ X)			(M+ X 1)
+(M1- X)			(M- X 1)
+(M1// X)		(M// 1 X)
+
+Special case extractors
+
+(M^-BASE MEXPT)			(CADR MEXPT)
+(M^-EXPT MEXPT)			(CADDR MEXPT)
+
+(M^^-BASE MNCEXPT)		(CADR MNCEXPT)
+(M^^-EXPT MNCEXPT)		(CADDR MNCEXPT)
+
+(M//-NUMER MQUOTIENT)		(CADR MQUOTIENT)
+(M//-DENOM MQUOTIENT)		(CADDR MQUOTIENT)
+
+(M=-LHS MEQUAL)			(CADR MEQUAL)
+(M=-RHS MEQUAL)			(CADDR MEQUAL)
+
+(RAT-NUMER RAT)			(CADR RAT)
+(RAT-DENOM RAT)			(CADDR RAT)
+
+(MLIST-FIRST MLIST)		(FIRST  (EXP-OPERANDS MLIST))
+(MLIST-SECOND MLIST)		(SECOND (EXP-OPERANDS MLIST))
+...
+
+There is some question as to how these should be defined.  They could return
+an MLIST rather than a lisp list, although it is easy to do
+(MAKE-MLIST-L (MLIST-REST MLIST)) if that is what is really wanted.
+
+(MLIST-REST MLIST)		(REST  (EXP-OPERANDS MLIST))
+(MLIST-REST2 MLIST)		(REST2 (EXP-OPERANDS MLIST))
+...
+
+>> Array references
+
+Current representation is
+((NAME ARRAY) . SUBSCRIPTS)
+
+(MAKE-AREF    NAME . SUBSCRIPTS)
+(MAKE-AREF!   NAME . SUBSCRIPTS)
+(MAKE-AREF-L  NAME SUBSCRIPTS)
+(MAKE-AREF-L! NAME SUBSCRIPTS)
+
+(AREF-NAME AREF)		(CAAR AREF)
+(AREF-SUBSCRIPTS AREF)		(CDR AREF)
+
+(AREF-FIRST AREF)		(FIRST (AREF-SUBSCRIPTS AREF))
+(AREF-SECOND AREF)		(SECOND (AREF-SUBSCRIPTS AREF))
+...
+
+>> Subscripted functions
+
+Current representation is
+((MQAPPLY) ((NAME ARRAY) . SUBSCRIPTS) . OPERANDS)
+
+(MAKE-SUBFUN    NAME SUBSCRIPTS . OPERANDS)
+(MAKE-SUBFUN!   NAME SUBSCRIPTS . OPERANDS)
+(MAKE-SUBFUN-L  NAME SUBSCRIPTS OPERANDS)
+(MAKE-SUBFUN-L! NAME SUBSCRIPTS OPERANDS)
+
+(SUBFUN-NAME SUBFUN)		(AREF-NAME (CADR SUBFUN))
+(SUBFUN-SUBS SUBFUN)		(AREF-SUBS (CADR SUBFUN))
+(SUBFUN-OPERANDS SUBFUN)	(CDDR SUBFUN)
+
+>> CRE form
+
+Current representation is
+((MRAT VARLIST GENVARS) NUMER . DENOM)
+
+(MAKE-MRAT VARLIST GENVARS NUMER DENOM)
+
+(MRAT-VARLIST MRAT)		(CADAR MRAT)
+(MRAT-GENVARS MRAT)		(CADDAR MRAT)
+(MRAT-BODY MRAT)		(CDR MRAT)
+(MRAT-NUMER MRAT)		(CADR MRAT)
+(MRAT-DENOM MRAT)		(CDDR MRAT)
+
+>> To be added
+
+Primitives for matrices, when someone gets around to rewriting the matrix stuff.
+
+
+Local Modes:
+Mode:Text
+Auto Fill Mode:1
+Space Indent Flag:0
+End:

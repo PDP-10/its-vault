@@ -1,0 +1,68 @@
+Macsyma general-rep operators			November 1979, CWH
+
+The files LIBMAX;OPERS and LIBMAX;MOPERS comprise an interface to the Macsyma
+general representation simplifier.  The entrypoints in these files are to be
+used when new expressions are to be created.
+
+The idea behind using these functions is to localize the knowledge of the
+internal expression representation format.  No Macsyma code, except that in the
+simplifier, should be doing (SIMPLUS (LIST '(MPLUS) X Y)).  The right way to
+add X and Y together is to do (ADD X Y).  The function f(x,y) = x^2/(x+y) would
+be expressed as:
+
+(DEFUN F (X Y) (DIV (POWER X 2) (ADD X Y)))
+
+The basic functions are:
+
+ADD		addition		MUL		multiplication
+NEG		negation		INV		inversion
+SUB		subtraction		DIV		division
+					POWER		exponentation
+
+NCMUL		non-commutative multiplication
+NCPOWER		non-commutative exponentiation
+ROOT		nth root
+TAKE		special functions
+
+ADD, MUL, NCMUL and TAKE can receive any number of arguments.  Each of the
+others take only two.   (POWER x n) computes x^n and (ROOT x n) computes
+x^(1/n).  The first argument to TAKE is a one-list of a special function.  The
+remaining arguments get passed to the special function.  So (TAKE '(%SIN) X)
+computes sin(x).
+
+All of the above functions assume that their arguments are simplified.  There
+are a corresponding set of functions, called ADD*, SUB*, MUL*, etc. for
+unsimplified operands.  If one has a list of terms to be added or a list of
+factors to be multiplied, the functions ADDN and MULN should be called.  The
+second argument to ADDN and MULN indicates if the operands are simplified.
+
+These operators are implemented on ITS as subrs and macros.  The macros are
+automatically loaded in via the run-time prelude (LIBMAX;PRELUD).  They are not
+loaded in with the compile-time prelude (LIBMAX;MPRELU).  See MAXDOC;LIBMAX
+USAGE for more information.  You should not rely on the fact that some
+operators are subrs and others macros, as the implementation details may vary
+on other Macsyma systems.
+
+When debugging interpreted code, the file LIBMAX;MOPERS FASL should be loaded.
+Interpreted code should be debugged with the entire compile time environment
+loaded, so LIBMAX;PRELUD > should be loaded in this case.
+
+There is some disagreement as to whether these are exactly the best bunch of
+names.  If you want to change them, bring it up at a Mathlab meeting.
+
+Notes to system hackers:
+
+In some cases, these functions will do pre-simplification, i.e.  if one of the
+arguments to ADD evaluates to zero, it doesn't get passed on to SIMPLIFYA.
+This is done to reduce consing and is purely an efficiency hack.
+
+The functions ADD and MUL are implemented both as subrs and as macros.  They
+are implemented as subrs in order to be around at run-time.  TRANSL generates
+calls to ADD and MUL.
+
+
+Local Modes:
+Mode: Text
+Auto Fill Mode:On
+Fill Column:79
+End:

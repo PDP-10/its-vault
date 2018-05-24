@@ -1,0 +1,989 @@
+Received: from ucbvax.berkeley.edu by MC.LCS.MIT.EDU  4 Apr 86 19:34:33 EST
+Received: by ucbvax.berkeley.edu (5.48/1.11)
+	id AA11020; Fri, 4 Apr 86 11:28:06 PST
+Received: by dali.berkeley.edu (5.45/5.16)
+	id AA15111; Fri, 4 Apr 86 11:27:50 PST
+Date: Fri, 4 Apr 86 11:27:50 PST
+From: fateman@dali.berkeley.edu (Richard Fateman)
+Message-Id: <8604041927.AA15111@dali.berkeley.edu>
+To: macsym@mc.lcs.mit.edu
+Subject: macsyma (tm of symbolics) bugs on sun:
+
+(c) 1976, 1982 Massachusetts Institute of Technology.
+All Rights Reserved.
+Enhancements (c) 1985 Symbolics, Inc. All Rights Reserved.
+Type describe(trade_secret); to see Trade Secret notice.
+Type exec("man macsyma"); for help.
+
+(c1) f(u,v):= if u^2 + v^2 > 2 then 0 else u^2 + v^2$
+
+(c2) plot([u,v,f(u,v)],[u,v],-1,1,-1,1,10);
+
+/usr2/macsyma.308/plot/plot.o being loaded.
+MACSYMA was unable to evaluate the predicate:
+
+errexp1
+
+  
+
+(c3) f(u,v):= if 0>0 then 0 else u^2 + v^2$
+
+(c4) ''c2
+;
+[compile and load]
+      u
+      v
+      v**2+u**2
+/usr/bin/f77: Command not found.
+ld:V53942x.o: cannot open
+[generate points]
+V53942: Command not found.
+rm: V53942 nonexistent
+
+(d4)                                 done
+
+caviness@dewey.udel.EDU 04/01/86 15:51:24
+Are there any facilities in Macsyma for arithmetic over non-prime 
+finite fields?
+
+fateman%vangogh@berkeley.edu 03/17/86 21:16:30-PST  ~TAYLOR
+deftaylor(y(t),sum(a[i]*t^(i+r),i,0,inf));
+taylor(diff(y(t),t),0,2); is wrong.
+(Answered by WGD: this is a longstanding bug in the Taylor differentiation 
+code. - JPG)
+
+fateman@dali.berkeley.edu 03/17/86 17:12:45-PST  ~RATFUN
+sqrt(log(x))/x+1/(sqrt(log(x))+x);
+ratsimp(diff(%,x));  integrate(%,x);
+gives "quotient by a polynomial of higher degree".
+(Answered by WGD: this is a known problem with Macsyma improperly 
+attempting GCD's in algebraic fields. - JPG)
+
+Wgd@SCRC 02/09/86 15:14-EST  ~TAYLOR
+TAYLOR doesn't truncate dependent multivars expanded to different levels.
+E.g. taylor((u+v)^2,[u,v],0,[1,2]); doesn't truncate the u^2 term.
+
+Wgd@SCRC 02/03/86 00:40-EST
+  rwg@SCRC 02/01/86 22:27-PST
+  'at(foo,bar);  calls CAR on an atom
+  while in the function DIM-%AT
+I patched the display part of this bug in the file ref'd below. 
+  
+  This came from trying to disprule the result of
+  (simp:false,tellsimpafter('at('integrate(any1,any2),any3)-
+  'at('integrate(any1,any2),any4),
+	    'integrate(any1,any2,any4,any3)));
+  where the ANYs were MATCHDECLAREd TRUE.
+First of all, you are losing with SIMP:FALSE because then the pattern
+form ends up with an MMINUS in it (instead of ((MTIMES) -1 ...) which
+fails to match any simplified form (always free of MMINUS's). What you
+need to do is suppress the rewrite integrate(any1,any2) -> any1*any2, which
+currently is done via the simplifier and the OUTATITIVE property of INTEGRATE.
+One would think (especially according to the INCORRECT DOC. on p 6-3) that
+just declaring integrate a noun would suppress this, but that's not true
+because the transformation is done via the simplifier, not by the call
+to the integrate code. This is an example where more control is needed
+to specify which transformations one wants; control which is currently
+impossible due to the nonexact specification of what the difference is
+between simplification and evaluation. However, even if this were
+specified exactly, one still needs the power to selectively control
+application of each single rewrite rule.
+
+However, it is currently possible to obtain the functionality you desire.
+I had to first fix a match compiler bug ((load "Q:>Wgd>match-patch") to
+get this patch and the above display patch). 
+With this file loaded I believe the following does what you desire:
+
+(declare(integrate,noun),remove(integrate,outative),
+ matchdeclare([any1,any2,any3,any4],true),
+ tellsimpafter('at('integrate(any1,any2),any3)-'at('integrate(any1,any2),any4),
+  	       integrate(any1,any2,subst(any4,any2),subst(any3,any2))),
+ remove(nounify('integrate),noun),declare(integrate,outative));
+
+[Note the new way I determine the integration limits from the at equations.
+ Your code put the equations directly into the limits]
+
+With this rule,    at(integrate(f(x),x),x=a)-at(integrate(f(x),x),x=b);
+		-> integrate(f(x),x,a,b)
+
+I had to examine both the simplifier and tellsimpafter code to figure
+out how to do this.  The average user wouldn't have access to this
+info and probably wouldn't be able to figure out how to implement
+the above rule.  We really need to beef up the documentation and
+functionality in this area.
+
+Wgd@SCRC 01/30/86 20:50-EST  ~RATSUBST
+ratsubst(1,'diff(f(x),x),1),radsubstflag:true;  recurses infinitely.
+
+Wgd@SCRC 01/30/86 19:33-EST  ~HIPOW
+There should be versions of HIPOW and LOPOW which ignore semantically bound
+(i.e. 'dummy') variables in a similar manner as FREEOF.  The doc doesn't 
+specify what their contract is with dummy var's (they currently are not
+ignored).  In taylor series situations one often wants the opposite
+behaviour, e.g.   lopow(y^2*at('diff(f(y),y,2),y=0),y) -> y, want y^2.
+
+Obviously this bug is independent of the particular binding operator, 
+e.g. lopow(y^2*limit('f(y),y,inf),y) has the same problem.  What is really 
+needed in many applications is RAT_LOPOW, which returns the LOPOW as a 
+rational function in the input variable.  I believe such a function would 
+be more useful than LOPOW since I really don't see why one would want LOPOW 
+to descend non-arithmetical operators in most applications.  There appears 
+to currently be no easy way to achieve RAT_LOPOW's functionality at Macsyma 
+level without ultimately depending upon LOPOW (or doing an unecessarily 
+complex pattern match).
+
+Wgd@SCRC 01/26/86 23:53-EST  Subject: ratfun problems
+RATNUMER and RATDENOM will re-rat their input args if they have
+a variable ordering different from that of RATVARS (if RATVARS=[]
+then the standard ordering). This is not specified in the doc.
+There should be (fast) versions of the above which just simply extract
+the NUM and DENOM regardless of variable ordering. The correct way to
+do this now seems to be 
+    block([ratvars:[]],ratvars(v1,...,vn),ratnumer(exp),...).
+The doc doesn't state that it is necessary to bind the var RATVARS
+around any calls to the function RATVAR if one wants a local ordering.
+There should be some binding primitive that accomplishes this.
+
+The doc doesn't state that RATVARS(); reinstates that default
+variable ordering, nor does it state what this default order
+is (presumably related to ORDERLESS, modulo ratfun kernel hacking).
+
+The user interface to the rational function package really needs 
+to be much better specified. A lot of internal functionality
+necessary for efficient algebraic programming is not available to
+the macsyma programmer.
+
+Wgd@SCRC 01/26/86 01:32-EST
+The Vax UNIX manual, version 11 p 2-15 says that "If a is both the name
+of an array and the name of a list, its use as an array takes
+precedence". It appears that this means that any global array will
+be used (even over a local lexically transparent list) if such an
+array exists at EVALUATION time. This makes subscript referencing
+of lists totally nonsafe: if someone later defines a global array
+with the same name then what one thought was a reference to some
+lexically transparent list then becomes a reference to the array on 
+subsequent evaluations, e.g:
+
+f(l):=l[1] /* supposed to give the first elt of the input list l */$
+f([a]) /* -> a, correctly */;
+l[k]:=k$ 
+f([a]) /* -> 1, because now the global array def'n of l is being used */;
+
+This can lead to very subtle bugs especially when the name clash is
+caused by independemt packages being loaded into the same environment.
+Thus it seems that the only safe way to get an elt of a list is to 
+use part(list,n) or an equivalent.
+
+Wgd@SCRC 01/25/86 21:38-EST
+/* SOLVE has problems when algebraic is true: */
+solve(x^(3/2)=1,x),algebraic:true /* why isn't this fully solved? */;
+solve(x^(3/2)=1,x),algebraic:false /* that's better */;
+/* verifying the solutions causes branch problems: */
+map('lambda([f],rectform(ratsimp(f^3)^(1/2))),%) /* this works */;
+map('lambda([f],rectform(ratsimp(f^(1/2))^(3/1))),%th(2)) /* this doesn't */;
+
+/* the following has the same roots as x^(3/2)=1 (plus x=0) but its
+   not fully solved regardless of the setting of algebraic */
+solve(x^2=x^(1/2),x);
+
+asb@SCRC-STONY-BROOK.ARPA 01/25/86 18:51-EST
+    Wgd@SCRC 01/25/86 18:26-EST
+    (Multi-arg) PRINT appears to have some weird behavior when its display 
+    covers multiple lines. I would like successive lines to be left-
+    justified, but it appears to right-justify the second line of 2-line 
+    output.  This is screwing up my calls to READ, which behaves in the same 
+    way.  I'm using forms like  apply('read,["message",value,....]) for 
+    parameterized multi-line input prompting (this gives me correct redisplay 
+    of the prompt if the screen is refreshed, etc). 
+    Here's an example of the lossage:
+
+    (l[0]:[], l[k]:=cons(k+10,l[k-1]))$
+    l[  entier(linel/4)] /* note the last line is right-justified */;
+    l[2*entier(linel/4)] /* but now the last line is left-justified, as I 
+    desire */;
+    /* In READ, last of 2-line will be right-justified again (type 1; to end 
+    read) */
+    apply('read,l[  entier(linel/3)+2]);
+    apply('read,l[2*entier(linel/3)+2]) /* again, last > 2 line is left-
+    justified */;
+LEFT_JUST_READ([LIST]):=BLOCK([LEFTJUST:TRUE],APPLY('READ,LIST))$
+
+Wgd@SCRC 01/24/86 17:16-EST  ~TRANSL
+rx(f):=rat(f,'x)$  translate(rx)$ fails, as does any form containing a 
+multi-arg call to rat.  Why doesn't this translate to a call to rat?
+(We patched it this way at SCRC.)
+
+RJF@MC.LCS.MIT.EDU 01/24/86 15:59:14-EST  ~COMPAR
+is(100!>0.5); gives arithmetic overflow (on mc); floating exception (on vax).
+
+Wgd@SCRC 01/24/86 15:41-EST  ~MLISP
+Is there a reason that Macsyma doesn't allow return() (i.e. return
+for control as opposed to value).  It facilitates comprehension
+of complex iteration constructs.  What would be nicer is named-block's.
+Would they be hard to implement?
+
+wgd@SCRC 01/17/86 23:47-EST  ~SUM
+  rwg@SCRC 01/09/86 22:28-PST
+  subst(0,x,sum(f(k,n)*(x^k+x^(n-k)),k,0,n)); should be f(0,n)+f(n,n),
+  not 0 (with a possible query about sign of n).  Perhaps it should
+  even error-check for negative powers of x.
+I have encountered the same problem in my new special function code.
+An easy way to handle this is to introduce delta functions and then have
+the sum simplifier handle them appropriately, e.g: 
+	subst(0,x,sum(f(n,k)*(x^k+x^(n-k),k,0,n)    
+	-> sum(f(n,k)*(delta(k,0)+delta(n-k,0)),k,0,n) 
+	-> f(n,0)+f(n,n)
+Unfortunately, we all know how well delta functions are integrated
+into the Macsyma environment.
+
+quark!jim@LANL.ARPA 01/10/86 14:13:41-mst  ~DOE-Macsyma-support
+To: info-macsyma@mit-mc.ARPA
+Los Alamos Laboratory would like to announce the creation of 3
+new mailing lists on the ARPANET.  These lists will, we hope, serve
+to support the active dissemination of information about the DOE
+version of MACSYMA.  Several people at Los Alamos will be providing
+support for these mailing lists.
+
+MACSYMA - General information about MACSYMA and new releases. 
+	  It will also be the place to report bugs in the DOE version.
+
+INFO-MACSYMA - Information about user contributed code, and questions 
+	       about the use of MACSYMA.
+
+BUG-MACSYMA - A restricted mailing list for those people involved in 
+	      maintaining MACSYMA.  People on this list will be required 
+	      to show proof of purchase of DOE MACSYMA in addition to 
+	      signing an agreement not to redistribute any code posted here. 
+	      We are sorry to do this but MACSYMA is a very sensitive 
+	      political hot potato.
+
+Please address questions and comments to:
+James E. O'Dell
+jeo@lanl.arpa
+lanl!quark!jim
+(505)667-0003
+
+MACRAK@MC.LCS.MIT.EDU 01/07/86 20:47:28-EST  ~REVERT
+[1] revert(taylor(sqrt(x),x,0,2),x) gives Illegal Dimension - *array -631.
+[2] Revert(x^2,x) gives Division by Zero.  I understand why it can't
+revert, but it should give a comprehensible error message.
+
+Wgd@SCRC 01/06/86 23:33-EST  ~PUISEUX
+Subject: solving functional equations via series
+  RP@SCRC 01/03/86 10:32-EST
+      Wgd@SCRC 01/03/86 00:14-EST
+	RP@SCRC 12/24/85 09:24-EST
+	I received several problems from Japan and am stuck on the following:
+	Problem 9: Find the Puiseux expansion of Y to higher degree,
+	y = x^(2/3) + 2*x^(4/3) + 13*x^2 +... for the following equation:
+	y^3-x*y^(1/2)+x^(4/3)=0.
+      This can be handled easily by either of the taylor series solution
+      routines RWG and I have for functional equations. Hopefully we can
+      merge our ideas into a powerful package and release it to users soon.
+  I would be interested to see how you would write a simple MACSYMA function 
+  which can handle the equation y^3-x*y^(1/2)+x^(4/3)=0 or by any other 
+  method available in MACSYMA. 
+Macsyma currently has no "canned" routine for calculating series expansions 
+for algebraic functions.  BMT once implemented a private package for 
+computing such so-called "Puiseux" expansions.  I'm currently attempting to 
+complete an old algorithm for computing series solutions to much more 
+general functional equations.  Basically, it is an effective version of the 
+Implicit Function Theorem.  The main idea underlying the algorithm is quite 
+simple and resembles the "method of undetermined coef's" for DE's (or 
+Frobenius' method): assume a solution y=a0*x^e1+..., use a "Newton polygon" 
+technique to determine the order e, plug in to determine the leading 
+coefficient a0, then iterate this process for the next term.  This works for 
+arbitrarily hairy DE's and transcendental eq's as well as algebraic eq's 
+(e.g. something of the form e^y'+sin(y'^2)*x*y=1+x) .  More precisely, it 
+works for functions that satisfy differentially algebraic equations (i.e. 
+the defining equation F(x,y,y',...) satisfies an algebraic DE in each of 
+its variables).  With this assumption it is possible to use
+differential elimination to show that y(x) satisfies an algebraic DE
+P(x,y,y',...) (which means P is a polynomial as opposed to the much
+more general F above).  Once one has such an algebraic P, transfer
+techniques can be used to derive relations for the series coef's.
+(e.g. computation of the indicial or recurrence relation for linear DE's).
+This method can also be used to derive recurrences for the series
+coef's of algebraic functions and it is currently the fastest algorithm
+known for computing Puiseux expansions.
+
+Wgd@SCRC 01/05/86 20:22-EST ~TAYLOR
+taylor(-sin(y+x^5),y,0,1,x,0,5) is missing -X^5 but is correct with y,0,2.
+
+Wgd@SCRC 01/02/86 20:23-EST
+TRACE passes copied arglists in some cases:
+set2([l]):=l[2]:2$  n:[0,1]$
+(untrace(set2), apply('set2,n))$  n; /* -> [0,2] correctly */
+n:[0,1]$  (trace(set2), apply('set2,n))$  n; /* -> [0,1] */
+
+Wgd@SCRC 12/12/85 20:37-EST
+Subject: ratfun package should canonicalize algebraically dependent kernels
+To: rwg@SCRC, bug-macsyma@MIT-MC.ARPA
+  asb@SCRC 12/12/85 09:12-EST
+      rwg@SCRC 12/12/85 00:29-PST
+      After DECLARE(n,integer), how do I get 
+      (%phi^2)^n-ratsimp(%phi^2)^n,algebraic;  back to 0?  
+  FOO:(%phi^2)^n-ratsimp(%phi^2)^n,algebraic;
+  SUBST(%PHI+1,%PHI^2,FOO),EXPTSUBST:TRUE;
+      If you can do that one, try replacing %phi^2 by %phi*(%phi-1) in
+      the above command.  
+  subst(%PHI*(%PHI-1),%phi^2,FOO),EXPTSUBST:TRUE;
+  Maybe I don't understand what you are asking.  Does this get at what you
+  wanted?
+I believe RWG wants a method that doesn't require one to have to use
+the defining poly for %PHI (since Macsyma already knows this but, as
+RWG noted a while back, its not easily accessible).
+      Among other things, this seems to be another case for
+      EXPTCONTRACT(a^n*b^n) = (a*b)^n, which I have often wanted.  If people 
+      are interested, I'll define a suggested behavior in macsyma, and 
+      somebody @scrc can lisp a real version.
+  Definitions always welcome.
+I view what you call EXPTCONTRACT as a general rep'n routine. You really
+need the help of the rational function package in this case because of 
+algebraic character of %PHI. It is my opinion that the rational function
+package should be extended so that algebraically dependent kernels
+(such as %PHI^(2*N) and (%PHI+1)^N) are automatically canonicalized. I
+have already expressed this opinion in my closely related message
+of 03/01/85 (where I call EXPTCONTRACT by POWERCONTRACT). There are
+others packages (such as NHAYAT) which would benefit enormously from
+such an enhancement, e.g.: 
+  Wgd@SCRC 09/23/85 02:36-EDT
+  Subject: NHAYAT bug due to weak ratfun package
+  To: rwg@TENEX.SCRC.Symbolics.COM, bug-macsyma@TENEX.SCRC.Symbolics.COM
+     rwg@SCRC 09/19/85 07:53-PDT
+     If FOO be SQRT(T)*(1-%E^-(2*%PI*T))/(1-%E^-(2*%PI/T)) = 
+     %E^(%PI*(T-1/T)/12) then with nhayat taylor(foo,t,0,0); gives 
+     Breakpoint two equal vars generated, yet map(taylor,foo,t=t,0=0,0=0) 
+     seems to work.  (old hayat punts completely).
+  A simpler example is taylor(exp(1/t)-exp((t-1/t)/2),t,0,0); This is due to
+  the rational function package not knowing the algebraic dependence of
+  exp(-1/t) and exp(1/(2*t)). I'll look into fixing this. That breakpoint
+  was designed to catch things like this.
+
+fateman@dali.berkeley.edu 12/03/85 17:19:17-PST  ~INTEGRATE, ~IRINTE
+integrate(u/sqrt(u^2-2*u+1),u); gives "Division by 0".
+
+DEVON@MIT-MC.ARPA 11/13/85 08:33-EST  ~SOLVE, ~LINSOLVE
+SOLVE([a=b,b=c],c); says  "Inconsistent equations: (1)".
+(It's correct, but a better message is called for here. - JPG)
+
+Wgd@Symbolics 11/04/85 22:35-EST  ~TRIG
+   rwg@Symbolics 10/26/85 06:10-PDT
+   To: Bug-Macsyma@Symbolics
+   foo:tan(a*%pi+%pi/2) is still broken.  (e.g. subst(b/%pi,a,foo).)
+   trigexpand(foo) disgraces itself, indicating that it requires the
+   obvious simplification.
+   
+   rwg@Symbolics 10/29/85 00:24-PST
+       asb@SCRC-STONY-BROOK.ARPA 10/26/85 10:59-EDT
+	   rwg@Symbolics 10/26/85 03:25-PDT
+	   declare(n,integer); tan((n+1/2)*%pi+alpha); doesn't simplify,
+	   but subst(2*n,n,%) does.  Likewise cot.  
+       This is probably our old %pi problem.
+   Then why does it work to subst 2*n for n?  I think it's just a braino where
+   somebody forgot that TAN has twice the frequency of SIN and COS.
+
+While I haven't looked at the code, I bet both of these are caused
+by a weakness in the wired-in "linear-in-pi" matching code in the
+trig simplification routines. It looks like the coeff of pi isn't being 
+split into numeric/symbolic part so that pieces of the numeric
+part can be extracted for phase analysis. E.g. in the first failing case
+COEFF(A*PI+PI/2,PI) = A+1/2 whereas, in the winning case, substing B/PI
+for A has coeff(B+PI/2) = 1/2. The 1/2 needs to be split off from the
+first coeff, along with anything database deducible as an integer, etc.
+
+CAMCAD@MIT-MC.ARPA 08/22/85 12:44-BST  ~ALGSYS
+Let f be  2*y^2*(x^2+y^2)-2*b*y^2*(x+y)+(b^2-3*a^2)*y^2-a^2*x^2+2*a^2*b*(x+y)
+   +a^2*(a^2-b^2)=0  (a curve known as Durers Conchoid).  Let fx:diff(f,x) 
+and fy:diff(f,y) .  I then said solve([f,fx,fy],[x,y]); to find the singular 
+points of the curve, and I know that such points do exist, both from a
+reference in a book, and by drawing the curve.  However, solve returned [] .
+I tried replacing a with 3 and b with 1, when I specifically know there are 
+2 solutions, but solve still failed to find any.  I also tried setting a=b, 
+in which case solve worked, and found the 2 solutions that exist here.
+
+RP@CUPID.SCRC.Symbolics.COM 08/14/85 14:40-EDT  ~LIMIT
+LIMIT does not handle the following, but TLIMIT does.
+[1] LOG(-2*ATAN(LOG(R))/ACOS(R)^2)/(1-R);  TLIMIT(%,R,1,PLUS);
+[2] SQRT(-2*LOG(COS(U^2)))/U^2;  TLIMIT(%,U,0);
+
+Wgd@TENEX.SCRC.Symbolics.COM 08/11/85 09:45-EDT  ~PSUBST
+SUBST(equation-list,form) appears to perform substitutions in
+series from the leftmost to rightmost equation in equationlist.
+The documentation doesn't specify this.  There should also be a 
+version that works in parallel (PSUBST?). 
+
+HQM@MIT-MC 08/03/85 11:05pm  ~ODE
+I am trying to solve the diff-eq
+2*'DIFF(F,R,1)/R+2*F/(A*R)-2*F/R^2+'DIFF(F,R,2)-F/A^2 = K*R*%E^-(R/A)
+using ODE wit the series option.  I get the error msgs: 
+error in subscript, PART fell off end.
+(Your diffeq is inhomogeneous, and ODE can't handle a non-zero rhs when the 
+equation is in canonical ODE form: it only solves homogeneous cases.
+The "error in subscript" is not an error message; it only advises you that 
+the recurrence relation is not trivial enough for it to handle, and then 
+calls up a routine to give the first NUMTERMS terms of the series. 
+Unfortunately, a bug in that routine gives the error message about PART fell 
+off end for your inho. case.  Note that solving the homogeneous case does 
+give an answer, albeit an incorrect one because of yet another bug. - LPH 8/3)
+
+RHB@MIT-MC.ARPA 08/01/85 18:00:48-EDT  ~ODE, ~SERIES
+ode('diff(y,x,2)+y,y,x); -> Y = %K1 SIN(X) + %K2 COS(X)  is correct, but:
+ode('diff(y,x,2)+y,y,x,series),closedform:true; ->
+[Y = SQRT(2) %K2 SIN(X/SQRT(2)) + %K1 COS(X/SQRT(2))]  isn't.
+
+LPH@MIT-MC.ARPA 07/19/85 02:01:10  ~ASK, ~ODE
+ode('diff(y,x,2)-y/x^2,y,x,series);
+ASKINTEGER(SQRT(5)); is followed by IS [] PNZ?
+
+Wgd@TENEX.SCRC.Symbolics.COM 07/18/85 10:43-EDT  ~IRINTE
+    asb@SCRC-STONY-BROOK.ARPA (for Beyer) 07/16/85 10:59-EDT
+    Assume 0<x<1, 0<d<1, and integrate(sqrt(x^2-d^2)/(1-x),x).
+The integral is clearly incorrect as can be seen by comparing 
+taylor(integrand,x,0,1,d,0,1) with taylor(integral,x,0,1,d,0,1).
+I looked at this a little and it appears that the bug is somewhere
+within DENMNUMN in IRINTE.  That code is among the most horrendous
+I've seen and it would take a good deal of effort to track this down.
+
+LPH@MIT-MC.ARPA (for JWE) 07/16/85 01:24:51-EDT  ~ASK, ~ODE
+ode('diff(y,x,2)+(1/x+1/(5*x^2))*y,y,x,series); elicits an 
+ASKINTEGER(SQRT(5)/5), then it gets a divide by 0 and fails.
+
+JPG@MIT-MC.ARPA 06/25/85 17:17:55-EDT  ~POWERSERIES
+POWERSERIES(1/SQRT(1-W),W,0); is giving the correct answer to 
+POWERSERIES(SQRT(1-W),W,0); which is not what it was asked for.
+(Has been fixed at SCRC in patch 317.15.  See MACDOC;MAIL BACKUP of 
+08/08/85 06:00-EDT for more details. - WGD)
+
+Wgd@TENEX.SCRC.Symbolics.COM 06/19/85 02:52-EDT  ~SUM, ~PROD
+There are some rather serious semantic bugs in SUM and PRODUCT that are
+causing me to not be able to do some simple manipulations.  Let SP stand
+for either SUM or PRODUCT.  SP are both MFEXPRS.  They evaluate
+their upper and lower limit args at invocation time, but evaluation of
+the first arg is suspended until the index is self-bound.  However, there
+is great confusion about how many times and in what environment the first
+arg should be evaluated.  For example, with  (k1:'k2, k2:'k3)$
+	prod(k1,k2,1,'n) /* -> n! correctly, but */;
+	prod(k1,k2,1,1) /* -> k2 */
+For a sound semantics, the latter should be equal to subst(1,n,former).
+The problem here is that the SP index is not evaluated and the first arg
+is (at a later time).  This violation of semantic level leads to lots of 
+confusion both in the implementation and for the user.  Either both args 
+should be unevaluated (not very useful and highly discouraged; e.g. see
+KMP's paper on the danger of fexprs) or both should be evaluated in normal 
+EXPR manner (highly encouraged).  Furthermore, the SP SIMPLIFICATION routines
+both EVALUATE their first arg when the lower and upper limits coincide (but 
+don't otherwise).  This evaluation (during simplification) is in addition
+to any evaluation that has already occured at SP invocation time.
+This is utterly crazy.  How is the user supposed to determine what will
+be evaluated when? (RWG also noted this problem:
+  RWG@MIT-MC 04/21/77 16:06:18  ~PRODUCT
+  foo:prod((i+a)/(i+b),i,2,n); returns the noun form.  Now a:lose; 
+  subst(1,n,foo);  ==>  still a noun form.  (This should simplify to 1.)
+  But subst(2,n,foo)  ==>  (2+lose)/(2+b) .  Who called eval?  It seems to me 
+  that a nounform prod or sum over an explicit integral range is a job for 
+  the simplifier.  It should do SUBSTITUTIONS, not evaluations. )
+I agree with RWG wholeheartedly: simplification should never result
+in evaluation (let alone only in certain cases). Furthermore, both SP
+should be EXPRS and evaluate their args in normal order, SUBSTing (more
+correctly, calling LIMIT) for special values of the index when necessary.
+Total evaluation should never be used when plugging in endpoints.
+I also find it quite weird that the index is always bound to itself before
+the first arg is evaluated.  Thus prod(k1+k2,k2,1,'n)->prod(2*k2,k2,1,n)
+because k2 is bound to itself before 'k1+k2' is evaluated. 
+
+The root of most of these semantic violations is the default self-binding
+of all Macsyma variables (presumably due to someone being too lazy to keep
+their semantic levels straight by appropriate use of "'").  If it were not 
+for this mistake, there wouldn't be such kludges as above.  Mathematical 
+operations should always be designed to preserve semantic levels, not to 
+support someone's favorite convenient kludge.  There are many other places in
+Macsyma (e.g. the Taylor's SP routines, cf. RWG's bug of 4/19/83) where 
+semantic boundaries are similarly violated in purely mathematical algorithms 
+(i.e. MEVAL is called when LIMIT really should be).  We should fix all of 
+these violations at some point.
+
+CHAE@MIT-MC 06/18/85 9:44am  ~IMSL
+How do you use EIGRF(mat)?  I keep getting: Illegal object in Fortran call.
+
+Wgd@TENEX.SCRC.Symbolics.COM 06/10/85 02:03-EDT  ~GENERAL
+The Macsyma translator and compiler give warning about evaluating
+things like INF, MINF, PIECE, etc.  Presumably these should be
+defined somehow so that appropriate info is available.
+
+Wgd@TENEX.SCRC.Symbolics.COM 06/08/85 03:20-EDT  ~ALGEBRAIC, ~RATFUN
+   rwg@RUSSIAN.SPA.Symbolics.COM 06/05/85 23:49-PDT
+   algebraic:true; integrate(integrate(log(-1/(x^2+x-1)),x),x);
+   gives: QUOTIENT by ZERO while in ERRRJF <- RATREDUCE <- BPROG .
+This is another problem with the polynomial GCD algorithms not really 
+knowing what to do when algebraics are present.  (These algorithms are 
+meant to work only over polynomial rings; GCDs are not unique in a 
+general algebraic ring.  It is through great kludgery that Macsyma
+manages to do as well as it does now with algebraics).  The bug is easily 
+reduced to integrate(log((x+sqrt(2))/(x-sqrt(2))),x),algebraic:true.
+Note that the integration works fine if algebraic=false.
+I recently investigated a similar class of bugs that were causing
+"quotient not exact" and "quotient by a poly of higher degree" type
+errors.  Hopefully, I'll be able to fix this also when I get a chance
+to finish (more properly, kludge) up these other similar fixes.
+
+NDRE@MIT-MC 06/07/85 2:41am  ~ODE
+I tried to solve
+-Y*Z^2/(A0^2*N^2)+2*Y*Z/(A0*R)+'DIFF(Y,R,2)+
+2*'DIFF(Y,R)/R-L^2*Y/R^2-L*Y/R^2 = 0
+by using ODE and the option whittaker and I got 
+[Y = %K1*A0^(-L-1)*2^(L+1)*N^(-L-1)*
+%F[1,1]([N+L+1],[2*L+2],-2*R*Z/(A0*N))*R^(L+1)*Z^(L+1)*%E^(R*Z/(A0*N))+
+%K2*A0^L*N^L*%F[1,1]([N-L],[-2*L],-2*R*Z/(A0*N))*
+%E^(R*Z/(A0*N))/(2^L*R^L*Z^L)]
+as an answer.  But this is not correct.  If one divides ODE's answer by R 
+one gets the correct answer.  It seems that ODE is using some
+transformation in its way to find a solution but forget to transform back 
+to the original dependent variable.  In the literature the solution
+of this diff.eq. is expressed by Laguerre polynomials. 
+Why not also use these in ODE?
+
+NCS@MIT-MC 06/01/85 13:38:42-EST  ~RANK
+m[i,j]:=1/(i+j+1)$  mat:genmatrix(m,3,3)$  eigenvalues(mat)$
+lambda:%[1][1];  rank(mat - lambda*ident(3));
+Rank should have returned 2, not 3.  Since all the expressions are at most 
+complex numbers, rank should have been able to determine if an entry is zero.
+( (73999^3)^(1/6)-sqrt(73999);
+factor(%); can show the difference is 0, but FACTOR is not being used in 
+this problem.  This may be the root of NCS's bug on RANK. - LPH) 
+
+Wgd@TENEX.SCRC.Symbolics.COM (for N. Breuil) 05/31/85 03:59-EDT  ~CHANGEVAR
+   asb@SCRC-STONY-BROOK.ARPA 05/21/85 09:27-EDT
+   changevar('integrate(cos(t)/sin(t)^2,t,0,%pi/2),y-cos(t)/sin(t),y,t);
+   returns an expression involving SIN and COS of T.
+This is due (essentially) to solve(y-cos(t)/sin(t),t) losing and changevar 
+not handling this case appropriately.	I'll look into enhancing changevar so 
+that its a no-op when solve loses.  This problem with solve is well known and 
+is related to the problem of homogenization I mentioned to bug-macsyma 
+previously.
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/31/85 03:48-EDT  ~LIMIT
+LIMIT doesn't use ATVALUES info.  It should do this regardless of the setting 
+of LIMSUBST (which needs to be documented).  When NDIFF gets installed this 
+problem will be alleviated some, as MC:JPG;NDIFF AT illustrates.  Try LIMIT 
+instead of AT and SUBST in that file for examples of LIMIT's problems.
+
+LPH@MIT-MC 05/29/85 16:23:45-EST  To: INFO-MACSYMA
+A determinant function, DET, that handles non-atomic arguments whose
+elements can be DECLARE'd to be of kind MATRIX is available for trial
+in LPH;DET <DEMO,USAGE,FASL>.  Comments to LPH.
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/24/85 21:43-EDT  ~CONSTANTP
+constantp(sum(1/k^2,k,1,inf)) -> false.  Should be true.
+We should put together a good specification for constantp. 
+
+MACRAK@MIT-MC 05/23/85 20:11:42-EST  ~SAVE
+Save should refuse to save `%', because Loadfile can't reload it.
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/22/85 09:38-EDT  ~DEFINT
+   asb@STONY-BROOK.SCRC.Symbolics.COM 05/20/85 15:37-EDT
+   integrate(sqrt(log(x)),x,0,1);
+   >>Trap: The arguments given to the SYS:INTERNAL-< instruction,
+   ((RAT SIMP) 1 2) and ((RAT SIMP) 3 2), were neither one of them a number.
+   While in the function LHOP-NUMDEN  LHOSPITAL  LHOSPITAL-CATCH
+Fixed and patched in 314.8.  It now returns a correct answer involving a 
+limit noun, which can be finished via %,LIMIT.  For some reason this limit 
+calculation is nouning out when called from DEFINT (presumably it has a 
+different environment).  If you run the above with TLIMSWITCH:TRUE you get 
+asked an unnecessary question about log(x) and %,LIMIT doesn't work because 
+LIMIT(%i*sqrt(log(x)),x,0,plus) -> INFINITY instead of INF.
+
+SJG%MIT-OZ@MIT-MC.ARPA 05/20/85 20:36-EDT  ~PLOT3D
+I'm plotting two functions simultaneously using:
+PLOT3D([F1(i,j),F2(i,j)],i,1,7,j,1,7);
+The hide option screws up the plot in certain areas (not to mention
+the fact that it does not properly perform hidden line removal).
+Is this a known bug?  Any fixes which will allow me to get some decent
+looking plots out?
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/18/85 13:59-EDT  ~COMPAR
+(ASKSIGN(A*B+A^2),SIGN(A*B+A^2)); (answer POS) gives PNZ.
+I discovered this while examining the barrage of questions in:
+   Moum.Edunet22@MIT-Multics 09/17/81 00:32-edt  ~DEFINT
+   integrate(1/(b*cos(x)^2+a)^2,x,0,2*%pi); gives 0, which is wrong.  ab+a^2 
+   is positive.  The correct answer is 2*%pi*abs(a+b/2)/(a^2+a*b)^(3/2).
+   It also asks an unnecessary question.
+This bug and a bug in the new code (causing local asksign info to be 
+ignored) are both fixed and patched in 313.40.  This doesn't really make a 
+dent in eliminating all the questions posed above; most are caused by 
+unnecessary application of realpart.  I'll look into eliminating the 
+realpart mess subsequently.
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/17/85 04:25-EDT  ~COMPAR
+(s:sqrt(-a-1)-sqrt(-a),asksign(s),sign(-s)); should give N since SQRT is 
+monotonic.  Instead it queries: Answer P, get P.  Answer N, get PNZ. 
+Thus there appears to be two bugs: a bug in the sign code for monotonic 
+functions [specifically, COMPAR isn't aware that EXPT is monotonic in each 
+arg] and a bug in the code for accessing local sign info stored by asksign. 
+This bug was discovered while looking at the crazy queries posed by 
+integrate(1/(a+b*cos(x)^2),x,0,2*%pi),b=1; a simpler form of the defint bug 
+of 9/17/81.
+(A simpler case: (ASKSIGN(A^2-1),SIGN(A^2-1)); (answer POS) gives PNZ.
+The factoring causes it problems. - JPG)
+[JPG: The reason I didn't originally mention this special case is because 
+that case works with the new DB code; the bug is in the old heuristic code.
+The fixes are, of course, independent of the new DB code, so could be 
+installed on MC without the new code. - WGD]
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/12/85 05:37-EDT  ~ALGFAC
+   rwg@RUSSIAN.SPA.Symbolics.COM 05/10/85 04:45-PDT
+   FACTOR(3*Y^4+6*X^2*Y^2-4*X*Y^2-10*Y^2+3*X^4-4*X^3+2*X^2-4*X+3,R^4-4);
+   gives: CDR called on 1 while in PFACTORALG1.
+I reduced the above to factor(3*y^4-10*y^2+3,r^4-4) and patched it in 313.23.
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/08/85 00:16-EDT
+Re: universal sign assumptions on parameters
+To: KMP@STONY-BROOK.SCRC.Symbolics.COM, bug-macsyma@MIT-MC.ARPA
+cc: Macsyma-I@STONY-BROOK.SCRC.Symbolics.COM
+    KMP@SCRC-STONY-BROOK.ARPA 05/07/85 19:02-EDT  Re: database queries
+	asb@STONY-BROOK.SCRC.Symbolics.COM 05/02/85 11:20-EDT
+	To: Bug-Macsyma@STONY-BROOK.SCRC.Symbolics.COM
+	g(x,y):=((x*(x+a)+y*(y+b))*((x+a)^2+(y+b)^2)^(1/2))$
+	f(x,y):=exp(-(x^2+y^2/l)/2)/(2*%pi*l)$
+	assume(a>0)$  integrate(f(x,y)*g(x,y),x,minf,inf);
+	asks about B*Y, answer pos.
+	It then asks if -Y^2 is Neg or Zero, which looks a little silly.
+	Can't it just ask if Y is zero or not?  Or even if Y^2 is Pos or Zero?
+    Maybe a switch ASSUME_VARIABLES_NONZERO (default TRUE) could control 
+    whether atomic (non-subscripted) variables were automatically assumed 
+    non-zero.  If FALSE, the DB would have to ask the user.  In general, 
+    I suspect that the question "Is FOO zero or nonzero?" is likely to be 
+    an irritation.
+A somewhat more general approach would be to allow the user to encapsulate 
+ASKSIGN and do whatever he pleases (this would allow ASSUME_NONZERO, 
+ASSUME_POS [already exists], etc).  There should be some generic Macsyma 
+function encapsulation mechanism (ala Zetalisp's ADVISE).  I note that 
+ASSUME_POS:TRUE$ [SIGN(B),SIGN(B+1)]; -> [POS,PNZ] due to incomplete 
+support of ASSUME_POS by the new database code.
+
+The query "Is -Y^2 n or z?" should get negated when I install some 
+primitivizing code that has been queued. I'm not sure whether its worthwhile 
+to check for signands being perfect powers (this could be expensive for big 
+signands); perhaps it could be done in the cheap case of pure monomial powers.
+
+Wgd@TENEX.SCRC.Symbolics.COM 05/01/85 14:21-EDT  ~LINSOLVE
+Ernst Niebur at the Institute of Theoretical Physics, Universite de Lausanne,
+Switzerland, mailed a LINSOLVE bug to the Macsyma group on 4/23/85.
+I narrowed down his bug to the following being incorrect:
+LINSOLVE([0=P*((2*Y-X)/(E*P)-Y/P),X=P*((X1+X)/P+X1/(E*P))],[X,X1,Y])
+This is due to a rather serious obscure bug in the code which generates the 
+solution by back-substitution after triangularization.  It was not keeping 
+genvar consistent with varlist when generating new parameters.
+This is now fixed and patched in 313.2 at SCRC.
+
+Wgd@TENEX.SCRC.Symbolics.COM 04/26/85 07:32-EST
+Subject: COMPAR bugfix and reduction to LIMIT and TAYLOR bugs
+To: Rwg@TENEX.SCRC.Symbolics.COM, bug-macsyma@MIT-MC.ARPA
+
+    Wgd@SCRC-TENEX 03/29/85 03:08-EST
+    Subject: Macsyma database extended 
+    To: bug-macsyma at SCRC-TENEX, bug-macsyma at MIT-MC
+    I totally rewrote the polynomial real zero package (PolyRZ) and
+    ...
+    The next bugs only remaining redundancy is asking the sign of sqrt(1-z^2)
+    after its told z^2-1<0. Reasoning about sqrt(1-z^2) really needs the
+    bivariate case of Tarski's procedure (i.e. cylindrical algebraic
+    decomposition in the plane ala Collins, Arnon, etal), which isn't
+    implemented yet.	
+
+      RWG@MIT-MC 09/15/82 04:09:49  ~COMPAR
+      LDEFINT(cos(x)/(1-z*cos(x)),x,0,%pi);  z^2-1 is NEG; z+1 is POS;
+      then asks sign of z-1.
+      (Also, why doesn't it factor the Z^2-1 in the question? - JPG)
+  
+By having the new Tarski algebraic database code dispatch to the heuristic
+SIGN database code when it isn't complete [e.g. polynomials in exp(x),
+sqrt(1-x), etc], the above mentioned problem with sqrt(1-z^2) no longer
+exists (since SIGN handles it fine). This, of course, doesn't mean that
+this heuristic is complete in the bivariate [z,w:sqrt(1-z^2)] case: one
+still needs the general cylindric algebraic decomposition algorithm for
+completeness.
+
+One can now do the above LDEFINT calculation with only one unnecessary
+query in one of the sign cases:
+
+First, you should do the calculation with TLIMSWITCH:TRUE to avoid random
+sign queries due to limit weaknesses (not necessary with the new limit package).
+The correct answer is %pi/z*((1+signum(1-z^2))/ (2*(1-z^2))-1).
+Everything works fine except for the case 1-z^2<0 where there is an
+unnecessary query as to the sign of z+1. This is due to the fact that,
+if exp:(abs(u*x+1)/abs((u+1)*x+1), then limit(exp,x,inf) unnecessarily
+queries about the sign of u because it doesn't combine the abs's using
+the multiplicative law. Taylor(exp,x,inf,1) encounters an essential
+singularity. Both limit and taylor should be extended to handle problems
+like this. By the way, I have ideas on how to actually produce the
+previous result (involving signum(1-z^2)). For some cases this requires
+limit to return discontinuous functions (e.g. signum) for results which
+depends on the sign variety of parameters and for other, more complicated,
+cases one has to resort to non-local control mechanisms to determine the
+sign constraints which parameterize the result. This would also require 
+support for discontinous functions (e.g. limit might return something
+like: IF A<1 & B>0 THE FOO(A,B) ELSE ..., instead of some complicated 
+expression in signum's and abs's which is equivalent).
+
+Wgd@TENEX.SCRC.Symbolics.COM 04/26/85 05:10-EST
+Subject: many unnecessary limit sign queries eliminated
+To: MACRAK@MIT-MC.ARPA, bug-macsyma@TENEX.SCRC.Symbolics.COM,
+    MACSYM@MIT-MC.ARPA
+
+    MACRAK@MIT-MC 04/24/85 00:21:46-EST
+    Limit((1+x^a)^x,x,inf); asks A pnz ans neg then A+1 pn...
+    Why doesn't it allow the possibility of A+1=0, which is, after
+    all, the only interesting case?
+
+This is another instance of a class of bugs that I fixed at SCRC a while
+ago, in preparation for the incorporation of the base case of Tarski's
+decision procedure into the Macsyma database. In this particular case,
+the query "Is A+1 pn?" is arising from simplification of 0^(-A-1) after
+limit attempts a straigtforward substitution of the limiting value in
+an errcatch. Many of the irrelevant questions mentioned in the bugs in
+MACSYM MAIL are also due to such queries during simplification of the
+initial substitution attempt in limit. I patched limit and asksign so 
+that the simple substitution attempt fails if any queries are posed 
+during subsequent simplification. THAT FIXES THIS BUG AND MANY OTHERS
+OF SIMILAR NATURE IN THE MAIL (I haven't done a comprehensive search 
+to find all bugs fixed). It is conceivable that this patch might weaken
+limit (or slow it down) in some cases due to its incompleteness, but
+that problem will go away when the new limit package arrives because
+of the way the new algorithm ignores non-dominating parts of the limit
+expression.
+
+PS. The relevant patches at SCRC are limit.308 and compar.889, 3/13/85.
+
+
+Wgd@SCRC-VALLECITO 04/23/85 05:48-EST
+Subject: exponent unmodulation patch & modular SOLVE
+    JPG@MIT-MC 04/22/85 11:37:35-EST
+    MODULUS:5$ RATSIMP(SQRT(2)); gives -1.  
+This is an instance of the "minding your MODULUS" class of bugs that
+I pointed out to BUG-MACSYMA on 3/28/85. More precisely, it was do
+to the exponent 1/2 being reduced modulo 5 deep in the guts of the
+rational function package. This is now fixed in rat3e.581 and patched
+in 312.3.
+
+    JPG@MIT-MC 04/22/85 12:01:22-EST
+    Subject: SOLVE/MODULUS interaction
+       NCS@MIT-MC 04/20/85 13:26:38-EST  ~SOLVE
+       In base 5, P2 should not have a root 0.
+       In base 7, solve seems to work fine for P1. 
+       P1: -T^7+15*T^6+28*T^5-796*T^4+2063*T^3-77*T^2-1702*T-216$
+       P2: -T^5-T^4-T^3+T^2+T+1$
+       modulus:5$ solve(P2); -> [T=1, T=0, T=-1]
+       modulus:7$ solve(P1); -> [T=2, T=-3, T=1]
+       (MODULUS:5$ SOLVE(T^2+T+1); is giving [T=0,T=-1] . - JPG)
+    SOLVE is not likely to give correct answers with MODULUS set. 
+    So, it now gives an error message in this case.  
+SOLVE should always give correct answers in modular fields (assuming 
+it handles singularities correctly) because of the fundamental
+algebraic homomorphism theorems. However, what it won't do correctly
+is find ALL the solutions. Therefore, I propose that we have it give
+a warning that not all solutions may be found, as it does when it
+applies arctrig functions. This allows the user to obtain a partial
+list of solutions (which may be all that is desired) without automatically 
+erring out as JPG's proposed fix does.  With my above bugfix, 
+NCS's problems now return only true roots.
+
+MACRAK@MIT-MC 04/24/85 00:21:46-EST  ~LIMIT
+Limit((1+x^a)^x,x,inf); asks A pnz ans neg then A+1 pn...
+Why doesn't it allow the possibility of A+1=0, which is, after
+all, the only interesting case?
+
+JPG@MIT-MC 04/22/85 11:37:35-EST  ~RATSIMP
+MODULUS:5$ RATSIMP(SQRT(2)); gives -1.  
+
+Wgd@SCRC-STONY-BROOK 04/16/85 02:40-EST  ~RISCH
+risch(diff(exp(1/p(x))/p(x),x),x) -> noun for polynomial p(x) 
+(e.g. p(x):=x).  Also gives the noun for symbolic p(x), but this is due 
+to risch(diff('p(x),x),x) nouning out.
+
+Wgd@SCRC-RIVERSIDE 03/29/85 03:08-EST  Re.: Macsyma database extended 
+I totally rewrote the polynomial real zero package (PolyRZ) and
+extended it to implement the univariate case of Tarski's decision
+procedure (modulo disjunctions, which aren't currently handled
+by the database).  Thus, currently, one can assume any conjunction
+of constraints on the signs of polynomials in x and then reason
+effectively about the sign of any polynomial in x. 
+
+This fixes the following bugs:
+
+  fateman%UCBKIM@Berkeley 07/19/83 09:24:29-PDT  ~COMPAR
+  let  x:h^2+2*h+1.  is(x>=0) gives "true"  but is(x+1>=0) gives 
+  "unable to evaluate".  It should try to complete the square.
+  
+The next bugs only remaining redundancy is asking the sign of sqrt(1-z^2)
+after its told z^2-1<0.  Reasoning about sqrt(1-z^2) really needs the
+bivariate case of Tarski's procedure (i.e. cylindrical algebraic
+decomposition in the plane ala Collins, Arnon, et al), which isn't
+implemented yet.	
+
+  RWG@MIT-MC 09/15/82 04:09:49  ~COMPAR
+  LDEFINT(cos(x)/(1-z*cos(x)),x,0,%pi);  z^2-1 is NEG; z+1 is POS;
+  then asks sign of z-1.
+  (Also, why doesn't it factor the Z^2-1 in the question? - JPG)
+  
+  JIM@MIT-MC 10/15/79 17:07:36  ~COMPAR
+  assume(x>10); sign(x^2-x-1); doesn't know.
+
+Patch 311.76 implements these extensions in Symbolics Macsyma.
+
+Wgd@SCRC-QUABBIN 03/28/85 01:31-EST  ~RATSIMP, ~MODULUS
+It appears that most callers of RATSIMP want MODULUS=FALSE. 
+For example,
+  (modulus:m:5, x:'x)$
+  x^m,ratsimpexpons -> 1
+  askinteger(m*x) -> yes
+  realpart(abs(m*x)) or realpart(asin(m*x))
+   -> "Inverse of zero divisor -- 5 modulo 5"
+  limit(m*x,x,inf) -> "Floating point meaningless unless MODULUS = FALSE"
+  taylor(2^(m*x),x,0,1) -> 1+... instead of 1+log(2)*m*x+...
+  radcan(x^m) -> 1
+  etc
+Perhaps we should have RATSIMP bind MODULUS:FALSE. We could then 
+either have those cases that want to pay attention to modulus 
+(I haven't discovered any yet) either do RATDISREP(RAT(X)) or
+provide a form (RATSIMP_MOD) for doing this.
+
+Wgd@SCRC-QUABBIN 03/27/85 23:55-EST  ~ALGSYS
+algsys([taylor(1-x,x,0,1)],[x]) -> [] because it doesn't specrepcheck it
+arg. This will be fixed in a forthcoming patch.
+
+Wgd@SCRC-RIVERSIDE 03/26/85 01:15-EST  ~SIMP, ~ABS, ~SIGNUM
+Macsyma doesn't appear to know that ABS and SIGNUM are multiplicative.
+It should provide means for going both ways in ABS(x*y) = ABS(x)*ABS(y)
+(analogous to, say, LOGEXPAND and LOGCONTRACT).
+Nor does it know the relation between ABS and SIGNUM and provide
+means for converting between the two.
+There are probably other identities of ABS and SIGNUM that should be
+added also (e.g. those in SHARE1;ABSIMP).
+
+Wgd@SCRC-QUABBIN 03/25/85 04:58-EST  ~COMPAR
+assume(not equal(a^2,b^2))$  sign(a-b) -> pn, correctly, 
+but sign(a+b) -> pnz instead of pn.
+
+Wgd@SCRC-RIVERSIDE 03/19/85 04:09-EST  ~ALGEPSILON, ~ROOTSEPSILON
+The documentation for rootsepsilon isn't very precise.
+It should say that every approx. root returned by realroots lies
+in a left half-open interval (a,b] containing a root such that
+b-a < rootsepsilon.
+The documentation for algepsilon is useless.  It must be a positive
+fixnum (and should have such a setcheck done on it [actually,
+ALGSYS or someone should check this]).  The rational 1/algepsilon
+gets passed to the realroots isolation code and is interpreted as
+is rootsepsilon above.  Probably this should either be flushed or
+made to behave like rootsepsilon.
+
+Wgd@SCRC-QUABBIN 03/12/85 06:00-EST  ~RATFUN
+block([algebraic:true,ratfac:true],rat(%phi^(n+2)/a));
+exhibits the source of RWG's bug reported below. 
+It appears to be due to bugs in FPGCDCO or something called by it.
+   rwg%SPA-NIMBUS 07/28/84 02:39-PDT
+   Even with ALGEBRAIC:FALSE, FACTOR(%phi^(n+2)/a) is wrong. 
+   With a=1, it's right, but why is it modded by the %phi polynomial?
+(Fixed in rat3e.582 and patched in 311.1 at SCRC. - WGD 4/27/85)
+
+Wgd@SCRC-QUABBIN 03/01/85 20:36-EST  Re.: strong ROOTSCONTRACT
+   silverm@SCRC-CUPID 02/28/85 11:22-EST
+   I haven't been able to simplify the following:
+   exp:sqrt(a^2-x^2)/(x^2-a^2)^2  -->  1/(a^2-x^2)^(3/2) .
+   I've tried all the usual functions, but always get back the same 
+   expression.  Is there a way of doing this, or is this a bug?
+(RATDISREP(RAT(EXP)),RATFAC,RATVARS:[A]; works.  -  JPG)
+
+This weakness is fairly well known to rational function hackers. 
+It has been previously reported in various forms, e.g:
+
+  MACRAK@MIT-MC 04/11/77 16:14:25  ~RADCAN, ~ROOTSCONTRACT
+  exp:sqrt(x^2-1)/sqrt(1-x^2)
+  radcan(exp) -> -%i, while rootscontract(exp) -> %i
+  If the value of X were taken into account, the principal value of
+  exp would be well-defined: it would be %i if -1<x<1 and -%i otherwise.
+  
+  MACRAK@MIT-MC 09/02/82 18:05:17  ~SIMP
+  [1] How does one simplify (1-y)^a*(y-1); to -(1-y)^(a+1) ?
+  (Also -(-1)^B --> (-1)^(B+1) . - ASB)
+  [2] There should be some way to transform a^x*b^x into (a*b)^x .
+
+Currently, rootscontract(f^n*(f*g)^m) works when g=2 but fails when
+g=-1 or g=g, etc.  It shouldn't be hard to have rootscontract check
+for gcd's among factors like these.  Control could be provided for just
+how hard it should look for them (via yamf: yet another Macsyma flag).
+Its also a bug that ratsimp(exp),algebraic:true  doesn't provide a method
+for solving such problems.
+
+Also, as MACRAK suggest in [2] above, the dual POWERCONTRACT 
+(a^x*b^x -> (a*b)^x) is often useful (indeed, NHAYAT has a version of this).
+
+rwg@RUSSIAN.SPA.Symbolics.COM (cc: RIVIN) 01/28/85 03:48-PST  ~DEFINT
+DEFINT((1/(1+a*t^m)-1/(1+b*t^n))/t,t,0,inf); a,b,m,n pos;  wins if you 
+say m and n are integers, m/(m+n) is not.  Loses if neither m nor n integer.
+Asks about sign of m,m-1,...,m-5 if you say n-m pos and n/(n+m) is integer, 
+m integer, n not, then says log(abs(a)) even though a was pos.
+Why does it care about integers?  about n/(n+m)?  (yecch, i think i can 
+guess re n/(n+m).)
+
+Didn't RIVIN once install some smarts about integrals coming out with 
+%GAMMAs?  How about the following?
+defint((1 - a^-t - a^(-1/t))/t,t,0,1) = %gamma + log(log(a)),
+(not even when a = %e),
+defint((1/(1+a*t^p)-%e^(-b*t))/t,t,0,inf) = %gamma + log(b) - log(a)/p,
+(not even when a=b=1),
+defint(1/log(t)+1/(1-t),t,0,1) = %gamma,
+defint(1/(%e^t-1)-%e^-t/t,t,0,inf) = %gamma.
+
+Wgd@SCRC-STONY-BROOK 01/23/85 02:05-EST  ~LIMIT
+   rwg%SPA-RUSSIAN@SCRC-STONY-BROOK 01/21/85 20:32-PST
+   INTEGRATE(atan(x)-%pi/2+1/(x+1),x,0,inf) gives DIVERGENT.  Not in my book.
+DEFINT is signalling divergence because it believes it has discovered
+a pole at infinity due to limit(x*(atan(x)-%pi/2+1/(x+1)),x,inf,0)
+incorrectly returning MINF instead of 0.  If you set TLIMSWITCH:TRUE
+you will obtain the correct answer -1.  This bug will disappear when the 
+new limit package appears.
+
+    Also loses for INTEGRATE(1/atan(x)-2/%pi-1/x+(1-4/%pi^2)/(x+1),x,0,inf).
+This now returns the noun with TLIMSWITCH:TRUE.  Superficially, it looks 
+tougher than the previous problem.  Do you think DEFINT should
+be able to handle this?  What do you get?
+
+LPH@MIT-MC 01/10/85 16:02-EST  ~HYPGEO
+depends(y,x)$
+ode(x^2*diff(y,x,2)+x*diff(y,x)+(x^2-mn^2)*y,y,x,series),closedform:true;
+produces a j[n](%i*x/sqrt(2)) on MC and a j[n](%i*x) in DOE-MACSYMA,
+and should involve j[n](x) instead.  The culprit is 
+HGFRED([],[N+1],-X^2/4) getting the wrong answer from BES->TRIG.
+This problem is in the ODE demo sequence.
+(Some of this is probably fixed. - JPG 2/12/85)
+
+MACRAK@MIT-MC 01/09/85 02:43-EST  Re.: Simplification while evaluating
+The Share package SIMPEV provides two functions which should largely
+solve Wgd's f(x):=x*f(x-1) problem.
+	SimpEval(f(3),f) => 0
+	SyntaxEv(f(3),f) => 3*f(2)
+Share2; SimpEv Fasl and Usage
+I have not been able to get tracing to work properly with this package,
+and I am not certain that all the user-defined simplifications will work
+perfectly.
+
+RJF@MIT-MC 12/24/84 01:08-EST  ~DESCRIBE
+describe(hardcopy) has no info.
+(Answered by LPH on 12/24/84 02:05-EST.
+Please see MC:MACDOC;MAIL BACKUP. - JPG)
+
+Wgd@SCRC-STONY-BROOK 11/27/84 02:42  ~MLISP
+In SMP:		f[x]: x f[x-1];  f[1] -> 0
+In Macsyma:	f[x]:= x*f[x-1]; f[1] -> <infinite loop>
+This is due to the fact that SMP simplifies while developing the
+evaluation tree so that, in the above example, 1*0*f(-1) is first
+simplified to 0 before f(-1) is evaluated.  One can imagine situations
+where such a semantics can save a lot of unnecessary computation.
+There should be such a mode available in Macsyma.
+
+
+	%%%  End of Part 1  %%%
+MACSYM MAIL is now in two parts.  To see Part 2, 
+do :PRINT ALJABR;OMAIL > .
+

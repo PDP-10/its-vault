@@ -1,0 +1,190 @@
+
+#############################################################################
+
+	Useful Lisp-callable functions available in an initial macsyma
+
+#############################################################################
+	** (c) Copyright 1980 Massachusetts Institute of Technology **
+			Information hacking
+
+KILL1 -       SUBR form of Macsyma's KILL command. Accepts one arg
+	      and kills the atom + value cell and properties from the
+	      Macsyma system.
+
+			Error Checking
+
+ERLIST -      Takes an arg of a message. Atomic messages are PRINC'd. Lists
+	      are PRINL'd. Types the message and then signals an error.
+
+ERREXP -      Takes no args. Types out "ERREXP contains the offending
+	      expression." Note that ERREXP must be SETQ'd 'by hand'. This
+	      function does not do that for you.
+
+FEXPRCHK -    SUBR of 2 args. Arg 1 is a FEXPR arg-list. Arg 2 is the 
+	      'pretty' name of the function for display if an error 
+	      is seen. Checks to see that Arg 1 is exactly 1 element
+	      long. Errs out if it's not.
+
+NONSYMCHK -   SUBR of 2 args. Arg 1 is any lisp object. Arg 2 is the 
+	      'pretty' name of the function for display if an error 
+	      is seen. Checks to see that exactly Arg 1 an atomic symbol.
+	      Errs out if it's not.
+
+			I/O Hacking
+
+PRINL -	      Accepts a single list as an arg. PRINC's each of the elements
+	      of the list separated by spaces.
+
+			Printname hacking, etc.
+
+$NOUNIFY -    Makes a non-Noun into a noun. Accepts a symbol as an arg.
+	      If the symbol has a verb property, uses that.
+              If the thing is a NOUN, it returns its arg.
+              Else strips a leading M or "$" from the printname 
+		   and puts a "%" on. Puts the <verb> form in the NOUN
+		   property of the <verb> and the <noun> in the VERB
+	           property of the <noun>. 
+
+$VERBIFY -    Makes a non-VERB into a verb. Accepts a symbol as an arg.
+	      If the symbol has a noun property, uses that.
+	      If the arg is a VERB or doesn't start with "%", just returns it.
+	      Else strips the %, adds a $. Calls NOUNIFY to set up all
+		   the VERB/NOUN properties, and returns what's in the thing's
+		   NOUN property.
+
+CONCAT -      Any number of args. Puts the printnames of all the args together
+	      as an interned symbol. Eg, (CONCAT '$ 'C 13.) => $C13
+	      Binds *NOPOINT to T and BASE to 10. during the operation.
+
+DOLLARIFY -   Put a dollarsigns on any symbols in a Lisp list. Returns
+	      `((MLIST SIMP) . <dollarified-input-list>)
+
+FULLSTRIP1 -  Remove dollarsign (like STRIPDOLLAR) and also do any inverse
+	      aliasing according to defined ALIAS's.
+
+FULLSTRIP -   MAPCAR's a FULLSTRIP1 across its arg.
+
+GETOP -	      Gets the operand form of an operator.
+	      E.g. (GETOP 'MPLUS) is &+ which corresponds to "+" .
+
+GETOPR -      Gets the operator form of an operand.
+	      E.g. (GETOPR '&+) is MPLUS.
+
+MEXPLODEN -   Like Lisp's EXPLODEN function, but binds BASE to 10 and
+	      *NOPOINT to T during the process.
+
+MAKSTRING* -  Like STRING* but returns a list of atomic symbols instead
+	      of fixnums.
+
+MSTRING -     A Macsyma-flavored EXPLODEN function which works on arbitrary
+	      expressions except MTEXT and MLABLE. Returns a list of the
+	      fixnum characters that make up the expressions strung out
+	      representation.
+
+STRING* -     A Macsyma-flavored EXPLODEN function - for atomic objects
+	      only. Returns the list of fixnums that make up the Macsyma
+	      printname of the object.
+
+STRING*1 -    A faster version of STRING*. Expects that NUMBERP and ALIAS
+	      checks have already been done.
+
+STRIPDOLLAR - Turn a lisp atom or BIGFLOAT form into its Macsyma display
+	      form. (Strips the &, $ or & if any from the head of the 
+	      printname of symbols, turns ((BIGFLOAT SIMP <m>) <n>) into
+              its more pretty form.)
+
+			Filename hacking
+
+FILESTRIP -   Converts a MACSYMA file specification into a LISP file 
+	      specification. NB: it also sets the DEFAULTF, beware.
+
+MTRUENAME -   Accepts a lisp file-object as an arg. Returns the Dollarified
+	      name of the file.
+
+TRUEFNAME -   Gets the TRUENAME of a filename. (Opens file, calls lisp
+	      TRUENAME, then closes file).
+
+			Predicates 
+
+$LISTP -      Returns T if its arg is an MLIST.
+
+$BFLOATP -    Returns T if its arg is a bigfloat number.
+
+ALIKE1 -      Use this predicate on Macsyma objects as you would use EQUAL on
+	      Lisp objects. It compares everything in the object except the
+	      flags in the CDAR of lists (it does notice tho' if one object
+	      is an array and another isn't and will return FALSE in that
+	      case -- all other flags are ignored).
+
+MEMALIKE -    Just like MEMBER in LISP except uses ALIKE1 instead of EQUAL.
+
+ASSOL -       Just like ASSOC in LISP except uses ALIKE1 instead of EQUAL.
+
+ASSOLIKE -    (CDR (ASSOL X L))
+
+FREE -        SUBR of two args.  Checks to see if its first arg is free of 
+	      its second arg.  Both args are assumed to be MACSYMA 
+	      expressions in general representation.
+
+AMONG -       SUBR of two args.  Checks to see if its first arg is 
+	      contained in its second arg.  Both args are assumed to be 
+	      fully general expressions (i.e. not necessarily in general 
+	      representation).  For this reason, (NOT (FREE EXP VAR)) is
+	      much more efficient than (AMONG VAR EXP), which would 
+	      otherwise amount to the same thing, if both EXP and VAR are 
+	      in general representation.
+
+ALPHABETP -   Returns T if its arg is an atomic symbol whose first character
+	      is an alphabetic character or has a non-null ALPHABET property.
+
+			List Hacking
+
+ASSQR -	      Like ASSQ but checks against the CDR instead of the CAR. 
+	      Returns the first CONS in arg 2 whose CDR is EQ to arg 1.
+
+ADD2LNC -     Arg1 is an object and Arg2 is an MLIST to union the object
+	      with. If Arg1 is in the MLIST, no change occurs. If Arg1 is
+	      is not in the list, it is spliced onto the end of the list 
+	      with NCONC.
+
+$CONS -	      Like LISP's CONS, but does the right thing with the (MLIST) in
+	      the CAR of the of the list. [Explicitly checks that second
+	      arg is an MLIST.]
+
+$FIRST -      A Macsyma flavored CAR.
+
+$REST -	      A Macsyma flavored CDR. (Removes any flags from the CDAR of
+	      the form that was its arg, but doesn't care if its arg wasn't
+	      a MLIST.)     
+
+
+			Application of user supplied FUNARGS.
+
+MAPPLY -      A Macsyma flavored APPLY. (MAPPLY fun arg-list fun-name) uses
+	      applies FUN to arg-list. Fun-name is what is referred to if an
+	      error occurs.
+
+MCALL -       A Macsyma flavored FUNCALL. (MCALL 'F arg1 arg2 ...) is the
+	      same as (MAPPLY 'F (list arg1 arg2 ...) 'F).
+
+FLOAT-GENCALL A macro for fast general numerical calls to user supplied
+              funargs. See LIBMAX;NUMMAC
+
+                         Evaluation.
+     
+              Any call to the macsyma evaluator not within the evaluator
+              itself has far-ranging effects on the entire system. It
+	      should not be used for trivial functionalities such as
+	      substitution and simplification. This information is only
+              provided for the sake of reading old code.
+
+$EV   -       Should NEVER be used in lisp code.
+
+MEVAL -	      A Macsyma flavored EVAL. Both evaluation and simplification.
+	      Same as (SIMPLIFYA (MEVAL1 form) NIL).
+
+MEVAL1 -      A Macsyma flavored EVAL that does only evaluation. No final
+	      simplification is done on the result.
+
+MBIND, MUNBIND - Macsyma variable "binding".
+

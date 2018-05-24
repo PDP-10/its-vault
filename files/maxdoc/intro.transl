@@ -1,0 +1,47 @@
+Updates to the macsyma->lisp translator.
+
+See the file MAXSRC;TRANSL > for more info.
+
+Any FEXPR added to macsyma needs special attention. Thats why they
+are called special forms.
+
+[1] if the FEXPR does not call MEVAL on its arguments, e.g.
+    LOADFILE, it needs to be added to the list in MAXSRC;TRDATA >.
+[2] If the FEXPR calls MEVAL, or calls any function which calls
+    MEVAL then,
+  "Find an appropriate file amoung the transl sources to put the
+   extension in. TRANS1 through TRANS4 or TRANSF. Do
+
+(DEF%TR $FOO (FORM)  ...body...)
+
+  The single argument is the entire form containing a call to $FOO.
+  Do wrong number of argument checking and other syntax checking.
+  If you want to error out, SETQ TR-ABORT to T, and return a call
+  to an apropriate TELL type function found at the beggining of
+  MAXSRC;TRANSL >. This will allow a sophisticated user or
+  a transl maintainer to do error-recovery, and backtrack problems.
+
+  The BODY should return a lisp expression equivalent to FORM.
+  The CAR of the return form is the MODE of the expression, and
+  the CDR is the lisp expression.
+
+  The functions which you may want to call to help you are
+  TRANSLATE, which returns a pair (MODE . S-EXPR), and TR-ARGS,
+  takes a list of macsyma args and returns a list of lisp
+  expressions (with no mode information).
+
+  More complex FEXPRs are seen in $SUM and LAMBDA and $SUBSTPART.
+
+  !!**!!  => Think about it. Can this be done as a macro? If so, then
+  do it as a macro using macsyma macros! Or, simply
+  write the translation property
+  (DEF%TR $FOO (FORM) (TRANSLATE (EXPAND-$FOO FORM)))  <= !!**!!
+
+[3] Major changes, see the code. My recomendation is that
+    both MEVAL and TRANSL be re-implemented. 
+
+[5] Functional forms which act through the simplifier must
+    have translation properties. This goes for the above too,
+    don't forget to call SIMPLIFY when returning something
+    of mode $ANY.
+

@@ -1,0 +1,152 @@
+
+The COMPILE command is a convenience feature in macsyma. It
+handles the calling of the function COMPFILE, which translates macsyma
+functions into lisp, the calling of the lisp compiler on the file
+produced by COMPFILE, and the loading of the output of the compiler,
+know as a FASL file, into the macsyma. It also checks the compiler
+comment listing output file for certain common errors. All these
+things can be done manually of course, but I have found that
+using COMPILE, with its convenient default actions, make some work
+go much faster, mainly use of PLOT2 and numerical integration.
+
+ARGUMENTS, SWITCHES, and defaults.
+
+COMPILE(); causes macsyma to prompt for arguments. You may also
+get the chance to ask for a tutorial on compilation when this is implemented.
+
+COMPILE(function1,function2,...); compiles the functions, it uses the name
+of function1 as the first name of the file to put the lisp output.
+
+COMPILE(ALL); would compile all functions. N.B. The arguments to COMPILE
+are evaluated, therefore COMPILE(FUNCTIONS) will not work. You must
+do COMPILE('FUNCTIONS); This is so that COMPILE works when called inside
+a program the same as it does when called on a C-line. See FLOATDEFUNK.
+
+COMPILE([file-name],function1,function2,...); N.B. all arguments are 
+evaluated, just like a normal function (it is a normal function!).
+Therefore, if you have variables with the same name as part of the file
+you can not ignore that fact.
+
+DEFAULT_DIRECTORY_COMPILE:STATUS(UDIR)
+STATUS(UDIR) is your "home" directory. And it is set at DDT level.
+COMPILE is not effected by previous LOADFILEs, although it does use
+LOADFILE to load the FASL file.
+
+FIRST_FILENAME_COMPILE:FALSE
+If you are doing a lot of compilations and always want the same file
+to be used as scratch, you might set this.
+FUNCTIONS_TO_COMPILE:FALSE
+It is not usually useful to set this, athough it can save some typing
+if you are changing and recompiling the same functions a lot.
+
+COMPILER_CALL:INFERIOR, can also be set to DDT. This controls
+whether the lisp compiler is called as an inferior job to macsyma
+or by valreting to toplevel DDT.
+
+COMPILE EXAMPLES, use of MODEDECLARE.
+
+In order to get the most out of compilation, declarations about
+what things are, need to be made. The basic idea of compilation is
+for the computer to make certain calculations only once, that is,
+at compile time. The not-so-basic ideas are "optimization" and 
+variable binding semantics, which we can talk about some other time.
+
+examples:
+
+F(X,Y):=X*Y; If what you want to do is call F(3.2,2.2) then there is
+some inefficiency, because you could have also done F('X,'X) and
+expected to recieve back X^2, and it takes many times longer for
+macsyma to figure out that it needs to call the PDP-10 floating point
+multiply instruction, than it does for the PDP-10 to execute this
+instruction. {see LISP MACHINE}
+
+F(X,Y):=(MODEDECLARE(X,FLOAT,Y,FLOAT),X*Y); tells macsyma that X and Y
+are the equivalent of the Fortran REAL, and when you compile or
+TRANSLATE the function, it can use that information to decide to use
+the PDP-10 multiply instruction.
+
+In general, the MODEDECLARE should appear as the first "function call"
+where ever new variables are introduced. Variables should be
+MODEDECLAREd as soon as they are introduced, not before, or after. By
+"introduced" we mean the lexical contour in which they appear. The
+following things, and only these things, mark the beginning of a
+contour:
+
+":="     starts a contour for all the formal parameters, and for
+all free variables used in the function.
+
+"BLOCK", starts a contour for all of the "block" variables.
+
+"DO" starts a contour for its "FOR" variable, presently the "FOR"
+variable should be declared in the next outer contour though, this
+bug will be soon fixed. Then a proper example would be
+FOR X:X1 THRU XN STEP DX DO(MODEDECLARE(X,FLOAT),SUM:SUM+F(X)*DX)
+
+"LAMBDA" starts a contour for its lambda variables.
+
+Certain constructs, such as SUM, have an implied contour of limited scope.
+e.g. SUM(J^2,J,1,N). In this case, it is not the responsibility of the
+user to declare the mode of the variable "J", which is
+bound by the construct. The code which handles the SUM can look at
+those modes of the lower and upper limits and infer the mode of "J".
+
+F(X,Y):=(MODEDECLARE([X,Y],FLOAT),SIN(4*X)+SQRT(1+X^2)*COS(X));
+F(X,Y):=(MODEDECLARE([X,Y,A,B],FLOAT,N,INTEGER), SQRT(A*B*X+Y^N));
+F(X):=(MODEDECLARE(X,FLOAT),
+       BLOCK([P,Q],
+             MODEDECLARE([P,Q],FLOAT),
+             P:SIN(X)*X^2,
+	     Q:4*X^2-X+14,
+	     IF X>0 THEN SQRT(P^2+ABS(P*Q)+SIN(Q)+1)
+                     ELSE P+Q/10));
+
+/* dY/dX=F(X,Y), [X0,Y0] and X_FIN and DX */
+
+Declaring that a function will return a floating point number.
+
+EULER(F,X0,Y0,X_FIN,DX):=
+     (MODEDECLARE([X0,Y0,X_FIN,DX],FLOAT,FUNCTION(F),FLOAT),
+      BLOCK([Y:Y0,X:X0],
+	    MODEDECLARE([Y,X],FLOAT),
+	    LOOP, IF X>=X_FIN THEN RETURN(Y),
+	    Y:Y+DX*APPLY(F,[X]),   X:X+DX,
+	    GO(LOOP)));
+
+Or, without the GO TO,
+
+EULER(F,X0,Y0,X_FIN,DX):=
+     (MODEDECLARE([X0,Y0,X_FIN,DX],FLOAT,FUNCTION(F),FLOAT),
+      BLOCK([Y:Y0],
+	    MODEDECLARE([Y,X],FLOAT),
+	    FOR X:X0 THRU X_FIN STEP DX 
+               DO Y:Y+DX*APPLY(F,[X]),
+	    Y);
+
+Declaring arrays, for example, A is an array that returns some number,
+
+SUM_ARRAY(A):=(MODEDECLARE(ARRAY(A),NUMBER),
+               IF LENGTH(ARRAYDIMS(A))#1 THEN ERROR("Takes only 1 dim array"),
+	       BLOCK([N:ARRAYDIMS(A)[1],SUM:0],
+	             MODEDECLARE([N,J],FIXNUM,SUM,NUMBER),
+		     FOR J:1 THRU N DO SUM:SUM+A[J],
+		     SUM));
+
+FLOATDEFUNK is a utility for making floating point functions from
+mathematical expression. It will take the input expression and FLOAT it,
+then OPTIMIZE it, and then insert MODEDECLARATIONS for all the variables.
+This is THE way to use ROMBERG, PLOT2, INTERPOLATE, etc. e.g.
+EXP:some-hairy-macsyma-expression;
+FLOATDEFUNK('F,['X],EXP); will define the function F(X) for you.
+
+SEMANTIC DECLARATIONS. These are not yet implemented.
+
+talk about variable scoping, lexical verses dynamic.
+
+ex.
+
+F():=BLOCK([MY_FLAG:TRUE],MODEDECLARE(MY_FLAG,SPECIAL),FOOBAR())
+
+F(U,EXP):=(MODEDECLARE(FUNCTION(MY_MAP(CLOSURE,ANY)),ANY),
+	   MY_MAP(LAMBDA([X],U:Q(U,X)),EXP));
+
+

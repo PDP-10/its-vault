@@ -1,0 +1,80 @@
+[ -*- Text -*- ]
+
+Created by GJC, 20 Nov 79 in mail to ADK
+Re-Formatted by KMP, 9 Oct 80
+
+This file briefly discusses the basics of Macsyma's internal control and
+data structure and its relation to the Lisp world.
+
+			*	*	*
+
+Interrupts
+
+  ^A	(Control-A)		Gets a Macsyma Breakpoint
+  ^G	(Control-G)		Gets a Macsyma Toplevel
+
+  ^B	(Control-B)		Gets a Lisp Breakpoint
+  ^^	(Control-Uparrow)	Gets a Lisp Toplevel
+
+Naming Conventions
+
+  To avoid name conflicts between functions and variables that the macsyma
+  use might use, and ones internal to the macsyma system, we have the "$"
+  <dollar sign> convention.  e.g.  what looks like FOOBAR at macsyma level
+  is probably the atom $FOOBAR at lisp level. All used C-lines and D-lines
+  are variables at lisp level with the expected stuff in them. Certain other
+  prefix characters are also used and have special meaning. Lisp symbols 
+  beginning with "&" <ampersand> are Macsyma strings. Lisp symbols beginning
+  with % are generally nounified Macsyma functions. 
+  Eg,
+		In Lisp		In Macsyma
+
+		 FOO		?FOO
+		$FOO		FOO
+		%FOO		FOO (as it would be generated in 'FOO(...))
+
+General representation.  
+
+  The most common form of a Macsyma expression as produced by the parser is:
+
+    ((<functionname> <flag1> ... <flagN>) <arg1> <arg2> ... <argM>)
+
+  The flags and the arguments are optional of course.
+
+  Some of the operators are not represented internally as ${macsymaname}.
+  Eg, "A+B;" parses as ((MPLUS) $A $B), not as (($+) $A $B).
+  Here is a table of some of the more common operator names:
+
+	+ ... MPLUS         * ... MTIMES
+	- ... MMINUS        ^ ... MEXPT
+	= ... MEQUAL        / ... MQUOTIENT
+	: ... MSETQ         [ ... MLIST
+
+  Non primitive things, like SOLVE, SUBST, go to $SOLVE, $SUBST, as
+  do all user defined functions.
+
+Simplification.
+
+  Note that after the simplifier mungs things (i.e. D-LINES and
+  what gets passed to most functions), the only arithmetic operators
+  left are {MPLUS, MEXPT, MTIMES}.  i.e.  X^3 => ((MEXPT) $X 3). So the
+  natural EXP(X) function gets munged to look very much like X^3.
+  X-Y comes out as ((MPLUS SIMP) $X ((MTIMES SIMP) -1 $Y)).
+
+  There is a special case n/m where n and m are integers goes
+  to ((RAT) n m).
+
+Random Comments 
+
+  GJC, 10/10/80
+  Experiments such as typing in equations at user level, and then
+  seeing what the lisp level looks like, tracing various functions
+  etc, can be useful to get some idea of what things look like.
+  However, that should not be the only source of information since
+  it is a dangerous violation of data abstraction. Representations
+  could change, and what is important is the accessor functions/macros
+  for the objects, not the objects themselves, which are seen by the
+  usual lisp printer only in terms of random CAR/CDR/CADR'ness.
+  See the macro packages for the "true word", and don't be distracted
+  by the fact that much of the existing system code doesn't use them.
+
