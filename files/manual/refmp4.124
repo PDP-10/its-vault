@@ -1,0 +1,1515 @@
+.if partial then start
+.count chapter from 13 printing "1"
+.count section in chapter printing "!.1"
+.count subsection in section printing "!.1"
+.end
+
+.chap (The MACSYMA Editor, macedit)
+
+.sec (Introduction,edint)
+
+The major features of the editor are its concise
+commands (few alphabetic characters), its varied assortment of commands, concatenation of commands as in
+TECO (the PDP-10 file editor), mnemonics for command names (once you know them,
+R means "move in the Reverse direction" ; B means "move to the Bottom" ), and
+compatibility with TECO as to command names (in the case of C, D, F, G, I, J, K,
+L, R, and S).
+
+.sec (Entering the Editor,entered)
+
+At any time while the user is inputting a command line to MACSYMA, he may enter
+the input-stream editor by typing "altmode" or "escape", henceforth denoted by
+<$>.  The editor is given the string of characters typed so far in the current
+input line.  In the case of a detected syntax error, upon typing <$>$$<$> must be the first character typed on the next command line.  Any other character (except "space") causes the edit buffer to be emptied.*  
+ the entire previous command string will be given to the editor.  Alternatively, <control>-Y also retrieves the previous command string (even if other characters have already been typed in the current C-line).   Thus, the previous command line is readily available for editing without retyping it.   
+
+One may also request the editor to edit or modify a previously accepted input
+line by using the $fun<STRING> function in MACSYMA.  Typing STRING(Ci) will restore
+the expression labeled as Ci as the current input string.  This enables the user
+to modify it by then immediately typing <$>.  For a simpler method, see the MYV command below.
+
+All the commands to the editor reference a cursor (displayed as an underscore or
+back-arrow, depending on the console) which is displayed within or at either end
+of the string of characters currently being edited (called the "input string"
+from now on).  The value of the variable $var<CURSOR/> determines what character is
+used $see<ioptions>.
+
+The editor accepts a command string which must be terminated by <$><$>.  A
+command string is any concatenation of one or more legal commands which will be
+processed in left-to-right order.  Display of the input string occurs at the end
+of the processing of each command string.  <$> is used to enter the editor, to
+exit from the editor (as <$><$>), and to terminate insert or search substrings.
+Otherwise, spurious <$>'s are ignored.  Rubouts (the rubout or delete key on the
+console) may be used at any point prior to command termination to delete the
+last character typed in.  ?? deletes the entire command. At any point prior to
+command termination, the user may type a <control>K, and the editor will reprint
+the characters of the command typed so far.
+
+Occasionally, one gets a syntax error because of omitting characters from the
+end of a command (especially right parentheses).  By typing <$><$><$>
+immediately, as the first 3 characters of the next input line, the last command
+will be automatically reproduced on the current input line at which point one
+can supply the missing characters or rubout erroneous characters.  For example:
+
+.example group turn on ""
+(C1) (((X+1)*X+2)*X+3$
+( ( ( X + 1 ) * X + 2 ) * X + 3 ***$***
+SYNTAX ERROR
+PLEASE REPHRASE OR EDIT
+
+(C1) <$>
+_(((X+1)*X+2)*X+3
+<$><$>
+(C1) (((X+1)*X+2)*X+3 )*X+4$
+1(In the above line the user typed the
+			characters after the 3)*
+.end
+
+.sec ("A Description of the Commands",commandescr)
+
+Some commands may be prefixed by an integer (represented below by "n") which
+usually may be positive or negative; although it may be zero as well in the case
+of K, L, and W; and it must be non-negative in case of W.  The default value of
+n is +1.  Except in the case of R, if n is positive the commands operate toward
+the right of the cursor, if n is negative they operate toward the left.  I and S
+are two of the few commands which may be followed by other characters, namely the
+characters which constitute the insert or search strings.  An error message will
+be printed if an illegal command substring is encountered or if any command
+substring fails.  In case of such error, the processing of the current command
+string will be terminated at that point, with the offending command substring
+indicated.
+.skip 1
+
+.begin fill compact
+.tabs 12, 24, 36, 48
+.indent 0,23
+.turn on "\"
+2Command    \Mnemonic   \Action*
+
+.skip 1
+2Commands which move the cursor*
+
+nC      \Character    \moves the cursor past n characters.
+
+nR      \Reverse      \moves the cursor past n characters in the reverse direction
+                      (nR =  -nC).
+
+J or T  \Jump to Top  \moves the cursor to the beginning of the input string.
+
+B or ZJ  \Bottom       \moves the cursor to the end of the input string.
+
+nL      \Line         \moves the cursor to the right of the nth carriage return (0L
+                      moves left); e.g., L moves to the next line.
+
+nSstring<$>           \\moves the cursor to the right (left if n is negative) of the nth
+                      occurrence of "string" in the input string.
+
+nS      \Search       \repeats the last S command given.
+
+) or ]  \Move         \moves the cursor right from the current position over the next
+                      balanced pair of parentheses (or brackets).
+
+( or [  \Move         \similar to ) or ] but moves left.
+
+.skip 1
+2Commands which delete characters*
+
+nD      \Delete       \deletes n characters, and saves them in the "save-register"
+                      (see the G command below).
+
+nK      \Kill         \deletes all the characters through the nth carriage return
+                      (0K kills left), and saves them in the "save-register";
+                      e.g., K deletes the remainder of this line.
+
+M) or M]\Delete       \similar to ) or ] but deletes the characters moved over and
+                      saves them in the "save-register".
+
+M( or M[\Delete       \similar to M) or M] but moves left.
+
+nFRstring<$>\         \deletes the next n occurrences of string. (This command is a special case of the FR command below and can be used in this way only when it is the last argument in the command string).
+
+.skip 1
+2Commands which insert characters*
+
+Istring<$>\Insert     \inserts the characters "string" at the current cursor position.
+                      The cursor is positioned at the right of the inserted text.  If
+                      no argument is given then the string of the last I command which
+                      had one is used.
+
+GR       \Get          \inserts at the current cursor position the characters deleted
+                      by the last use of D, K, or M.  Thus G may be used in combination
+                      with D or K to move characters from one place to another in the
+                      input string; or to recover from an accidental use of D or K.
+                      There is only one "save-register".
+
+nFRstring1<$>string2<$>
+                      \replaces the next n occurrences of string1 by string2.  If n is
+                      1 it may be omitted.  nFR given with no string arguments uses
+                      those from the last FR given which had them.
+
+MFRstring1<$>string2<$>
+                      \replaces all occurrences after the current cursor position of string1 by string2.
+
+
+YVname<$>\Yank value    \puts into the editing buffer, the value of the argument whose
+                      name is given, if a label or the name of a user variable, at the
+                      current cursor position leaving the cursor at the end of the
+                      inserted string.
+
+YFname<$>\Yank function \\puts into the editing buffer the
+                      definition of the user function whose name is given (as with YV).
+                      If the name is followed by
+                      a list of subscripts in brackets, then the named subscripted
+                      function is brought into the buffer.  This command provides
+                      an alternative to DISPFUN and STRING $see<display!functions>.
+
+.begin indent 0, 0 skip 1
+Note: If the YV or YF commands are prefixed by the letter M then the editor will
+clear the buffer before yanking, and also will leave the cursor at the head of
+the edit string when done.
+.end
+
+.skip 1
+2Commands which control display of results*
+
+P       \Print        \simply reprints the input string.  This is useful in case of
+                      console problems.
+
+nW      \Window       \controls the window size of the display, which is the maximum
+                      number of characters displayed on each side of the cursor.
+                      This is useful in case of slow consoles and large input strings.
+                      0W will cause only the cursor to be displayed.  Once set 
+                      the window size remains at that setting until it is reset.
+V       \View         \restores the display to full view, which is the normal mode
+                      (affected only by W).
+
+Q       \Quit         \exits the editor without reprinting the just edited string.
+
+.end
+
+.skip 1
+<$><$> will exit from the editor and is also the command string terminator.  Two
+examples of legal command strings are 4C3DIFOO<$><$> and -2SBAR<$>3R<$><$>.  The
+first moves right over four characters, deletes the next three characters, and
+inserts FOO.  The second searches from the current pointer position to the
+beginning of the text for the second occurrence of BAR then moves left over
+three characters.
+
+.example
+.begin group once center
+2Example3
+
+(C1) X:1$
+
+(C2) NATRIX([A,4],[-1,A/2]);
+.end
+
+(D2)                   NATRIX([A, 4], [- 1, 1/2 A])
+(C3)<$>
+_NATRIX([A,4],[-1,A/2])
+DIM<$><$>
+M_ATRIX([A,4],[-1,A/2])
+]2CD<$><$>
+MATRIX([A,4],[_1,A/2])
+<$><$>   1(In the line below the user typed the ;)*
+(C3) MATRIX([A,4],[1,A/2]);
+
+.begin group
+			       [ A    4   ]
+(D3)                           [          ]
+			       [ 1  1/2 A ]
+.end
+.begin group
+(C4) CHARPOLY(%,X);
+(D4)                     (A - 1) (1/2 A - 1) - 4
+.end
+(C5)<$>
+_CHARPOLY(%,X)
+S%<$>-DID3<$>CI'<$><$>
+CHARPOLY(D3,'_X)
+<$><$>   1(In the line below the user typed the ;)*
+(C5) CHARPOLY(D3,'X);
+(D5)                     (A - X) (1/2 A - X) - 4
+.end
+
+.chap (Batch Functions,batchap)
+
+.sec (Introduction,batint)
+
+The Batch set of functions in MACSYMA, namely $fun<BATCH>, $fun<DEMO>,
+$fun<BATCON> (mnemonic for BATch CONtinue) and $fun<BATCHLOAD>,
+provide a facility for executing command lines stored on a disk file
+rather than in the usual on-line mode.  This facility has several
+uses, namely to provide a reservoir for working command lines, for
+giving error-free demonstrations, or helping in organizing one's
+thinking in complex problem-solving situations where modifications may
+be done via the PDP-10 TECO file editor.
+
+A batch file consists of a set of MACSYMA command lines, each with its
+terminating ; or $, which may be further separated by spaces, carriage-returns,
+form-feeds, and the like.  The BATCH and DEMO functions have both a simple and
+more complicated format, which are described below.
+
+.sec  (The Simple Format,simpform)
+
+.inline function(BATCH,|filename1, filename2, DSK, directory|)
+
+(The same function format holds for $fun<DEMO> as well.)  The arguments to BATCH (or
+DEMO) in this format specify the file which is to be batched. Here, each file is
+specified by two filenames of at most six characters each, the device the file
+is on ( which is normally DSK), and the user file directory.  E.g.
+DEMO(TAYLOR,DEMO,DSK,DEMO) calls for "demonstrating" (see below) the file TAYLOR
+DEMO on the DEMO disk directory. Latter arguments to the BATCH or DEMO functions
+may always be omitted if they are known from previous file-manipulating
+functions.
+
+The BATCH function calls for reading in the command lines from the file one at a
+time, echoing them on the user console, and executing them in turn.  Control is
+returned to the user console only when serious errors occur or when the end of
+the file is met.  Of course, the user may quit out of the file-processing by
+typing control-G at any point $see<hints> .
+
+DEMO differs from BATCH only in that it pauses after the execution of each
+command line, waiting for the user to type a space which tells it to go on.  If
+the user types any other character, file-processing will then terminate, giving
+control over to the user console.  (The user may actually continue processing
+from the file at any time - see the BATCON function below.)
+
+.sec (The More Complicated Format,compform)
+
+.inline function(BATCH,|[fn1, fn2, DSK, directory], <delay-switch>, <index-specification>|)
+
+The arguments to 5BATCH* or $fun<DEMO> in this mode are as follows:
+
+The first argument is the file specification (as above), enclosed in brackets.
+
+The second argument, the delay-switch, may be answered by $var<ON/> or $var<OFF/>
+(the default if it is omitted).  This switch has to do with the temporary inability
+of LISP, the system underlying MACSYMA, to have more than one input file open at a
+time. If in the course of batching in a file of command lines, execution of a
+function forces a second file to be input, this would ordinarily cause an error.
+However, setting the delay-switch to ON causes the entire batch file to be read in
+before execution of it begins, thus preventing the error.  The default for the
+delay-switch is OFF, as the circumstance described above is not frequent, it takes
+some time to read in a batch file, and one may always continue batching via the
+$fun<BATCON> function.  As soon as the inability of LISP is removed, this switch will no
+longer be needed.
+
+The index-specification is given by one or two arguments, the possibilities being:
+(In the following, m and n are positive integers.)
+
+(i) 2m1.  This indicates that processing is to begin with the mth command line in the
+file.  Thus, the default for the index-specification is 1.
+
+(ii) 2m1, 2n1.  This indicates that only the 2m1th command line through
+the 2n1th command line are to be processed.
+
+(iii) a variable (say FOO).  FOO must be non-numeric and neither TRUE nor FALSE.
+This causes file-processing to begin at FOO&& $see<batmisc> and continue until
+the end of the file.  This makes it unnecessary to count command lines as
+required by (i) above.
+
+(iv) variable (say FOO), continue-flag.  The continue-flag is either ON (the
+default, and unnecessary) or OFF.  If OFF, this enables one to separate a batch
+file into subfiles by prefixing a command line in the file with FOO&&.  By using
+FOO as the index-specification, one may execute only that subfile which begins
+with FOO and ends with some other variable&&, or the end of file.  If the
+continue-flag is ON, this causes mode (iv) to operate as (iii) above.
+
+One can see that BATCH(TAYLOR,DEMO,DSK,DEMO) and BATCH([TAYLOR,DEMO,DSK,DEMO], OFF,
+1) are equivalent.
+
+.sec (The BATCON Function,batconfun)
+
+The $fun<BATCON> function is used to continue or change the last $fun<BATCH> or
+$fun<DEMO> function, without it being necessary to mention again BATCH or DEMO, the
+file specification, or the setting of the delay-switch.  Of course, if one wishes
+to change any of these, a new call to BATCH or DEMO is required.
+
+The possible arguments to BATCON are as follows:
+
+(i) a number
+
+(ii) number1, number2
+
+(iii) a variable
+
+(iv) variable, continue-flag
+
+They are all as in $ref<compform>.  The numeric arguments may involve the variable $var<BATCOUNT/0>
+which is set to the number of the last expression BATCHed in from the file.
+Thus BATCON(BATCOUNT-1) will resume BATCHing from the expression before the
+last BATCHed in from before.  One other mode is possible:
+
+(v) skip-flag.  The skip-flag is useful if an error has occurred while batching,
+or if the user wishes to interject command lines from the console while in
+DEMO-mode and then to continue processing from the file.  The skip-flag may be
+either TRUE or FALSE.  If FALSE, this indicates that processing is to continue
+with the last command line attempted (supposedly edited, in case of error); if
+TRUE, this indicates that processing is to continue with the next (untried)
+command line in the file.
+
+.sec (Using BATCHLOAD to create a MACSYMA init file)
+
+One useful application of this command is
+if you wish your MACSYMA init file to be a batch file (which may be
+easier for many users to work with than an init file written in LISP).
+You would create your batch file which you wish to have BATCHed when
+you start up MACSYMA, perhaps calling it UNAME INIT.  Then you create
+the file UNAME MACSYM (which is the standard way to name a MACSYMA
+init file), containing the command:
+($BATCHLOAD $UNAME $INIT $DSK $directory) and the batch file will be
+automatically BATCHed in when you start up a MACSYMA.
+
+.sec (Miscellany,batmisc)
+
+(1) Comments may be added to batch files at any point, and will, of course, be
+treated as such when batching in the file.  A comment is any string beginning
+with /* and ending with */ as in PL/I.
+
+(2) Any command line in a batch file may begin with variable&&.  This labels
+that command line so that the file can be partitioned into subfiles.  If not in
+a subfile mode, this prefix will be treated as a comment.
+
+(3) When using the batch functions, it is inconvenient to keep track of which Di
+label MACSYMA will assign to a computation; yet later command lines often need
+to refer to an earlier computation.  One way to get around this, of course, is
+for the user to explicitly label some of his command lines.  A function %TH is
+also provided, such that %TH(i), where i is positive, refers to the result of
+the i2th1 previous command line.  E.g., %TH(1) and the variable % both refer
+to the same computation.
+
+(4) When $fun<BATCH>ing in several files it is possible for one file to
+unintentionally cause an error to occur in a subsequent one by duplication of
+names or settings of options.  If the variable $var<BATCHKILL/FALSE> is TRUE however, then
+the effect of all previous BATCH files is nullified because a KILL(ALL) and a
+RESET() will be done automatically when the next one is read in.  If BATCHKILL is bound to any
+other atom then a KILL(BATCHKILL) will be done.  (The default value of BATCHKILL
+is FALSE meaning to do nothing.)
+
+(5) While BATCHing in a file which takes a lot of time to process the user may
+leave his terminal unattended.  If an error occurs he may want some special
+action to be taken automatically.  By setting the option $var<ERRORFUN/> to the
+name of a function of no arguments one can have that function executed when any
+error occurs.  Useful functions are $fun<QUIT> and $fun<LOGOUT>. However in the
+case of LOGOUT the user should also set the switch TTYOFF to TRUE to prevent his
+job from hanging up in the case it tries to output to the terminal $see<hints>. In addition if a file has been opened for writing, then a command
+to close it should be executed before the LOGOUT.  Also,
+the user may wish to set $var<DYNAMALLOC/FALSE> to TRUE
+$see<storman> so that his job will not hang if additional
+storage space is needed
+
+If the user is executing a function of his own and would like to signal an error
+he can use the functions ERROR and ERRCATCH $see<miscfun>.  
+
+(6) If the user does not have a directory of his own then he can
+use the one called USERS to store his files.  He should identify them as his in some fashion such as using his login name
+for the first file names.
+
+(7) The DEMO file directory contains many demonstration files which may be helpful to the user in learning to use MACSYMA.
+
+
+.chap (Secondary Storage Functions,secstor)
+
+.sec (Introduction,secstorint)
+
+There are two different reasons for wanting to use secondary storage while
+running a MACSYMA.  Sometimes the user's intermediate expressions are large, and
+it is impossible to complete the job if all the intermediate expressions are
+kept in main memory.  In this case the user would like to have his intermediate
+expressions written automatically onto the disk, in order to free main memory.
+On the other hand, some users would like to save some expressions onto the disk
+so that they can be read back into a future MACSYMA at a later time.  In this
+case the user would like to specify certain expressions to be stored and to name
+the disk file where they are to be stored.  MACSYMA offers the user two
+secondary storage schemes.  The user may ask to have his expressions
+automatically filed away onto the disk, or he may, by means of the $fun<SAVE> and
+$fun<STORE> functions, exercise explicit control over the storage of expressions.
+These latter functions give the user more power and flexibility at the expense
+of a greater effort.  It is expected that the user whose only concern is to run
+a big job which would not run without using secondary storage will use the
+automatic storage scheme, while the user who wishes to save expressions for use
+in later MACSYMAs will use the SAVE and STORE functions.
+
+.sec (Automatic Storage of Expressions,autostor)
+2
+.isolate(A - How to use it)
+*To activate the automatic storage scheme the user merely sets the MACSYMA option
+$var<DSKUSE/FALSE> to TRUE.  From this point on labelled expressions
+will be written out periodically onto the disk.  (A labelled expression is one
+which is referred to by a line label, e.g. D4, C7, E12.)  Once an expression is
+written onto the disk it will no longer reside in main memory and most of the
+main memory storage taken up by it will be released. When the user attempts to
+reference an expression which has been stored onto the disk, MACSYMA will
+retrieve the correct value from the disk file.  In this scheme expressions are
+copied periodically onto the disk whenever there are enough to write out
+(see FILESIZE).
+An alternative heuristic to use in order to free some storage is to write out
+all labelled expressions, values, functions, and arrays whenever the garbage
+collector finds that space is getting low. This is the purpose of the $var<DSKGC/>
+function $see<utility!functions>.
+
+If the user is dealing with large expressions then his storage limit may be
+exceeded before FILESIZE expressions have been generated.  In this
+case the DSKGC method should be used.  If this situation does not occur and if
+the user prefers to have some control over how many expressions are saved in
+each file then the other scheme should be used.
+2
+.isolate(B - Cleaning up the disk)
+*
+The automatic storage scheme will in general cause several disk files to be
+created, which are of no further value after the user has finished running his
+current MACSYMA. There is a function called $fun<REMFILE>, which will delete all the
+files created by the automatic storage scheme.  Thus if the user does not want
+these files to stay around, he should execute REMFILE() before leaving MACSYMA.
+REMFILE will only delete files created in the same MACSYMA to which the REMFILE
+function is given.  In order to delete files created in previous uses of MACSYMA
+it is necessary to use the $fun<DELFILE> function $see<utility!functions>.
+2
+.isolate(C - Options)
+*
+The user may specify how often files are written, how large they are, what they will
+be named, and what gets stored in them, or he may accept the default values for all
+these.  The following MACSYMA options are relevant.
+
+$var<FILENAME/> - The value of this variable is the first name of the files which are
+generated by the automatic disk storage scheme.  The default value is
+the first three characters of the user's login name concatenated with
+an integer, the lowest integer which insures a unique name (e.g. ECR1).
+
+$var<STORENUM/> - The value of this variable, an integer, is the second name of the last
+file written.  Each time a file is written, this value is first
+increased by 1, so it must always be an integer.  It is initially set to 1000.
+
+$var<FILESIZE/> - The value of this variable is the number of expressions written into
+each file.  The default value is 16.
+
+
+$var<DEVICE/> - The value of this variable is the default device.  It is initialized
+to DSK.
+
+$var<UNAME/> - The value of this variable is the default sname.  It is initialized to
+the user's login name, if he has a disk directory, and to USERS
+otherwise.  UNAME determines to what directory disk files will be
+written.
+
+$var<DIREC/> - may be used as an alias for UNAME.
+
+$var<DSKALL/> - If TRUE will cause values, functions, arrays, and rules to be written
+periodically onto the disk in addition to labelled expressions.  TRUE is the
+default value whereas if DSKALL is FALSE then 2only1 labelled
+expresions will be written.
+
+.sec (|Explicit Storage of Expressions|,explicitstor)
+
+.subsec(|Use of the storage functions|,storage!functions)
+
+The functions $fun<SAVE>, $fun<STORE>, and $fun<FASSAVE> allow the user to explicitly state that
+certain expressions should be written onto the disk.  These functions also allow
+him to specify the file into which these expressions should be written.  They allow
+the user to store away arrays, function definitions, rules, and any other type of
+information.  The main purpose of these functions is to allow the user to save
+expressions onto the disk so that they can be read into future MACSYMAs.
+
+SAVE and STORE  are identical in all respects but one.  When an expression is
+STOREd it is both written onto the disk and removed from main memory. (When the
+expression is referenced, of course, the correct value is retrieved from the
+disk.)  When an expression is SAVEd, it is written onto the disk but not
+removed from main memory.  The only difference between these two functions is
+their effect on main memory storage.
+
+FASSAVE  is similar to SAVE but produces a FASL file in which the sharing of subexpressions which are shared in core is preserved in the file created.  hence, expressions which have common subexpressions will consume less space when loaded back from a file created by FASSAVE rather than by SAVE.   The user should note that FASSAVE files are not as flexible as SAVE files since the RESTORE function (see below) cannot be applied to them.   Also if the user's MACSYMA is already near maximal allocation, FASSAVE , which uses a considerable amount of space and time in doing its job, may not work, whereas SAVE still might.
+
+SAVE, STORE, FASSAVE take any number of arguments.  If the first argument is a list it
+is assumed to be the file specification (e.g. [fn1, fn2, DSK, directory]).  In
+accordance with the standard options for file specifications, the latter
+arguments may be omitted from the list and the defaults will
+be assumed.  If the first argument is not a list, the expressions will be
+written into a file with the default filename.  The value of the MACSYMA
+variable $var<FILENAME/> is the default first filename, and the value of the MACSYMA
+variable $var<FILENUM/0> is the default second filename.  The value of FILENUM is
+increased by 1 each time a file is written, so its value must always be an
+integer. FILENUM is initially 0.  The value of DEV is the default device, and
+the value of UNAME is the default username.
+
+All arguments to SAVE or STORE, except possibly the first, must be one of the
+following:
+
+(1) The name of an "information list" $see<property!specification>. SAVE(VALUES) will not
+cause MACSYMA options (e.g. SHOWTIME, RATPRINT, etc.) to be saved.  Also ALIASES
+will be automatically saved with every use of the SAVE function if they exist.
+
+(2) ALL    When this atom is an argument every quantity associated with any
+information list is written.
+
+(3) [m,n]  when this list is given as an argument, every label whose line number lies between m and n inclusive gets written.
+
+(4) When any other atom is an argument, it must be either an array, a function, or
+have a value.  It gets written onto the disk.
+
+(5) A=B  The effect is similar to the case where the argument is just B, i.e. B
+gets written onto the disk.  The only difference shows up if the file is read
+into some future MACSYMA.  In that case, the expression which is referred to as
+"B" in the present MACSYMA will be referred to as "A" in the future MACSYMA.
+For example, suppose the user wishes to save some expression, say D7, for use in
+a future MACSYMA.  He can execute STORE([FOO, BAR], YESTERDAYSD7 = D7).  D7 is
+now stored onto the disk.  When he comes back the following day and load in a
+fresh MACSYMA he merely executes $fun<LOADFILE>(FOO, BAR, DSK, ECR) and the variable
+YESTERDAYSD7  will take on the value which D7 had yesterday.  This renaming
+however has no effect on the present MACSYMA, where D7 must still be referred to
+as "D7".  Note that if a SAVEd or STOREd file contains labelled expressions
+they may conflict with expressions having the same label in the MACSYMA into
+which the file is loaded.  For example if D9 is in a file which is loaded into a
+MACSYMA then it would replace the D9 which was already in the MACSYMA (if there
+was a D9 generated), or it would itself be replaced by D9 when the new D9 was
+generated.  To avoid this difficulty the user should give labelled expressions a
+name as described in (4) above.  He could also set $var<LINENUM/> in the new MACSYMA or
+save it from the old one so that line numbers wouldn't conflict.
+
+The user should note that each use of the SAVE or STORE function will cause exactly
+one file to be written, regardless of the number of arguments the function is given.
+
+REMFILE(TRUE) will perform REMFILE() (see $ref<autostor> - B) and in addition will delete
+files created by SAVE or STORE which haven't been assigned names explicitly by
+the user.
+
+Certain MACSYMA variables (i.e. $var<LINENUM/>, $var<FILESIZE/>, etc.) are used to
+communicate to the MACSYMA system that certain options are in effect, or to tell
+the system to use certain values.  These variables should not be STOREd (though
+they may be SAVEd), since the system programs will not be able to correctly
+retrieve their values from the disk.  In general, one should not attempt to
+STORE variables whose purpose is to provide information to the system (i.e.
+MACSYMA options).
+
+.subsec(|Retrieval of expressions stored on disk|,retexp)
+2
+.isolate(1 - In the MACSYMA you are using)
+*
+Expressions which are written onto the disk using the SAVE function also reside
+in main memory, so the notion of retrieving them from the disk in the present
+MACSYMA is not applicable. Expressions written onto the disk using STORE,
+however, no longer reside in main memory.  When such expressions are referenced
+the system will always retrieve the correct value from the disk.  When a STOREd
+array is referenced, the array will be brought back to main memory.  Functions
+and values will be read from the disk correctly, but will not be returned to
+main memory.  If the user wants to bring an expression back to main memory he
+may use the function UNSTORE.  This function takes any number of arguments.
+Each argument must be an atomic variable, and if this atomic variable refers to
+an expression which is stored onto the disk, the expression is returned to main
+memory.  Of course, when an expression is UNSTOREd, either by the user or by
+the system (as happens when STOREd arrays are accessed), a copy of the
+expression still remains on the disk in the assigned file.
+2
+.isolate(2 - In future MACSYMAs)
+*
+Files created by SAVE and STORE can be loaded into future MACSYMAs using the
+LOADFILE function.  This will set up in main memory all those expressions which
+were written into the file.  Some of the expressions will have different names
+than they had in the MACSYMA where they were created, if the renaming option
+(i.e. arguments of the form A=B) of the STORE or SAVE function was used.  Also, unless the FASSAVE scheme was
+used, expressions will generally take up more space than they did in the MACSYMA where they were created, as sharing among common subexpressions will be lost.
+
+.sec (Saving a MACSYMA Overnight,savmacsym)
+
+Often a user in the middle of his work would like to save everything onto the disk so he
+can go home and resume work tomorrow.  When the user decides to save the state of his
+MACSYMA, he should execute for example:
+$fun<SAVE>([fn1,fn2,DSK,directory],ALL)
+
+This will write all his lines, arrays, functions, values, rules, and aliases (if he
+has created any), and the current value of LINENUM  into a single disk file named fn1 fn2 (where these may be any
+names given by the user).  Of course, the user should choose names for his files
+which are unique.  If he does not have his own directory then he should use the
+USERS directory and his login name for the first file name.  If the automatic
+storage scheme was in effect he should now execute $fun<REMFILE>(); to delete
+useless files from the disk.  When the user comes back the next day he should load
+a fresh MACSYMA and execute one of the following two functions:
+
+.example
+   LOADFILE(2fn1, fn2, DSK, directory*);
+
+or RESTORE(2fn1, fn2, DSK, directory*);
+.end
+
+The first command will cause all expressions to be loaded into the present
+MACSYMA.  Whereas all the expressions may have fit into the MACSYMA in which
+they were generated, they may not fit into a new MACSYMA, because common
+subexpressions originally shared will not be shared in a new MACSYMA. However if
+the $fun<OPTIMIZE> function is used  $see<extracting!expressions>, then some sharing of common subexpressions
+may be obtained.  The $fun<RESTORE> function does not cause the expressions to be
+loaded into main memory but does permit them to be accessed when needed.  (This
+is as though STORE had been used on the information.)  Thus it should be used if
+it is not desired to bring all the expressions into main memory at the same
+time.
+
+.CHAP (Storage Management,storman)
+
+In the LISP system in which MACSYMA resides, the space requirements of the
+user's programs and data may be increased during the execution of the programs.
+This is in contrast to static storage allocation systems in which the storage is
+completely allocated before the programs are executed and consequently the
+storage requirements must be completely known before execution time and cannot
+be changed during program execution.  If they exceed the capacity of the memory
+space that has been allocated for them, the programs will not be allowed to run.
+
+With our LISP system, a certain amount of space is initially allocated, the
+programs are started running, and the amount of space utilized changes during
+execution.  If at some point the limit of available space is exceeded, program
+execution will be terminated.
+
+This LISP divides up the available memory spaces into several portions on the
+basis of what kind of data they will contain.
+
+.begin preface 1 indent 0,10
+BPS - (binary program space) for compiled functions and arrays.
+
+FIXNUM - for integers which fit into one machine word.
+
+FLONUM - for floating point numbers.
+
+BIGNUM - the first word of numbers bigger than one machine word.
+
+SYMBOL - for atomic symbols.
+
+ARRAY - for array indicators.
+
+LIST - for anything else not in the other spaces, e.g. uncompiled
+functions, symbolic expressions, etc.
+
+PDL - for several kinds of pushdown lists.
+.end
+.skip 1
+
+When a MACSYMA is started up, each space is initially allocated some fixed
+amount.  These spaces will grow as the user interacts with MACSYMA, each
+particular space growing as the user causes more objects to be created which
+reside in that space. For example, executing a command line which causes an
+out-of-core file to be loaded mainly increases BPS and LIST space.  Also new
+labelled expressions are created every time a command line is executed and these
+occupy LIST space.  Push down lists are used to store variables, return
+addresses, and other information related to the function calling mechanism.
+
+When a space (except for BPS and the PDLs) is used up, a process is initiated
+called "garbage collection" which attempts to free up storage so it can be
+reused rather than trying to increase the size of the spaces. In very simple
+terms, it marks every word in a particular storage space which is still being utilized
+and then links up the unmarked words (termed "garbage") on a chain to be used to
+store subsequently created data.  If this chain is not of a certain assigned
+minimal size, a special allocation routine is invoked. At this point several
+possibilities can occur, among which is the possiblity of increasing the size of
+the spaces. Before these are described however, there is something to be
+mentioned which the user should take note of. The initial allocations (later to
+be referred to as "level 0 allocations") are quite reasonable.  Many problems run
+quite well using these allocations.  If the user's problem does not run due to
+running out of storage, most often this is due to one of the following
+circumstances and not to the insufficiency of the allocations:
+
+.begin narrow 4 preface 1
+(1) The user has organized his problem poorly, thereby either not solving the
+problem he intended to solve, biting off too much in too short a time, or
+creating intermediate expression swell of perhaps incredible proportions.  He
+should get a feel for the size of all of his expressions and the behavior of
+MACSYMA's functions on them.
+
+(2) The user is retaining expressions in core that are useless to him.  Since
+MACSYMA maintains a complete history of the user's session, it does not release
+the storage occupied by the user's data unless explicitly instructed to do so.
+This can be accomplished in several ways. One way is by using the functions
+KILL, REMVALUE, REMFUNCTION, and REMARRAY $see<freeing!storage> which unbind an item from
+the expression it represents thus freeing up the storage occupied by the
+expression to be reclaimed on the next garbage collection. It is recommended
+that the user give a name to all labelled expressions which he wishes to keep
+around for a time, and then periodically do a KILL(LABELS).  He should also KILL
+functions and arrays which he no longer needs.  Killing a name will not
+accomplish much unless the labelled expression (D line) at which the assignment
+was done is also KILLed because the two symbols are holding onto the same
+expresson.
+
+If the above approach is unacceptable because the (intermediate or final)
+expressions which the user needs occupy a lot of storage,  he can store them on
+the disk (kill the corresponding label if any) and have them retrieved when
+needed.  This can be accomplished in the following two ways (see Chapter $ref<secstor>).
+
+The STORE function can be used to explicitly transfer expressions from main
+memory to disk.  These will be brought back into main memory each time they are
+referenced. Since the process of retrieving an expression from a large file may
+be rather time consuming, the user can use the UNSTORE function to bring an
+expression back to main memory and keep it there. However, in general an
+UNSTOREd expression will occupy more space then it originally did because
+several copies of common subexpressions will be created.  These were originally
+represented by pointers to a single copy.
+
+Another way to transfer expressions to the disk is by using the automatic
+storage mechanism.  This will cause expressions to be STOREd automatically in an
+effort to conserve space.  As with the explicit use of the STORE function, the
+expressions will be retrieved by MACSYMA when they are referenced. There are two
+heuristics which MACSYMA uses to decide when to store expressions.  One is to
+STORE all values, functions, arrays, and labelled expressions whenever available
+space becomes low.  This is the purpose of the DSKGC function. The other
+heuristic is to periodically STORE a fixed number of labelled expressions
+whenever that many get created above a minimum number which are to be kept
+around.  The user can utilize this option by setting the switch DSKUSE to TRUE.
+In addition if DSKALL is TRUE, then all values, functions, and arrays will be
+written at this time as well.
+
+(3) A recursive infinite loop has occurred because of a bug in either the user's
+code or in MACSYMA's code.  Such a loop would cause storage spaces to grow
+indefinitely if possible. It may be difficult for the user to recognize that
+this situation has occurred, as opposed to a real need for more space, yet such
+a situation can cause havoc to any dynamic allocation scheme. By typing a
+control-D the user will be informed whenever a garbage collection occurs and a
+printout such as the following will occur:
+.example
+
+;GC DUE TO ... SPACE
+;2729[33%] LIST, 1935[94%] FIXNUM, 511[99%] FLONUM,
+; 509[99%] BIGNUM, 629[15%] SYMBOL,
+; 480[93%] ARRAY WORDS FREE
+
+.end
+
+The numbers before the name of each space give the number of words of that space
+which are available. The percentages refer to the ratio of the available amount
+of space compared to the total amount (used plus unused). This may be of some
+help in determining whether the user's computation is doing what he expected.
+Typing a control-C will turn off this g.c. printout.
+.end
+
+If the user feels that he is not in one of the above situations and that there is a
+real need for more space, he can avail himself of the following scheme:
+
+When a space, e.g. LIST is exhausted, MACSYMA
+will print:
+
+.example
+You have run out of LIST space
+Do you want more?
+Type ALL; NONE; a level-no.; or the name of a space;
+
+.end
+
+At this point the user can type a control-A and enter a (MACSYMA-BREAK).  He can
+then follow any of the procedures mentioned in (2) above.  After getting out of
+the break by typing EXIT; he can then type OK; which indicates that the user
+believes he has freed up enough space thus making reallocation unnecessary. If he
+is wrong, he will get the above message again.  He can also reply with the name
+of a space, i.e. one of FIXNUM, FLONUM, BIGNUM, SYMBOL, or ARRAY which will
+cause the size of that space to be expanded.  If he replies with LIST or ALL
+then not only will list space be increased, but so will every other space.  This
+is because if he needs more list space, then he probably needs more of the other
+spaces as well.  Replying LIST also increments the "allocation level" by one.
+There are 5 equi-spaced levels of allocation, ranging from the initial level 0
+to level 4. The user can also boost his MACSYMA up to that particular level of
+allocation immediately by replying with that level number.
+
+At level 4 the maximal allocation possible on the computer is just about
+exhausted so that there is no higher level.  Also, the amount of
+core space devoted to the allocatible storage spaces is 
+obviously inversely proportional to the number and size of out-of-core files which are loaded in.  If many out-of-core files
+are loaded in, allocation level 4 will not even be attainable.
+The user may wish for this reason alone to continue now and
+then with a fresh MACSYMA.  If the user's computation exceeds
+this level of storage it will error out with the message "...STORAGE CAPACITY
+EXCEEDED". Since the size of the spaces can't be decreased, it is important not
+to increase them unless it is necessary.
+
+If the user knows initially that his problem will require much space, the
+function $fun<ALLOC> is provided.  5ALLOC* takes any number of arguments which are the
+same as the replies to the "run out of space" question above.  It increases
+allocations accordingly.
+
+Lastly, if he is running a MACSYMA disowned, or for other reasons wishes storage
+space to be increased automatically as needed without having any questions
+asked, the user may set the switch DYNAMALLOC [FALSE] to TRUE which will
+ allocate additional space whenever necessary.
+
+Like the other spaces BPS and the PDLs cannot be decreased.  BPS will continue
+to grow until the MACSYMA runs out of address space so caution should be
+exercised in causing out-of-core files to be loaded.  For example, once the
+integration file is loaded into the user's MACSYMA it is there to stay even if
+he no longer uses it.  The allocation of the PDLs is sufficiently large, so that
+if they are ever caused to overflow it is probably due to a recursive infinite
+loop in the user's programs.
+
+.chap(Simple Plotting Functions,simplot)
+
+The MACSYMA functions PLOT, PARAMPLOT, GRAPH, and MULTIGRAPH produce character plots for the terminal of specified
+functions and sets of data points.  The format of these functions and the variables
+used by the corresponding routines are described below:
+
+2Variables*
+
+$var<LINEL/> - width of graphing area in terms of number of characters.
+
+$var<PLOTHEIGHT/> - height of graph in terms of number of characters.
+
+$var<XAXIS/FALSE> - if set to TRUE will cause the Y=0 axis to be displayed.
+
+$var<YAXIS/FALSE> - if set to TRUE will cause the X=0 axis to be displayed.
+
+.skip 1
+2Formats for PLOT and PARAMPLOT*
+
+.function(PLOT,|F(x), x, low, high|)
+- plots the expression F(x) over the domain low < x < high.
+
+.endfunction
+
+.function(PLOT,|F(x), x, low, high, INTEGER|)
+- as above, but plots F(x) only for integer values of x.
+
+.endfunction
+
+.function(PLOT,|F(x), x, [x1, x2, x3, ..., xn]|)
+- plots the function F(x) for the values x1,x2,x3,...,xn.
+
+.endfunction
+
+The first argument to PLOT may also be a list of functions rather than just a
+single function.  This permits several functions to be plotted on the same set
+of axes. Three optional final arguments may also be given.  They are: (1) an X
+axis label (quoted string or name), (2) a Y axis label, and (3) a list of
+plotting characters used for the given function(s) enclosed in "s.  (Note also
+that if a special symbol such as ; , $ , etc. is used it must be preceded by a
+\.)  An * will be used to plot any functions which are not given a particular
+plotting character.
+
+.function(PARAMPLOT,|f1(t),f2(t),t,low,high|)
+plots the plane curve f(t) = ( f1(t) , f2(t) )  with parameter t.  The syntax is basically like that of plot.  For example,
+
+.example
+PARAMPLOT(COS(T),SIN(T),T,0,2*%PI)
+.end
+.endfunction
+.scon
+plots a circle.  Also several curves may be presented at the same time by using the following syntax
+
+.function(PARAMPLOT,|[f1(t), g1(t), ... h1(t)], [f2(t), g2(t), ..., h2(t)], t, low, high, [list of plotting characters]| )
+- plots the plane curves f(t) = (f1,f2), g(t) = (g1,g2),...,h(t) = (h1,h2)  using the specified plotting characters or the default "*".  For example,
+
+.example
+PARAMPLOT([COS(T),COS(T)+7],[SIN(T),SIN(T)],
+		T,0,2*%PI,["@"])
+.end
+.scon
+plots two circles. 
+.endfunction
+
+The user may wish to $fun<TRANSLATE> or $fun<COMPFILE> $see<compilation> the functions to be
+plotted as they might be evaluated many times.
+
+2Formats for GRAPH and MULTIGRAPH:*
+
+.function(GRAPH,|[x1, x2, x3, ..., xn], [y1, y2, y3, ..., yn]|)
+- Graphs the two sets of data points.
+
+.endfunction
+
+.function(GRAPH,|[[x1, y1], [x2, y2], ..., [xn, yn]]|)
+- Graphs the points specified by the list of coordinate pairs.
+
+.endfunction
+
+.function(GRAPH,|xset, [yset1, yset2,..., ysetn],optional-args|)
+- allows graphing of one x-domain with several y-ranges; e.g. GRAPH([0,1],[[0,1],[1,2]],["&"]).
+
+.endfunction
+
+.function(MULTIGRAPH,|[ [xset1, yset1], ..., [xsetn, ysetn] ], optional-args|)
+- allows the user to produce a scatter-graph involving several x-domains each with a single y-range; e.g. MULTIGRAPH([ [[0,1],[0,1]], [[3,4],[1,2]] ],["&"]).
+
+.endfunction
+
+The three optional final arguments mentioned above under PLOT may also be used
+with GRAPH and MULTIGRAPH.
+
+The plot produced by the above functions is a character plot on a coordinate system
+defined by axes along the minimum x and y values of the plot. The x and y
+coordinates are independently scaled to optimally use the specified graphing area. 
+Note that this may distort the shape of the graph e.g., a circle could become an
+ellipse.  The origin of the graph (left-hand corner) is given on the graph by the
+values of XORG and YORG; the computed increments (= one character) are given by the
+values of XDELTA and YDELTA and the maximum X and Y values are given by XMAX and
+YMAX. The axes are labeled with the number sequence 0,2,4,6,8,0,2,4,...  as an aid
+in counting the number of increments from the origin.
+
+When a graph is completed, the user must type a single character (on
+non-printing consoles), such as space or carriage return, to return control to
+MACSYMA.
+.example
+.once center
+2Examples3
+
+(C1) XAXIS:YAXIS:TRUE$
+
+(C2) PLOT([1/(X^2+1),X^2-1],X,-2,2,[@]);
+.begin group
+  4[    *                           .
+   [                                .                           *
+  2[                                .
+   [     *                          .
+  0[                                .                          *
+   [      *                         .
+  8[                                .                         *
+   [       *                        .
+  6[                                .                        *
+   [        *                       .
+  4[                                .                       *
+   [         *                      .
+  2[                             @@@@@@@                   *
+   [          *               @@@   .   @@@
+  0[                        @@      .      @@             *
+   [           *          @@        .        @@@
+  8[                   @@@          .           @@       *
+   [            *    @@             .             @@@
+  6[             @@@@               .                @@@*
+   [         @@@@                   .                  *@@@@
+  4[   @@@@@@     *                 .                       @@@@@@
+   [@@@            *                .                 *           @@@
+  2[                                .                *
+   [................*.................................................
+  0[                 *              .               *
+   [                  *             .              *
+  8[                                .             *
+   [                   *            .            *
+  6[                    *           .           *
+   [                     *          .          *
+  4[                      **        .         *
+   [                        *       .       **
+  2[                         **     .      *
+   [                           **   .   ***
+  0[                             *******
+   -------------------------------------------------------------------
+    0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4
+XORG=-2.0 YORG=-0.999744 XDELTA=0.062 YDELTA=0.091
+XMAX=1.96800017 YMAX=3.0
+.end
+
+.begin group
+(C2) POLARPLOT(RHO,NUMBREV):=BLOCK([THETA, LIMIT, X, Y, P, NUMER,
+        RATPRINT], NUMER:TRUE, RATPRINT:FALSE, THETA:0.0, X:Y:[],
+          LIMIT:72*NUMBREV, FOR I:1 THRU LIMIT DO
+                ( P:RHO(THETA), X:CONS(P*COS(THETA),X),
+                  Y:CONS(P*SIN(THETA),Y), THETA:THETA+%PI/36.0),
+        GRAPH(X,Y,X,Y))$
+
+(C3) XAXIS:YAXIS:FALSE$
+
+(C4) F(T):=4-COS(8.0/3.0*T)$
+.end
+.next page
+.begin group
+
+(C5) POLARPLOT(F,3)$
+a
+
+
+
+
+
+  6[                      *  *  *  *     *  *  *  *
+   [              * *  *         * *  *  * *         *  * *
+  4[             *           * *             * *            *
+   [      * *  *  *  *  *  ** * * * * * * * * * *** *  *  *  ** * *
+Y 2[    *     *         **                         **         *      *
+   [ **       *   * * **                             * ** *   *       * *
+  0[*       * ***                                           *** *       *
+   [**  * *     *                                           *      * * **
+  8[  *          *                                          *         *
+   [**  * *     *                                           *      * * **
+  6[*       * ***                                           *** *       *
+   [ *        **  * * *                                ** *  **         *
+  4[  * *     *        ***                         ***        *      **
+   [      * *  *           ** * * * * * * * * * ***          ** * *
+  2[             **  *  *    * *             * *    *  *  * *
+   [              * *            * *     * *            * *
+  0[                   *  *  *  *  *  *  *  *  *  *  *
+   ---------------------------------------------------------------------------
+    0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2
+XORG=-4.77137667 YORG=-4.77137756 XDELTA=0.14 YDELTA=0.6
+XMAX=4.7713773 YMAX=4.77137697
+                                  X                 
+
+
+.end
+.end
+1
+
+.chap(Complex Plotting and Graphics---PLOT2,plot2)
+
+.sec(Introduction,plot2intro)
+
+This is a description of the functions contained in the following 6
+files:
+.once center
+APLOT2 > ARC CFFK,   TEKPLT > ARC CFFK,  PLOT3D > ARC CFFK
+.once center
+WORLD  > ARC CFFK,   PRINT  > ARC CFFK,  IFFUN  > ARC CFFK.
+.bcon
+They will be loaded up as needed when most of the functions below are
+used.  However to get the "complete" PLOT2 environment, LOADFILE(PLOT2,LISP,DSK,SHARE) is recommended.  This loads in complete AUTOLOAD properties for the functions described below.  The effect of loading this file will be to cause the PLOT2 package to be automatically loaded when you need it.  If you use PLOT2 regularly,  you should consider including PLOT2 LISP DSK SHARE in your MACSYM (INIT) file; it will take up neglegible room in your MACSYM.  
+
+The capabilities of the routines described here include plotting of
+several curves on a single graph, plotting several graphs in different
+positions on the screen, saving plots, replotting plots with different
+scales without having to recompute any points, plotting of 3 dimensional
+surfaces, plotting of user defined dashed lines and symbols.
+
+The devices supported are: the Tektronix 4010 and 4013, the Imlac PDS 1 and PDS 4 (using ARDS graphics conventions), the XGP and the Gould line-printer (at MIT) and printing and display consoles in a "preview" mode.
+
+.sec(Two-Dimensional Plotting,d2plot)
+
+.function(PLOT2,|y-exprs,variable,var-range,optionals-args|)
+plots 2y-exprs* on the y axis as 2variable* (the x axis) takes on  values specified by 2var-range*.
+.bcon
+2y-exprs* can take one of two forms:
+.begin narrow 8,5
+.scon
+i) 2expr* plots a curve of 2expr* against 2variable*
+.scon
+ii) [2expr1*,2expr2*, .. ,2expri*, .. ,2exprn*] plots n curves of 2expri* against 2variable*.  2expri* gets evaluated in the context FLOAT(EV(2expri*,2variable*=2value gotten from var-range*, NUMER)). It is an error if this doesn't result in a floating point number.
+.end
+.scon
+2var-range* can have the following forms:
+.begin narrow 8,5
+.scon
+i) 2low*,2high*, where 2low* and 2high* evaluate to numbers.  2low* may be either greater or less than 2high*.  2variable* will take on PLOTNUM values equally spaced between 2low* and 2high*. 
+.begin narrow 2,2
+Note that the first argument will be evaluated at 2low* first e.g. PLOT2(1/X,X,-1,-3); calculates 1/(-1.0) before 1/(-3.0). This will only make a difference if the computation of the first arg changes a variable which changes the value returned by subsequent computation.  Whether or not 2low* < 2high*, min(2low*,2high*) will be on the left of the plot. 
+.end
+.scon
+ii) 2low1,2high*,INTEGER.  As in i), except 2variable* will take on all integer values between 2low* and 2high* inclusive.
+.scon
+iii) [2val1*,2val2*, ... , 2valn*] . 2variable* takes the values specified by the list
+.scon
+iv) 2arrayname* where 2arrayname* is the name of a declared floating-point  one-dimensional array (i.e. declared by ARRAY(2arrayname*,FLOAT, 2max-index*);).  2variable* takes the values from 2arrayname*[0] thru 2arrayname*[2max-index*] (2max-index* is the maximum index of 2arrayname*
+.end
+.scon
+2optional-args* can be any of the following:
+.begin narrow 8,5
+.bcon
+i) X-Label, Y-Label or Title descriptor
+.bcon
+ii) Line type descriptor
+.bcon
+iii) FIRST, SAME and LAST
+.bcon
+iv) POLAR, LOG, LINLOG, LOGLIN
+.end
+.scon
+The optional arguments may appear in any order.  The rule for 	evaluation of the optional args is as follows.  If the argument is atomic it gets evaluated.  The resulting arguments are the	ones that get used.
+
+If you want to plot more than 3-4 curves on the same plot investigate using the NOT3D option to PLOT3D $see<d3plot>
+
+.example
+.once center
+2Examples1
+
+  PLOT2(SIN(X),X,-%PI,%PI);	plots sin(X) against X as X takes on
+				PLOTNUM values between -%PI to %PI
+  PLOT2(X!,X,0,6,INTEGER);	plots X! as X takes integral values
+				between 0 and 6
+  F(X):=SQRT(X);
+  PLOT2(F(X),X,[-2,3,100.12]);	plots F(X) as X takes the values in the
+				values in the list
+  PLOT2([X+1,X^2+1],X,-1,1);	plots 2 curves on top of each other
+.end
+.endfunction
+
+.function(PLOT2,|y-funs,var-range,optionals-args|)
+is the alternative form for PLOT2.  2y-funs* must be a function of one argument or a list of functions of one argument.  The functions must be either translated or compiled functions which return a floating point number when it is given floating point arg (or integer arg if the INTEGER arg to PLOT2 is given).  This form of PLOT2 acts as though you had given a argument to the 2y-funs*, and also specified that argument as the 2variable* in the form above. E.g. PLOT2(F,-2,2); acts like PLOT2(F(X),X,-2,2);  This is supposed to provide a quicker evaluation of the first arg and for that reason NO checking is done on the result.  If the wrong kind of number is returned, the resulting plot will not be meaningful.
+
+.example
+
+      TRANSLATE:TRUE;
+      F(X):=(MODEDECLARE(X,FLOAT),EXP(-X*X));
+      PLOT2(F,-2,2);
+      PLOT2(F,[-2,-1,0,1,2]); 
+      ARRAY(V,FLOAT,10);
+      FOR I FROM 0 THRU 10 DO V[I]:FLOAT(I*I);
+      PLOT2(F,V);
+.end
+.endfunction
+
+.function(GRAPH2,|x-lists,y-lists,optional-args|)
+plots points specified by the first 2x-lists* and 2y-lists*.  The format for 2x-lists* can be one of
+.begin narrow 8,5
+.scon
+i) [2x-pt1*,2x-pt2*, .. ,2x-pti*, .. ,2x-ptn*] 	where 2x-pti* evaluates to a number
+.scon
+ii) 2arrayname* where 2arrayname* is the name of a declared one-dimensional array of floating point numbers
+.scon
+iii) 22d-arrayname* where 22d-arrayname* is the name of a declared two-dimensional array of floating point numbers (i.e. by ARRAY(22d-arrayname*, FLOAT, 2max-row-index*,2max-col-index*);)
+.scon
+iv) [2x-list1*,2x-list2*, .. ,2x-listi*, .. ,2x-listk*]	where 2x-listi* can have the form of either i) or ii).
+.end
+.scon
+The format of 2y-lists* is similar.  The format of 2optional-args* is the same as for PLOT2.
+
+Note that GRAPH2 performs the same job as the MACSYMA function MULTIGRAPH and that GRAPH2 is thus slightly incompatible with GRAPH FASL.
+.endfunction
+
+
+.function(PARAMPLOT2,|x-exprs,y-exprs,variable,var-range,optional-args|)
+plots 2x-exprs* as the x coordinate against 2y-exprs* as the y coordinate.
+.scon
+      The format for the first two arguments is the same as that for the first argument to PLOT2.  Thus if 2x-exprs* is [2x-expr1*, 2x-expr2*, .. ,2x-expri*, .. ,2x-exprn*] and 2y-exprs* is [2y-expr1*,2y-expr2*, .. ,2y-expri*, .. ,2y-exprk*], then max(n,k) curves will be plotted. They will be (assuming n > k): 
+.scon
+.once center
+2x-expr1* vs. 2y-expr1*, .. ,2x-exprk* vs. 2y-exprk*,
+.once center
+2x-expr(k+1)* vs. 2y-exprk*, .. ,2x-exprn* vs. 2y-exprk*
+.scon
+The format for the remaining arguments is the same as for PLOT2.
+.endfunction
+
+.function(PARAMPLOT2,|x-funs.y-funs,var-range,optional-args|)
+efficiently evaluates its first 2 arguments in the same way that the alternative form of PLOT2 works.
+.endfunction
+.skip 1
+.once center
+2Examples1
+.example
+  TRANSLATE:TRUE;	causes automatic translation
+  F(X):=(MODEDECLARE(X,FLOAT),COS(X)); 
+  G(X):=(MODEDECLARE(X,FLOAT),SIN(X));
+  PARAMPLOT2(F,G,0,2*%PI); plots F(x) vs G(x) as x goes from 0 to 2*%PI
+
+  PARAMPLOT2(SIN(T),COS(T),T,0,2*%PI);
+.end bcon
+plots sin(T) for the x-axis and cos(T) for the y-axis as T takes on PLOTNUM $see<d2plot> values between 0 and 2*%PI.  (If EQUALSCALE is TRUE this draws a circle.)
+.scon
+$var<PLOTNUM/20> is the number of points PLOT2 and PARAMPLOT2 plot when given the 2low*,2high* type of variable range.  The default if you    load up PLOT2,LISP,DSK,SHARE is 20, which is sufficient for   trying things out.  100 is a suitable value for a final hard copy.
+
+.sec(What to Type When PLOT2 has Finished Plotting,whatnow)
+
+When a plot is finished the bell on your terminal will be dinged.  (In fact, this happens only if WAIT is TRUE and if you're plotting on the terminal.)  The plotting
+function is now waiting for you to type something before it exits and prints
+the next C-Label on your nice plot.  It does nothing with most characters; 
+they are left to be part of the next C-Line.  However, the following characters
+are read and interpreted specially.
+.scon
+2space1 exits the plotting function. 
+.scon
+2return1 clears the screen and then exits.  
+.scon
+2tab1 causes the previous plot to be replotted.
+.begin narrow 8,5
+.bcon
+This is useful if the line is noisy, or, in conjunction with 2control-A1  if various plotting parameters need to be changed.
+.end
+.scon
+2linefeed1 sends out a hardcopy signal.  
+
+.begin narrow 8,5 
+.bcon
+At present this can only  be used to generate  hardcopy on the Tektronix hardcopy unit or on the Gould line-printer.
+.end
+.scon
+2rubout1 names the plot.  
+.begin narrow 8,5 
+.bcon
+PLOT2 types out "Enter name of plot" you reply 2plotname*;  this is identical to typing a space instead of a rubout, followed by NAMEPLOT(2plotname*);.  
+.end 
+.scon
+2control-A1
+.begin narrow 8,5 
+.bcon
+This is not really read by the plotting function, but enables you to enter a 2control-A1 break and change various options, before typing tab to have the plot replotted.  Make sure the plot has finished before you type this.
+
+.end
+.scon 
+$var<PLOTBELL/TRUE> when FALSE inhibits the dinging of the bell.  
+.scon
+While your plot is coming out your terminal is in a rather strange state (e.g. not echoing characters).  Thus it is OK to type ahead to MACSYMA, but the ONLY way you should interrupt the plot is with 2control-^1.  E.g. do not use 2control-A1 until the plot has finished.  
+
+
+.sec("Three-Dimensional Plotting",D3plot)
+
+.function(PLOT3D,|z-exprs,x-var,var-range,y-var,var1-range,optional-args|)
+makes a 3-dimensional plot of 2z-exprs* against 2x-var* and 2y-var*.  The plot consists of curves of 2y-exprs* against 2x-var* (the x coordinate) with 2y-var* (the y coordinate) held fixed.  Perspective is used and curves further away from the viewer have those parts of them which are hidden by the closer curves removed. 
+
+The format of 2y-exprs* is the same as for PLOT2.  The context of evaluation is FLOAT(EV(2expri*,2x-var*=2value gotten from var-range1,2y-var*=2value gotten from var1-range1,NUMER)).
+
+The format for 2var-range* and 2var1-range* is the same as for PLOT2 except that if 2var1-range* is of the form 2low*,2high* then 2y-var* will take on PLOTNUM1 values. 
+
+      The format of 2optional-args* is the same as for PLOT2 except that additional options $var<NOT3D/>, $var<\3D/>, $var<CONTOUR/> are available. 
+.endfunction
+.function(PLOT3D,|z-funs,var-range,var1-range,optional-args|)
+is analogous to the alternative form for PLOT2.  2z-funs* must be a function or list of functions of 2 arguments, which must return a floating point argument when given floating point (integer, if the INTEGER argument is used for either 2var-range* or 2var1-range*) arguments.  The functions must be translated or compiled.  If you expect to make several 3D plots this form is recommended. 
+
+ A simple example is 
+.example
+  TRANSLATE:TRUE;	causes automatic translation
+  G(X,Y):=(MODECLARE(X,FLOAT),EXP(-X*X-Y*Y));	defines a funtion G
+  PLOT3D(G,-2,2,-2,2);	plots it 
+.end
+.endfunction
+.function(GRAPH3D,|x-lists,y-lists,z-lists,optional-args|) 
+takes 3 arguments (GRAPH2 takes 2) and  interprets them as lists of x, y, and z points which it uses to draw lines using the 3d transformations.  It can be used to add lines (e.g.  axes) to your 3D plot.  The hidden line routines are not used.  
+.endfunction 
+
+2NOT3D1
+
+In this section we describe the option $var<NOT3D/>.   As an example, consider 
+.example 
+.once center 
+PLOT3D(SIN(X)+A,X,-%PI,%PI,A,[-2,3,4,6],NOT3D) 
+.end scon
+which plots sin(X)+A for X from -%PI to %PI ($var<PLOTNUM/20> points) and A
+taking the values in the list.  This is equivalent to:  
+.example 
+.once center
+PLOT2([SIN(X)-2,SIN(X)+3,SIN(X)+4,SIN(X)+6],X,-%PI,%PI) 
+.end 
+.scon 
+but requires less typing. 
+
+The additional NOT3D argument to PLOT3D, causes exactly the same points as in the bare PLOT3D to be calculated.  Instead of plotting a 3-dimensional representation of the data, the data is plotted in a 2D one.  Specifically 1 2D curve of z vs. x for each y value, and so is a convenient way to plot several curves on the same plot. 
+
+2PERSPECTIVE, REVERSE, VIEWPT, and CENTERPLOT1
+
+The following options govern the type of perspective view given. 
+
+$var<PERSPECTIVE/TRUE>, if FALSE causes a non-perspective view to be taken.  This is equivalent to extending the viewing position out to infinity along a line connecting the origin and VIEWPT. 
+
+$var<REVERSE/FALSE>, if TRUE cause a left-handed coordinate system to be assumed. 
+
+$var<VIEWPT/> and $var<CENTERPLOT/> determine the perspective view taken.       They are defaulted to be unbound.  VIEWPT may be set to a list of 3 numbers and gives the point from which the projection should be made.  CENTERPLOT may likewise be set to a list of 3 numbers and gives a point on the line of sight.  The projection will be made onto a plane perpendicular to a line joining VIEWPT and CENTERPLOT. 
+
+If VIEWPT and CENTERPLOT are unbound (the default) then they will be chosen as  follows: the extreme values of the coordinates are determined.  This gives the two points min:  [xmin,ymin,zmin], max:[xmax,ymax,zmax]. CENTERPLOT is chosen as (min+max)/2, and VIEWPT is chosen as max+3*(max-min).  The view is then one in which the z axis is vertical, the x axis is increasing towards you to the left and the y axis is increasing towards you to the right. 
+
+If CENTERPLOT is FALSE then the old type of  perspective view will be given (like setting the x and z components of CENTERPLOT to the corresponding components of VIEWPT). 
+
+.sec("Using the XGP from PLOT2",plot2!xgp)
+
+To get plots out on the XGP,  simply do PLOTMODE(XGP, ...) where ... is the correct plot mode for your terminal (i.e. GR for Grinnell TV's, T for Tektronix, or D for character display terminals like VT52's).  Then you can use
+linefeed at the end of the display of a plot, or HARDCOPY(); to cause
+a hardcopy to be submitted  to the XGP (it is processed by the Gould
+spooler first).  If MIT-AI$$The computer at the MIT AI Lab* is up and the queuing for the XGP is successful,
+you will receive a message from the XGP spooler when your plot is
+printed.  If MIT-AI is down, your plot will be processed into an XGP scan
+file,  .GLPT.; > SCN, and the Gould spooler will send you a warning
+message telling you that MIT-AI is down.  You must copy the SCN file to MIT-AI
+yourself when MIT-AI comes up and queue it by doing
+.example
+.once center
+	:XGP ;SCAN AI:dir;* SCN
+.end
+.scon
+where dir is the directory on MIT-AI to which you copied the files (use
+MACSYM;  if you don't know of any other directory to use).
+
+If you use the NAMEFILE$$NAMEFILE(filespec) simply copies the PLOT2 scratch file to filespec* command instead of HARDCOPY or linefeed,
+you can print the plot file later by doing
+.example
+.once center
+	:GTPL dir;fn1 fn2/a/o[x]
+.end
+.scon
+where dir, fn1, fn2 are the directory, first file name, and second file
+name of the plot file stored with NAMEFILE.  $var<PLOTLFTMAR/128> and $var<PLOTBOTMAR/320>   adjust the bottom margin and left margin for the XGP plots. These default to values$$Whose units are given in increments of 1/200 th of an inch* such that the plots will fit comfortably on an 8 1/2 x 11 page.
+ 
+
+
+There are many other features of PLOT2 (such as three-dimensional and contour plotting) which the user can learn about by reading SHARE;PLOT2 USAGE and SHARE;PLOT2 RECENT.   As an example, consider
+
+.begin narrow 8,0
+.example
+(PLOTMODE(XGP,D),WINDOW:[100,900,0,950])$
+
+(PLOTNUM:PLOTNUM:40,VIEWPT:[-30,-20,5])$
+
+PLOT3D((X^3+Y^4-0.2*X)*EXP(-X^2-Y^2)+0.3*EXP(-(X-1.225)^2-Y^2),
+             X,-3,3,Y,-3,3);
+
+NAMEFILE(PLOT,TEST,DSK,CFFK);
+.end
+.end
+.scon
+The resulting plot is shown on the next page
+.next page
+.chap (Debugging in MACSYMA,debugmac)
+
+When MACSYMA detects a syntax error in an input line, the error
+message sometimes displays the offending expression to help the user
+pinpoint the source of error.  This is inconvenient if the expression
+is large, especially when the user has a slow terminal.  Gradually,
+this scheme is being replaced by a scheme that does not display the
+offending expression, but rather sets $var<ERREXP/> to it, and prints
+out the error message followed by the message "ERREXP contains the
+offending expression".  The user can then type ERREXP; to see the
+expression and locate the error.
+
+When the user's command lines, especially functions and $fun<BLOCK>
+programs, do not do what is expected or generate errors, MACSYMA
+offers several debugging alternatives:
+
+(1) The user may trace function calls by typing TRACE(2fun1,fun2,...1),
+where the 2funi1 are either MACSYMA or user-defined functions.  This will cause a
+printout of the function name and its arguments each time it is entered, and of
+the function name and the value it returns each time it is exited.  A count
+which is the level of recursion is also printed.  Usually, this is all the
+tracing power the user will need, although MACSYMA offers the full
+capabilities of the LISP tracing package including conditional and breakpoint
+tracing.  This will not be described here - for information see [Mn1].  MACSYMA
+uses trace-syntax very similar to that of LISP.
+
+To check which functions are currently under trace, the user may type TRACE().
+To remove tracing of functions use UNTRACE(2fun1,fun2,...1).  To untrace all
+previously traced functions type UNTRACE().  Since the TRACE package takes up
+some of the user's workspace in core, when finished with it the user should type
+$fun<REMTRACE>().  It can always be reloaded again if necessary.
+
+(2) The assignment of variables can be traced by setting the variable SETCHECK to a list of variables (which can be subscripted).  When a variable on the list is bound (either with : or :: or function argument binding) then a message -- variable "SET TO" value -- will be printed. If the variable SETCHECKBREAK is set to TRUE then a (MACSYMA-BREAK) will be caused each time a variable on the SETCHECK list is bound.
+
+(3) By setting the variable $var<REFCHECK/FALSE> to TRUE, the user will be informed when each
+of his variables which has a value comes up for evaluation for the first time
+during the course of a computation.  This has a dual purpose.  The user will be
+informed of evaluations he may not have been aware of which are the result of
+assignments he made long ago. It also gives him a sort of chronological trace of
+his computations which may be helpful in finding out where an error has
+occurred.
+
+(4) By setting the variable $var<PREDERROR/> to TRUE, the user will be informed of
+predicates of IF-THEN-ELSE statements which failed to evaluate to either TRUE or
+FALSE.
+
+(5) The user may have variables which he intends not to use purely symbolically,
+i.e. they are to have values all the time.  By typing
+DECLARE([2var1,var2,1...],BINDTEST) MACSYMA will give the user an error
+whenever any of the vari appear in a computation unbound.  To remove a BINDTEST
+declaration, the user may use the function $fun<REMOVE>.  $see<property!specification>
+
+(6) When an error occurs in the course of a computation, MACSYMA prints out an
+error message and terminates the computation.  At times the user may find it
+helpful to investigate the environment at the place of the error.  To do so, type DEBUGMODE:TRUE or DEBUGMODE:ALL and repeat the computation.  This enters a special
+debugging mode which will "break" or pause when an error occurs.  This mode may
+be terminated by typing DEBUGMODE:FALSE.  When an error occurs in debugging
+mode, (ERROR-BREAK) is printed. MACSYMA is then waiting for the user to type
+something.  He may type any command line just as if he were at "top level".  The
+command lines will be evaluated in the environment of the error.  If the user had done DEBUGMODE:ALL, he may now
+type BACKTRACE;, and MACSYMA will print out a backtrace, which is a list of the
+function calls the user is currently in together with the arguments they were
+called with, ordered from most recent to earliest i.e., when reversed, this list
+shows a trace beginning from the initial function and ending at the last call
+entered including only those function calls from which the user still has not
+exited.  To exit from the MACSYMA error-break and return to "top-level", type
+EXIT;.
+
+The user may also enter the error-break at any point, by typing control-A or by
+executing the function $fun<BREAK> $see<miscfun>.  This will simply cause his
+computation to pause, while he investigates at will.  $var<%%/> refers to the last
+computed result while in the MACSYMA break.  $var<%/> still refers to the last
+result computed at top-level.  Upon typing EXIT;, the computation will resume.  If
+he wants to quit a computation begun in a control-A break without quitting the
+top-level suspended computation, the user can type control-X.
+
+During a break one may type $var<TOPLEVEL/>;.  This will cause top-level MACSYMA to
+be entered recursively.  Labels will now be bound as usual.  Everything will be
+identical to the previous top-level state except that the computation which was
+interrupted is saved. The function TOBREAK() will cause the break which was left by
+typing TOPLEVEL; to be re-entered.  If TOBREAK is given any argument whatsoever,
+then the break will be exited, which is equivalent to typing TOBREAK() immediately
+followed by EXIT;.
+
+
+In the following example, an attempt is made to define a function ROOT which finds an approximate root to an expression
+using Newton-Raphson iteration.
+.example
+.begin group
+(C1) ROOT(F,V):=BLOCK([VAL,FUN,DER],DER:DIFF(F,V),VAL:0.0,
+        TEST,FUN:SUBST(VAL,V,F),IF ABS(FUN)<5.0E-7 THEN
+        RETURN(VAL),DER:SUBST(VAL,V,DER),VAL:VAL-FUN/DER,
+        GO(TEST))$
+.end
+
+(C2) NUMER:TRUE$
+
+(C3) F:SIN(%PI*X)-%PI*(X-1)$
+
+(C4) ROOT(F,X);
+
+3.3116898E+8 ARG TOO BIG FOR ACCURACY - SIN
+
+(C5) REFCHECK:TRUE$
+
+(C6) DEBUGMODE:TRUE$
+
+.begin group
+(C7) ''C4;
+F has value
+V has value
+VAL has value
+FUN has value
+DER has value
+.end
+
+3.3116898E+8 ARG TOO BIG FOR ACCURACY - SIN
+
+(ERROR-BREAK)
+
+_VAL;
+1.0541436E+8
+
+_DER;
+- 2.98023224E-8
+
+_TRACE(SUBST)$
+
+_''C4;
+
+.begin fill
+1(The numerical value of %PI is present below due to NUMER being set to TRUE
+above.)
+.end
+
+.begin group
+1 ENTER SUBST [0.0, X, SIN(3.1415927 X) - 3.1415927 (X - 1)]
+1 EXIT SUBST: 3.1415927
+1 ENTER SUBST [0.0, X, 3.1415927 COS(3.1415927 X) - 3.1415927]
+1 EXIT SUBST: - 2.98023224E-8
+1 ENTER SUBST [1.0541436E+8, X, SIN(3.1415927 X) - 3.1415927 (X - 1)]
+.end
+
+3.3116898E+8 ARG TOO BIG FOR ACCURACY - SIN
+
+.begin group
+try again
+
+.begin fill
+1(This message is due to an error-break occurring within another error break.)
+.end
+
+_EXIT;
+Exited from the break
+.end
+
+(C8) <$>
+_''C4
+MYFROOT<$><$>
+
+.begin fill
+1(The user uses the MYF command of the MACSYMA editor to insert the definition of ROOT into the
+edit buffer. The editor is then used to insert an IF statement to test for
+DER being close to 0. The actual editing work is not shown.)
+.end
+
+.begin group
+(C8) ROOT(F,V):=BLOCK([VAL,FUN,DER],DER:DIFF(F,V,1),VAL:0.0,
+        TEST,FUN:SUBST(VAL,V,F),IF ABS(FUN)<5.0E-7 THEN
+         RETURN(VAL),DER:SUBST(VAL,V,DER),IF ABS(DER)<5.E-8
+         THEN ERROR("DERIVATIVE IS ZERO"),VAL:VAL-FUN/DER,
+        GO(TEST))$
+.end
+
+(C9) UNTRACE();
+(D9)                             [SUBST]
+
+(C10) REFCHECK:FALSE$
+
+(C11) ''C4;
+DERIVATIVE IS ZERO
+QUIT     (This is due to the ERROR function being executed.)
+.end
+

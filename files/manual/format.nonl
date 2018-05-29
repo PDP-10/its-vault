@@ -1,0 +1,143 @@
+.device xgp
+
+.!xgpcommands_";squish"
+
+.font 1 "nonl"; font 2 "nonlI"; font 3 "ellen;my25fg kst"; font 4 "40vshd";
+.font 5 "nonlb"; font 6 "57vsgn"; font 7 "plunk"; font a "20fg";
+
+.!xgplftmar_220
+
+.MARGINS(1500,1000,1000,1000);
+.EVENLEFTBORDER_RIGHTBORDER
+
+.turn on "" for "%"
+.turn on ""
+.tabbreak compact
+.variable header, tagname;
+
+.count page to 999
+.count chapter printing "1"
+.count appendix printing "I"
+.count section in chapter printing "!.1"
+.count subsection in section printing "!.1"
+.count footnote inline in section printing "1"
+
+
+.footsep_"_______________"
+
+
+.at "$$"entry"*"  turn on "^{[]" next footnote;}^[{!}]{; 
+.send foot  turn on "{" preface 1 spread_1
+.	indent 0,0 
+1{!}. entry*
+.break 
+
+
+
+.fill preface 1
+.indent 4
+
+.macro sb(x,i) turn on "{[]" }xi {turn on
+
+.macro sp(x,i) turn on "{[]^" }x^i {turn on
+
+.macro ss(x,i,j) turn on "{[]^" }x^j&i {turn on
+
+
+.macro example begin nofill; indent 0; turn off "^";
+.  millspacing_10; skip 1; select 3 
+
+.MACRO SCON  SKIP 1 CONTINUE
+.macro bcon  break continue 
+.macro isolate (line)skip 1
+line
+.skip 1
+
+.macro chap (title,tag) top (5MACSYMA1,,5{page}1)
+.next page 
+.header_"{chapter} title"
+.if length("tag")=0
+.	then start tagname_"title" end
+.	else start tagname_"tag" end
+.maketag(tagname,chapter!)
+.begin turn on "{" once center
+5{!}  title*
+.skip 1
+.send contents 
+.skip 1
+5Chapter {!} \title1\. {page}
+
+.skip 1
+.top (5MACSYMA*,{header}, 5{page}*) end
+
+.macro appnd (title) top(5MACSYMA,,{page}*)
+.next page next appendix
+.header_"{appendix!} title"
+.begin turn on "{" once center
+Appendix {!}  -  title*
+.skip 1
+.send contents 
+.skip 1
+Appendix {!}\title\. {page}
+
+.skip 1
+.top (5MACSYMA*,{header}, 5{page}*) end
+
+.macro maketag (tag,counter)  tag: next counter 
+
+.macro sec (title,tag,option)
+.if length("option")=0 then optional_"0" else optional_"-1"
+.top(MACSYMA,,{page}) if lines < 5 then next page
+.if length("tag")=0
+.	then start tagname_"title" end
+.	else start tagname_"tag" end
+.maketag(tagname,section!)
+.begin indent 0; header_"{chapter}.{section} title"; turn on "{"
+.if optional then start isolate (|5[{!}] title*|) end else start isolate (|5{!} title*|) end
+.send contents 
+\{!}\title\. {page}
+
+.
+.top (5MACSYMA*,{header},  5{page}*) end
+
+.macro subsec(title,tag,option)
+.if length("option")=0 then optional_"0" else optional_"-1"
+.top(5MACSYMA1,,5{page}1) if lines < 5 then next page
+.if length("tag")=0
+.	then start tagname_"title" end
+.	else start tagname_"tag" end
+.maketag(tagname,subsection!)
+.begin indent 0; header_"{chapter}.{section}.{subsection} title"; turn on "{"
+.if optional then start isolate (|5[{!}] title*|) end else start isolate (|5{!} title*|) end
+.send contents 
+\\{!}\title\. {page}
+
+.
+.top (5MACSYMA*,{header},  5{page}*) end
+
+.macro function(name,args) begin skip 1 indent 4,0 narrow 4 once widen 4 indent 0,4
+.if lines < 5 then next page
+.inline function(name,|args|)
+
+.macro inline function(name,args) turn on "{" }5name*(2args*) {
+.send funky }name(args){page}*{turn on
+
+.macro endfunction break end
+
+.at "$var<" variable ">" 
+.turn on "{"; }5variable*{send funky }variable{page}{turn on
+
+.at "$fun<" name ">" 
+.turn on "{"; }5name*{send funky }name{page}{turn on
+
+.at "$ref<" label ">"  [8] label 
+
+.at "$see<" label ">"  turn on "{" }(see {[8] label}){ turn on 
+
+.if not declaration(partial) then partial_true
+.if partial then start
+.insert contents
+.portion body
+.end
+
+.macro top(a,b,c)  odd heading(a,b,c); even heading(c,b,a);

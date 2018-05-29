@@ -1,0 +1,365 @@
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+This file documents recent changes to LLOGO. For more
+complete information, see AI memo 307 [a copy in
+pub source form is on line as LLOGO;MEMO >, and probably
+in XGP form in LLOGO;MEMO DOC]. 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+
+HENRY   4 November 1975
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;		LISP LOGO COLOR TV TURTLE		     ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+This describes the LISP LOGO Color graphics package. This system is 
+usable from either LISP or LLOGO, and displays full color pictures 
+on the Advent TV, or the Tektronix color monitor on the third floor.
+
+All the primitives for line drawing are implemented, FD, BK, RT, LT, PU, PD,
+etc. compatible with the ordinary LISP LOGO black and white [black and green?]
+TV turtle. The following are not (yet) implemented:
+	XOR mode
+	MARK
+	XGP output
+	Shading with windows
+	SAVEWINDOWS for color windows.
+
+Shading is implemented, but it is currently ureliable due to hardware bugs.
+SHOWTURTLE mode deos not save pictures before displaying the turtle cursor 
+over them, so that display of the turtle may mess up some pictures on the 
+screen, unlike in the black and white version. Full color windows are 
+implemented, but are currently slow.
+Files created by the ordinary black and white TV turtle using SAVEWINDOWS
+can be read into the color system using GETWINDOWS, and displayed with 
+SHOWWINDOW or HIDEWINDOW, etc. They will appear in the current
+pen color if displayed with SHOWWINDOW, in the eraser color for HIDEWINDOW.
+
+
+Colors are created by specifying the amount of red, green, and blue light
+which make the color. The colors WHITE, BLACK, RED, GREEN, BLUE, YELLOW,
+MAGENTA, CYAN are supplied initially, and new ones can be created by
+	?MAKECOLOR <color name> <red> <green> <blue>  {abbreviation: MC}
+Where <color name> is an atomic name for the color, and <red>, <green>,
+and <blue> are floating point numbers between 0.0 and 1.0 which say how
+much of each of the primaries is included in the color being defined.
+YELLOW was defined by 
+	?MAKECOLOR 'YELLOW 1.0 1.0 0.0
+A list of all currently defined colors is kept, called :COLORS.
+REDPART, GREENPART, and BLUEPART of a color retrieve the corresponding
+intensities of the primaries in that color.
+
+
+The system always keeps track of two default colors, the PENCOLOR and
+the ERASERCOLOR. The PENCOLOR is the color the turtle draws in, so that
+all lines drawn by the turtle when its pen is down appear on the screen
+in that color. The initial pen color is WHITE and can be changed by:
+	?PENCOLOR <color name>  {abbreviation: PC}
+where <color name> has been previously defined. There can, of course,
+be many different turtles, each with its own color pen. The ERASERCOLOR
+is the color used by the turtle to draw when its eraser is down. It is
+used as the background color, so lines drawn with the pen down are made
+to disappear by drawing them in the same color as the background.
+CLEARSCREEN erases everything on the screen, filling the screen with the
+ERASERCOLOR. The eraser color can be changed by 
+	?ERASERCOLOR <color name>   {abbreviation: ERC}
+This has the effect of immediately changing the background color 
+on the screen as well, whereas changing PENCOLOR only affects future
+drawing by the turtle. [maybe this is wrong?] The initial eraser color is
+black. :PENCOLOR holds the current pen color, :ERASERCOLOR the current 
+eraser color.
+
+	POINTSTATE in the color version returns true if the point
+is on in some color other than the eraser color, and false if the
+point has the eraser color. POINTCOLOR returns the name of the color
+of the point. In the black and white version, POINTCOLOR returns the
+pen color if the point is on, the eraser color if the point is off.
+
+
+
+There is a limit of 16. different colors visible on the screen at once,
+including the :PENCOLOR and :ERASERCOLOR [More precisely, you can only 
+do PENCOLOR with 15. different colors between CLEARSCREEN's]. The currently visible
+colors are kept in an array called the PALETTE, and colors are added to free
+slots in the PALETTE whenever you do a PENCOLOR mentioning a color not included
+in the PALETTE. Clearing the screen removes all colors from the palette 
+except for the current pen and eraser colors. The index of the :PENCOLOR
+in the PALETTE is :PENNUMBER and the index of the :ERASERCOLOR is :ERASERNUMBER
+[:ERASERNUMBER never changes]. The following primitives allow explicit
+manipulation of the current set of colors:
+
+	?REPLACECOLOR  <old color> <new color> {abbreviation: RC}
+changes all visible drawings currently on the screen in <old color> to
+be instantly changed to <new color>. It is much faster than changing
+the PENCOLOR and redrawing the objects. 
+
+	?MAKEPALETTE <number> <color>
+Changes the color in position <number> in the PALETTE to be <color>. It
+is like REPLACECOLOR of whatever color was formerly in that position.
+
+	PENCOLOR will also accept a number as input, in which case it will
+select whatever color is in that slot in the PALETTE, i.e. it is like
+PENCOLOR PALETTE <number>.
+
+
+Unfortunately, at present the color system is not very conveniently 
+accessible. Here is the procedure that you should follow whenever 
+you want to use the color system:
+
+The 11Logo system should be brought down to use the color turtle. 
+First, see if anyone is using the 11Logo system by logging
+in as PEEK from a free console. If nobody objects to the system 
+being brought down, then put switch 2 on the PDP11 console up, then
+login as SYSKILL. This will bring the system down. Press the HALT
+switch on the PDP11 console, then write-protect the disks by turning
+on the switches on the upper left and lower left of the disk panel. 
+These switches are marked PROT CART and PROT FIXED, and
+should light up when you do this. Turn the switch on the lower left
+of the panel marked PDP10 DMA LINK above the disk to the R/W position
+[the other position is marked RO]. 
+
+If you want to use the Tektronix color monitor, turn it on with the power
+toggle switch at the upper right corner of the monitor. If you want to use
+the Advent, you should move the Datapoint terminal near the 11 to 
+the Advent room. On the patch panel behind the 11, connect the hole
+on the top row marked T31 to the seventh hole from the left on the 
+fourth row [this hole is just to the left of the one marked TBOX]. 
+Turn the Advent on. If you see broadcast television, flip the 
+switch on the metal box on the wall.
+
+You are now ready to log into ITS. The color turtle can be used 
+from either LISP or LLOGO. From an LLOGO, answer "NO" to questions 
+about TV turtle, etc., then, 
+	?READLISP COLORT FASL LLOGO
+From a LISP, just do (FASLOAD COLORT FASL DSK LLOGO). 
+
+When you are finished, you should log out of ITS. If you were using 
+the Tektronix, turn the power off. If you were using the Advent, 
+turn the Advent off, return the terminal to the computer room, 
+then reconnect the T31 line to the Datapoint line on the patch panel.
+Now bring the 11Logo system back up. Turn off the two switches on 
+the left side of the disk. Put 157000 into the data 
+switches on the PDP11, lift the HALT switch, then press LOAD 
+ADDRESS, then START. The 11 system terminal should then type a star.
+Type L on the terminal [ is ESC on the keyboard], and it should 
+type back a few spaces. Then type 0:SITS and a carriage return. 
+After a few moments it should type back a star, then type G, and 
+it should eventually say SITS IS UP.
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;		Other changes to the TV turtle:			;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+If SHADE is done when the turtle is sitting in a region that is on 
+instead of off, the region will be filled by erasing the shading 
+pattern into the region. This is kind of an "inverse" shading. 
+For example, CIRCLE 100 SHADE will create a filled in circle, then SHADE 
+again will erase the filled circle. SHADE 'CHECKER instead of the second
+SHADE will turn off every other point in the filled circle. 
+Previously, shading a region that was on was prohibited.
+
+
+SCALE <scale-factor> will change the size of turtle steps by <scale-factor>.
+It is like doing TURTLESIZE of the current turtle size divided by <scale-factor>
+except that it adjusts the turtle's position so that it should not change
+its physical position on the screen. 
+	SCALE 2.0
+	...draw something....
+	SCALE 0.5
+is a good way to draw a picture at twice the usual size.
+
+
+Normally, any attempt to move the turtle beyond the boundaries of
+the screen causes an error. In wrap mode the turtle reappears at the
+other side of the screen after going past one edge, and lines wrap
+around, as if the display area were a torus. Now, there is another 
+option, "clip" mode, in which any display past the boundaries of the
+screen simply is not shown, and does not cause an error. This mode is
+useful when you don't want to be bothered by out of bounds errors, but
+don't care about seeing display output which occurs outside the limits
+of the display area. CLIP turns on clip mode, and NOCLIP turns it off,
+analogous to WRAP and NOWRAP. :CLIP is T if in clip mode, NIL otherwise.
+
+
+The turtle can now be made to draw using "brushes". An arbritrary
+picture can be designated as the turtle's brush, and when the turtle
+draws a line, that picture will be swept along the turtle's path. 
+Make a window of the picture to be used as the brush, then say
+BRUSH <window-name>. The name of the window used as the brush is 
+kept as the value of :BRUSH. NOBRUSH returns to ordinary line
+drawing mode, which can be thought of as a brush consisting of a 
+single point. Currently, brushes are not rotated when the turtle's
+heading changes. Brushes are local to each turtle, so that each of
+several turtles may be given its own brush shape.
+
+It is no longer necessary to create a shading pattern from a window
+by using MAKEPATTERN. Instead, just give the name of the window as an
+argument to SHADE, and the picture contained in the window will be
+used as the pattern. MAKEPATTERN has been flushed.
+
+The variable :TVSTEP is the size of a TV raster point in turtle coordinates.
+Thus, FD :TVSTEP goes forward exactly one TV point, no matter what the TURTLESIZE 
+currently is. It can therefore be used to measure distance in TV points 
+independently of the scale used for turtle steps.
+
+The format of window files created by SAVEWINDOWS has changed. Old
+window files will be readable into the new version, but newly created
+files will not be readable with previous versions. Old files should be
+recreated by reading them into the latest version with GETWINDOWS,then
+recreating the file with SAVEWINDOWS, as the compatibility feature will
+disappear after a while.
+
+MAKEWINDOW is much smarter now about saving pictures. Before saving away
+the picture, it figures out the smallest rectangular area within the area
+you've specified in which something is visible, and only saves the visible
+area. This means that less space will be wasted in the window saving blank
+space, so windows will be smaller and faster to redisplay, although they
+will be slightly slower to create. This means you needn't think so hard
+about what arguments to give MAKEWINDOW, as you won't be penalized for making
+the area too large. While it is making the window, MAKEWINDOW displays a box
+around the area which is going to be saved, just so that you
+can see what will be included in the window. If you don't want this to happen,
+set :WINDOWOUTLINE to NIL.
+
+Definitions for DISPLAY, WIPE, WIPECLEAN, and SNAP have been added
+to the LLOGO TV turtle so that they are, for the most part, compatible
+with their counterparts in 11LOGO. Although their effects are not quite
+identical to the 11LOGO primitives, 11LOGO programs which use them 
+in a simple manner will not need any modification to run on LLOGO.
+The definitions are [approximately]:
+	DISPLAY <a-window> is SHOWWINDOW <a-window> :XCOR :YCOR
+	WIPE <a-window> is HIDEWINDOW <a-window> :XCOR :YCOR
+	WIPECLEAN is WIPE 
+	  [WIPE of no arguments clears screen, but doesn't affect turtle [WIPECLEAN
+           does the same], with one argument hides the window at current location.]
+	SNAP is MAKEWINDOW GENSYM
+	  [typical use is MAKE 'MYPICTURE SNAP]
+
+MAKETURTLE has been changed to accept forms for drawing and erasing the turtle,
+rather than the names of functions to call, a slight convenience. For example,
+the turtle could be made to look like the contents of a saved window by doing
+	MAKETURTLE (DISPLAY 'TURTLEWINDOW) (WIPE 'TURTLEWINDOW)
+where TURTLEWINDOW is the name of the window to be used to represent the turtle
+cursor.
+
+DISPLAYWINDOW [DW] displays a window, sensitive to the state of the pen, eraser, etc.
+It is like SHOWWINDOW if the pen is down, HIDEWINDOW if the eraser is down.
+
+Points, arcs, and circles displayed are now sensitive to the pen state. 
+For example, PD CIRCLE 100 ERD CIRCLE 100 will draw and erase a circle. An
+exception is when using POINT with last arg T or NIL will explicity turn the 
+point on or off, regardless of the pen state.
+
+:DRAWSTATE is a global variable set to NIL if the pen, eraser and xor modes 
+are not in effect, else it is one of the atoms PEN, ERASER, or XOR.
+The function DRAWSTATE is an inverse of this, accepting one of these atoms,
+and setting the pen, eraser, or XOR accordingly. Similarly, the variable
+:OFFSCREEN holds one of NIL, WRAP or CLIP if lines drawn outside 
+the display area will cause an error, wrap around, or clip. 
+OFFSCREEN sets this mode.
+
+
+Setting :OUTLINE to NIL will suppress drawing a box outlining the display
+area.
+
+A reminder of an incompatibility with 11LOGO: the trig functions SIN, COS, 
+and ATAN in LLOGO behave as they do in LISP, that is they use radians as 
+a measure of angle, not degrees as in 11LOGO. Use SINE, COSINE, or ARCTAN
+if you want degrees.
+
+
+Henry 23 August 1975 LLOGO 1623
+
+If you set the variable :REDEFINE to T, the system will not
+print a warning and ask for confirmation when you try to 
+redefine functions. This applies to both user defined and system
+functions.
+
+LLOGO initialization files are no longer printed out at you when
+they are read in, since you probably don't want to see it every time
+you start up.
+
+READLISP will read ordinary LISP files into LLOGO. 
+
+Default second file name for files saved by SAVEWINDOWS
+is now WINDOW, for files saved by SAVESNAPS it is SNAPS. If
+either of these file names are given to READFILE it will do the
+correct thing, reading in the file of saved windows or snaps.
+
+Henry   21 July 1975   LLOGO 1620
+
+	LOGO has long suffered from lack of sufficiently rich
+iterative control structure, leading to bad programming techniques
+such as excessive use of GO and awkwardly open-coded loops. To 
+help alleviate this, some new iteration primitives have been added.
+
+REPEAT <number of iterations> <form> ... <form>
+	Evaluates each <form> in the body in turn, repeating until
+the body has been executed <number of iterations> times. REPEAT 3 PRINT 'FOO
+prints FOO three times.
+
+WHILE <condition> <form> ... <form>
+	Repeatedly executes all the <form>s while <condition> evaluates to 
+something other than NIL.
+
+UNTIL <condition> <form> ... <form>
+	Repeatedly executes all the <form>s until <condition evaluates to something
+other than NIL. Like WHILE NOT <condition> <form> ... <form>.
+
+	REPEAT, WHILE and UNTIL all return the value of the last form evaluated.
+
+FOREVER <form> ... <form>
+	Repeats execution of the body forever. Will return only if
+a STOP or OUTPUT is executed inside it.
+
+	In addition, LLOGO now correctly understands both flavors of
+the LISP primitive DO. The "old style DO" takes a variable name, an initial
+value for the variable, a value for the variable each time around the 
+loop and a stop condition. Example:
+	DO :I 1 :I+1 :I>5 PRINT :I*:I
+prints the first five squares.
+	The "new style DO" allows more than one iteration variable, and
+allows specification of actions upon return and a return value. 
+For LOGO to understand this unambiguously, the DO variable specifications and 
+the stop rule/return forms must____ be parenthesized. Example:
+	TO FACTORIAL :N
+	10 OP DO ((:M :N :M+1) (:TOTAL 1 :M*:TOTAL)) (ZEROP :M :TOTAL) 
+	END
+There must be parentheses around each of the DO variable specifications,
+around all the variable specifications, and around the stop condition/return forms.
+All other parentheses are optional, as ordinarily the case in LOGO.
+
+	Since you may often have iterations which include more code
+than can reasonably fit on one line, it's useful to remember that if
+you set :PARENBALANCE to NIL, LLOGO will let you extend parenthesized
+forms over any number of lines until parentheses balance.
+	MAKE 'PARENBALANCE NIL
+	(DO :I 1 :I+1 :I>10
+	    PRINT :I
+	    ....more code...
+	    .... )
+
+
+	More iteration features on the way, possibly including some features
+similar to those in MUDDLE or INTERLISP. Comments & suggestions appreciated.
+
+
+Other changes to LLOGO:
+
+	LOTS outputs a very large number, use it when you just want
+a large number to take the place of "infinity". Idea courtesy of SMALLTALK.
+
+	LLOGO has been changed to accept some varieties of 11LOGO's array
+commands in cases where they do not conflict with LISP. DEFINEARRAY exists
+as in 11LOGO. Cases of 11LOGO-style STORE which do not conflict with LISP's
+store, like STORE 'MYARRAY .... will be detected by the parser, and treated 
+correctly.
+
+
+

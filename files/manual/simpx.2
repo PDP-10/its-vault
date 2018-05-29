@@ -1,0 +1,84 @@
+(setq $foop '($&))
+(putprop $foop 'simpxnct 'operators)
+(defun onedel (l)
+       (do ((u l (cdr u))
+	    (v nil (cond ((not (onep1 (car u))) (cons (car u) v))
+			 (t v))))
+	   ((null u) (nreverse v))))
+
+(DEFUN SIMPxNCT (X CHECK Z) 
+       (PROG (W1 W) 
+	     (SETQ CHECK X)
+	     (setq w (cdr x)
+		   W1 (mapcar 'simpcheck w (mycopy z (length w))))
+
+;;;THIS DOES 0.FOO  OR FOO.0  SIMPLIFICATION
+	      (AND $DOT0SIMP  (memq 't (mapcar 'zerop1 w1)) (RETURN 0))
+
+;;;THIS DOES FOO.1 OR 1.FOO  CASES
+	      (AND $DOT1SIMP (return (onedel w1)))
+
+;;;THIS CODE HANDLES THE SPECIAL RULES FOR SCALARS IN
+;;;NONSCALAR EXPRESSIONS   M1.(S*M2) => S*(M1.M2) AND (S*M1).M2 => S*(M1.M2)
+	      (AND $DOTSCRULES (memq 't (mapcar '$NONSCALARP w1))
+		    (COND
+		     ((not (memq nil
+			    (mapcar '((lambda r)
+				      (not ($nonscalarp r))) w1)))
+		      (RETURN (MULn W1 nil)))
+		     (t (return
+		      (do ((w2 w1 (cdr w2))
+			   (w3 (car w2) (car w2))
+			   (sp nil (cond ((not ($nonscalarp w3))
+					  (nconc sp w3))
+					 (t (nconc sp (car (partition-ns w3))))))
+			   
+			   (nsp nil (cond ((not ($nonscalarp w3)) nsp)
+					  (t (nconc nsp (cadr (partition-ns w3)))))))
+			  ((null w2)
+			   (cond
+			    ((null nsp) (simptimes
+					 (append '((mtimes)) (cons 1 sp)) 1 t))
+			    (t (simptimes
+				(append '((mtimes)) (cons 1 sp)
+					(list (simplifya (cons $foop nsp) t)))
+				1 t)))))
+		      ))))
+	      ))
+
+
+(DEFUN OUTOFDOT (XW1 XW2 XN) 
+       (COND ((= XN 1)
+	      (COND ((NULL (CAR XW1)) (THROW NIL ONLYNONSCALARS))
+		    (T 
+		     (SIMPTIMES 
+		      (APPEND '((MTIMES)) (CAR XW1)
+			      (LIST (SIMPLIFYA
+				     (LIST '(MNCTIMES)
+			        	   (MULN (CADR XW1) T) XW2) T)))
+			1 T))))
+	      ((= XN 2)
+	       (COND ((NULL (CAR XW2)) (THROW NIL ONLYNONSCALARS))
+		     (T 
+	      (SIMPTIMES (APPEND '((MTIMES)) (CAR XW2)
+	       (LIST (SIMPLIFYA 
+		 (LIST '(MNCTIMES) XW1 (MULN (CADR XW2) T)) T))) 1 T))))))
+
+(DEFUN PARTITION-CONST (X)
+	(DO ((L X (CDR L))
+	     (CONSTLIST NIL (CONS (CAR L) CONSTLIST)))
+	    ((OR (NULL L) (NOT (AND (NOT ($NONSCALARP (CAR L)))
+				    ($CONSTANTP (CAR L)))))
+	     (LIST (NREVERSE CONSTLIST) L))))
+ 
+(DEFUN PARTITION-NS (X)
+ ((LAMBDA (SP NSP) ; SP = SCALAR PART, NSP = NONSCALAR PART
+   (MAPC (FUNCTION 
+	  (LAMBDA (Z) (COND ((NOT ($NONSCALARP Z))
+			     (SETQ SP (NCONC SP (LIST Z))))
+			    (T (SETQ NSP (NCONC NSP (LIST Z)))))))
+	 X)
+   (LIST SP NSP)) NIL NIL))
+
+
+(defun mycopy (x n) (cond ((= n 0) nil) (t (cons x (mycopy x (- n 1))))))

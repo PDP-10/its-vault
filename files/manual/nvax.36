@@ -1,0 +1,513 @@
+Addendum to the Mathlab/MIT MACSYMA Reference Manual
+for VAX/UNIX "VAXIMA"  
+
+Facilities of Macsyma will work as they do
+on the ITS/PDP-10 MIT-MC system
+with the exception of items mentioned here.  Some of
+the differences represent extensions or restrictions
+reflecting the features available in the current VAX/UNIX operating system.
+We have tried to list differences in the order in which the user
+is most likely to need the information, not in terms of "importance."
+
+
+@Section[Getting started]
+@Label[gs]
+
+The program is named @t[vaxima] and it may be invoked via a full path
+name at Berkeley by @t[/usr/local/vaxima].  (For brevity, the VAX UNIX
+Macsyma system will occasionally be referred to as "vaxima".)
+
+You should provide an environment specification which indicates the
+home directory for the Macsyma system on your installed system.
+For example, on "kim" (Kim No-Vax, our Berkeley vaxima development system), the most up-to-date system is installed 
+in @t[/xper/mac/].  My .login file, contains the line
+@Begin[Example]
+setenv VAXIMA /xper/mac
+@End[Example]
+This will work if your system (which was delivered on a magnetic tape)
+was read into a directory whose name is "/xper/mac".  This environment
+name is consulted to find "auto-loading" files, the "describe" database,
+"share" directory files, and other useful information.
+(If you use the "Bourne Shell" rather than the "C shell," your .profile
+file should contain "@t[VAXIMA=/xper/mac]" .)
+
+In general, commands and output are in lower case.
+
+The command line must be followed by a ; or a  , and
+THEN a <@i[return]>. Similarly, for ^K ^L <@i[esc]> ?? and other
+such Macsyma line-oriented control characters: these must be followed
+by a <@i[return]> to take effect. The edit escape, <@i[esc]> <@i[return]>
+will put you in a text editor (the default is the screen-oriented editor VI).
+If you wish to use another editor, change the value of the macsyma
+variable @t[editorcom] to an appropriate string.  For example, to
+use "emacs", do @t[editorcom:"emacs vaxima.buf";]
+
+It is possible to use the "teco-like" MACSYMA editor described in Chapter 11
+of the manual.
+Normally, systems intended for use on VMS will be
+delivered with this "teco-like" editor enabled.
+
+For the curious, it is assumed that this option would
+be used only in VMS systems, and so the "forvms" status flag is
+checked. There is a (sstatus feature forvms)
+in @t[mdoit.l] which is normally commented out but which should be uncommented
+when building a vms vaxima. The effect of this
+is to change the definition of the lisp function "@t[edit*]" and substitute
+the file @t[jpg/medit.o] for @t[jpg/newedit.o].
+
+To leave the editor and return to Macsyma with the corrected line,
+type @t[:wq] <@i[return]>.   (To edit a command typed earlier, use the edit function, which
+will turn its argument into a string and hand it to VI.
+This functionality is in general a bit different from the one at MIT. Try it.)
+
+@Section[File Names]
+@Label[fn]
+
+The commands @t[loadfile, save, writefile, batch] and the newer
+@t[load] take a
+simpler file description.  The file name
+is not of the form described in the MIT manual,
+namely [<@i[6letters]>, <@i[6letters]>, @t[dsk], <@i[6letters]>]
+(e.g. [@t[foo,bar,dsk,share]] )  but a simple atomic name,
+(e.g. foobar).  It is possible to use more complicated file
+names, such as "@t[../foo/bar.longname]"  but then the double-quotes
+are required. @t[Closefile] requires no argument, but assumes the file
+name given in the previous @t[writefile] is to be closed.
+The command @t[load] will ordinarily search
+for files in the appropriate "share" directory. File suffixes
+".l" for lisp, ".o" for object, ".v" for "vaxima source" are useful
+but optional.  Load will use "batch" if appropriate.
+Only the simple form of @t[batch( filename)] is provided.
+We have not converted STORE or FASSAVE to the VAX,
+since it seems somewhat less important with the larger
+virtual memory.  
+
+@Section[|Translation and Compilation of Macsyma-level code|]
+@Label[tcmlc]
+
+These facilities are in a transitional stage.  We have not tried to
+maintain compatibility with recent changes.  It is quite possible to
+link to other languages, making certain uses of these facilities
+unnecessary.
+
+@Section[Floating Point Calculations]
+@Label[fpc]
+
+Floating point numbers are double precision (64 bit), and the
+associated constants, scientific subroutines, etc. are
+correspondingly more precise (and accurate, we hope). The
+math double-precision library functions in the underlying lisp
+(and thus in the underlying run-time library) are used.
+However, we have noticed that some constants and numerical
+algorithms (e.g. in the dilogarithm numerical routines) still reflect the
+single-precision routines on the PDP-10.  If anyone cares to contribute
+more accurate lisp-language routines, we would be pleased to distribute
+them in future versions.  Our preference at this time would be to
+have links to Fortran or C-coded routines, at least until such time
+as the underlying Franz Lisp system handles floating-point computations
+more efficiently.
+
+The number of digits in the display of floating point numbers can
+be reduced by use of the function @t[floatformat(type,fieldwidth,precision)].
+For example, @t[floatformat(e,0,8)] will change
+the default display to use 8-digit fraction E format in whatever
+fieldwidth is required. F and G (the default) formats
+can be specified. (corresponding to the UNIX operating system
+printf function)
+
+There are extensive facilities for
+interaction with numerical software written in Fortran or C.
+We have experimental interfaces for the IMSL library, although
+this requires an IMSL-licensed system.
+For example, IMSL's ZRPOLY, for polynomial zero-finding on the VAX,
+can be used (it is "autoloaded" at Berkeley) when first used e.g.
+@Begin[Example]
+ zrpoly(x^2-1,x);
+@End[Example]
+Some details are available in 
+Douglas Lanam's SYMSAC 81 paper. Further
+information
+on numerical/algebraic facilities is being produced.
+
+The value of @t[ratepsilon] for the VAX is initially about 2.775e-17
+(that is, (0.5)@-[53]5) rather than 2.0e-8.
+
+@Section[Storage]
+@Label[storg]
+
+Programs which run out of storage on the PDP-10 may
+run successfully on the VAX, however the address space
+available to a user is in practice restricted by operating
+system constraints, some of which have been incorporated as
+parameters in the Lisp system.  An error message which declares
+"Attempt to allocate beyond static structures" indicates that
+you will have to have a reconfigured Lisp system to grow larger.
+You should save
+your computation and make a larger Lisp system and Vaxima.  This
+takes about 4 cpu minutes on a VAX 11/780, but will in general require
+that you be familiar with the instructions for generating a system,
+and that the object code is on-line (the ".o" files).  Since the current allocation is
+much larger than the PDP-10, you should also take this opportunity
+to ask if you really want to continue with the computation.  Large
+jobs tend to run rather poorly unless you have a lightly loaded
+system or high priority.
+
+It is possible to fiddle with various allocations to attempt to
+decrease the number of garbage collections in a system which you
+suspect will require large amounts of space.  The "alloc"
+is different from the pdp-10's: alloc(<spacetype>,<numberofpages>) allocates
+some number of pages.
+Spacetype is likely to be list, but could be fixnum or other
+"Franz" spaces.  Try 
+@Begin[Example]
+	alloc(list,1000);
+@End[Example]
+for example. There are
+64 cons-cells on a page. See the Franz Lisp manual for more details.
+
+The message "[@t[fasl hole filled up]]"  which you may provoke by using
+the fasl program, is merely informative, and is not an indication
+of trouble.
+
+If the Macsyma variable 
+@t[gcprint]
+is set to a non-false value then
+after each garbage collection a summary of current memory allocation
+will be printed out in this form: [@t[*list:553{87%}; fixnum:23{27%}; ut:87%]].
+The meaning of this is that after garbage collection and subsequent
+allocation of new data space, there are 553 (512 byte) pages of list data and
+23 pages of fixnum data. 87% of the list space is used and 27% of the fixnum
+space is used.  The * before list indicates that it was list space which ran
+out and caused the garbage collection. The ut indicates the percentage
+of time utilized in non-garbage collection mode.  The first time the
+message is printed, this item will be 0%, which indicates only that
+various counters have been initialized. The allocation of storage is
+automatic; you will never be asked to make a decision about which data
+space to allocate, although a low utilization measure is an indication
+that automatic allocation is not set appropriately for your problem,
+and various parameters could be fiddled with.
+
+You will not encounter difficulties loading out-of-core
+files (the "nocore" message) since all the files fit in core. 
+An option at system generation time allows for some rarely used 
+files to not be loaded. They will be loaded automatically should
+any programs contained in those files be needed.
+The size of a
+vaxima is approximately 2.3 megabytes (and can be more);
+at least 1 megabyte is shared between users.  Typical "working sets"
+are much smaller than that; how much smaller is a question
+being studied; we suspect that 0.5 megabytes is a typical size during
+CPU-bound operation.  There is a limit on the size to which a particular
+system can grow (currently about 4 megabytes), which can be exceeded
+by re-compilation of the lisp system and construction of a larger vaxima
+as indicated above.
+There are
+other limits on the size of a job that are imposed by the operating
+system configuration and the number of other jobs using the paging
+device.  Clearly you cannot exercise a 64 megabyte address space unless
+you have 64 megabytes of disk space.
+
+@Section[Control Characters and Escapes]
+@Label[cce]
+
+You are not provided the same set of control characters to
+enter break loops, turn on garbage collection messages, etc. that are
+provided on the PDP-10.
+You can halt computation with a designated character 
+(default is <@i[rubout]> or ^C at Berkeley). 
+This is discussed under debugging, below.
+
+Your UNIX erase character (often backspace at Berkeley) and
+your line-kill character (often @ or ^U at Berkeley) and your
+word-kill (default ^W) are
+used by Macsyma too.  You can change these with the UNIUNIX
+command "@t[stty]" or "@t[tset]".
+
+You can invoke the UNIX shell by typing 
+@t[shell();]
+at
+a command line. Alternatively, you can type ^Z, in the 4BSD 
+UNIX shell, to stop your job and suspend it in background.
+Many options are available at this point, including "@t[fg]"
+which returns to your job in the foreground, "bg" which sets it going
+in background, etc.
+To return from the 
+@t[shell();]
+command to Macsyma,
+type 
+@t[exit].
+To exit from Macsyma and kill your Macsyma
+job, type 
+@t[quit();]
+
+Other UNIX commands can be executed from
+Macsyma by invoking the exec command on a string 
+argument: @t[ exec("whoami"); ] or @t[ exec("ls -l"); ]for
+example.  An integer
+return-code is the value of such a command, zero if no error.
+
+The sequence ^B <@i[return]>  [^B is <@i[control]>+B]
+goes into lisp from Macsyma, @t[(reset)] returns to Macsyma. Other options
+are discussed in the section on debugging in this addendum.
+
+@Section[Describe Database]
+@Label[ddb]
+
+The describe command is using a database obtained from MIT in April, 1982.
+It may not be installed on your system, since it requires extra disk
+space.  We have not attempted to revise the descriptions to reflect
+exactly the VAX Macsyma commands.  Most descriptions, however, are correct.
+In case of conflicts, assume that this document is most relevant.
+
+Adding features to the system can be done by defining functions
+in a file (compiled if appropriate) and loading the file in via the 
+"@t[mdoit]" file  (see  "How to make a Vaxima").
+If users add facilities represented by new commands, it would be useful
+to put a description of each such commands in the local
+mac/manual/descrips directory.
+Other users can access this information via the describe command and the
+apropos command.  (Try describe(describe);)
+The example command can also be augmented by providing example text in the
+mac/manual/examples directory.
+
+@Section[Plotting Curves]
+@Label[pc]
+
+A version of Plot which uses the UNIX
+UNIX graph/plot package, for output
+on daisy-wheel printers, dot-plotters, tektronix scopes, etc., is
+available, and can be used in a simple way by specifying
+@t[plot(]f(x),x,left,right,points@?[)];  where points= number of points.
+The command @t[plotout()]; actually produces the plot on your terminal
+(the type of your terminal is determined from your environment).
+It is possible to use other devices by specification of an
+argument to plotout.)
+
+@Section[|SHARE and Other User-Contributed Files|]
+@Label[sh!oucf]
+
+With a few exceptions, "SHARE" files defined as of May 1, 1982 on the
+MIT-MC computer, are
+included on this tape.  The missing files were particularly dependent
+on facilities available only on the PDP-10 "ITS" system.
+Not every file has been checked out,
+and some undoubtedly contain MIT-MC or PDP-10 dependencies.
+A number of "DEMO" files are available, too.
+
+Various strategies are available for finding files, but you can
+always get to a file by using the appropriate full path name.
+If your directory search path has been set up correctly, @t[load] will
+accomodate partial file name specification.
+The Macsyma variable @t[file_search] is set to a list of directories
+to be searched, and can be modified.  Be sure to enclose directory specifications within
+double-quotes. 
+For example, if the "demo" directory were not already in the search
+path, you could access those files by their simple names on Berkeley's CSvax,
+("Ernie Covax") where they are in the directory @t["/vb/mac/demo",] 
+by executing @t[file_search:cons("/vb/mac/demo",file_search);].
+
+Files which are available at MIT can be usually be used without
+change and may be transported as Macsyma-level
+text or lisp text.  The object file formats ("fasl") on the two
+machines are incompatible, but a lisp text file from MIT can be
+compiled locally.
+
+@Section[Bugs and Debugging]
+@Label[bad]
+
+Bugs in Macsyma in the VAX version may be the result
+of bugs in the lisp code in which case they can often
+be exhibited on non-VAX
+systems, or may be unique to VAX (or VAX/UNIX) environments.
+
+In order to aid in debugging, there are packages similar to those 
+described in the main body of this Manual, although since
+the character-interrupt handling is somewhat different, debugging is described
+here.
+
+You have an interrupt character, usually <@i[rubout]> or ^C, which you have
+chosen as your standard under UNIX. If you wish to halt a computation,
+you can type this interrupt character one, two, or three times.
+
+The first character will cause an interrupt at the next
+available clean place in your
+computation at the interface between some compiled and some interpreted code,
+or at a garbage collection.  If the interrupt does not happen promptly
+enough for you, you may type the interrupt character a second
+time.  This will snap
+"transfer links" which are used when compiled code calls compiled
+code, and then cause an
+interrupt at the next such function-call.  As a side effect, it will slow
+down execution until the transfer links are re-established at the first
+execution of a particular transfer.
+It is possible to be caught in a very tight loop in which there are
+no function calls, 
+in which case the third typing of the interrupt character will stop the computation
+cold.
+Even using this drastic interrupt,
+you will generally
+be able to avail yourself of any of several alternatives.
+
+When the system stops, it will type
+@Begin[Example]
+	Interrupt (type h for help):
+@End[Example]
+You can then type one of several atoms:
+*** begin indent  5,10; here@t[ r], 
+Just return (after displaying the time if @t[ showtime ] was set to @t[true ] or @t[ all.]);
+
+@t[ q],
+Return to the top-level of Macsyma,
+
+@t[ exit],
+Exit from Macsyma,
+
+@t[ l],
+Enter a lisp break,
+
+@t[ m],
+Enter a Macsyma-break.
+
+@t[ h],
+Type a menu of options. 
+*** begin indent ends here
+Usually it is possible to get more debugging information from the
+lisp system (at a cost in execution speed) by typing @t[debugging(true);]
+to macsyma  (or @t[(debugging t)] to lisp).  The relevant functions which
+will be more helpful in these cases are the lisp functions
+@t[(baktrace)]
+and 
+@t[(showstack)].
+
+If you are in a debugging break, the
+prompt will have a D to its left. Typing ^D steps one level up out
+of a break loop, and typing 
+@t[(reset)]
+to
+lisp gets to the top level of macsyma.
+
+It is also possible to quit temporarily out of your job by typing ^Z.
+See your UNIX manual for details.
+It is currently not always possible to catch asynchronous
+interrupts which occur in user-written
+"foreign" functions (C, Fortran). We hope to remedy this soon.
+
+@Section[Typesetting of equations]
+@Label[typ!set]
+
+Phototypeset output can be obtained by several routes. The
+most straightforward  at the moment is to use the 
+@t[writefile]
+command in Macsyma or the 
+@t[script]
+command in UNIX to put your 
+output character stream into a file, and turn on the "@t[EQN]" display 
+processor by the Macsyma command 
+@t[typeset:true;]
+
+You can also have the system initialize various parameters via a subsequent
+call to:
+@t[phototinit()].
+
+The resulting file can be run through the equation processor
+and the typesetter (at Berkeley, one of the dot-plotters), by
+the command
+@Begin[Example]
+	eqn filename | vtroff.
+@End[Example]
+
+Some Macsyma-level flags affect the typesetter characteristics as
+follows:
+@Begin[Example]
+Flag        Default     Meaning of default
+
+photottolc      t       translate upper-case to lower
+phototwidth     5       default width of display is 5 inches
+phototindent    0       indentation from left margin is 0 inches
+phototdebug   false     photot debugging information off
+phototcsiz      10      initial point size is 10 pt.
+phototbreakup   t       attempt breakup of multi-line expressions
+@End[Example]
+
+@Section[Initialization]
+@Label[init]
+
+It is possible to have your vaxima job automatically initialize your
+environment. This mechanism can be used to customize your system by
+loading in particular facilities or altering the syntax of expressions,
+initializing variables and flags, etc.
+
+When vaxima starts up, it loads files with names
+<@i[vaxima-main-dir]>@t[/vaximarc.l] and @t[.vaximarc] from the current
+HOME directory.  The first of these files is intended for the use of
+system programmers primarily for the correction of bugs or the
+printing of messages. We used the notation <@i[vaxima-main-dir]> for the
+file-system directory where Macsyma sources, shared files, etc. are
+located, if they are on-line.  The second is for your use, if you wish
+to initialize the system with your own default values, functions, etc.
+
+If the files exist (they need not), they must contain lisp code, not macsyma code.
+
+@Section[|Mail and Send|]
+@Label[ms]
+
+The mit-mc system has commands which enable the user to send mail
+to the "bug-reports" file, and to other users.  UNIX users can
+interrupt their jobs (e.g. with control-z), use the system Mail command,
+and resume using "fg".  Each site running VAX Macsyma should have a designated
+contact person to deal with problems that can be locally resolved.
+If you believe there is a bug or report which should be shared
+with others,
+there is a vaxima-bugs mailing list at Berkeley, to which problems
+may be sent via arpanet  (kim:vaxima-bugs@berkeley) or uucp (ucbvax!kim:vaxima-bugs).
+U.S. Mail should be directed to Prof. Fateman (EECS Dept., UC, Berkeley, CA
+94720, USA).
+
+Some functions such as runtime, alarmclock, and other monitoring
+facilities pertaining to disk file sizes, directories, etc,
+will generally not work as described by the manual or @t[describe].
+Overall, you should consider using the facilities in UNIX itself,
+rather than the internalized view of the operating system that
+is more relevant on PDP-10 systems.
+
+@Section[Other]
+@Label[the!rest]
+
+In the 4BSD UNIX system, the message 'killed' or 'out of core' immediately
+after the starting of a vaxima means that there is currently insufficient free space on
+the swapping device to run vaxima.  This situation is
+is system load dependent: when the load decreases, try again.
+
+Some status functions operate differently.
+
+
+@Section[Differences between the VAX UNIX version and the VAX/VMS version]
+@Label[diff!vaxvms]
+
+In general, the VAX/VMS system will lag behind UNIX in features requiring
+interaction with the operating system because we do not generally
+use VMS at Berkeley. Furthermore, many VMS systems are configured
+to so restrict the use of virtual memory that Vaxima cannot be loaded.
+Usually a 4 megabyte virtual address space is needed, although most
+users do not require a large "working set".  This is, however, dependent
+on system load.  There are also references
+in the UNIX portion above, to UNIX operating system facilities such
+as the shell, the phototypesetter processing capabilities, graphics,
+Fortran, and the file system.  Most of these facilities can be made
+to work under VMS with the "Eunice" package.
+
+For VMS systems, a file named @t[dr0:[foo.bar.baz]stuff.mac] can
+be referenced as @t["/dr0:/foo/bar/baz/stuff.mac"] in Vaxima.  A file in the
+current working directory named @t[stuff.mac] can be refered to simply
+as @t["stuff.mac"].
+
+Control characters for VMS:  rubout works to erase a character, control-Y exits
+to VMS DCL level, control-B exits from Macsyma top-level to lisp.
+@t[(reset)] returns to Macsyma. (Other things may work too)
+
+Describe can be but has not been moved to VMS yet.
+
+Making a new system on VMS is currently much more
+complicated, and requires a Eunice license and
+a UNIX license for your system. 
+

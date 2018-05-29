@@ -1,0 +1,116 @@
+.sec(Vector Analysis,vecan)
+
+The file VECT > contains a vector analysis package,  VECT DEMO contains a corresponding demonstration, and  VECT ORTH contains definitions of various orthogonal curvilinear coordinate systems.
+
+The vector analysis package can combine and simplify symbolic 
+expressions including dot products and cross products, together with
+the gradient, divergence, curl, and Laplacian operators.  The
+distribution of these operators over sums or products is under
+user control, as are various other expansions, including expansion
+into components in any specific orthogonal coordinate systems.
+There is also a capability for deriving the scalar or vector potential
+of a field.
+
+To establish 2indeterminate1, indeterminate2, ...1 as vector entities,
+type
+.example
+        DECLARE([2indeterminate1, indeterminate2, ...1], NONSCALAR) $
+.end
+.scon
+Vectors can also be represented as lists of components.
+
+"." is the dot-product operator, "~" is the cross-product operator,
+$fun<GRAD> is the gradient operator, $fun<DIV> is the divergence operator, $fun<CURL> is the curl or rotation operator, and $fun<LAPLACIAN> is DIV GRAD.
+
+Most non-controversial simplifications are automatic.  For additional
+simplification, there is a function which can be used in the form
+
+.inline function(VECTORSIMP,vectorexpression)
+.scon
+This function employs additional non-controversial simplifications,
+together with various optional expansions according to the settings
+of the following global flags:
+.scon
+$var<EXPANDALL/FALSE>
+.scon
+$var<EXPANDDOT/FALSE>, $var<EXPANDDOTPLUS/FALSE>
+.scon
+$var<EXPANDCROSS/FALSE>, $var<EXPANDCROSSPLUS/FALSE>, $var<EXPANDCROSSCROSS/FALSE>
+.scon
+$var<EXPANDGRAD/FALSE>, $var<EXPANDGRADPLUS/FALSE>, $var<EXPANDGRADPROD/FALSE>
+.scon
+$var<EXPANDDIV/FALSE>, $var<EXPANDDIVPLUS/FALSE>, $var<EXPANDDIVPROD/FALSE>
+.scon
+$var<EXPANDCURL/FALSE>, $var<EXPANDCURLPLUS/FALSE>, $var<EXPANDCURLCURL/FALSE>
+.scon
+$var<EXPANDLAPLACIAN/FALSE>, $var<EXPANDLAPLACIANPLUS/FALSE>, $var<EXPANDLAPLACIANPROD/FALSE>
+.scon
+The PLUS suffix refers to employing additivity or distributivity.
+The PROD suffix refers to the expansion for an operand that is any
+kind of product.  EXPANDCROSSCROSS refers to replacing p~(q~r)
+with (p.r)*q-(p.q)*r,  and EXPANDCURLCURL refers to replacing
+CURL CURL p with  GRAD DIV p + DIV GRAD p.  EXPANDCROSS:TRUE has the 
+same effect as EXPANDCROSSPLUS:EXPANDCROSSCROSS:TRUE, etc.  Two other
+flags, $var<EXPANDPLUS/FALSE> and $var<EXPANDPROD/FALSE>, have the same effect as setting all
+similarly suffixed flags true.  When TRUE, another flag named
+$var<EXPANDLAPLACIANTODIVGRAD/FALSE>, replaces the LAPLACIAN operator with the
+composition DIV GRAD.  All of these flags are initially FALSE.
+For convenience, all of these flags have been declared EVFLAG.
+
+For orthogonal curvilinear coordinates, the global variables
+$var<COORDINATES/[X,Y,Z]>, $var<DIMENSION/3>, $var<SF/[1,1,1]>, and $var<SFPROD/1> are set by the function invocation
+
+.inline function(SCALEFACTORS,coordinatetransform) 
+.scon
+Here 2coordinatetransform1 evaluates to the form
+[[expression1, expression2, ...], indeterminate1, indeterminat2, ...],
+where indeterminate1, indeterminate2, etc. are the curvilinear
+coordinate variables and where a set of rectangular Cartesian
+components is given in terms of
+the curvilinear coordinates by [expression1, expression2, ...].  COORDINATES
+is set to the vector [indeterminate1, indeterminate2, ...], and
+DIMENSION is set to the length of this vector.  SF[1], SF[2], ...,
+SF[DIMENSION] are set to the coordinate scale factors, and SFPROD is
+set to the product of these scale factors.  Initially, COORDINATES is
+[X, Y, Z], DIMENSION is 3, and SF[1]=SF[2]=SF[3]=SFPROD=1,
+corresponding to 3-dimensional rectangular Cartesian coordinates.
+
+To expand an expression into physical components in the current
+coordinate system, there is a function with usage of the form
+
+.inline function(EXPRESS,expression)
+.scon
+The result uses the noun form of any derivatives arising from
+expansion of the vector differential operators.
+To force evaluation of these derivatives,
+the built-in EV function can be used together with the DIFF evflag,
+after using the built-in DEPENDS function to establish any new
+implicit dependencies.
+
+The scalar potential of a given gradient vector, in the current
+coordinate system, is returned as the result of
+ 
+.inline function(POTENTIAL,givengradient).
+.scon
+The calculation makes use of the global variable $var<POTENTIALZEROLOC/0>,
+which must be NONLIST or of the form [indeterminatej=expressionj,
+indeterminatek=expressionk, ...], the former being equivalent to
+the nonlist expression
+for all right-hand sides in the latter.  The indicated right-hand
+sides are used as the lower limit of integration.  The success of
+the integrations may depend upon their values and order.
+POTENTIALZEROLOC is initially set to 0.
+
+The vector potential of a given curl vector, in the current
+coordinate system, is returned as the result of
+
+.inline function(VECTORPOTENTIAL,givencurl).
+.scon
+POTENTIALZEROLOC has a similar role as for POTENTIAL, but the order
+of the left-hand sides of the equations must be a cyclic permutation
+of the coordinate variables.
+
+EXPRESS, POTENTIAL, and VECTORPOTENTIAL can have a second argument
+like the argument of SCALEFACTORS, causing a corresponding
+invocation of SCALEFACTORS before the other computations.
+

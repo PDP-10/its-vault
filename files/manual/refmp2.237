@@ -1,0 +1,3503 @@
+.if partial then start
+.count chapter from 6 printing "1"
+.count section in chapter printing "!.1"
+.count subsection in section printing "!.1"
+.end
+
+.chap (MACSYMA Functions and Variables,Mfunctions)
+
+Following is a list of all MACSYMA functions divided into functional classes.
+MACSYMA variables which affect the operation of some functions are described under the
+appropriate function with their default value in brackets.  These are sometimes
+referred to as MACSYMA options.
+
+.sec (General Purpose Functions,general!functions)
+
+.subsec (Evaluation and Simplification Functions,evsimpfun)
+
+.function(EV,|exp, arg1, ..., argn|)
+is one of MACSYMA's most powerful and versatile commands. It evaluates the expression 2exp1 in the environment
+specified by the 2argi1.  This is done in steps, as follows:
+
+.skip 1
+(1) First the environment is set up by scanning the 2argi1 which may be as follows:
+
+$flag<SIMP> causes 2exp1 to be simplified regardless of the setting of the switch SIMP
+which inhibits simplification if FALSE.
+
+$flag<NOEVAL> suppresses the evaluation phase of EV (see step (4) below).  This is
+useful in conjunction with the other switches and in causing 2exp1 to be
+resimplified without being reevaluated.
+
+$flag<EVAL> causes an extra post-evaluation of 2exp1 to occur. (See step (5) below.)
+
+$flag<INFEVAL> leads to an "infinite evaluation" mode.  EV repeatedly evaluates an expression until it stops changing.    To prevent a variable, say X, from being evaluated away in this mode, simply include X='X as an argument to EV.   Of course expressions such as EV(X,X=X+1,INFEVAL); will generate an infinite loop.  2CAVEAT EVALUATOR*.
+
+$flag<EXPAND> causes expansion.
+
+EXPAND(2m,n1) causes expansion, setting the values of MAXPOSEX and MAXNEGEX to
+2m1 and 2n1 respectively. (see the EXPAND function below)
+
+$flag<DETOUT> causes any matrix inverses computed in 2exp1 to have their
+determinant kept outside of the inverse rather than dividing through each
+element.
+
+$flag<DIFF> causes all differentiations indicated in 2exp1 to be performed.
+(see the DIFF function below.)
+
+$flag<DERIVLIST>(2var11,...,2vark1) causes only differentiations with respect to
+the indicated variables.
+
+$flag<FLOAT> causes non-integral rational numbers to be converted to floating point.
+
+$flag<NUMER> causes some mathematical functions (including exponentiation) with numerical
+arguments to be evaluated in floating point $see<Simple!Functions>. It causes variables in 2exp1 which have been given numervals $see<uspropfun> to be replaced by their values.  It also sets the FLOAT switch on.
+
+$flag<PRED> causes predicates (expressions which evaluate to TRUE or FALSE)
+to be evaluated.
+
+$flag<NOUNS> converts all nouns occurring in 2exp1 to verbs.
+
+
+E where E is an atom declared to be an $var<EVFLAG/> $see<MACSYMA!properties> causes E to be
+bound to TRUE during the evaluation of 2exp1.
+
+2V:expression* (or alternatively 2V=expression*) causes 2V* to be bound to
+the value of 2expression* during the evaluation of 2exp*.  Note that if 2V*
+is a MACSYMA option, then 2expression* is used for its value during the evaluation
+of 2exp*.  If more than one argument to EV is of this type then the binding is done
+in parallel.  If 2V* is a non-atomic expression then a substitution rather than a
+binding is performed.
+
+E where E is a function name declared to be an EVFUN $see<property!specification>  causes E to be applied to 2exp*.
+
+Any other function names (e.g. SUM) cause evaluation of occurrences of those
+names in 2exp* as though they were verbs $see<evaluation>.
+
+In addition a function occurring in 2exp1 (say F(args)) may be defined locally for
+the purpose of this evaluation of 2exp1 by giving F(args):=body as an argument to EV.
+
+If an atom not mentioned above or a subscripted variable or subscripted expression
+was given as an argument, it is evaluated and if the result is an equation or
+assignment then the indicated binding or substitution is performed.  If the result is
+a list then the members of the list are treated as if they were additional arguments
+given to EV. This permits a list of equations to be given (e.g. [X=1, Y=A**2] ) or a
+list of names of equations (e.g. [E1,E2] where E1 and E2 are equations) such as that
+returned by $fun<SOLVE>. $see<SOLVE>
+
+The 2argi1 of EV usually may be given in any order but since they are picked up left to right the order may influence the result.  This is strictly true of substitution equations which are handled in sequence, left to right, and EVFUNS which are composed, e.g. EV(2exp1,RATSIMP,RECTFORM) is handled as RECTFORM(RATSIMP(2exp1)).
+The SIMP, NUMER, FLOAT, PRED, and INFEVAL switches may also be set locally in a block, or
+globally at the "top level" in MACSYMA so that they will remain in effect until being reset.  Setting INFEVAL:TRUE locally will cause all evaluations occurring via explicit calls to EV to be done "infinitely".
+
+If 2exp1 is in CRE form $see<rep> then EV will return a result in CRE form provided
+the NUMER and FLOAT switches are both FALSE.
+
+(2) During step (1), a list is made of the non-subscripted variables appearing on the
+left side of equations in the 2argi1 or in the value of some 2argi1 if the value
+is an equation.
+The variables (including subscripted variables) in the expression 2exp1 are
+replaced by their
+global values, except for those appearing in this list.  Usually, 2exp1 is just a
+label or % (as in (C2) below), so this step simply retrieves the expression named by the
+label, so that EV may work on it.
+
+(3) If any substitutions are indicated by the 2argi1, they are carried out now.
+.begin turn on ""
+(4) The resulting expression is then re-evaluated (unless one of the 2argi1 was NOEVAL) and simplified according the the
+2argi1.  Note that any function calls in 2exp1 will be
+carried out after the variables in it are evaluated and that
+EV(F(X)) thus may behave like F(EV(X)).
+.end
+(5) If one of the 2argi1 was EVAL, steps (3) and (4) are repeated.
+.example
+.begin group
+.once center
+2Examples1
+
+(C1) SIN(X)+COS(Y)+(W+1)**2+'DIFF(SIN(W),W);
+.end
+.begin group
+                        d                 2
+(D1)  COS(Y) + SIN(X) + --SIN(W) + (W + 1)
+                        dW
+.end
+(C2) EV(%,SIN,EXPAND,DIFF,X=2,Y=1);
+.begin group
+                    2
+(D2)      COS(W) + W  + 2 W + COS(1) + 1.90929742
+.end
+.end
+
+An alternate "top level" syntax has been provided for EV, whereby one may just
+type in its arguments, without the EV().  That is, one may write simply
+2exp,arg11,...,2argn1. (This is not permitted as part of another expression, i.e. in functions, blocks, etc.).  2exp,RESCAN1 is equivalent to EV(2exp1). 
+
+
+.example
+(C4) X+Y,X:A+Y,Y:2;
+(D4)                Y + A + 2
+
+1(Notice the parallel binding process)*
+
+(C5) 2*X-3*Y=3$
+
+(C6) -3*X+2*Y=-4$
+
+(C7) SOLVE([D5,D6]);
+solution
+.begin group
+                             1
+(E7)                  Y =  - -
+                             5
+.end
+.begin group
+                          6
+(E8)                  X = -
+                          5
+.end
+
+(D8)               [E7, E8]
+
+(C9) D6,D8;
+(D9)               - 4 =  - 4
+
+(C10) X+1/X > GAMMA(1/2);
+
+.begin group
+                    1
+(D10)           X + - > SQRT(%PI)
+                    X
+.end
+
+(C11) %,NUMER,X=1/2;
+
+(D11)            2.5 > 1.7724539
+
+(C12) %,PRED;
+(D12)                  TRUE
+
+.end
+.endfunction
+
+
+.function(UNKNOWN,exp)
+returns  TRUE   iff  2exp*  contains an operator or function not known to the built-in simplifier.
+.endfunction
+
+.function(EXPAND,exp)
+causes products of sums and exponentiated sums to be multiplied out,
+numerators of rational expressions which are sums to be split into their respective
+terms, and multiplication (commutative and non-commutative) to be distributed over
+addition at all levels of 2exp1.
+For polynomials one may wish use RATEXPAND which uses a more efficient algorithm (see below).
+
+
+Terms in 2exp1 whose exponent is less than $var<MAXNEGEX/1000> or greater than $var<MAXPOSEX/1000> will not be EXPANDed.  However,
+
+EXPAND(2exp,p,n1) expands 2exp1, using 2p1 for MAXPOSEX and 2n1 for MAXNEGEX.  This helps the user control how much and what kinds of expansion are to take place.
+
+$var<EXPON/0> - the exponent of the largest negative power which is automatically
+expanded (independent of calls to EXPAND).  For example if EXPON is 4 then (X+1)**(-5)
+will not be automatically expanded.
+
+$var<EXPOP/0> - the highest positive exponent which is automatically expanded.  Thus
+(X+1)**3, when typed, will be automatically expanded only if EXPOP is greater than or
+equal to 3.  If it is desired to have (X+1)**n expanded where n is greater than EXPOP
+then executing EXPAND((X+1)**n) will work only if MAXPOSEX is not less than n.
+
+
+
+.example
+(C1) (1/(X+Y)**4-3/(Y+Z)**3)**2;
+
+.begin group
+                              1          3     2
+(D1)                      (-------- - --------)
+                                  4          3
+                           (Y + X)    (Z + Y)
+.end
+
+(C2) EXPAND(%,2,0);
+
+.begin group
+                           6              9          1
+(D2)             - ----------------- + -------- + --------
+                          4        3          6          8
+                   (Y + X)  (Z + Y)    (Z + Y)    (Y + X)
+.end
+
+(C3) EXPAND(A.(B+C.(D+E)+F));
+
+(D3)            A . F + A . C . E + A . C . D + A . B
+
+.end
+.endfunction
+
+.function(RATEXPAND,exp)
+expands 2exp1 by multiplying out products of sums and exponentiated sums,
+combining fractions over a common denominator, cancelling the greatest common divisor
+of the numerator and denominator, then splitting the numerator (if a sum) into its
+respective terms divided by the denominator.  This is accomplished by converting 2exp1
+to CRE form $see<rep> and then back to general form.
+
+
+$var<RATEXPAND/FALSE> - if TRUE will cause CRE expressions to be fully expanded when
+they are converted back to general form or displayed, while if it is FALSE then they
+will be put into a recursive form. (see RATSIMP below)
+
+$var<RATDENOMDIVIDE/TRUE> - if FALSE will stop the splitting up of the terms of the
+numerator of RATEXPANDed expressions from occurring.
+
+$var<KEEPFLOAT/FALSE> if set to TRUE will prevent floating point numbers from being
+rationalized when expressions which contain them are converted to CRE form.
+
+$var<GCD/EZ> if FALSE will prevent the greatest common divisor from being taken
+when expressions are converted to CRE form.  This will sometimes speed the calculation if gcds are not required. (cf. the function GCD in $ref<rational!functions>)
+
+.example
+(C1) RATEXPAND((2*X-3*Y)**3);
+
+.begin group
+                3         2       2        3
+(D1)      - 27 Y  + 54 X Y  - 36 X  Y + 8 X
+
+(C2) (X-1)/(X+1)**2+1/(X-1);
+.end
+
+.begin group
+                              X - 1       1
+(D2)                         -------- + -----
+                                    2   X - 1
+                             (X + 1)
+.end
+
+(C3) EXPAND(D2);
+
+.begin group
+                         X              1           1
+(D3)                ------------ - ------------ + -----
+                     2              2             X - 1
+                    X  + 2 X + 1   X  + 2 X + 1
+.end
+
+(C4) RATEXPAND(D2);
+
+.begin group
+                             2
+                          2 X                 2
+(D4)                 --------------- + ---------------
+                      3    2            3    2
+                     X  + X  - X - 1   X  + X  - X - 1
+
+.end
+
+.end
+.endfunction
+
+.function(RATSIMP,exp)
+"rationally" simplifies (similar to RATEXPAND) the expression 2exp1 and all of
+its subexpressions including the arguments to non-rational functions.  The result is
+returned as the quotient of two polynomials in a recursive form, i.e. the coefficients
+of the main variable are polynomials in the other variables.  Variables may, as in
+RATEXPAND, include non-rational functions (e.g. SIN(X**2+1) ) but with RATSIMP, the
+arguments to non-rational functions are rationally simplified.  Note that RATSIMP is
+affected by some of the variables which affect RATEXPAND.
+
+
+$var<RATSIMPEXPONS/FALSE> - if TRUE will cause exponents of expressions to be
+RATSIMPed automatically during simplification.
+.endfunction
+
+.function(RATSIMP,|exp,v1,...,vn|)
+enables rational simplification with the specification of variable ordering as in RATVARS.
+
+.example
+.begin group
+(C1) SIN(X/(X^2+X))=%E^((LOG(X)+1)**2-LOG(X)**2);
+
+
+                                    2                  2
+                    X          - LOG (X) + (LOG(X) + 1)
+(D1)          SIN(------) = %E
+                   2
+                  X  + X
+.end
+
+(C2) RATSIMP(%);
+.begin group
+                                  1          2
+(D2)                        SIN(-----) = %E X
+                                X + 1
+.end
+
+(C3) ((X-1)**(3/2)-(X+1)*SQRT(X-1))/SQRT((X-1)*(X+1));
+
+.begin group
+                       3/2
+                (X - 1)    - SQRT(X - 1) (X + 1)
+(D3)            --------------------------------
+                    SQRT(X - 1) SQRT(X + 1)
+.end
+
+(C4) RATSIMP(%);
+.begin group
+                                 2
+(D4)                      - -----------
+                            SQRT(X + 1)
+.end
+
+(C5)  X**(A+1/A),RATSIMPEXPONS:TRUE;
+
+.begin group
+                    2
+                   A  + 1
+                   ------
+                     A
+(D5)              X
+.end
+
+.end
+.endfunction
+
+.function(RADCAN,exp)
+simplifies 2exp1, which can contain logs, exponentials, and radicals,
+by converting it into a form which is canonical over a large class of expressions and a
+given ordering of variables; that is, all functionally equivalent forms are mapped
+into a unique form.  For a somewhat larger class of expressions, RADCAN produces a
+regular form [Fa2].  Two equivalent expressions in this class will not necessarily
+have the same appearance, but their difference will be simplified by RADCAN to zero.
+For some expressions RADCAN can be quite time consuming.  This is the cost of
+exploring certain relationships among the components of the expression for
+simplifications based on factoring and partial-fraction expansions of exponents.  
+
+
+
+$var<RADPRODEXPAND/TRUE>  when set to FALSE will inhibit certain transformations: RADCAN(SQRT(1-X)) will remain SQRT(1-X) and will not become %I SQRT(X-1).  RADCAN(SQRT(X^2-2*X+1)) will remain SQRT(X^2-2*X + 1) and will not be transformed to X-1. 
+ 
+.example
+(C1) (LOG(X**2+X)-LOG(X))**A/LOG(X+1)**(A/2);
+
+.begin group
+                          2               A
+                    (LOG(X  + X) - LOG(X))
+(D1)                -----------------------
+                                   A/2
+                         LOG(X + 1)
+.end
+
+(C2) RADCAN(%);
+.begin group
+                               A/2
+(D2)                 LOG(X + 1)
+.end
+
+(C3) LOG(A**(2*X)+2*A**X+1)/LOG(A**X+1);
+
+.begin group
+                   2 X      X
+              LOG(A    + 2 A  + 1)
+(D3)          --------------------
+                       X
+                  LOG(A  + 1)
+.end
+
+(C4) RADCAN(%);
+(D4)                  2
+
+(C5) (%E**X-1)/(%E**(X/2)+1);
+
+.begin group
+                       X
+                     %E  - 1
+(D5)                ---------
+                      X/2
+                    %E    + 1
+.end
+
+(C6) RADCAN(%);
+
+.begin group
+                      X/2
+(D6)                %E    - 1
+.end
+
+.end
+.endfunction
+
+.function(COMBINE,exp)
+simplifies the sum exp by combining terms with the same denominator into a single term.
+.endfunction
+
+
+.function(MULTTHRU,exp)
+multiplies a factor (which should be a sum) of 2exp1  by the other factors of
+2exp1. That is 2exp1 is f1*f2*...*fn where at least one factor, say fi, is a
+sum of terms.  Each term in that sum is multiplied by the other factors in the
+product.  (Namely all the factors except fi).  MULTTHRU does not expand
+exponentiated sums.  This function is the fastest way to distribute products
+(commutative or noncommutative) over sums.  Since quotients are represented as
+products $see<simp> MULTTHRU can be used to divide sums by products as well.
+
+.endfunction
+
+.function(MULTTHRU,|exp1, exp2|)
+multiplies each term in 2exp21 (which should be a sum
+or an equation) by 2exp11.  If 2exp11 is not itself a sum then this form is
+equivalent to MULTTHRU(2exp11*2exp21).
+
+.example
+(C1) X/(X-Y)**2-1/(X-Y)-F(X)/(X-Y)**3;
+
+.begin group
+               1        X         F(X)
+(D1)       - ----- + -------- - --------
+             X - Y          2          3
+                     (X - Y)    (X - Y)
+.end
+
+(C2) MULTTHRU((X-Y)**3,%);
+
+.begin group
+                    2
+(D2)       - (X - Y)  + X (X - Y) - F(X)
+.end
+
+(C3) RATEXPAND(D2);
+.begin group
+                           2
+(D3)                    - Y  + X Y - F(X)
+.end
+
+(C4) ((A+B)**10*S**2+2*A*B*S+(A*B)**2)/(A*B*S**2);
+
+.begin group
+                         10  2              2  2
+                (B  + A )   S  + 2 A B S + A  B
+(D4)            --------------------------------
+                                   2
+                              A B S
+.end
+
+(C5) MULTTHRU(%);
+
+.begin group
+                                          10
+                        2   A B   (B  + A)
+(D5)                    - + --- + -------
+                        S    2      A B
+                            S
+.end
+
+1(notice that (B+A)**10 is not expanded)*
+
+(C6) MULTTHRU(A.(B+C.(D+E)+F));
+
+(D6)                A . F + A . (C . (E + D)) + A . B
+
+1(compare with similar example under EXPAND)*
+
+.end
+.endfunction
+
+.function(XTHRU,exp)
+combines all terms of 2exp1 (which should be a sum) over a common denominator
+without expanding products and exponentiated sums as $fun<RATSIMP> does.  XTHRU
+cancels common factors in the numerator and denominator of rational expressions but
+only if the factors are explicit.  Sometimes it is better to use XTHRU before
+RATSIMPing an expression in order to cause explicit factors of the gcd of the
+numerator and denominator to be canceled thus simplifying the expression to be
+RATSIMPed.
+
+.example
+(C1) ((X+2)**20-2*Y)/(X+Y)**20+(X+Y)**-19-X/(X+Y)**20;
+
+.begin group
+                                                20
+                     1           X       (X + 2)   - 2 Y
+(D1)             --------- - --------- + ---------------
+                        19          20             20
+                 (Y + X)     (Y + X)        (Y + X)
+.end
+
+(C2) XTHRU(%);
+.begin group
+                                     20
+                              (X + 2)   - Y
+(D2)                          -------------
+                                       20
+                                (Y + X)
+.end
+
+.end
+.endfunction
+
+.function(PARTFRAC,|exp, var|)
+expands the expression 2exp1 in partial fractions with respect to the main variable,
+2var1.
+Each power of a different denominator will be represented by only a single term (i.e. the decomposition is not "complete").
+The algorithm employed is based on the fact that the denominators of the partial
+fraction expansion (the factors of the original denominator) are relatively prime.
+The numerators can be written as linear combinations of denominators, and the
+expansion falls out.
+
+.example
+(C1) 2/(X+2)-1/(X+1)-X/(X+1)**2$
+
+(C2) RATSIMP(%);
+.begin group
+                                     X
+(D2)                      - -------------------
+                             3      2
+                            X  + 4 X  + 5 X + 2
+.end
+
+(C3) PARTFRAC(%,X);
+.begin group
+                            - 2 X - 1     2
+(D3)                       ---------- + -----
+                                   2    X + 2
+                            (X + 1)
+.end
+
+.end
+.endfunction
+
+.function(FACTOR,exp)
+factors the expression 2exp1, containing any number of variables or functions,
+into factors irreducible over the integers.
+
+.ENDFUNCTION
+
+.FUNCTION(FACTOR,|exp, p|)
+factors 2exp1 over the field of integers with an element adjoined whose minimum polynomial is 2p1.
+
+
+$var<FACTORFLAG/FALSE> if FALSE suppresses the factoring of integer
+factors of rational expressions.
+
+$var<DONTFACTOR/> may be set to a list of variables with respect to which factoring is
+not to occur.  (It is initially empty).  Factoring also will not take place with
+respect to any variables which are less important (using the variable ordering assumed
+for CRE form) than those on the DONTFACTOR list. $see<rational!functions>
+
+$var<SAVEFACTORS/FALSE> if TRUE causes the factors of an expression which is a
+product of factors to be saved by certain functions in order to speed up later
+factorizations of expressions containing some of the same factors.
+
+$var<BERLEFACT/TRUE> if FALSE then the Kronecker factoring algorithm will be used otherwise the Berlekamp
+algorithm, which is the default, will be used. (see [Be1, Wa4])
+
+				
+$var<INTFACLIM/1000> is the largest divisor which will be tried when factoring a bignum integer.  If set to FALSE (this is the case when the user calls FACTOR explicitly), or if the integer is a fixnum (i.e. fits in one machine word), complete factorization of the integer will be attempted.   The user's setting of INTFACLIM is used for internal calls to FACTOR. 
+ Thus, INTFACLIM may be reset to prevent MACSYMA from taking an inordinately long time factoring large integers. 
+.endfunction
+.function(GCFACTOR,n)
+factors the gaussian integer n over the gaussians, i.e. numbers of the
+form  a + b i where a and b are rational integers. Factors are normalized by making a and b non-negative.
+.endfunction
+.example
+(C1) FACTOR(2**63-1);
+
+.begin group
+                                                2
+(D1)                   73 127 337 92737 649657 7
+.end
+
+(C2) FACTOR(Z**2*(X+2*Y)-4*X-8*Y);
+
+(D2)                   (2 Y + X) (Z - 2) (Z + 2)
+
+(C3)  X**2*Y**2+2*X*Y**2+Y**2-X**2-2*X-1;
+
+.begin group
+                     2  2        2    2    2
+(D3)                X  Y  + 2 X Y  + Y  - X  - 2 X - 1
+.end
+
+(C4) DONTFACTOR:[X]$
+
+(C5) FACTOR(D3/36/(Y**2+2*Y+1));
+
+.begin group
+                            2
+                          (X  + 2 X + 1) (Y - 1)
+(D5)                      ----------------------
+                                36 (Y + 1)
+.end
+
+(C6) FACTOR(%E**(3*X)+1);
+.begin group
+                          X         2 X     X
+(D6)                   (%E  + 1) (%E    - %E  + 1)
+.end
+
+(C7) FACTOR(X**4+1,A**2-2);
+
+.begin group
+                    2              2
+(D7)              (X  + A X + 1) (X  - A X + 1)
+.end
+
+.end
+
+When FACTOR is applied to integers, note that the value returned by FACTOR when used in other computations may not lead to a simplified result.  Using D1 above, the user can check that D1 + 1; will not return  2^63.
+
+
+.endfunction
+
+.function(FACTORSUM,exp)
+tries to group terms in factors of 2exp1 which are sums into groups
+of terms such that their sum is factorable.  It can recover the
+result of EXPAND((X+Y)^2+(Z+W)^2) but it can't
+recover EXPAND((X+1)^2+(X+Y)^2) because the terms have variables in common.
+
+.EXAMPLE
+
+.BEGIN GROUP
+
+(C1) (X+1)*((U+V)^2+A*(W+Z)^2),EXPAND;
+
+	  2      2                            2      2
+(D1) A X Z  + A Z  + 2 A W X Z + 2 A W Z + A W  X + V  X 
+
+			 2        2    2            2
+	    + 2 U V X + U  X + A W  + V  + 2 U V + U
+
+.END
+.BEGIN GROUP
+(C2) FACTORSUM(%);
+				       2          2
+(D2)                 (X + 1) (A (Z + W)  + (V + U) )
+
+.END
+.END
+.endfunction
+
+.function(FACTOROUT,|exp,var1,var2,...|)
+rearranges the sum 2exp* into a sum of terms of the form f(var1,var2,...)*g
+where g is a product of expressions not containing the vari's and f is factored.
+.endfunction
+
+
+Another technique of factoring complex expressions uses the function SCANMAP (see Chapter $ref<lisp!functions>). 
+             
+
+
+
+.function(SQFR,exp)
+is similar to FACTOR except that the polynomial factors are "square-free."  That
+is, they have factors only of degree one.  This algorithm, which is also used by the
+first stage of FACTOR, utilizes the fact that a polynomial has in common with its
+n2th1 derivative all its factors of degree > n.  Thus by taking gcds with the
+polynomial of the derivatives with respect to each variable in the polynomial, all
+factors of degree > 1 can be found.
+
+.example group
+(C1) SQFR(4*X**4+4*X**3-3*X**2-4*X-1);
+
+                             2               2
+(D1)                       (X  - 1) (2 X + 1)
+
+.end
+.endfunction
+
+.function(GFACTOR,exp)
+factors the polynomial 2exp1 over the Gaussian integers (i. e. with SQRT(-1) =
+%I adjoined).  This is like FACTOR(2exp1,A**2+1) where A is %I.
+
+.example group
+(C1)  GFACTOR(X**4-1);
+(D1)        (X - 1) (X + 1) (X + %I) (X - %I)
+
+.end
+.endfunction
+
+.function(GFACTORSUM,exp)
+is similar to FACTORSUM but applies GFACTOR instead of FACTOR.
+.endfunction
+
+.function(IRREDUCIBLE,exp)
+returns 2exp1 flagged as being irreducible, i.e. it doesn't factor.
+2Exp1 must be a sum.  If FACTOR is ever called on an expression marked as irreducible
+it returns immediately.  For example, if the value of H is a large expression which
+the user knows to be irreducible and the expression G*H is to be factored (where the
+value of G is arbitrary) then FACTOR(G*IRREDUCIBLE(H)) is faster than FACTOR(G*H).
+
+.endfunction
+
+.function(PARTITION,|exp, var|)
+returns a list of two expressions.  They are (1) the factors of 2exp1 (if it is a
+product) or the terms of 2exp1 (if it is a sum) which don't contain 2var1 and, (2)
+the factors or terms which do.
+
+.example
+(C1) PARTITION(2*A*X*F(X),X);
+
+(D1)                 [ 2 A , X F(X) ]
+
+(C2) PARTITION(A+B,X);
+
+(D2)                 [ A + B , 0 ]
+.end
+.endfunction
+
+.function(LOGCONTRACT,exp)
+recursively scans an exp, transforming subexpressions of the form
+a1*LOG(b1) + a2*LOG(b2) + c into LOG(RATSIMP(b1^a1 * b2^a2)) + c
+
+.example
+
+(C1) 2*(A*LOG(X) + 2*A*LOG(Y))$
+
+(C2) LOGCONTRACT(%);
+					2  4
+(D3) 				 A LOG(X  Y )
+
+
+
+.end
+.endfunction
+
+.function(ROOTSCONTRACT,exp) 
+converts products of roots into roots of products. For example,
+ROOTSCONTRACT(SQRT(X)*Y^(3/2)); gives SQRT(X*Y^3).
+Currently it only knows about rational number exponents whose 
+denominators are 2, but extension to other roots will follow.
+.endfunction
+
+
+.subsec (Sums and Products,sumsandprods)
+
+.function(SUM,|exp, ind, lo, hi|)
+performs a summation of the values of 2exp1 as the index 2ind1 varies from
+2lo1 to 2hi1.   If the upper and lower limits differ by an integer then each term
+in the sum is evaluated and added together.  Otherwise the summand is evaluated with the
+index of summation unbound and (if SIMPSUM [FALSE] is TRUE) the result is
+simplified.  This simplification may sometimes be able to produce a closed form.  If
+SIMPSUM is FALSE or if 'SUM is used, the value is a sum noun form which is a
+representation of the sigma notation used in mathematics.
+
+
+Sums may be differentiated, added, subtracted, or multiplied with some automatic
+simplification being performed.
+
+
+$fun<CAUCHYSUM[FALSE]> when TRUE causes the Cauchy product to be used when multiplying
+sums together rather than the usual product.  In the Cauchy product the index of the
+inner summation is a function of the index of the outer one rather than varying
+independently.
+
+$fun<GENINDEX[I]> is the alphabetic prefix used to generate the next variable of summation when necessary.
+
+$fun<GENSUMNUM[0]> is the numeric suffix used to generate the next variable of
+summation.  If it is set to FALSE then the index will consist only of GENINDEX with no
+numeric suffix.
+
+.example
+(C1) SIMPSUM:TRUE$
+
+(C2) SUM(I**2+2**I,I,0,N);
+
+.begin group
+                         3      2
+              N + 1   2 N  + 3 N  + N
+(D2)         2      + --------------- - 1
+                             6
+.end
+
+(C3) SUM(3**(-I),I,1,INF);
+
+.begin group
+                          1
+(D3)                      -
+                          2
+.end
+
+(C4) SUM(I^2,I,1,4)*SUM(1/I^2,I,1,INF);
+
+.begin group
+                                       2
+(D5)                              5 %PI
+.end
+
+.end
+.endfunction
+
+.function(NUSUM,|exp,var,low,high|)
+performs indefinite summation of 2exp1 with respect to 2var1 using a decision procedure due to R.W. Gosper.  2exp1  and the potential answer must be expressible as products of n^[th] powers, factorials, binomials, and rational functions.
+.endfunction
+
+.function(UNSUM,|fun,n|)
+is the first backward difference  2fun(n) - fun(n-1)1.
+.endfunction
+
+.example
+
+(C1) G(P):=P*4^N/BINOMIAL(2*N,N);
+					    N
+					 P 4
+(D1) 			   G(P) := ----------------
+				   BINOMIAL(2 N, N)
+.begin group
+
+(C2) G(N^4);
+				     4  N
+				    N  4
+(D2) 			       ----------------
+			       BINOMIAL(2 N, N)
+.end
+(C3) NUSUM(D2,N,0,N);
+			 4	  3	  2		 N
+	  2 (N + 1) (63 N  + 112 N  + 18 N  - 22 N + 3) 4      2
+(D3) 	  ------------------------------------------------ - ------
+			693 BINOMIAL(2 N, N)		     3 11 7
+
+(C4) UNSUM(%,N);
+				     4  N
+				    N  4
+(D4) 			       ----------------
+			       BINOMIAL(2 N, N)
+
+
+.end
+
+
+.function(PRODUCT,|exp, ind, lo, hi|)
+gives the product of the values of 2exp1 as the index 2ind1 varies from
+2lo1 to 2hi1.  The evaluation is similar to that of SUM.   No simplification of
+products is available at this time.
+
+.example group
+(C1)  PRODUCT(X+I*(I+1)/2,I,1,4);
+
+(D1)             (X + 1) (X + 3) (X + 6) (X + 10)
+.end
+.endfunction
+
+.subsec (Differentiation and Integration Functions,difintfun)
+
+.function(DIFF,|exp, v1, n1, v2, n2, ...|)
+differentiates 2exp1 with respect to each 2vi1, 2ni1 times.  If just the first
+derivative with respect to one variable is desired then the form DIFF(2exp,v1)
+may be used.  If the noun form of the function is required (as, for example, when writing a
+differential equation), 'DIFF should be used and this will display in a two dimensional
+format.
+
+
+
+$var<DERIVABBREV/FALSE> if TRUE will cause derivatives to display as subscripts.
+
+DIFF(2exp1) gives the "total differential", that is, the sum of the
+derivatives of 2exp1 with respect to each of its variables times the function
+DEL of the variable.  No further simplification of DEL is offered. 
+.example
+
+(C1) DIFF(EXP(F(X)),X,2);
+			     2
+		      F(X)  d		  F(X)  d       2
+(D1) 		    %E	   (--- F(X)) + %E     (-- F(X))
+			      2		        dX
+			    dX
+
+
+
+(C2) DERIVABBREV:TRUE$
+
+
+(C3) 'INTEGRATE(F(X,Y),Y,G(X),H(X));
+				H(X)
+			       /
+			       [
+(D3) 			       I     F(X, Y) dY
+			       ]
+			       /
+				G(X)
+
+(C4) DIFF(%,X);
+	    H(X)
+	   /
+	   [
+(D4) 	   I	 F(X, Y)  dY + F(X, H(X)) H(X)  - F(X, G(X)) G(X)
+	   ]	        X		      X			 X
+	   /
+	    G(X)
+
+.end
+.endfunction
+.begin turn on ""
+.function(DEPENDS,|funlist1,varlist1,funlist2,varlist2,...|)
+declares functional dependencies for variables to be used by DIFF.  DEPENDS([F,G],[X,Y],[R,S],[U,V,W],U,T) informs DIFF that F and G depend on X and Y, that R and S depend on U,V, and W, and that U depends on T.  The arguments to DEPENDS are evaluated.  The variables in each 2funlist1 are declared to depend on all the variables in the next 2varlist1.$$In this command, lists of length one can be typed in directly as atoms.*  A 2funlist1 can contain the name of an atomic variable or array.   In the latter case, it is assumed that all the elements of the array depend on all the variables in the succeeding 2varlist1.    Initially, DIFF(F,X) is 0;  executing DEPENDS(F,X) causes future differentiations of F with respect to X to give  DF/DX  or  YX   (if DERIVABBREV:TRUE).
+
+.example
+
+(C1) DEPENDS([F,G],[X,Y],[R,S],[U,V,W],U,T);
+(D1) 	       [F(X, Y), G(X, Y), R(U, V, W), S(U, V, W), U(T)]
+
+(C2) DEPENDENCIES;
+(D2) 	       [F(X, Y), G(X, Y), R(U, V, W), S(U, V, W), U(T)]
+.begin group
+(C3) DIFF(R.S,U);
+			       dR	    dS
+(D3) 			       -- . S + R . --
+			       dU	    dU
+.end
+.end
+
+Since MACSYMA knows the chain rule for symbolic derivatives, it takes advantage of the given dependencies as follows:
+.example
+.begin group
+(C4) DIFF(R.S,T);
+			   dR dU	     dS dU
+(D4) 			  (-- --) . S + R . (-- --)
+			   dU dT	     dU dT
+.end
+.end
+.bcon
+If we set 
+.example
+(C5) DERIVABBREV:TRUE;
+(D5) 				     TRUE
+.end
+.scon
+then re-executing the command C4, we obtain
+.example
+
+(C6) ''C4;
+(D6) 			  (R  U ) . S + R . (S  U )
+			    U  T	      U	 T
+.end
+
+
+To eliminate a previously declared dependency, the REMOVE command can be used.  For  example, to say that R no longer depends on U as declared in C1, the user can type  REMOVE(R,DEPENDENCY).  This will eliminate all dependencies that may have been declared for R.  
+.example
+
+(C7) REMOVE(R,DEPENDENCY);
+(D7) 				     DONE
+
+(C8) ''C4;
+(D8) 				 R . (S  U )
+				       U  T
+
+.end scon
+2CAVEAT:1 DIFF* is the only1 MACSYMA* command which uses 1DEPENDENCIES* information.   The arguments to 1INTEGRATE,LAPLACE,*etc. must be given their dependencies explicitly in the command, e.g., 1INTEGRATE(F(X),X)*.
+
+.endfunction
+1
+.end
+.function(GRADEF,|f(x1, ..., xn), g1, ..., gn|)
+defines the derivatives of the function 2f1 with respect to its n arguments.  That is,
+d2f1/d2xi1 = 2gi1, etc.  If fewer than n gradients, say i, are given, then they
+refer to the first i arguments of 2f1.  The 2xi1 are merely dummy variables as in
+function definition headers and are used to indicate the i2th1 argument of 2f1.  All
+arguments to GRADEF except the first are evaluated so that if 2g1 is a defined
+function then it is invoked and the result is used.
+
+Gradients are needed when, for example, a function is not known explicitly but
+its first derivatives are and it is desired to obtain higher order derivatives.
+GRADEF may also be used to redefine the derivatives of MACSYMA's predefined functions
+(e.g. GRADEF(SIN(X),SQRT(1-SIN(X)**2)) ).  It is not permissible to use GRADEF on
+subscripted functions.
+
+GRADEFS is a list of the functions which have been given gradients by use of the
+GRADEF command.
+
+PRINTPROPS([2f1,f2,1...],GRADEF) $see<MACSYMA!properties> may be used to display the gradefs of the functions 2f1,f2,..1
+
+REMOVE([2f1,f2,1...],GRADEF) may be used to eliminate the GRADEF property from the functions 2f1,f2,...1.
+
+.example
+(C1) DEPENDS(Y,X)$
+
+(C2) GRADEF(F(X,Y),X**2,G(X,Y))$
+
+(C3) DIFF(F(X,Y),X);
+.begin group
+                                     dY    2
+(D3)                         G(X, Y) -- + X
+                                     dX
+.end
+
+(C4) GRADEF(J(N,Z), 'DIFF(J(N,Z),N),
+RATSIMP(J(N-1,Z)-N/Z*J(N,Z)))$
+
+(C5) DIFF(J(2,X),X,2);
+
+.begin group
+                       2
+              J(0, X) X  - 3 J(1, X) X + 6 J(2, X)
+(D5)          ------------------------------------
+                                2
+                               X
+.end
+
+.end
+
+    (The example above computes the second derivative of a Bessel function of order two.
+A subscripted function e.g. J[N], could not have been used because a gradient for it
+cannot be defined using GRADEF.)
+
+.endfunction
+
+.function(GRADEF,|a,v,exp|)
+may be used to state
+that the derivative of the atomic variable 2a1 with respect to 2v1 is
+2exp1.  This automatically does a DEPENDS(2a1,2v1).  For examples, see example 2 of Appendix III.
+
+
+PRINTPROPS([2a1,a21,...],ATOMGRAD) $see<MACSYMA!properties> may be used to display the atomic
+gradient properties of 2a1,a2,...1
+
+REMOVE([2a1,a2,1...],ATOMGRAD) may be used to eliminate the ATOMGRAD property from  2a1,a2,...1.
+
+
+.endfunction
+
+.function(INTEGRATE,|exp, var|)
+integrates 2exp1 with respect to 2var1 or returns an integral expression
+(the noun form) if it cannot perform the integration.  Roughly speaking three stages
+are used:
+
+
+(1) INTEGRATE sees if the integrand is of the form F(G(X))*DIFF(G(X),X) by testing
+whether the derivative of some subexpression (i.e. G(X) in the above case) divides the
+integrand.  If so it looks up F in a table of integrals and substitutes G(X) for X in
+the integral of F.  This may make use of gradients in taking the derivative.  (If an
+unknown function appears in the integrand it must be eliminated in this stage or else
+INTEGRATE will return the noun form of the integrand.)
+
+(2) INTEGRATE tries to match the integrand to a form for which a specific method can
+be used, e.g. trigonometric substitutions.
+
+(3) If the first two stages fail it uses the Risch algorithm. (see [Mo2, Mo4])
+.endfunction
+
+2CAVEAT: 1INTEGRATE* knows only about explicit dependencies.1
+
+.function(INTEGRATE,|exp, var, low, high|)
+finds the definite integral of 2exp1 with respect to 2var1 from 2low1 to
+2high1.   Several methods are used,including direct substitution in the indefinite integral and contour integration (see [Wa3]).  Improper integrals may use the names $var<INF/> for positive infinity
+and $var<MINF/> for negative infinity.  If an integral "form" is desired for
+manipulation (for example, an integral which cannot be computed until some numbers
+are substituted for some parameters), the noun form  'INTEGRATE may be used and
+this will display with an integral sign.
+
+$var<ABCONVTEST/FALSE> when TRUE causes INTEGRATE to test for absolute convergence.
+
+The function $fun<LDEFINT> uses $fun<LIMIT> $see<difintfun> to evaluate the indefinite integral at the lower and upper limits.
+
+
+Sometimes during integration the user may be asked what the sign of an expression
+is.  Suitable responses are POS; , ZERO; , or NEG; . $see<decass>
+
+.example
+(C1) INTEGRATE(SIN(X)**3,X);
+
+.begin group
+                    3
+                 COS (X)
+(D1)             ------- - COS(X)
+                    3
+.end
+
+(C2) INTEGRATE(X**A/(X+1)**(5/2),X,0,INF);
+IS  A + 1  POSITIVE, NEGATIVE, OR ZERO?
+
+POS;
+IS  2 A - 3  POSITIVE, NEGATIVE, OR ZERO?
+
+NEG;
+.begin group
+                            3
+(D2)            BETA(A + 1, - - A)
+                            2
+.end
+
+(C3) GRADEF(Q(X),SIN(X**2));
+(D3)                              Q(X)
+
+(C4) DIFF(LOG(Q(R(X))),X);
+
+.begin group
+                           d             2
+                          (-- R(X)) SIN(R (X))
+                           dX
+(D4)                      --------------------
+                                Q(R(X))
+.end
+
+(C5) INTEGRATE(%,X);
+(D5)                          LOG(Q(R(X)))
+
+.end
+.endfunction
+
+.function(RISCH,|exp, var|)
+integrates 2exp1 with respect to 2var1 using the Risch algorithm.  This
+currently handles the cases of nested exponentials and logarithms which the main
+part of $fun<INTEGRATE> can't do.  INTEGRATE will automatically apply RISCH if
+given these cases.
+
+
+$var<ERFFLAG/TRUE> - if FALSE prevents RISCH from introducing the ERF function in
+the answer if there were none in the integrand to begin with.
+
+.example group
+(C1) RISCH(X^2*ERF(X),X);
+
+	    2     2
+	 - X     X             3           2
+       %E     (%E   SQRT(%PI) X  ERF(X) + X  + 1)
+(D1)   ------------------------------------------
+		      3 SQRT(%PI)
+
+(C2) DIFF(%,X),RATSIMP;
+				 2
+(D2)                            X  ERF(X)
+
+.end
+.endfunction
+
+.function(CHANGEVAR,|exp,f(x,y),y,x|)
+makes the change of variable given by f(x,y) = 0 in all integrals occurring in 
+2exp1 with integration with respect to x;  y is the new variable.
+
+.example
+(C1) 'INTEGRATE(%E**SQRT(A*Y),Y,0,4);
+
+.begin group
+                    4
+                   /
+                   [    SQRT(A) SQRT(Y)
+(D1)               I (%E               ) DY
+                   ]
+                   /
+                   0
+.end
+
+(C2) CHANGEVAR(D1,Y-Z^2/A,Z,Y);
+.begin group
+
+			       2 SQRT(A)
+			      /
+			      [		     Z
+			    2 I		 Z %E  dZ
+			      ]
+			      /
+			       0
+(D4) 			    ---------------------
+				      A
+
+.end
+.end
+.endfunction
+
+.function (LIMIT,|exp, var, val, dir|)
+finds the limit of 2exp1 as the real variable 2var1 approaches the value
+2val1 from the direction 2dir1.  2Dir1 may have the value PLUS for a limit
+from above, MINUS for a limit from below, or may be omitted (implying a
+two-sided limit is to be computed).  For the method see [Wa3].  LIMIT uses the
+following special symbols:  INF (positive infinity) and MINF (negative
+infinity).  On output it may also use UND (undefined), IND (indefinite but
+bounded) and INFINITY (complex infinity).
+
+
+$fun<LHOSPITALLIM[4]> is the maximum number of times  L'Hospital's rule is used in
+LIMIT.  This prevents infinite looping in cases like LIMIT(COT(X)/CSC(X),X,0).
+
+$fun<TLIMSWITCH[FALSE]> when true will cause the limit package to use Taylor series when possible.
+
+.example
+(C1) LIMIT(X*LOG(X),X,0,PLUS);
+
+(D1)                 0
+
+(C2) LIMIT((1+X)**(1/X),X,0);
+
+(D2)                 %E
+
+(C3) LIMIT(%E**X/X,X,INF);
+
+(D3)                 INF
+
+(C4) LIMIT(SIN(1/X),X,0);
+
+(D4)                 IND
+
+.end
+.endfunction
+
+.function(TLIMIT,|exp,var,val,dir|) 
+ is just the function LIMIT with TLIMSWITCH set to TRUE.
+
+.endfunction
+
+.function(LDEFINT,|exp,var,low,high|)
+yields the definite integral of 2exp* by using LIMIT to evaluate the indefinite integral of 2exp* with respect to 2var* at the upper limit 2high* and at the lower limit 2low*.
+
+.endfunction
+
+.function(TLDEFINT,|exp,var,low,high|)
+is just LDEFINT with  TLIMSWITCH  set to TRUE.
+
+.endfunction
+
+.function (RESIDUE,|exp, var, val|)
+computes the residue in the complex plane of the expression 2exp1
+when the variable 2var1 assumes the value 2val1.  The residue is the coefficient of
+(2var1-2val1)**(-1) in the Laurent series for 2exp1.
+
+.example
+(C1) RESIDUE(S/(S**2+A**2),S,A*%I);
+
+.begin group
+                        1
+(D1)                    -
+                        2
+.end
+
+(C2) RESIDUE(SIN(A*X)/X**4,X,0);
+
+.begin group
+                        3
+                       A
+(D2)                 - --
+                       6
+.end
+
+.end
+.endfunction
+
+
+.function(ODE2,|diffeq,depvar,indvar|)
+solves ordinary differential equations,2diffeq1, of first or second order. The dependent and independent variables are specified as the second and third arguments.   When successful ODE2 returns either an explicit or implicit solution for the dependent variable.  The symbol  2%C1 is used to represent the constant in the case of first order equations and 2%K1,%K21 represent the constants for second order equations.    If for some reason ODE2 cannot obtain a solution, it returns FALSE, sometimes printing an error message to the user.  
+.example
+.begin group
+(C1) X^2*'DIFF(Y,X) + 3*X*Y = SIN(X)/X;
+			 2 dY	        SIN(X)
+(D1) 		        X  -- + 3 X Y = ------
+			   dX		  X
+
+.end
+(C2) ODE2(%,Y,X);
+
+
+				%C - COS(X)
+(D2) 			    Y = -----------
+				     3
+				    X
+
+
+.end
+.endfunction
+
+.sec (Part Selection and Substitution, pss)
+
+The functions in this section are used to extract or replace parts of expressions.
+
+.subsec (The Part Functions,partfun)
+
+The PART functions make it possible to reference or replace any part of any
+MACSYMA expression.  A part of a displayed expression is referred to by a set of
+indices which are non-negative integers.  For example, in exponentiation the base is
+considered part 1 and the exponent part 2.  In a quotient the numerator is part 1 and
+the denominator part 2.  In a sum or product the i2th1 term or factor is part i. In
+any expression the main operator is part 0.  For -X the 0th part is -, for DIFF(F(X),X) it is DIFF, etc.  Note that unary minus is considered an
+operator.
+
+In MACSYMA the user has some control of the way in which expressions are displayed.  The ordering of factors in a product or terms in a sum may be changed by the user (see  $ref<ordering!functions>, $ref<rational!functions>).  The ordering of parts in the displayed form of an expression may differ from the ordering in the internal representation of the expression.
+
+.function(PART,|exp, n1, ..., nk|)
+deals with the displayed form of 2exp*. It 
+obtains the part of 2exp1 as specified by the indices 2n11,...,2nk1.  First part
+2n11 of 2exp1 is obtained, then part 2n21 of that, etc.  The result is part 2nk1
+of ... part 2n21 of part 2n11 of 2exp1.  Thus PART(Z+2*Y,2,1) yields 2.  PART can
+be used to obtain an element of a list, a row of a matrix, etc.
+
+.example
+(C1)  X+Y/Z**2;
+.begin group
+                        Y
+(D1)                   -- + X
+                        2
+                       Z
+.end
+(C2) PART(D1,1,2,2);
+
+(D2)                    2
+
+(C3) 'INTEGRATE(F(X),X,A,B)+X;
+
+.begin group
+                      B
+                     /
+                     [
+(D3)                 I F(X)dX + X
+                     ]
+                     /
+                     A
+.end
+
+(C4) PART(%,1,1);
+(D4)                  F(X)
+
+.end
+.endfunction
+
+.function(INPART,|exp,n1,...,nk|)
+is similar to PART but works on the internal representation of the
+expression $see<simp> rather than the displayed form and thus may be faster since no
+formatting is done.  Care should be taken with respect to the order of subexpressions
+in sums and products (since the order of variables in the internal form is often
+different from that in the displayed form) and in dealing with unary minus, subtraction,
+and division (since these operators are removed from the expression). PART(X+Y,0) or
+INPART(X+Y,0) yield +, though in order to refer to the operator it must be enclosed
+in "s.  For example ...IF INPART(D9,0)="+" THEN ...
+
+.example
+(C1)  X+Y+W*Z;
+
+(D1)                  W Z + Y + X
+
+(C2)  INPART(D1,3,2);
+
+(D2)                  Z
+(C3)  PART(D1,1,2);
+
+(D3)                  Z
+
+(C4) 'LIMIT(F(X)**G(X+1),X,0,MINUS);
+.begin group
+                                      G(X + 1)
+(D4)                      LIMIT   F(X)
+                          X ->0-
+.end
+
+(C5) INPART(%,1,2);
+(D5)                            G(X + 1)
+
+.end
+.endfunction
+
+.function(DISPFORM,exp) 
+returns the external representation of 2exp* (wrt its main operator).   This should be useful in conjunction with PART which also deals with the external representation.  DISPFORM(2exp*,ALL) converts the entire expression (not just the top-level) to external format.
+
+.endfunction  
+
+.function(NOUNIFY,f)
+returns the noun form of the function name 2f1.  This is needed
+if one wishes to refer to the name of a verb function as if it were a noun.  Note that
+some verb functions will return their noun forms if they can't be evaluated for
+certain arguments.  This is also the form returned if a function call is preceded by a
+quote.
+
+.example group
+(C6) IS(INPART(D4,0)=NOUNIFY(LIMIT));
+
+(D6)                              TRUE
+
+.end
+.endfunction
+
+.function(VERBIFY,f)
+returns the function name 2f1 in its verb form.
+
+.endfunction
+
+.function(BOX,exp)
+returns 2exp1 enclosed in a box. The box is actually part of the expression. BOX(2exp,label1) encloses 2exp1 in a labeled box.  2label1 is a name which will be truncated in display  if it is too long.  Simplification will occur within and outside of a BOXed expression but simplifications which require interactions across the box boundary will not take place.
+
+
+$var<BOXCHAR/""> - is the character used to draw the box in this and in the DPART and
+LPART functions.
+.endfunction
+
+.function(DPART,|exp, n1, ..., nk|)
+selects the same subexpression as PART, but instead of just returning that
+subexpression as its value, it returns the whole expression with the selected
+subexpression displayed inside a box.  The box is actually part of the expression.
+
+.example group
+(C1) DPART(X+Y/Z**2,1,2,1);
+
+                       Y
+(D1)                  ---- + X
+                         2
+                     """""
+                     " Z "
+                     """""
+
+.end
+.endfunction
+
+.function(LPART,|label, exp, n1, ..., nk|)
+is similar to DPART but uses a labelled box. A labeled box is similar to the one
+produced by DPART but it has a name in the top line.
+
+.endfunction
+
+.function(REMBOX,|exp, arg|)
+removes boxes from 2exp1 according to 2arg1.  If 2arg1 is $var<UNLABELED/> then all
+unlabeled boxes are removed.  If 2arg1 is the name of some label then only boxes with
+that label are removed.  If 2arg1 is omitted then all boxes labeled and unlabeled
+are removed.
+
+.endfunction
+.subsec (The Substitution Functions,substfuns)
+
+.function(SUBST,|a, b, c|)
+substitutes 2a1 for 2b1 in 2c1.  2b1 must be an atom or a complete
+subexpression of 2c1.  For example, X+Y+Z is a complete subexpression of
+2*(X+Y+Z)/W while X+Y is not. When 2b1 does not have these characteristics,
+one may sometimes use SUBSTPART or RATSUBST (see below).  Alternatively, if
+2b1 is of the form e/f then one could use SUBST(a*f,e,c) while if 2b1 is of
+the form e**(1/f) then one could use SUBST(a**f,e,c).   The SUBST command also discerns the X^Y  in X^(-Y) so that SUBST(A,SQRT(X),1/SQRT(X)) yields 1/A.
+.skip
+2a1 and 2b1 may also be operators of an expression (enclosed in "s) or they may be function names.  If one wishes to substitute for the independent variable in derivative forms then the AT function (see below) should be used.
+
+SUBST(2eq1,exp1) or SUBST([2eq11,...,2eqk1],2exp1) are other permissible
+forms. The 2eqi1 are equations indicating substitutions to be made.  For each
+equation, the right side will be substituted for the left in the expression
+2exp1.
+
+For expressions in CRE representation $see<rep>, SUBST, like many of MACSYMA's general simplification commands, works on the RATDISREPed form of the expression.
+
+
+$var<EXPTSUBST/FALSE> if TRUE permits substitutions like Y for %E**X in %E**(A*X) to
+take place.
+
+.example
+(C1) SUBST(A,X+Y,X+(X+Y)**2+Y);
+.begin group
+                                 2
+(D1)                    Y + X + A
+.end
+
+(C2) SUBST(-%I,%I,A+B*%I);
+(D2)                             A - %I B
+
+.begin group fill indent 0,0
+1(Note that C2 is one way of obtaining the complex conjugate of an expression.)
+The following examples illustrate the difference between substitution (as performed by SUBST) and binding (as performed by $fun<EV>).
+.end
+
+(C3) %PI*R,%PI:-%I;
+%PI improper value assignment
+
+(C4) SUBST(X=0,DIFF(SIN(X),X));
+
+(D4)                           1
+
+(C5) DIFF(SIN(X),X),X=0;
+0
+attempt to differentiate wrt a number
+
+.BEGIN GROUP
+
+(C6) MATRIX([A,B],[C,D]);
+				[ A  B ]
+(D6)                            [      ]
+				[ C  D ]
+
+(C8) SUBST("[",MATRIX,%);
+(D8)                        [[A, B], [C, D]]
+.END
+
+.end
+.endfunction
+
+.function(RATSUBST,|a, b, c|)
+substitutes 2a1 for 2b1 in 2c1.  2b1 may be a sum, product, power, etc. 
+RATSUBST knows something of the meaning of expressions whereas SUBST does a
+purely syntactic substitution.  Thus SUBST(A,X+Y,X+Y+Z) returns X+Y+Z whereas
+RATSUBST would return Z+A.
+
+
+$var<RADSUBSTFLAG/FALSE> if TRUE permits substitutions like U for SQRT(X) in X.
+
+.example 
+.begin group
+(C1) RATSUBST(A,X*Y^2,X^4*Y^8+X^4*Y^3);
+
+                  3      4
+(D1)           A X  Y + A
+.end
+
+(C2) 1 + COS(X) + COS(X)^2 + COS(X)^3 + COS(X)^4;
+.begin group
+	    4	      3	        2
+(D2)	 COS (X) + COS (X) + COS (X) + COS(X) + 1
+.end
+
+(C3) RATSUBST(1-SIN(X)^2,COS(X)^2,%);
+.begin group
+	    4		          2 	       2
+(D3)     SIN (X) + COS(X) (2 - SIN (X)) - 3 SIN (X) + 3
+.end
+
+.end
+.endfunction
+
+.function(SUBSTPART,|x, exp, n1, ..., nk|)
+substitutes 2x1 for the subexpression picked out by the rest of the arguments as in
+PART.  It returns the new value of 2exp1.  2x1 may be some operator to be
+substituted for an operator of 2exp1.  In this case it is enclosed in "s.
+
+.example
+(C1) 1/(X^2+2);
+.begin group
+                                    1
+(D1)                              ------
+                                   2
+                                  X  + 2
+.end
+
+(C2) SUBSTPART(3/2,%,2,1,2);
+.begin group
+                                    1
+(D2)                             --------
+                                  3/2
+                                 X    + 2
+.end
+
+(C3) A*X+F(B,Y);
+(D3)                          A X + F(B, Y)
+
+(C4) SUBSTPART("+",%,1,0);
+(D4)                         X + F(B, Y) + A
+
+(C5) X^2 + X + 1$
+
+(C6) SUBSTPART("[",%,0);
+				    2
+(D6) 				  [X , X, 1]
+
+
+.end
+.endfunction
+
+.function(SUBSTINPART,|x, exp, n1, ...|)
+is like SUBSTPART but works on the internal representation of 2exp1.
+
+.example
+(C1) X.'DIFF(F(X),X,2);
+.begin group
+                                   2
+                                  d
+(D1)                         X . (--- F(X))
+                                    2
+                                  dX
+.end
+
+(C2) SUBSTINPART(D^2,%,2);
+.begin group
+                                      2
+(D2)                             X . D
+.end
+
+(C3) SUBSTINPART(F1,F[1](X+1),0);
+
+(D3)                            F1(X + 1)
+
+.end
+
+.begin group
+.once center
+2Additional1 2Information1
+
+.skip 1
+If the last argument to a part function is a list of indices then several
+subexpressions are picked out, each one corresponding to an index of the list.  Thus
+PART(X+Y+Z,[1,3]) is Z+X.
+
+$var<PIECE/> holds the value of the last expression selected when using the part functions.
+It is set during the execution of the function and thus may be referred to in the
+function itself as shown below.
+
+If $var<PARTSWITCH/FALSE> is set to TRUE then END is returned when a selected
+part of an expression doesn't exist, otherwise an error message is given.
+.end
+
+.example
+(C1)  27*Y**3+54*X*Y**2+36*X**2*Y+Y+8*X**3+X+1;
+
+.begin group
+            3         2       2            3
+(D1)    27 Y  + 54 X Y  + 36 X  Y + Y + 8 X  + X + 1
+.end
+
+(C2)  PART(D1,2,[1,3]);
+
+.begin group
+                  2
+(D2)          54 Y
+.end
+
+(C3)  SQRT(PIECE/54);
+
+(D3)            Y
+
+(C4)  SUBSTPART(FACTOR(PIECE),D1,[1,2,3,5]);
+
+.begin group
+                          3
+(D4)           (3 Y + 2 X) + Y + X + 1
+.end
+
+(C5) 1/X+Y/X-1/Z;
+.begin group
+                                 1   Y   1
+(D5)                           - - + - + -
+                                 Z   X   X
+.end
+
+(C6) SUBSTPART(XTHRU(PIECE),%,[2,3]);
+
+.begin group
+                                Y + 1   1
+(D6)                            ----- - -
+                                  X     Z
+.end
+
+.end
+.endfunction
+
+.function(ATVALUE,|form, list, value|)
+enables the user to assign the boundary value 2value1 to 2form1 at the points specified by 2list1.
+
+.example
+(C1) ATVALUE(F(X,Y),[X=0,Y=1],A**2)$
+.end
+
+The 2form1 must be a function, f(v1,v2,...) , or a derivative, DIFF(f(v1,v2,...),vi,ni,vj,nj,...) in which the functional arguments explicitly appear  (ni is the order of differentiation with respect vi).
+
+The 2list1 of equations determine the "boundary" at which the 2value1 is given; 2list1 may be a list of equations, as above, or a single equation,  vi = expr  .
+
+The symbols @1, @2,... will be used to represent the functional variables v1,v2,... when atvalues are displayed.
+
+PRINTPROPS([2f1, f2,*...], ATVALUE)
+will display the atvalues of the functions 2f1,f21,... as specified in previously
+given uses of the ATVALUE function. $see<MACSYMA!properties>  If the list contains just one
+element then the element can be given without being in a list.  If a first argument
+of ALL is given then atvalues for all functions which have them will be displayed.
+
+.endfunction
+
+.function(AT,|exp, list|)
+will evaluate 2exp1 (which may be any expression) with the variables assuming
+the values as specified for them in the 2list1 of equations or the single
+equation similar to that given to the ATVALUE function.  If a subexpression
+depends on any of the variables in 2list1 but it hasn't had an atvalue
+specified and it can't be evaluated then a noun form of the AT will be returned
+which will display in a two-dimensional form.
+
+.example
+(C1) ATVALUE(F(X,Y),[X=0,Y=1],A**2);
+
+.begin group
+                                     2
+(D1)                                A
+.end
+
+(C2) ATVALUE('DIFF(F(X,Y),X),X=0,Y+1);
+
+(D2)                              @2 + 1
+
+(C3) PRINTPROPS(ALL,ATVALUE);
+.begin group
+                                  !
+                      D           !
+                     --- F(@1, @2)!       = @2 + 1
+                     D@1          !
+                                  !@1 = 0
+
+                                        2
+                             F(0, 1) = A
+.end
+
+(D3)                               DONE
+
+(C4) DIFF(4*F(X,Y)**2-U(X,Y)**2,X);
+
+.begin group
+                   d                        d
+(D4)    8 F(X, Y) (-- F(X, Y)) - 2 U(X, Y) (-- U(X, Y))
+                   dX                       dX
+.end
+
+(C5) AT(%,[X=0,Y=1]);
+.begin group
+                                         !
+               2               d         !
+(D5)       16 A  - 2 U(0, 1) ( -- U(X, Y)!            )
+                               dX        !
+                                         !X = 0, Y = 1
+.end
+.end
+.endfunction
+
+.subsec (More Functions for Part Extraction,extracting!expressions)
+
+.function(LISTOFVARS,exp)
+yields a list of the variables in 2exp1.
+
+
+$var<LISTCONSTVARS/FALSE> if TRUE will cause LISTOFVARS to include %E, %PI, %I,
+and any variables declared constant $see<property!specification> in the list it returns if they
+appear in 2exp1.  The default is to omit these.
+
+.example group
+(C1) LISTOFVARS(F(X[1]+Y)/G**(2+A));
+
+(D1)                            [X[1], Y, A, G]
+
+.end
+.endfunction
+
+.function(COEFF,|exp, v, n|)
+obtains the coefficient of 2v1**2n1 in 2exp1.  2n1 may be omitted if it is 1.
+2v1 may be an atom, or complete subexpression of 2exp1 e.g., X, SIN(X), A[I+1], X+Y,
+etc. (In the last case the expression (X+Y) should occur in  2exp1).  Sometimes it may
+be necessary to expand or factor 2exp1 in order to make 2v^n1 explicit.  This is
+not done automatically by COEFF.
+
+.example group
+(C1) COEFF(2*A*TAN(X)+TAN(X)+B=5*TAN(X)+3,TAN(X));
+
+(D1)                         2 A + 1 = 5
+
+(C2) COEFF(Y+X*%E**X+1,X,0);
+(D2)                            Y + 1
+
+.end
+.endfunction
+
+.function(RATCOEF,|exp, v, n|)
+returns the coefficient, C, of the expression 2v1**2n1
+in the expression 2exp1.  2n1 may be omitted if it is 1.  C will be free (except
+possibly in a
+non-rational sense) of the variables in 2v1.  If no coefficient of this type exists,
+zero will be returned.  RATCOEF expands and rationally simplifies its first argument
+and thus it may produce answers different from those of COEFF which is purely
+syntactic.  Thus RATCOEF((X+1)/Y+X,X) returns (Y+1)/Y whereas COEFF returns 1.
+RATCOEF(2exp,v1,0) is currently the same as RATSUBST(0,2v,exp1).  Therefore
+if 2v1 occurs to any negative powers, RATCOEF should not be used.  Since 2exp1 is
+rationally simplified before it is examined, coefficients may not appear quite the way
+they were envisioned.
+
+.example group
+(C1) S:A*X+B*X+5$
+
+(C2) RATCOEF(S,A+B);
+
+(D2)               X
+
+.end
+.endfunction
+
+.function(BOTHCOEF,|exp, var|)
+returns a list whose first member is the coefficient of 2var1 in 2exp1 (as found by
+RATCOEF if 2exp1 is in CRE form otherwise by COEFF) and whose second member is
+the remaining part of 2exp1.  That is, [A,B] where 2exp1=A*2var1+B.
+
+.example group
+(C1) ISLINEAR(EXP,VAR):=BLOCK([C],
+	C:BOTHCOEF(RAT(EXP,VAR),VAR),
+        IS(FREEOF(VAR,C) AND C[1]#0))$
+
+(C2) ISLINEAR((R**2-(X-R)**2)/X,X);
+
+(D2)                              TRUE
+
+.end
+.endfunction
+
+.function(ISOLATE,|exp, var|)
+returns 2exp1 with subexpressions which are sums and which do not contain
+2var1 replaced by intermediate expression labels (these being atomic symbols
+like E1, E2, ...). This is often useful to avoid unnecessary expansion of
+subexpressions which don't contain the variable of interest.  Since the
+intermediate labels are bound to the subexpressions they can all be substituted
+back by evaluating the expression in which they occur.
+
+
+$var<EXPTISOLATE/FALSE> if TRUE will cause ISOLATE to examine exponents of
+atoms (like %E) which contain 2var1.
+
+.example
+(C1) (A+B)^4*(1+X*(2*X+(C+D)^2));
+
+.begin group
+			   4                  2
+(D1)                (B + A)  (X (2 X + (D + C) ) + 1)
+.end
+
+(C2) ISOLATE(%,X);
+
+.begin group
+					2
+(E2)                             (D + C)
+.end
+
+.begin group
+					4
+(E3)                             (B + A)
+.end
+
+(D3)                      E3 (X (2 X + E2) + 1)
+
+(C4) RATEXPAND(D3)$
+
+(C5) EV(%);
+
+.begin group
+	       4  2          4        2            4
+(D5)  2 (B + A)  X  + (B + A)  (D + C)  X + (B + A)
+.end
+
+(C6) (A+B)*(X+A+B)^2*EXP(X^2+A*X+B);
+.begin group
+					   2
+				      2   X  + A X + B
+(D6)               (B + A) (X + B + A)  %E
+.end
+
+(C7) ISOLATE(%,X),EXPTISOLATE:TRUE;
+
+(E7)                              B + A
+
+.begin group
+				     B
+(E8)                               %E
+.end
+
+.begin group
+					   2
+				      2   X  + A X
+(D8)                    E7 E8 (X + E7)  %E
+
+.end
+
+.end
+.endfunction
+
+.function(PICKAPART,|exp,depth|)
+will assign E labels to all subexpressions of 2exp1 down to the specified integer 2depth1. 
+This is useful for dealing with large expressions and for automatically
+assigning parts of an expression to a variable without having to use the part
+functions.
+
+.EXAMPLE
+(C1) INTEGRATE(1/(X^3+2),X)$
+
+.BEGIN GROUP
+(C2) PICKAPART(D1,1);
+
+				       1/3
+			      LOG(X + 2   )
+(E2)                          -------------
+				    2/3
+				 3 2
+.END
+.BEGIN GROUP
+
+					 1/3
+				  2 X - 2
+			    ATAN(------------)
+				  1/3
+				 2    SQRT(3)
+(E3)                        ------------------
+				2/3
+			       2    SQRT(3)
+.END
+.BEGIN GROUP
+
+
+			       2    1/3      2/3
+			  LOG(X  - 2    X + 2   )
+(E4)                    - -----------------------
+				     2/3
+				  6 2
+
+(D4)                         E4 + E3 + E2
+.END
+.END
+.endfunction
+
+.function (REVEAL,|exp,depth|)
+will display 2exp1 to the specified integer 2depth1 with
+the length of each part indicated.  Sums will be displayed as
+SUM(n) and products as PRODUCT(n) where n is the
+number of subparts of the sum or product.  Exponentials will
+be displayed as EXP.
+
+.EXAMPLE
+
+(C1) INTEGRATE(1/(X^3+2),X)$
+
+(C2) REVEAL(%,2);
+(D2)              PRODUCT(3) + PRODUCT(3) + PRODUCT(3)
+
+.BEGIN GROUP
+(C3) REVEAL(D1,3);
+		    EXPT LOG                    EXPT LOG
+(D3)              - -------- + EXPT EXPT ATAN + --------
+		       6                           3
+
+.END
+.END
+.endfunction
+
+.function(NUMFACTOR,exp)
+gives the numerical factor multiplying the expression 2exp1 which should be a
+single term.  If the gcd of all the terms in a sum is desired the CONTENT function
+(sect. 6.5) may be used.
+
+.example
+(C1) GAMMA(7/2);
+
+.begin group
+(D1)               15 SQRT(%PI)
+                   ------------
+                        8
+.end
+
+(C2) NUMFACTOR(%)
+.begin group
+                    15
+(D2)                --
+                     8
+.end
+
+.end
+.endfunction
+
+.function(HIPOW,|exp, v|)
+the highest explicit exponent of 2v1 in 2exp1.  Sometimes it may be necessary
+to expand 2exp1 since this is not done automatically by HIPOW.  Thus
+HIPOW(Y**3*X**2+X*Y**4,X) is 2.
+
+.endfunction
+
+.function(LOPOW,|exp, v|)
+the lowest exponent of 2v1 which explicitly appears in 2exp1.  Thus
+LOPOW((X+Y)**2+(X+Y)**A,X+Y) is MIN(A,2).
+
+.endfunction
+
+.function(DERIVDEGREE,|exp, dv, iv|)
+finds the highest degree of the derivative of the dependent
+variable 2dv1 with respect to the independent variable 2iv1 occuring in 2exp1.
+
+.example group
+(C1) 'DIFF(Y,X,2)+'DIFF(Y,Z,3)*2+'DIFF(Y,X)*X**2$
+(C2) DERIVDEGREE(%,Y,X);
+(D2)                           2
+
+.end
+.endfunction
+
+The next several functions deal with complex variables.  The user should note the following conventions.
+
+.begin narrow 8,5; single space
+1) all variables are assumed to take on real values exclusively;
+
+2) all functions are assumed to be real-valued;
+
+3) the complex argument is maintained between 0 and 2*%PI, whenever possible;
+
+4) the argument of 0 is (arbitrarily) assumed to be  0, although normally the user need not worry about this, since 0*%E^(%I*0) is simplified to 0;
+
+5) trigonometric functions are normally assumed to take on their principal values.
+
+.end
+
+.function(REALPART,exp)
+gives the real part of 2exp1. REALPART and IMAGPART will work on
+expressions involving trigonometic and hyperbolic functions, as well as SQRT, LOG, and
+exponentiation.
+
+.endfunction
+
+.function(IMAGPART,exp)
+returns the imaginary part of the expression 2exp1.
+
+.endfunction
+
+
+The real or imaginary part of an expression of the form Z^N, where Z is not purely real, will be algebraic if  n <= MAXPOSEX; otherwise, for compactness,it will be expressed as ABS(Z)^N * COS(N*ARG z)  or  ABS(Z)^N * SIN(N*ARG Z).
+
+.function(RECTFORM,exp)
+returns an expression of the form  A + B*%I, where A and B are purely real.
+
+.endfunction
+
+.function(POLARFORM,exp)
+returns  R*%E^(%I*THETA) where R and THETA are purely real.
+
+.endfunction
+
+CAVEAT: Simplification of algebraic and transcendental functions of a complex variable may give rise to apparent factors, %I.  For example, SQRT(-C+D) may be transformed to %I*SQRT(C-D).
+
+.function(CABS,exp) 
+returns the complex absolute value (the complex modulus) of exp.
+.endfunction
+
+.example
+
+(C1) RECTFORM(SIN(2*%I+X));
+
+(D1) 		    COSH(2) SIN(X) + %I SINH(2) COS(X)
+
+(C2) POLARFORM(%);
+.begin group
+	      2	      2		 2	 2
+(D2) SQRT(COSH (2) SIN (X) + SINH (2) COS (X))
+
+				      SINH(2) COS(X)
+			      %I ATAN(--------------)
+				      COSH(2) SIN(X)
+			    %E
+.end
+(C3) RECTFORM(LOG(3+4*%I));
+.begin group
+					    4
+(D3) 			   LOG(5) + %I ATAN(-)
+					    3
+.end
+(C4) POLARFORM(%);
+.begin group
+
+					 ATAN(4/3)
+				 %I ATAN(---------)
+	      2		 2 4		  LOG(5)
+(D4)  SQRT(LOG (5) + ATAN (-)) %E
+			   3
+.end
+(C5) RECTFORM((2+3.5*%I)^.25),NUMER;
+
+(D5) 		        0.36825881 %I + 1.36826627
+
+(C6) POLARFORM(D5);
+.begin group
+				    0.26291253 %I
+(D6) 			 1.416957 %E
+
+.end
+.end
+
+
+.function(LHS,eqn)
+the left side of the equation 2eqn1.
+
+.endfunction
+
+.function(RHS,eqn)
+the right side of the equation 2eqn1.
+
+.endfunction
+
+.function(NUM,exp)
+obtains the numerator, exp1, of the rational expression 2exp1 = exp1/exp2.
+
+.endfunction
+
+.function(DENOM,exp)
+returns the denominator, exp2, of the rational expression 2exp1 = exp1/exp2.
+
+.endfunction
+
+The above two commands do not alter the internal representations of expressions and have the desirable property that for all expressions  NUM(exp)/DENOM(exp) is the same as exp.
+
+.function(FIRST,exp)
+yields the first part of 2exp1 which may result in the first element
+of a list, the first row of a matrix, the first term of a sum, etc.  Note that FIRST and
+the following two functions work on the form of 2exp1 which is displayed not the form
+which is typed on input.  If the variable $var<INFLAG/FALSE> is set to TRUE however, these
+functions will look at the internal form of 2exp1.  Note
+that the simplifier re-orders expressions $see<simp>.  Thus FIRST(X+Y) will be X if
+INFLAG is TRUE and Y if INFLAG is FALSE.  (FIRST(Y+X) gives the same results).
+
+.endfunction
+
+.function(REST,|exp, n|)
+yields 2exp1 with its first 2n1 elements removed if 2n1 is
+positive and its last 2-n1 elements removed if 2n1 is negative.  If 2n1 is 1 it
+may be omitted.  2Exp1 may be a list, matrix, or other expression.
+If INFLAG:TRUE the internal form of 2exp1 will be used.
+.endfunction
+
+.function(LAST,exp)
+yields the last part (term, row, element, etc.) of the 2exp1.
+If INFLAG:TRUE the internal form of 2exp1 will be used.
+
+.endfunction
+
+.function(DELETE,|exp1, exp2|)
+removes all occurrences of 2exp11 from 2exp21.  2Exp11 may
+be a term of 2exp21 (if it is a sum) or a factor of 2exp21 (if it is a product).
+
+.example group
+(C1)  DELETE(SIN(X),X+SIN(X)+Y);
+
+(D1)               Y + X
+
+.end
+.endfunction
+
+.function(LENGTH,exp)
+gives the number of parts in the internal form of 2exp1.  For lists
+this is the number of elements, for matrices it is the number of rows, and for sums it
+is the number of terms.  However for products it may not always yield the number of
+factors that would be displayed because of the fact that -E is represented internally
+as -1*E and A/B is represented internally by A*B^(-1).
+
+.endfunction
+
+.function(NTERMS,exp)
+gives the number of terms that 2exp1 would have if it were fully
+expanded out and no cancellations or combinations of terms occurred. Note that expressions
+like SIN(E), SQRT(E), EXP(E), etc. count as just one term regardless of how many terms E has
+(if it is a sum).
+
+.endfunction
+
+.next page
+.sec (SOLVE and Related Functions, SOLVE)
+
+The following functions obtain the roots of equations or yield information
+concerning the roots.
+
+.function(NROOTS,|poly, low, high|)
+finds the number of real roots of the real univariate
+polynomial 2poly1 in the half-open interval (2low1,2high1].  The endpoints of the interval may also be MINF,INF respectively for minus infinity and plus infinity.  NROOTS(2poly1) is equivalent to NROOTS(2poly1,MINF,INF).   The method of Sturm sequences is
+used.  (see Heindel in [A1].)
+
+.example group
+(C1) POLY1:X**10-2*X**4+1/2$
+(C2) NROOTS(POLY1,-6,9.1);
+RAT REPLACED 0.5 BY 1/2 = 0.5
+(D2)                               4
+
+.end
+.endfunction
+
+.function(REALROOTS,|poly, bound|)
+finds all of the real roots of the real univariate polynomial 2poly1
+within a tolerance of 2bound1 which, if less than 1, causes all integral roots to be
+found exactly.  The parameter 2bound1 may be arbitrarily small in order to achieve
+any desired accuracy. The first argument may also be an equation.  REALROOTS(2poly1) is equivalent to REALROOTS(2poly1,ROOTSEPSILON).   $var<ROOTSEPSILON/1.0E-7> is a real number used to establish the confidence interval for the roots.
+
+.example
+(C1) REALROOTS(X**5+X+1,5.0E-6);
+
+.begin group
+                                    395773
+(E1)                          X = - ------
+                                    524288
+.end
+
+(D1)                              [E1]
+
+(C2) E1,FLOAT;
+(D2)                        X = - 0.75487709
+
+(C3) PART(C1,1);
+.begin group
+                                5
+(D3)                           X  + X + 1
+.end
+
+(C4) %,D2;
+(D4)                          1.50687992E-6
+
+.end
+.endfunction
+
+.function(ALLROOTS,poly)
+finds all the real and complex roots of the real polynomial 2poly1 which must
+be univariate and may be an equation.   For complex polynomials an algorithm by Jenkins and Traub is used; $$Algorithm 419, Comm. ACM, vol. 15, (1972), p. 97* for real polynomials the algorithms used is due to Jenkins.$$Algorithm 493, TOMS, vol. 1, (1975), p.178.*  The flag $var<POLYFACTOR/FALSE> when true causes ALLROOTS to factor the polynomial over the real numbers if the polynomial is real, or over the complex numbers, if the polynomial is complex.
+
+.example
+(C1) (2*X+1)**3=13.5*(X**5+1);
+
+.begin group
+                            3          5
+(D1)               (2 X + 1)  = 13.5 (X  + 1)
+.end
+
+(C2) ALLROOTS(%);
+
+(E2)                    X =  - 1.0157555
+
+(E3)                      X = 0.829675
+
+(E4)           X =  - 0.96596254 %I - 0.40695972
+
+(E5)             X = 0.96596254 %I - 0.40695972
+
+(E6)                        X = 1.0
+
+(D6)                  [E2, E3, E4, E5, E6]
+
+.end
+.endfunction
+
+.function(LINSOLVE,|[exp1, exp2, ...], [var1, var2, ...]|)
+solves the list of simultaneous linear equations for the list of
+variables.  The 2expi1 must each be linear in the variables and may be equations.  LINSOLVE does no error checking to assure linearity.
+
+
+If $var<GLOBALSOLVE/FALSE> is set to TRUE then variables which are SOLVEd for will be
+set to the solution of the set of simultaneous equations.
+
+$var<BACKSUBST/TRUE> if set to FALSE will prevent back substitution after the
+equations have been triangularized.  This may be necessary in very big problems where
+back substitution would cause the storage capacity to be exceeded.
+
+.example
+(C1) X+Z=Y$
+
+(C2) 2*A*X-Y=2*A**2$
+
+(C3) Y-2*Z=2$
+
+(C4) LINSOLVE([D1,D2,D3],[X,Y,Z]),GLOBALSOLVE:TRUE;
+SOLUTION
+
+(E4)                            X : A + 1
+
+(E5)                             Y : 2 A
+
+(E6)                            Z : A - 1
+
+(D6)                          [E4, E5, E6]
+.end
+.endfunction
+
+.function(ALGSYS,|[exp1, exp2, ...], [var1, var2, ...]|)
+solves the list of simultaneous polynomials or polynomial equations (which can be
+non-linear) for the list of variables.  The symbols %R1, %R2, etc. will be used to
+represent arbitrary parameters when needed for the solution.   In the process described below, ALGSYS is entered recursively if necessary.
+
+
+The method is as follows:
+
+(1) First the equations are FACTORed and split into subsystems.
+
+(2) For each subsystem 2Si1, an equation 2E1 and a variable 2var1 are selected (the 2var1 is chosen to have lowest nonzero degree).   Then  the resultant of 2E1 and 2Ej1 with respect to 2var1 is computed for each of the remaining equations 2Ej1 in the subsystem 2Si1.   This yields a new subsystem 2S'i1 in one fewer variables (2var1 has been eliminated).   The process now returns to (1).
+
+(3) Eventually, a subsystem consisting of a single equation is obtained.  If the equation is multivariate and no approximations in the form of floating point numbers have been introduced,  then SOLVE is called to find an exact solution. $$ The user should realize that SOLVE may not be able to produce a solution or if it does the solution may be a very large expression.*
+
+If the equation is univariate and is either linear, quadratic, or bi-quadratic, then again SOLVE is called if no approximations have  been introduced.   If approximations have been introduced then if the switch $var<REALROOTS/TRUE>:TRUE, the function REALROOTS  is called  to find the real-valued solutions.   If REALROOTS:FALSE then  ALLROOTS is called which looks for real and complex-valued solutions.   If ALGSYS produces a solution which has fewer significant digits than required, the user can change the value of $var<ALGEPSILON/10^8> to a higher value.
+
+(4) Finally, the solutions obtained in step (3) are re-inserted into previous levels and the solution process returns to (1).
+
+The user should be aware of several caveats. 
+
+When ALGSYS encounters a multivariate equation which already contains floating point approximations, then, presently, it does not attempt to apply exact methods to such equations and prints the message: ALGSYS CANNOT SOLVE---SYSTEM TOO COMPLICATED.   
+
+Interactions with RADCAN can produce large or complicated expressions.  In that case, the user may use  PICKAPART or REVEAL to analyze the solution.  Occasionally, RADCAN may introduce an apparent %I into a solution which is actually real-valued. To prevent the omission of possible solutions, the user may prefer to set $var<REALONLY/TRUE>:FALSE.  
+
+.example
+(C1) X+Z-Y$
+
+(C2) X+B*Y*Z -A$
+
+(C3) X^2+C*Z -D;
+
+(C4) ALGSYS([D1,D2,D3],[X,Y,Z]);
+
+(D4) 				      []
+
+(C5) X+Z-Y^2$
+
+(C6) ALGSYS([D1,D2,D5],[X,Y,Z]);
+		 B - A		   A - 1
+(D6) 	   [[X = -----, Y = 1, Z = -----], [X = A, Y = 0, Z = - A]]
+		 B - 1		   B - 1
+
+(C7) X+B*Y*Z*X -A$
+
+(C8) ALGSYS([D1,D5,D7],[X,Y,Z]);
+		  2
+	    SQRT(B  - 4 A B + 2 B + 1) + B + 1
+(D8) [[X = ----------------------------------, Y = 1, 
+			   2 B
+
+	    2
+      SQRT(B  + (2 - 4 A) B + 1) + (1 - 2 A) B + 1
+Z = - --------------------------------------------], 
+		 2			 2
+	 B SQRT(B  + (2 - 4 A) B + 1) + B  + B
+
+	     2
+     - SQRT(B  - 4 A B + 2 B + 1) + B + 1
+[X = ------------------------------------, Y = 1, 
+		     2 B
+
+	    2
+      SQRT(B  + (2 - 4 A) B + 1) + (2 A - 1) B - 1
+Z = - --------------------------------------------],
+		 2			 2
+	 B SQRT(B  + (2 - 4 A) B + 1) - B  - B
+
+
+[X = A, Y = 0, Z = - A]]
+
+.end
+.endfunction
+
+.function(SOLVE,|exp, var|)
+solves the algebraic equation 2exp1 for the variable 2var1 and returns a list of
+solution equations in 2var1.  If 2exp1 is not an
+equation, it is assumed to be an expression to be set equal to zero.  2Var1 may be a
+function (e.g. F(X)), or other non-atomic expression except a sum or product. It may
+be omitted if 2exp1 contains only one variable.  2Exp1 may be a rational expression,
+and may contain trigonometric functions, exponentials, etc.
+
+The following method is used:
+
+Let E be the expression and X be the variable.  If E is linear in X then it is
+trivially solved for X.  Otherwise if E is of the form A*X**N+B then the result is
+(-B/A)**(1/N) times the Nth roots of unity.
+
+If E is not linear in X then the gcd of the exponents of X in E (say N) is
+divided into the exponents and the multiplicity of the roots is multiplied by N.  Then
+SOLVE is called again on the result.
+
+If E factors then SOLVE is called on each of the factors.  Finally SOLVE will use
+the quadratic, cubic, or quartic formulas where necessary.
+
+In the case where E is a polynomial in some function of the variable to be solved
+for, say F(X), then it is first solved for F(X) (call the result C), then the equation
+F(X)=C can be solved for X provided the inverse of the function F is known.
+
+
+$var<BREAKUP/TRUE> if FALSE will cause SOLVE to express the solutions of cubic or
+quartic equations as single expressions rather than as made up of several common
+subexpressions which is the default.
+
+$var<MULTIPLICITIES/FALSE> - will be set to a list of the multiplicities of
+the individual solutions returned by SOLVE, REALROOTS, or ALLROOTS.
+
+$var<SOLVEFACTORS/TRUE> - if FALSE then SOLVE will not try to factor the expression.
+The FALSE setting may be desired in some cases where factoring is not necessary.
+
+$var<SOLVERADCAN/FALSE> - if TRUE then SOLVE will use RADCAN which will make SOLVE
+slower but will allow certain problems containing exponentials and logs to be solved.
+
+When SOLVing polynomials with large integer coefficients, it may be useful to reset INTFACLIM.
+
+.endfunction
+
+.function(SOLVE,|[eq1, ..., eqn], [v1, ..., vn]|)
+solves a system of simultaneous (linear or non-linear) polynomial equations by
+calling LINSOLVE or ALGSYS and returns a list of the solution lists in the
+variables.  In the case of LINSOLVE this list would contain a single list of
+solutions.  It takes two lists as arguments. The first list 2(eqi1, i=1,...,n)
+represents the equations to be solved; the second list is a list of the unknowns
+to be determined.  If the total number of variables in the equations is equal to
+the number of equations, the second argument-list may be omitted.
+For linear systems if the given equations are not compatible, the message
+INCONSISTENT will be displayed; if no unique solution exists, then SINGULAR will
+be displayed.   $var<DISPFLAG/TRUE>  when set to FALSE within a BLOCK  will inhibit the display of of output generated by the solve functions called from within the BLOCK.
+
+.example
+(C1) SOLVE(ASIN(COS(3*X))*(F(X)-1),X);
+SOLUTION
+
+.begin group
+                                    %PI
+(E1)                            X = ---
+                                     6
+.end
+THE ROOTS OF
+
+(E2)                            F(X) = 1
+(D2)                            [E1, E2]
+
+(C3) SOLVERADCAN:TRUE$
+(C4) SOLVE(5**F(X)=125,F(X));
+(D4)                           F(X) = 3
+
+(C5) [4*X**2-Y**2=12,X*Y-X=2]
+
+.begin group
+                          2    2
+(D5)                  [4 X  - Y  = 12, X Y - X = 2]
+.end
+
+(C6) SOLVE(D5,[X,Y]);
+
+(D6)  [[Y =  - 0.15356758,
+
+	X =  - 1.733752], [Y = 2.0, X = 2.0]]
+
+.begin group
+(C7) SOLVE(X^3+A*X+1,X);
+
+                                     3
+			     SQRT(4 A  + 27)
+(E7)                         ---------------
+			        6 SQRT(3)
+.end
+
+.begin group
+				     1 1/3
+(E8)                           (E7 - -)
+				     2
+.end
+SOLUTION
+
+.begin group
+				   %I SQRT(3)   1
+				  (---------- - -) A
+	     %I SQRT(3)   1            2        2
+(E9) X = ( - ---------- - -) E8 - ------------------
+		 2        2              3 E8
+.end
+
+.begin group
+				   %I SQRT(3)   1
+			       ( - ---------- - -) A
+	   %I SQRT(3)   1               2       2
+(E10) X = (---------- - -) E8 - ---------------------
+	       2        2               3 E8
+.end
+
+.begin group
+					A
+(E11)                         X = E8 - ----
+				       3 E8
+.end
+
+(D11)                         [E9, E10, E11]
+.end
+.endfunction
+
+.function(POLYDECOMP,|poly,var|)
+returns a list of polynomials [f1(var),f2(var),...fn(var)] such that 2poly1 = f1(f2(...fn(var)...)).   There is no other decomposition which involves more polynomials excepting linear fi.
+.endfunction
+
+.next page
+.sec (The Matrix Functions,matrix!functions)
+
+Matrix multiplication is effected by using the dot operator, ".", which is also convenient if the user wishes to represent other non-commutative algebraic operations $see<dotop>.   The exponential of the   .  operation  is  "^^" .
+
+Thus, for a matrix A,  A.A = A^^2  and, if it exists, A^^-1  is the inverse of A.
+
+The operations +,-,*,**  are all element-by-element operations; all operations are normally carried out in full, including the  . (dot) operation.   Many switches exist for controlling simplification rules involving dot and matrix-list operations (see below).
+
+
+.function(ENTERMATRIX,|m, n|)
+allows one to enter a matrix element by element with MACSYMA
+requesting values for each of the 2m1*2n1 entries.
+
+.example
+(C1) ENTERMATRIX(2,1);
+
+ROW 1 COLUMN 1  X+Y/2;
+
+ROW 2 COLUMN 1  34;
+
+MATRIX-ENTERED
+.begin group
+                                [ Y     ]
+                                [ - + X ]
+(D1)                            [ 2     ]
+                                [       ]
+                                [   34  ]
+.end
+
+.end
+.endfunction
+
+.function(MATRIX,|row1, ..., rown|)
+defines a rectangular matrix with the indicated rows.
+Each row has the form of a list of expressions, e.g. [A, X**2, Y, 0] is a list of
+4 elements.
+
+.endfunction
+
+.function(GENMATRIX,|array, i2, j2, i1, j1|)
+generates a matrix from the array using 2array(i1,j1)1 for the first (upper-left) element and 2array(i2,j2)1
+for the last (lower-right) element of the matrix.  If j1=i1 then j1 may be omitted. If j1=i1=1
+then i1 and j1 may both be omitted. If a selected element of the array doesn't
+exist a symbolic one will be used.
+
+.example
+(C1) H[I,J]:=1/(I+J-1)$
+
+(C2) GENMATRIX(H,3,3);
+.begin group
+                           [   1  1]
+                           [1  -  -]
+                           [   2  3]
+                           [       ]
+                           [1  1  1]
+(D2)                       [-  -  -]
+                           [2  3  4]
+                           [       ]
+                           [1  1  1]
+                           [-  -  -]
+                           [3  4  5]
+.end
+
+.end
+.endfunction
+
+.function(COPYMATRIX,M)
+creates a copy of the matrix 2M1.  This is the only way to make a copy aside
+from recreating 2M1 elementwise.  Copying a matrix may be useful when SETELMX is used
+(see below).
+
+.endfunction
+
+.function(COPYLIST,L)
+creates a copy of the list L.
+
+.endfunction
+
+.function(ADDROW,|M,l|)
+appends the row given by the list 2l1 onto the matrix 2M1.
+
+.endfunction
+
+.function(IDENT,n)
+produces an 2n1 by 2n1 identity matrix.
+
+.endfunction
+
+.function(DIAGMATRIX,|n, x|)
+returns a diagonal matrix of size 2n1 by 2n1 with the diagonal elements all 2x1.
+An identity matrix is created by DIAGMATRIX(2n1,1), or one may use IDENT(n).
+
+.endfunction
+
+.function(EMATRIX,|m, n, x, i, j|)
+will create an 2m1 by 2n1 matrix all of whose elements are zero except for
+the 2i,j1 element which is 2x1.
+
+.endfunction
+
+.function(MATRIXMAP,|fn, M|)
+will map the function 2fn1 onto each element of the matrix 2M1.
+
+
+.endfunction
+
+.function(SETELMX,|x, i, j, M|)
+changes the 2i,j1 element of 2M1 to 2x1.  The altered matrix is returned as the
+value.  The notation 2M1[2i,j1]:2x1 may also be used, altering 2M1 in a similar manner, but
+returning 2x1 as the value.
+
+.endfunction
+
+.function(COEFMATRIX,|[eq1, ...], [var1, ...]|)
+the coefficient matrix for the variables 2var11,... of the
+system of linear equations 2eq11,...
+
+.endfunction
+
+.function(AUGCOEFMATRIX,|[eq1, ...], [var1, ...]|)
+the augmented coefficient matrix for the variables 2var11,... of the system of linear
+equations 2eq11,....  This is the coefficient matrix with a column adjoined for the
+constant terms in each equation (i.e. those not dependent upon 2var11,...).
+
+.example
+(C1) [2*X-(A-1)*Y=5*B,A*X+B*Y+C=0]$
+
+(C2) AUGCOEFMATRIX(%,[X,Y]);
+
+.begin group
+                        [2  1 - A  5 B ]
+(D2)                    [              ]
+                        [A    B     - C]
+.end
+
+.end
+.endfunction
+
+.function(COL,|M,i|)
+gives a matrix of the 2i1th column of the matrix 2M1.
+
+.endfunction
+
+.function(ROW,|M, i|)
+gives a matrix of the 2i1th row of matrix 2M1.
+
+.endfunction
+
+.function(SUBMATRIX,|m1, ..., M, n1, ...|)
+creates a new matrix composed of the matrix 2M1 with rows 2mi1
+deleted, and columns 2ni1 deleted.
+
+.endfunction
+
+.function(MINOR,|M, i, j|)
+computes the 2i,j1 minor of the matrix 2M1.  That is, 2M1 with row 2i1 and
+column 2j1 removed.
+
+.endfunction
+
+.function(TRANSPOSE,M)
+produces the transpose of 2M1.
+
+.endfunction
+
+.function(ECHELON,M)
+produces the echelon form of 2M1.  That is, 2M1 with elementary row operations
+performed on it such that the first non-zero element in each row in the resulting
+matrix is a one and the column elements under the first one in each row are all zero.
+
+.example
+(C3) ECHELON(D2);     (D2 is as above)
+
+.begin group
+                 [      A - 1        5 B      ]
+                 [1   - -----        ---      ]
+                 [        2           2       ]
+(D3)             [                            ]
+                 [                2 C + 5 A B ]
+                 [0     1       - ------------]
+                 [                       2    ]
+                 [                2 B + A  - A]
+.end
+
+.end
+.endfunction
+
+.function(TRIANGULARIZE,M)
+produces the upper triangular form of the matrix 2M1 which needn't be square.
+
+.example group
+(C4) TRIANGULARIZE(D2);
+
+               [2     1 + A           5 B      ]
+(D4)           [                               ]
+               [          2                    ]
+               [0  2 B + A  - A   - 2 C - 5 A B]
+
+.end
+.endfunction
+
+.function(RANK,M)
+computes the rank of the matrix 2M1.  That is, the order of the largest
+non-singular subdeterminant of M.
+
+.example group
+(C5) RANK(D2);
+(D5)                            2
+.end
+.endfunction
+
+.function(DETERMINANT,M)
+computes the determinant of 2M1 by a method similar to Gaussian
+elimination.  The form of the result depends upon the setting of the switch RATMX (see below).   There is a special routine for dealing with sparse determininants which can be used by setting the switches RATMX:TRUE and SPARSE:TRUE.
+
+.endfunction
+
+
+.function(NEWDET,|M,n|)
+also computes the determinant of 2M1 but uses the Johnson-Gentleman
+tree minor algorithm [Ge1].  2M1 may be the name of a matrix or array.  The argument 2n1 is the order; it is optional if 2M* is a matrix.
+
+.endfunction
+
+.function(CHARPOLY,|M, var|)
+computes the characteristic polynomial for 2M1 with respect to
+2var1.  That is, DETERMINANT(2M1 - DIAGMATRIX(LENGTH(2M1),2var1)).
+.endfunction
+.example
+(C2) A:MATRIX([3,1],[2,4]);
+.begin group
+                                 [3  1]
+(D2)                             [    ]
+                                 [2  4]
+.end
+
+(C3) CHARPOLY(A,LAMBDA);
+.begin group
+                               2
+(D3)                     LAMBDA  - 7 LAMBDA + 10
+.end
+
+(C4) SOLVE(%);
+SOLUTION
+
+(E4)                           LAMBDA = 2
+
+(E5)                           LAMBDA = 5
+
+(D5)                            [E4, E5]
+
+(C6) X:MATRIX([X1],[X2]);
+.begin group
+                                  [X1]
+(D6)                              [  ]
+                                  [X2]
+.end
+
+(C7) A.X-LAMBDA*X,E5;
+.begin group
+                             [ X2 - 2 X1  ]
+(D7)                         [            ]
+                             [ - X2 + 2 X1]
+.end
+
+(C8)  D7[1,1]=0;
+(D8)                          X2 - 2 X1 = 0
+
+(C9) X1**2+X2**2=1;
+.begin group
+                                2     2
+(D9)                          X2  + X1  = 1
+.end
+
+(C10) SOLVE([D8,D9],[X1,X2]);
+
+(D10) [[X2 =  - 0.89442714, X1 =  - 0.44721357],
+
+       [X2 = 0.89442714, X1 = 0.44721357]]
+
+.end
+.skip 2
+
+.begin group nofill center
+2Options Relating to Matrices*
+
+Note: MX stands for Matrix and SC stands for Scalar
+
+.end
+
+By resetting the options $var<LMXCHAR/> and $var<RMXCHAR/>  (with the defaults  [ and ] respectively), the user can specify the delimiters used in the display of matrices.
+
+$var<RATMX/FALSE> -  if FALSE will cause determinant and matrix addition,
+subtraction, and multiplication to be performed in the representation of the
+matrix elements and will cause the result of matrix inverse to be left in the
+representation of the matrix elements.  If it is TRUE, the 4 operations
+mentioned above will be performed in CRE form and the result of matrix inverse
+will be in CRE form.  Note that this may cause the elements to be expanded (depending on the setting of  RATFAC)
+which might not always be desired.
+
+$var<LISTARITH/TRUE> - if FALSE causes any arithmetic operations with lists to be suppressed;  when TRUE, list-matrix operations are contagious causing lists to be converted to matrices yielding a result which is always a matrix.  However, list-list operations should return lists.
+
+$var<DETOUT/FALSE> - if TRUE will cause the determinant of a matrix whose
+inverse is computed to be kept outside of the inverse.  For this switch to have
+an effect DOALLMXOPS and DOSCMXOPS should be FALSE (see below).  Alternatively
+this switch can be given to EV which causes the other two to be set correctly.
+
+$var<DOALLMXOPS/TRUE> - if TRUE all operations relating to matrices are carried
+out.  If it is FALSE then the setting of the following switches govern which
+operations are performed.
+
+$var<DOMXMXOPS/FALSE> - if TRUE then all matrix-matrix or matrix-list operations are carried
+out (but not scalar-matrix operations);  if this switch is FALSE they are not.
+
+$var<DOSCMXOPS/FALSE> - if TRUE then scalar-matrix operations are performed.
+
+$var<DOSCMXPLUS/FALSE> - if TRUE will cause  SCALAR + MATRIX  to give a matrix answer.
+
+$var<SCALARMATRIXP/TRUE> -  if TRUE causes a square matrix of dimension one (when produced as a result of a computation) to be
+converted to a scalar (i.e. its only element).
+
+$var<SPARSE/FALSE> - if TRUE  and if RATMX:TRUE  then DETERMINANT will use special routines for computing sparse determinants.
+
+
+.subsec (The Dot Operator,dotop)
+
+In some applications one would like to work with expressions that contain
+variables which are to behave like matrices (e.g. are non-commutative).  The variables
+may be declared to be non-scalar by using the $fun<DECLARE> function (sect. 6.12). 
+After the expressions are manipulated into a particular form then perhaps actual
+matrices will be substituted for them.  Several options are provided in order to
+control how MACSYMA treats such expressions.  (The options are checked for and
+utilized by MACSYMA in the order in which they are presented here).
+
+In the following discussion A, B, and C are any expressions, and SC is a scalar
+expression (i.e. one free of lists, matrices, and any atoms declared non-scalar).
+
+$var<DOTASSOC/TRUE> - when TRUE causes (A.B).C to simplify to A.(B.C)
+
+$var<DOTSCRULES/FALSE> - when TRUE will cause A.SC or SC.A to simplify to SC*A
+and A.(SC*B) to simplify to SC*(A.B)
+
+$var<DOTCONSTRULES/TRUE> - is similar to DOTSCRULES but with constants instead
+of scalars. 
+
+$var<DOTEXPTSIMP/TRUE> - when TRUE causes A.A to simplify to A^^2
+
+$var<DOTDISTRIB/FALSE> - if TRUE will cause A.(B+C) to simplify to A.B+A.C
+
+
+.EXAMPLE
+(C1) DECLARE([M1,M2,M3],NONSCALAR)$
+
+(C2) (1-L*M1).(1-L*M2).(1-L*M3),DOTCONSTRULES:TRUE,EXPAND;
+
+(D2)  - L M3 + L M2 . L M3 - L M2 + L M1 . L M3
+
+         - L M1 . (L M2 . L M3) + L M1 . L M2 - L M1 + 1
+
+.BEGIN GROUP
+(C3) %,DOTSCRULES:TRUE;
+
+		2                     2
+(D3)  - L M3 + L  (M2 . M3) - L M2 + L  (M1 . M3)
+
+			 3                     2
+	  - L  (M1 . (M2 . M3)) + L  (M1 . M2) - L M1 + 1
+.END
+.BEGIN GROUP
+
+(C4) RAT(%,L);
+			      3            
+(D4)/R/   - (M1 . (M2 . M3)) L  + (M2 . M3 + M1 . M3
+
+		                      2
+	 + M1 . M2) L  + ( - M3 - M2 - M1) L + 1
+.END
+.END
+.next page
+.sec (Functions for Rational Expressions,rational!functions)
+
+A rational expression is the quotient of two polynomials.  MACSYMA provides a
+special internal representation (called CRE for canonical rational expression form -
+$see<rep> ) which can be used for rational expressions (and polynomials as special cases)
+and which requires less storage than the general representation.  In addition CRE
+manipulations are usually faster.  Therefore it may be desirable to use these whenever the
+problem of interest can be expressed largely in terms of polynomials or rational
+expressions.  The symbol /R/ following the line label in the display of an expression
+indicates that either the expression is in CRE form or that some subexpression of it
+is.
+
+CRE form is "contagious" in that any time a CRE expression is added to or
+multiplied by another compatible expression, the result is in CRE form.  Thus by
+initially multiplying by RAT(1) one can force his entire calculation to be done
+in CRE form.  However, if CRE are mixed into an expression containing general forms e.g. SIN(RAT(X**2)), such that the result is not totally in CRE form, then the result is automatically converted into general representation.
+
+Some functions (e.g. RATSIMP, FACTOR, etc.) use CRE form internally in the
+implementation of their algorithms.  This fact however is usually transparent to
+the user.
+
+.function(RATVARS,|var1, var2, ..., varn|)
+forms its n arguments into a list in which the rightmost variable 2varn1 will
+be the main variable of future rational expressions in which it occurs, and the
+other variables will follow in sequence.  If a variable is missing from the
+RATVARS list, it will be given lower priority than the leftmost variable
+2var11. The arguments to RATVARS can be either variables or non-rational
+functions (e.g. SIN(X)).
+
+The variable $var<RATVARS/> is a list of the arguments which have been given to this
+function.
+.endfunction
+
+.function(RAT,|exp, v1, ..., vn|)
+converts 2exp1 to CRE form by expanding and combining all terms over a common
+denominator and cancelling out the greatest common divisor of the numerator and
+denominator as well as converting floating point numbers to rational numbers within
+a tolerance of $var<RATEPSILON/2.0E-8>.  The variables are ordered according to
+the 2v11,...,2vn1 as in RATVARS, if these are specified.  RAT does not
+generally simplify functions other than + , - , * , / , and exponentiation to an
+integer power and it does not deal with equations whereas RATSIMP does handle these
+cases.  Note that atoms (numbers and names) in CRE form are not the same as they
+are in the general form.  Thus RAT(X)-X results in RAT(0) which has a different internal representation than 0.
+
+
+$var<RATFAC/FALSE> when TRUE invokes a partially factored form for CRE rational expressions.  During rational operations the expression is maintained as fully factored as possible without an actual call to the factor package.  This should always save space and may save some time in some computations.  The numerator and denominator are still made relatively prime, for example
+.example
+RAT((X^2 -1)^4/(X+1)^2);  yields (X-1)^4*(X+1)^2),
+.end
+.scon
+but the factors within each part may not be relatively prime.  
+
+
+$var<RATPRINT/TRUE> if FALSE suppresses the printout of the message informing
+the user of the conversion of floating point numbers to rational numbers.
+
+$var<KEEPFLOAT/FALSE> if TRUE prevents floating point numbers from being converted to rational numbers.$$As with all other switches, various MACSYMA algorithms may override the setting of this switch if they are unable to operate in that mode.*
+
+$var<BFTORAT/FALSE> controls the conversion of bfloats to rational numbers.  If BFTORAT:FALSE, RATEPSILON will be used to control the conversion (this results in relatively small rational numbers).   If BFTORAT:TRUE, the rational number generated will accurately represent the bfloat.
+
+(Also see the $fun<RATEXPAND> and $fun<RATSIMP> functions. sec. 6.1.1)
+
+.example
+(C1) ((X-2*Y)**4/(X**2-4*Y**2)**2+1)*(Y+A)*(2*Y+X)
+	/(4*Y**2+X**2);
+.begin group
+                                           4
+                                  (X - 2 Y)
+              (Y + A) (2 Y + X) (------------ + 1)
+                                   2      2 2
+                                 (X  - 4 Y )
+(D1)          ------------------------------------
+                              2    2
+                           4 Y  + X
+.end
+
+(C2) RAT(%,Y,A,X);
+.begin group
+                            2 A + 2 Y
+(D2)/R/                     ---------
+                             X + 2 Y
+.end
+
+.end
+.endfunction
+
+.function(RATDISREP,exp)
+changes its argument from CRE form to general form.  This is
+sometimes convenient if one wishes to stop the "contagion", or use rational functions
+in non-rational contexts (see the example at the beginning of this section).  Most CRE
+functions will work on either CRE or non-CRE expressions, but the answers may take
+different forms.  If RATDISREP is given a non-CRE for an argument, it returns its
+argument unchanged.
+
+.endfunction
+
+.function(TOTALDISREP,exp)
+converts every subexpression of 2exp1 from CRE to general form.  If 2exp1 is
+itself in CRE form then this is identical to RATDISREP but if not then RATDISREP
+would return 2exp1 unchanged while TOTALDISREP would "totally disrep" it. 
+This is useful for ratdisrepping expressions e.g., equations, lists, matrices, etc. which
+have some subexpressions in CRE form.
+
+.endfunction
+
+.function(NUM,exp)
+obtains the numerator of the rational expression 2exp1.
+
+.endfunction
+
+.function(DENOM,exp)
+returns the denominator of the rational expression 2exp1.
+
+.endfunction
+
+The above two commands do not alter the internal representations of expressions and have the desirable property that for all expressions  NUM(exp)/DENOM(exp) is the same as exp.   This is not true of the following two commands which return expressions in CRE form.
+
+.function(RATNUMER,exp)
+obtains the numerator of the rational expression 2exp1.  If 2exp1 is in general
+form then the NUM function should be used instead, unless one wishes to get a CRE
+result.
+
+.endfunction
+
+.function(RATDENOM,exp)
+obtains the denominator of the rational expression 2exp1.  If 2exp1 is in
+general form then the DENOM function should be used instead, unless one wishes to get a
+CRE result.
+
+.endfunction
+
+.function(RATWEIGHT,|v1, w1, ..., vn, wn|)
+assigns a weight of 2wi1 to the variable 2vi1.  This causes a monomial
+to be replaced by 0 if its weight exceeds the value of the variable $var<RATWTLVL /FALSE> (for the default value FALSE no truncation occurs).  The weight of a monomial is the sum of the products
+of the weight of a variable in the term times its power.  Thus the weight of
+3*v1**2*v2 is 2*w1+w2.  This truncation occurs only when multiplying or
+exponentiating CRE forms of expressions.
+
+$var<RATWEIGHTS/[]> returns a list of weight assignments, as does RATWEIGHT();     KILL(...,RATWEIGHTS), SAVE(...,RATWEIGHTS) eliminate and save weight assignments ($see<freeing!storage>,$see<explicitstor>).
+
+.example
+
+(C5) RATWEIGHT(A,1,B,1);
+(D5)                         [[B, 1], [A, 1]]
+
+(C6) EXP1:RAT(A+B+1)$
+
+(C7) %**2;
+.begin group
+                      2                  2
+(D7)/R/              B  + (2 A + 2) B + A  + 2 A + 1
+.end
+
+(C8) RATWTLVL:1$
+
+(C9) EXP1**2;
+(D9)/R/                       2 B + 2 A + 1
+.end
+
+.endfunction
+
+.function(HORNER,|exp, var|)
+will convert 2exp1 into a rearranged representation as in Horner's rule, using
+2var1 as the main variable if it is specified.  2Var1 may also be omitted in
+which case the main variable of the CRE form of 2exp1 is used.  HORNER sometimes
+improves stability if 2expr1 is to be numerically evaluated.  It is also useful
+if MACSYMA is used to generate programs to be run in FORTRAN (see $fun<STRINGOUT> -
+$ref<disk!storage>)
+
+.example
+(C1) 1.0E-20*X^2-5.5*X+5.2E20;
+.begin group
+                                2
+(D1)                   1.0E-20 X  - 5.5 X + 5.2E+20
+.end
+
+(C2) HORNER(%,X),KEEPFLOAT:TRUE;
+(D2)                  X (1.0E-20 X - 5.5) + 5.2E+20
+
+(C3) D1,X=1.0E20;
+ARITHMETIC OVERFLOW
+
+(C4) D2,X=1.0E20;
+(D4)                          6.9999999E+19
+
+.end
+.endfunction
+
+.function(FASTTIMES,|p1, p2|)
+multiplies the polynomials 2p11 and 2p21 by using a special algorithm for
+multiplication of polynomials. They should be multivariate, dense, and nearly the same
+size.  Classical multiplication is of order N*M where N and M are the degrees.
+FASTTIMES is of order MAX(N,M)**1.585.
+
+
+The rest of the functions in this section return their results in general
+representation only if all of their principal arguments are in that form.  If
+any of their principal arguments are in CRE form then the result is returned in
+CRE form.
+.endfunction
+
+.function(DIVIDE,|p1, p2, var1, ..., varn|)
+computes the quotient and remainder of the polynomial 2p11 divided by the
+polynomial 2p21, in a main polynomial variable, 2varn1.  The other variables
+are as in the RATVARS function.  The result is a list whose first element is the
+quotient and whose second element is the remainder.
+
+.example group
+(C1) DIVIDE(X+Y,X-Y,X);
+(D1)                        [1, 2 Y]
+
+(C2) DIVIDE(X+Y,X-Y);
+(D2)                      [ - 1, 2 X]
+
+1(Note that Y is the main variable in C2)
+
+.end
+.endfunction
+
+.function(QUOTIENT,|p1, p2, var1, ...|)
+computes the quotient of the polynomial 2p11 divided by the polynomial
+2p21.
+
+.endfunction
+
+.function(REMAINDER,|p1, p2, var1, ...|)
+computes the remainder of the polynomial 2p11 divided
+by the polynomial 2p21.
+
+.endfunction
+
+.function(CONTENT,|p1, var1, ..., varn|)
+returns a list whose first element is the greatest common divisor of the
+coefficients of the terms of the polynomial 2p11 in the variable 2varn1
+(this is the content) and whose second element is the polynomial 2p11 divided
+by the content.
+
+.example group
+(C1) CONTENT(2*X*Y+4*X**2*Y**2,Y);
+
+(D1)            [2*X, 2*X*Y**2+Y].
+
+.end
+.endfunction
+
+.function(GCD,|p1, p2, var1, ...|)
+computes the greatest common divisor of 2p11 and 2p21.  The flag $var<GCD/EZ> determines which algorithm is employed.  Setting GCD to EZ,RED, or MOD selects the EZGCD [Mo6], reduced, or modular [Br1] algorithm, respectively.   If GCD:FALSE then GCD(p1,p2,var) will always return  1 for all x.  Many functions (e.g. RATSIMP, FACTOR, etc.) cause gcd's to be taken implicitly.  For homogeneous polynomials it is recommended that GCD:RED be used.
+
+To take the gcd when an algebraic is present, e.g. GCD(X^2-2*SQRT(2)*X+2,X-SQRT(2)); ,   ALGEBRAIC must be TRUE and  GCD must not be EZ.
+
+.endfunction
+
+.function(EZGCD,|p1, p2, ...|)
+gives a list whose first element is the g.c.d of the polynomials 2p1,p21,... and
+whose remaining elements are the polynomials divided by the g.c.d.  This always
+uses the EZGCD algorithm (not recommended for homogeneous polynomials).
+
+.endfunction
+
+.function(MOD,p)
+converts the polynomial 2p1 to a modular representation with respect to
+the current modulus which is the value of the variable MODULUS.
+
+
+If $var<MODULUS/FALSE> is set to a positive prime p, then all arithmetic in the
+rational function routines will be done modulo p.  That is all integers will be reduced
+to less than p/2 in absolute value (if p=2 then all integers are reduced to 1 or 0).
+This is the so called "balanced" modulus system, e.g. N MOD 5 = -2, -1, 0, 1, or 2.
+.endfunction
+
+.function(RESULTANT,|p1, p2, var|)
+computes the resultant of the two polynomials 2p11 and 2p21, eliminating the
+variable 2var1.  The resultant is a determinant of the coefficients of 2var1 in
+2p11 and 2p21 which equals zero if and only if 2p11 and 2p21 have
+a non-constant factor in common.
+
+
+$var<MODRESULT/FALSE> if TRUE causes the modular resultant algorithm to be used,
+otherwise the reduced (which is the default) will be used (see [Co1]).
+
+.example group
+(C1)    RESULTANT(A*Y+X**2+1,Y**2+X*Y+B,X);
+
+             4      3              2    2
+(D1)        Y  + A Y  + (2 B + 1) Y  + B
+
+.end
+.endfunction
+
+.function(RATDIFF,|exp, var|)
+differentiates the rational expression  2exp1 (which must be a ratio of
+polynomials or a polynomial in the variable 2var1) with respect to 2var1.  For
+rational expressions this is much faster than DIFF.  The result is left in CRE
+form. However, RATDIFF should not be used on factored CRE forms;  use DIFF instead for such expressions.
+
+.example
+(C1) (4*X**3+10*X-11)/(X**5+5);
+.begin group
+                                         3
+                                      4 X  + 10 X - 11
+(D1)                                  ----------------
+                                            5
+                                           X  + 5
+.end
+
+(C2) MODULUS:3$
+
+(C3) MOD(D1);
+.begin group
+                                2
+                               X  + X - 1
+(D3)                      --------------------
+                           4    3    2
+                          X  + X  + X  + X + 1
+.end
+
+(C4) RATDIFF(D1,X);
+.begin group
+                          5    4    3
+                         X  - X  - X  + X - 1
+(D4)                ------------------------------
+                     8    7    5    4    3
+                    X  - X  + X  - X  + X  - X + 1
+.end
+.end
+.endfunction
+
+.subsec (Algebraic Integers,algint)
+
+An algebraic integer is a solution of a univariate  monic polynomial equation with
+integer coefficients.  Examples of algebraic integers are 2+3*%I, SQRT(7), and
+6^(1/3)-5^(1/7).  In addition to the factorization of polynomials over the ring of
+integers with an algebraic integer adjoined, MACSYMA provides simplification of
+expressions involving algebraic integers by representing them in a canonically
+simplified form, in which there are no radicals in the denominators of fractions.
+
+.function(TELLRAT,|poly1,...,polyn|)
+adds to the ring of algebraic integers known to MACSYMA, the
+elements which are the solutions of the univariate, monic polynomials 2polyj* (integer coefficients).  MACSYMA initially knows about %I and
+all roots of integers.  TELLRAT() returns a list of the polynomials given to TELLRAT.   To SAVE or KILL all of one's TELLRATs, just do SAVE (...,TELLRATS,...) or KILL(...,TELLRATS,...).    To undo a TELLRAT(p(X)), simply do TELLRAT(X).
+
+
+$var<ALGEBRAIC/FALSE> must be set to TRUE in order for the simplfication of
+algebraic integers to take effect.
+
+$var<RATALGDENOM/TRUE> if TRUE allows rationalization of denominators wrt. radicals to take effect.   To do this one must use CRE form in algebraic mode.
+
+
+
+.example
+(C1) ALGEBRAIC:RATALGDENOM:TRUE$
+
+(C2) RATDIS(E):=RATDISREP(RAT(E))$
+
+.BEGIN GROUP
+(C3) 10*(1+%I)/(3^(1/3)+%I);
+			       10 (%I + 1)
+(D3)                           -----------
+				 1/3
+				3    + %I
+
+(C4) RATDIS(%);
+		   2/3               1/3
+(D4)   (4 %I + 2) 3    + (4 - 2 %I) 3    - 4 %I - 2
+.END
+.BEGIN GROUP
+
+(C5) TELLRAT(A^2+A+1)$
+
+(C6) A/(SQRT(2)+SQRT(3))+1/(A*SQRT(2)-1);
+			  1                 A
+(D6)                ------------- + -----------------
+		    SQRT(2) A - 1   SQRT(3) + SQRT(2)
+
+(C7) RATDIS(%);
+      (7 SQRT(3) - 10 SQRT(2) + 2) A - 2 SQRT(2) - 1
+(D7)  ----------------------------------------------
+			    7
+
+.END
+.end
+.endfunction
+
+.subsec (Functions for Extended Rational Expressions,eratfuns)
+
+An extended rational expression is a truncated power series with rational functions for coefficients ( as generated by TAYLOR).  The truncation capability (RATWEIGHT,RATWTLVL) described above $see<rational!functions> is utilized by extended CRE forms as well as by CRE forms.
+
+.function(TAYLOR,|exp,[var1,pt1,ord1],[var2,pt2,ord2],...|)
+returns a truncated power series in the variables 2vari1 about the points  2pti1, truncated at 2ordi1. For further details see $ref<taylor>.
+
+
+$var<PSEXPAND/FALSE> if TRUE will cause extended rational function expressions
+to display fully expanded. (RATEXPAND will also cause this.)  If FALSE,  multivariate expressions will be displayed just as in the rational function package.  If  PSEXPAND:MULTI,  then terms with the same total degree in the variables are grouped together.
+
+.endfunction
+
+
+.function(SRRAT,exp)
+converts 2exp1 from extended rational form to CRE form, i.e. it is like
+RAT(RATDISREP(2exp1)) although much faster.
+
+
+
+.example
+
+
+(C1) 			 TAYLOR(1 + X, [X, 0, 3]);
+
+(D1)/T/ 		        1 + X + . . .
+
+		
+(C2) 1/%;	
+.begin group
+				    2	 3
+(D2)/T/ 		   1 - X + X  - X  + . . .
+.end
+
+(C3) TAYLOR(1 + X + Y + Z, [X, 0, 3], [Y, 1, 2],
+	[Z, 2, 1]);
+
+(D3)/T/ 	      4 + (Z - 2) + (Y - 1) + X + . . .
+
+
+(C4) 1/%;
+.begin group
+
+	1   Z - 2      1    Z - 2
+(D4)/T/ - - ----- + (- -- + ----- + . . .) (Y - 1)
+	4    16	       16    32
+
+    1	 3 (Z - 2)		   2
+ + (-- - --------- + . . .) (Y - 1)
+    64	    256
+
+      1	   Z - 2    1	 3 (Z - 2)
+ + (- -- + ----- + (-- - --------- + . . .) (Y - 1)
+      16    32	    32	    128
+
+       3    3 (Z - 2)		      2
+ + (- --- + --------- + . . .) (Y - 1)  + . . .) X
+      256      256
+
+    1	 3 (Z - 2)	 3    3 (Z - 2)
+ + (-- - --------- + (- --- + --------- + . . .) (Y - 1)
+    64	    256	        256	 256
+
+     3	  15 (Z - 2)		     2		 2
+ + (--- - ---------- + . . .) (Y - 1)  + . . .) X
+    512	     2048
+
+       1    Z - 2     1	   5 (Z - 2)
+ + (- --- + ----- + (--- - --------- + . . .) (Y - 1)
+      256    256     256     1024
+
+       5     15 (Z - 2)		        2	    3
+ + (- ---- + ---------- + . . .) (Y - 1)  + . . .) X  
+      2048      4096
+
+ + . . .
+.end
+.end
+.endfunction
+
+
+.sec (Poisson Series Functions,poissfun,1)
+
+A Poisson series is a finite sum where each term has the form p*trig(q) where
+"trig" is either SIN or COS .  Usually, p is a polynomial with
+rational number or floating point coefficients, or a general MACSYMA expression.  The
+argument q is a linear combination of no more than 6 variables, whose names are
+literally U, V, W, X, Y, and Z.  (These restrictions are not vital, but apparently
+present no difficulty in usual applications.  They could be altered easily).
+
+Conversion to a Poisson series expands all products or powers of sines and/or
+cosines into sums. In order to display the result, it is usually necessary to convert
+an expression in Poisson encoding into general MACSYMA representation using the
+OUTOFPOIS function, or to print it using the PRINTPOIS function.
+
+.function(POISSIMP,A)
+converts A into a Poisson series for A in general representation.
+.endfunction
+
+.function(INTOPOIS,A)
+converts A into a Poisson encoding.
+
+.endfunction
+
+.function(OUTOFPOIS,A)
+converts A from Poisson encoding to general representation.  If A is not in
+Poisson form, it will make the conversion, i.e. it will look like the result of
+OUTOFPOIS(INTOPOIS(A)).  This function is thus a canonical simplifier for sums of
+powers of SIN's and COS's of a particular type.
+
+.endfunction
+
+.function(PRINTPOIS,A)
+prints a Poisson series in a readable format.  In common with OUTOFPOIS, it
+will convert A into a Poisson encoding first, if necessary.
+
+.endfunction
+
+.function(POISTIMES,|A, B|)
+is functionally identical to INTOPOIS(A*B).
+
+.endfunction
+
+.function(POISTRIM)
+is a reserved function name which (if the user has defined it) gets
+applied during Poisson multiplication.  It is a predicate function of 6 arguments
+which are the coefficients of the U, V,..., Z in a term.  Terms for which POISTRIM is
+TRUE (for the coefficients of that term) are eliminated during multiplication.
+
+.endfunction
+
+.function(POISPLUS,|A, B|)
+is functionally identical to INTOPOIS(A+B).
+
+.endfunction
+
+.function(POISEXPT,|A, B|)
+(B a positive integer) is functionally identical to INTOPOIS(A**B).
+
+.endfunction
+
+.function(POISDIFF,|A, B|)
+differentiates A with respect to B.  B must occur only in the trig arguments
+or only in the coefficients.
+
+.endfunction
+
+.function(POISINT,|A, B|)
+integrates in a similarly restricted sense (to POISDIFF).  Non-periodic terms
+in B are dropped if B is in the trig arguments.
+
+.endfunction
+
+.function(POISSUBST,|A, B, C|)
+substitutes A for B in C.  C is a Poisson series.
+
+(1) Where B is a variable U, V, W, X, Y, or Z then A must be an expression linear in
+those variables (e.g. 6*U+4*V).
+
+(2) Where B is other than those variables, then A must also be free of those
+variables, and furthermore, free of sines or cosines.
+
+.endfunction
+
+.function(POISSUBST,|A, B, C, D, N|)
+is a special type of substitution which operates on A and B as in
+type (1) above, but where D is a Poisson series, expands COS(D) and SIN(D) to order N
+so as to provide the result of substituting A+D for B in C.  The idea is that D is an
+expansion in terms of a small parameter.  For example, POISSUBST(U,V,COS(V),E,3)
+results in COS(U)*(1-E^2/2) - SIN(U)*(E-E^3/6).
+
+.endfunction
+
+.function(POISMAP,|series, sinfn, cosfn|)
+will map the functions 2sinfn* on the sine terms and 2cosfn* on
+the cosine terms of the poisson series given.  2sinfn* and 2cosfn* are functions of two
+arguments which are a coefficient and a trigonometric part of a term in series
+respectively.
+
+.example
+(C1) PFEFORMAT:TRUE$
+
+(C2) (2*A^2-B)*COS(X+2*Y)-(A*B+5)*SIN(U-4*X);
+
+.begin group
+					
+(D2)        - (A B + 5) SIN(U - 4 X) 
+
+		      2
+		+ (2 A  - B) COS(2 Y + X)
+.end
+
+(C3) POISEXPT(%,2)$
+
+.begin group
+(C4) PRINTPOIS(D3);
+
+    2
+(2 A  - B) ( - A B - 5) SIN( - 2 Y - 5 X + U)
+
+    2
+(2 A  - B) ( - A B - 5) SIN(2 Y - 3 X + U)
+
+		  2
+- 1/2 ( - A B - 5)  COS(2 U - 8 X)
+
+	2     2                   2
+1/2 (2 A  - B)  + 1/2 ( - A B - 5)
+
+	2     2
+1/2 (2 A  - B)  COS(4 Y + 2 X)
+.end
+
+(D4)                               DONE
+
+(C5) POISINT(D3,Y)$
+
+(C6) POISSIMP(%);
+
+.begin group
+	     2     2 
+(D6) 1/8 (2 A  - B)  
+
+	                         2
+	SIN(4 Y + 2 X) - 1/2 (2 A  - B) ( - A B - 5)
+
+				     2
+        COS(2 Y - 3 X + U) + 1/2 (2 A  - B) ( - A B - 5)
+
+        COS( - 2 Y - 5 X + U)
+.end
+
+(C7) OUTOFPOIS(SIN(X)^5+COS(X)^5);
+
+.begin group
+(D7) 1/16 SIN(5 X) + 1/16 COS(5 X) - 5/16 SIN(3 X) 
+
+	+ 5/16 COS(3 X) + 5/8 SIN(X) + 5/8 COS(X)
+.end
+
+.end
+
+One or two final points:  the coefficients in the arguments of the trig
+functions must fit in a pre-arranged domain.  Initially this is set to [-15,16] but
+can be set to [-2^[n-1]+1, 2^[n-1]] by the variable $fun<POISLIM[5]>.  This should not be
+done in the middle of a calculation.  Also, it is possible to define the coefficient
+arithmetic to be almost anything.  The user (probably in conjunction with a LISP-MACSYMA
+programmer) must define the programs needed to add, multiply, substitute,
+encode and decode the coefficients.  The encoding for +1 and -1 and a program to test
+for 0 (zero), completes each package.  These packages are available for coefficients
+being CRE form, polynomials with floating point coefficients, and polynomials with
+rational number coefficients, in addition to the default general MACSYMA form.
+
+If all coefficients of trig terms are desired in CRE form, the user should
+LOADFILE(POIS3,FASL,DSK,MACSYM) and LOADFILE(RATPOI,FASL,DSK,MACSYM).  Only those
+variables on the RATVARS list can be used in the coefficients.  In many instances this
+is a much more efficient technique in terms of speed.
+
+.endfunction

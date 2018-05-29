@@ -1,0 +1,252 @@
+.<<(c) Copyright 1982 Massachusetts Institute of Technology>>
+.chap (The MACSYMA Editor, macedit)
+
+.sec (Introduction,edint)
+
+The major features of the editor are its concise
+commands (few alphabetic characters), its varied assortment of commands, concatenation of commands as in
+TECO (the PDP-10 file editor), mnemonics for command names (once you know them,
+R means "move in the Reverse direction" ; B means "move to the Bottom" ), and
+compatibility with TECO as to command names (in the case of C, D, F, G, I, J, K,
+L, R, and S).
+
+.sec (Entering the Editor,entered)
+
+At any time while the user is inputting a command line to MACSYMA, he may enter
+the input-stream editor by typing "altmode" or "escape", henceforth denoted by
+<$>.  The editor is given the string of characters typed so far in the current
+input line.  In the case of a detected syntax error, upon typing <$>$$<$> must be the first character typed on the next command line.  Any other character (except "space") causes the edit buffer to be emptied.*  
+the entire previous command string will be given to the editor.
+Alternatively, <control>-Y also retrieves the previous command string
+(even if other characters have already been typed in the current
+C-line).  Thus, the previous command line is readily available for
+editing without retyping it.
+
+One may also request the editor to edit or modify a previously
+accepted input line by using the $fun<STRING> function in MACSYMA.
+Typing STRING(Ci) will restore the expression labeled as Ci as the
+current input string.  This enables the user to modify it by then
+immediately typing <$>.  For a simpler method, see the MYV command
+below.
+
+All the commands to the editor reference a cursor (displayed as a
+dollar sign) which is displayed within or at either end of the string
+of characters currently being edited (called the "input string" from
+now on).  The value of the variable $var<CURSOR/$> determines what
+character is used $see<ioptions>.
+
+The editor accepts a command string which must be terminated by
+<$><$>.  A command string is any concatenation of one or more legal
+commands which will be processed in left-to-right order.  Display of
+the input string occurs at the end of the processing of each command
+string.  <$> is used to enter the editor, to exit from the editor (as
+<$><$>), and to terminate insert or search substrings.  Otherwise,
+spurious <$>'s are ignored.  Rubouts (the rubout or delete key on the
+console) may be used at any point prior to command termination to
+delete the last character typed in.  ?? deletes the entire command. At
+any point prior to command termination, the user may type a
+<control>K, and the editor will reprint the characters of the command
+typed so far.
+
+Occasionally, one gets a syntax error because of omitting characters
+from the end of a command (especially right parentheses).  By typing
+^Y (control-Y) immediately, as the first character of the next input
+line, the last command will be automatically reproduced on the current
+input line at which point one can supply the missing characters or
+rubout erroneous characters.  For example:
+
+.example group turn on ""
+(C1) (((X+1)*X+2)*X+3$
+( ( ( X + 1 ) * X + 2 ) * X + 3 ***$***
+SYNTAX ERROR
+PLEASE REPHRASE OR EDIT
+
+(C1) ^Y
+(C1) (((X+1)*X+2)*X+3
+
+1The user can now complete the command line.*
+.end
+
+(Entering the editor (with an altmode) and then exiting again immediately
+will also produce the same effect.)
+
+.sec ("A Description of the Commands",commandescr)
+
+Some commands may be prefixed by an integer (represented below by "n") which
+usually may be positive or negative; although it may be zero as well in the case
+of K, L, and W; and it must be non-negative in case of W.  The default value of
+n is +1.  Except in the case of R, if n is positive the commands operate toward
+the right of the cursor, if n is negative they operate toward the left.  I and S
+are two of the few commands which may be followed by other characters, namely the
+characters which constitute the insert or search strings.  An error message will
+be printed if an illegal command substring is encountered or if any command
+substring fails.  In case of such error, the processing of the current command
+string will be terminated at that point, with the offending command substring
+indicated.
+.skip 1
+
+.begin fill
+.tabs 15, 30, 50;
+.indent 0,32
+.turn on "\"
+.begin group
+2Command\Mnemonic\Action*
+
+.skip 1
+2Commands which move the cursor*
+
+nC\Character\moves the cursor past n characters.
+
+nR\Reverse\moves the cursor past n characters in the reverse direction
+(nR =  -nC).
+
+J or T\Jump to Top\moves the cursor to the beginning of the input string.
+.end
+B or ZJ\Bottom\moves the cursor to the end of the input string.
+
+nL\Line\moves the cursor to the right of the nth carriage return (0L
+moves left); e.g., L moves to the next line.
+
+nSstring<$>\Search\moves the cursor to the right (left if n is
+negative) of the nth occurrence of "string" in the input string.
+
+nS\Search\repeats the last S command given.
+
+) or ]\Move\moves the cursor right from the current position over the next
+balanced pair of parentheses (or brackets).
+
+( or [\Move\similar to ) or ] but moves left.
+
+.skip 1
+2Commands which delete characters*
+
+nD\Delete\deletes n characters, and saves them in the "save-register"
+(see the GR command below).
+
+nK\Kill\deletes all the characters through the nth carriage return
+(0K kills left), and saves them in the "save-register";
+e.g., K deletes the remainder of this line.
+
+M) or M]\Delete\similar to ) or ] but deletes the characters moved over and
+saves them in the "save-register".
+
+M( or M[\Delete\similar to M) or M] but moves left.
+
+nFRstring<$>\\deletes the next n occurrences of string. (This command
+is a special case of the FR command below and can be used in this way
+only when it is the last argument in the command string).
+
+.skip 1
+2Commands which insert characters*
+
+Istring<$>\Insert\inserts the characters "string" at the current
+cursor position.  The cursor is positioned at the right of the
+inserted text.  If no argument is given then the string of the last I
+command which had one is used.
+
+GR\Get Register\inserts at the current cursor position the characters
+deleted by the last use of D, K, or M.  Thus GR may be used in
+combination with D or K to move characters from one place to another
+in the input string; or to recover from an accidental use of D or K.
+There is only one "save-register".
+
+nFRstring1<$>string2<$>\replaces the next n occurrences of string1 by
+string2.  If n is 1 it may be omitted.  nFR given with no string
+arguments uses those from the last FR given which had them.
+
+MFRstring1<$>string2<$>\replaces all occurrences after the current
+cursor position of string1 by string2.
+
+YVname<$>\Yank value\puts into the editing buffer, the value of the
+argument whose name is given, if a label or the name of a user
+variable, at the current cursor position leaving the cursor at the end
+of the inserted string.
+
+YV^\Yank value\puts the previous command line into the editing buffer.
+
+YFname<$>\Yank function\puts into the editing buffer the definition of
+the user function whose name is given (as with YV).  If the name is
+followed by a list of subscripts in brackets, then the named
+subscripted function is brought into the buffer.  This command
+provides an alternative to DISPFUN and STRING $see<display!functions>.
+
+GVname<$>\Grind value\puts into the editing buffer the value of the
+argument whose name is given, as for YV above, but in the format of
+"GRIND" output, making it easier to read.
+
+GFname<$>\Grind function\puts into the editing buffer the definition
+of the user function whose name is given, as for YF, but in the
+format of "GRIND" output, making reading it and editing it much
+easier.
+
+.begin indent 0, 0 skip 1
+Note: If the YV, YV^, YF, GV and GF commands are prefixed by the
+letter M then the editor will clear the buffer before yanking, and
+also will leave the cursor at the head of the edit string when done.
+.end
+
+.skip 1
+2Commands which control display of results*
+
+P\Print\simply reprints the input string.  This is useful in case of
+console problems.
+
+nW\Window\controls the window size of the display, which is the maximum
+number of characters displayed on each side of the cursor.
+This is useful in case of slow consoles and large input strings.
+0W will cause only the cursor to be displayed.  Once set 
+the window size remains at that setting until it is reset.
+
+V\View\restores the display to full view, which is the normal mode
+(affected only by W).
+
+Q\Quit\exits the editor without reprinting the just edited string.
+
+.end
+
+.skip 1
+<$><$> will exit from the editor and is also the command string
+terminator.  Two examples of legal command strings are 4C3DIFOO<$><$>
+and -2SBAR<$>3R<$><$>.  The first moves right over four characters,
+deletes the next three characters, and inserts FOO.  The second
+searches from the current pointer position to the beginning of the
+text for the second occurrence of BAR then moves left over three
+characters.
+
+.example
+.begin group once center
+2Example3
+
+(C1) X:1$
+
+(C2) NATRIX([A,4],[-1,A/2]);
+.end
+
+(D2)                   NATRIX([A, 4], [- 1, 1/2 A])
+(C3)<$>
+_NATRIX([A,4],[-1,A/2])
+DIM<$><$>
+M_ATRIX([A,4],[-1,A/2])
+]2CD<$><$>
+MATRIX([A,4],[_1,A/2])
+<$><$>   1(In the line below the user typed the ;)*
+(C3) MATRIX([A,4],[1,A/2]);
+
+.begin group
+			       [ A    4   ]
+(D3)                           [          ]
+			       [ 1  1/2 A ]
+.end
+.begin group
+(C4) CHARPOLY(%,X);
+(D4)                     (A - 1) (1/2 A - 1) - 4
+.end
+(C5)<$>
+_CHARPOLY(%,X)
+S%<$>-DID3<$>CI'<$><$>
+CHARPOLY(D3,'_X)
+<$><$>   1(In the line below the user typed the ;)*
+(C5) CHARPOLY(D3,'X);
+(D5)                     (A - X) (1/2 A - X) - 4
+.end
+

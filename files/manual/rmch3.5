@@ -1,0 +1,303 @@
+.<<(c) Copyright 1983 Massachusetts Institute of Technology>>
+.chap (What a Serious User Should Know,serious)
+
+Usually the user need not be concerned with the internal workings of MACSYMA, but
+some knowledge of the representation of expressions and of the way in which they are
+evaluated, simplified, and displayed should be acquired in order to use MACSYMA more
+easily, efficiently, and effectively.
+
+.sec (Representation,rep)
+
+After an expression is read by MACSYMA it is automatically translated (i.e. lexically 
+scanned and parsed) to a LISP "internal" form.  This is the form in which
+MACSYMA's programs deal with expressions.  Initially the translated expression
+is in "general" form but certain functions convert this to other forms.
+
+(1) 5The general form* represents non-atomic expressions as LISP lists whose first
+element is the main operator of the expression and whose remaining elements are the
+operands also represented in this form.  Thus, after simplification, 2*X+3/4 is represented essentially $$Ignoring the flags MACSYMA places on operators* 
+as (PLUS (RAT 3 4) (TIMES 2 X)).  F(X)-LOG(X) is represented as
+(PLUS (F X) (TIMES -1 (LOG X))).  Any expression which MACSYMA deals with can be
+represented in this form.
+
+(2) 5Canonical Rational Expressions* constitute a second kind of
+representation which is especially suitable for expanded polynomials
+and rational functions (as well as for partially factored polynomials
+and rational functions when RATFAC[FALSE] is set to TRUE,
+$see<rational!functions>).  In this 5CRE form* an ordering of
+variables (from most to least main) is assumed for each expression.
+Polynomials are represented recursively by a list consisting of the
+main variable followed by a series of pairs of expressions, one for
+each term of the polynomial.  The first member of each pair is the
+exponent of the main variable in that term and the second member is
+the coefficient of that term which could be a number or a polynomial
+in another variable again represented in this form.  Thus the
+principal part of the CRE form of 3*X^2-1 is (X 2 3 0 -1) and that of
+2*X*Y+X-3 is (Y 1 (X 1 2) 0 (X 1 1 0 -3)) assuming Y is the main
+variable, and is (X 1 (Y 1 2 0 1) 0 -3) assuming X is the main
+variable. "Main"-ness is usually determined by reverse alphabetical
+order.  In the case of sums like X-Y, the display is X-Y, however
+(unless the flag $var<NEGSUMDISPFLAG/TRUE> is set to FALSE).
+
+The "variables" of a CRE expression needn't be atomic.  In fact any
+subexpression whose main operator is not + - * / or ^ with integer
+power will be considered a "variable" of the expression (in CRE form)
+in which it occurs.  For example the CRE variables of the expression
+X+SIN(X+1)+2*SQRT(X)+1 are X, SQRT(X), and SIN(X+1).  If the user does
+not specify an ordering of variables by using the RATVARS function
+$see<rational!functions> MACSYMA will choose an alphabetic one.
+
+The $fun<RAT> function, e.g. RAT(X^n) will truncate multi-word integer
+exponents 2n1 to fixnums.
+
+In general, CRE's represent rational expressions, that is, ratios of
+polynomials, where the numerator and denominator have no common
+factors, and the denominator is positive.  The internal form is
+essentially a pair of polynomials (the numerator and denominator)
+preceded by the variable ordering list.
+
+If an expression to be displayed is in CRE form or if it contains any
+subexpressions in CRE form, the symbol /R/ will follow the line label.
+
+Many MACSYMA commands operate only on expressions in general representation.  If they are called on an expression in CRE or extended CRE form, they convert that expression into general representation first which, of course, may take some time.
+
+(3) An 5extended CRE form* is used for the representation of Taylor series. The notion of a rational expression is
+extended so that the exponents of the variables can be positive or negative rational
+numbers rather than just positive integers and the coefficients can themselves be 
+rational expressions as described above in (2) rather than just polynomials.  These are
+represented internally by a recursive polynomial form which is similar to and is a generalization
+of CRE form, but carries additional information such as the degree of truncation. 
+
+As with CRE form, the symbol /T/ follows the line label of such expressions.
+
+(4) When $var<RATFAC/FALSE> is TRUE, expressions are brought into
+5partially factored form1: numerator and denominator are relatively
+prime products of recursively constructed primitive polynomial
+kernels.  Kernels at the same level within numerator and denominator
+may not be relatively prime.  In the future, kernels may be further
+specified to be square-free.
+
+(5) Another internal form is used to represent Poisson series.  This
+specialized representation of trigonometric series is described in
+section $ref<poissfun>.
+
+The symbol /P/ follows the line label of Poisson series expressions.
+
+.sec(Evaluation)
+
+After MACSYMA parses a command line the expression is evaluated and simplified
+and the result is displayed.  Often the two-phase process of evaluation and
+simplification is referred to simply as "evaluation."  In this section though,
+we use the word "evaluation" to refer only to the evaluation stage proper and
+not to the simplification stage.
+
+MACSYMA expressions consist of numbers, variables, function calls, and
+operators.  When an expression is read by MACSYMA the parsing program
+translates it into LISP preserving the order and the result is the
+value of the current C line.  The evaluation phase proceeds by
+building up an expression which is similar in form to the input
+expression, but has certain substitutions.  The evaluator is
+recursive, and calls itself on all sub-expressions.
+
+When the evaluator sees a name, it checks to see whether the name has a value
+assigned to it.  If there is a value, that value is returned by the evaluator. 
+If there is no value assigned to the name, the evaluator just returns the name
+itself.  (For the means of assigning values to names refer to
+$ref<atomic!variables>.  For a description of the evaluation process as applied
+to subscripted names see $ref<arrays>).  Note that problems could arise if a
+variable is bound to an expression containing an occurrence of that variable
+since each time the variable is evaluated, the entire expression is substituted
+for each occurrence of the variable.  For example if Y has the value [X,Y,Z] and
+if the value of Y is evaluated the result is [X,[X,Y,Z],Z].
+
+MACSYMA distinguishes between two types of functions - nouns and verbs.  Most
+functions in the system, including all user-defined functions, are initially considered
+to be verb-type.  Undefined functions and some system functions are considered to be
+noun-type.  When the evaluator sees a function call, it evaluates the arguments to the
+function (unless that function is of a type which doesn't have its arguments evaluated, e.g. BATCH; for a list of such functions see Appendix VI).  Then, if the function is verb-type, the evaluator applies the
+function to the evaluated arguments and returns the value of the function.  For noun-type
+functions the evaluator returns an expression identical to the function call, except
+that the arguments are replaced by their evaluations.
+
+The user can explicitly declare a name to be noun-type by using the $fun<DECLARE>
+function $see<MACSYMA!properties>. $$The noun-ness applies to both the function use and array use of the name.  Note that nounifying a function name F doesn't affect occurrences of F that existed before F was nounified.*  For example, the function INTEGRATE normally
+tries to integrate its first argument.  After the command
+DECLARE(INTEGRATE,NOUN) is given however, INTEGRATE will not perform the
+integration.  Sometimes the user may give a verb function arguments which it is
+not equipped to deal with.  In certain cases the verb function will return the
+noun form of itself.  If this was because of some undefined functions in the
+expression, which the user defines at a later time, he can cause the noun-form
+to be re-evaluated at that time by giving the label of that line followed by the
+name of the unevaluated function separated with a comma as arguments of the
+function EV $see<general!functions>.  For example:
+
+.example
+(C1) DIFF(X*F(X),X);
+
+.begin group
+                     d
+(D1)              X (-- F(X)) + F(X)
+                     dX
+.end
+
+(C2) F(X):=SIN(X)$
+
+(C3) EV(D1,DIFF);
+(D3)              SIN(X) + X COS(X)
+
+.end
+
+Here we see that the expression returned by the evaluator is similar to the input
+expression.  The basic difference is that names which have values are replaced by their
+values and verb-type function calls are replaced by the result of applying the function
+to its arguments.
+
+MACSYMA has several special operators which give the user some control over the
+evaluation process.  The single-quote operator $fun<'> has the effect of preventing
+evaluation.  Thus an expression preceded by a single-quote evaluates to that
+expression.  A special case is the evaluation of a function call where the name
+of the function is preceded by a quote as in 'F(X).  In this instance the quote
+causes the function to be treated as though it were noun-type.
+
+To simply prevent evaluation of F(X) without converting F to a noun, use '(F(X)).
+
+The quote-quote operator, $fun<' '> , causes an extra evaluation to occur. It is best considered as a macro character.  Inputting
+an expression preceded by a quote-quote has exactly the same effect as inputting
+the result of evaluating and simplifying the expression.  In other words when an
+inputted expression contains a sub-expression which begins with a quote-quote
+that sub-expression is replaced in the input string by the result of evaluating
+and simplifying the expression following the quote-quote.  This occurs at the
+time an expression is parsed.  In the case of evaluating a function call with a
+'' preceding the name of the function (i.e. ''F(x) ), the '' causes the function to be
+treated as if it were verb-type.
+
+.example
+.begin group
+(C1) X;
+(D1)                 X
+.end
+(C2) X:3$
+
+(C3) X;
+(D3)                 3
+
+(C4) 'X;
+(D4)                 X
+
+(C5) F(X):=X^2;
+.begin group
+                                    2
+(D5)                       F(X) := X
+.end
+
+(C6) 'F(2);
+(D6)                          F(2)
+
+(C7) EV(%,F);
+(D7)                           4
+
+(C8) '(F(2));
+(D8)                          F(2)
+
+(C9) ''%;
+
+1(''atom means evaluate the atom's value)*
+
+(D9)                           4
+
+(C10) DECLARE(INTEGRATE,NOUN)$
+
+.begin group
+(C11) INTEGRATE(Y^2,Y);
+                    /
+                   [  2
+(D11)              I Y DY
+                   ]
+                  /
+.end
+
+.begin group
+(C12) ''INTEGRATE(Y^2,Y);
+
+                      3
+                     Y
+(D12)                --
+                     3
+.end
+
+.begin group
+(C13) F(Y):=DIFF(Y*LOG(Y),Y,2);
+
+(D13) 			 F(Y) := DIFF(Y LOG(Y), Y, 2)
+.end
+
+.begin group
+(C14) F(Y):=''(DIFF(Y*LOG(Y),Y,2));
+                                     1
+(D14)                        F(Y) := -
+                                     Y
+.end
+
+.begin group
+(C15) C14;
+                                     1
+(D15)                        F(Y) := -
+                                     Y
+.end
+
+1(Notice that the input expression has been changed due to the use of ' '.)
+.end
+
+Referring to line (C14) above, suppose one wished to define the function F(Y) as
+DIFF(Y*LOG(Y),Y,I) within another function G(I) where the I in the definition of F(Y) is
+to be replaced by the argument to G when G is 2called*.
+
+G(I):=BLOCK(...,F(Y):=''(DIFF(Y*LOG(Y),Y,I)),...) will 2not* do the job because the
+.bcon
+'' operator will cause the differentiation to be carried out at parse time and thus either
+an error will result (if I is unbound) or the current global value of I will be used
+rather than the value of the argument to G when it is called.  Omitting the '' is also
+not desirable in this example because that would force the differentiation to be done each time F is called rather than at the time it is defined.  To remedy this one may use the command
+.function(DEFINE,|function(arguments),body|)
+.endfunction 
+.scon
+which is like 2function(arguments):=''body*
+but causes the evaluation of 2body1 to occur at the time DEFINE is evaluated.  Thus
+G(I):=BLOCK(...,DEFINE(F(Y),DIFF(Y*LOG(Y),Y,I)),...) will work properly.
+DEFINE may also be used for subscripted functions.
+
+.sec (Simplification,simp)
+
+The simplifier takes the output of the evaluator and tries to make the
+expression smaller and more manageable, using some built-in algebra.
+Unless the user takes some special action (such as setting the special
+variable SIMP to FALSE $see<general!functions> or calling FACTOR
+on an integer), MACSYMA will never
+output an unsimplified expression.  The simplifier re-orders
+expressions in order to obtain a standard form and the result is the
+value of the current D line.  Thus A+B+C or C+A+B or C+B+A if input,
+will all result in the same internal form, (PLUS A B C) which displays
+as C + B + A . The simplifier also changes the SQRT function to
+exponentiation to the 1/2 power and removes the difference and
+quotient operators from the expression by converting X-Y to X+(-1)*Y
+and X/Y to X*Y^(-1).
+
+Roughly speaking, the simplifier orders expressions on the basis of
+their subexpressions being ordered first.  Variables are ordered
+alphabetically i.e., from A to Z. Constants ($var<%E/>, $var<%PI/>,
+$var<%I/> and any atoms DECLAREd CONSTANT) come before variables and
+numbers come before constants.  Finally, functions are ordered
+according to their arguments$$Comparing first arguments first, second
+arguments second, etc.*, and according to their names in case their
+arguments are the same.  Thus Y+2*A*X-%PI would become (PLUS (TIMES -1
+%PI) (TIMES 2 A X) Y)).
+
+The user should be aware that the line between evaluation and simplification is
+not clear-cut.  For instance, SIN is a noun-function.  When the evaluator sees
+SIN(0), it returns SIN(0).  However, the simplifier notices this special case
+and changes this expression to 0.  So simplification will sometimes obscure the
+difference between noun and verb functions.
+
+[Mo1] mentions these and many other matters dealing with simplification.
+
+

@@ -1,0 +1,1650 @@
+
+.begin "multics"
+.appnd(Multics MACSYMA)
+
+MACSYMA is also implemented on the Multics operating system which runs on
+Honeywell Level 68/DPS hardware.  It is the same MACSYMA as on the ITS system.
+Those differences which arise may be traced back to differences in the MacLisp
+implementation and to differences in the host operating system.  Since this
+manual is mainly written for using MACSYMA on ITS, one has to be aware of
+these differences if one is to use this manual while using MACSYMA on Multics.
+
+Procedures for logging in and out will not be given here.  It is assumed that
+if one has access to a Multics system one will either know the procedures for
+logging in or will be able to obtain adequate documentation in order to learn
+how to do so.
+
+.subsec(Loading up MACSYMA,lum)
+
+To use MACSYMA on Multics one simply invokes the "3macsyma1"
+command.  On MIT-Multics, this command is in the default search space.
+The absolute pathname is 3>lib>macsyma>macsyma1, with a link in
+3>iml1.  In addition, there are the entrypoints "3minima1" and
+"3dmacsyma1", which are not in the default search space, but may be
+found in >lib>macsyma.  These will not be of interest to the casual
+user.  "minima" loads up the subset of MACSYMA corresponding to the
+ITS in-core system.  "dmacsyma" (for Debugging MACSYMA) loads up the
+full MACSYMA and LISP macro packages.
+
+.subsec(Special Characters and Obvious Differences,scaod)
+
+.begin indent 0,5;turn on ""
+1.(6)All command names should be in lower case, since Multics, unlike
+ITS, is "case sensitive".
+
+2.(6)All input must end with a newline (return) after the semi-colon or
+dollar-sign is typed.  Failure to type a return is the most common cause
+of "no response" encountered by users of Multics MACSYMA.
+
+3.(6)The character to enter the editor and to terminate editor commands
+is "&" (ampersand) instead of altmode.  The character to use for "rubout"
+or "delete" (to erase the previous character typed) is "#" (number-sign or
+pound-sign).
+
+4.(6)Control characters are not entered in the manner described in
+the rest of this manual but are instead entered by the conventions of
+the Multics implementation of LISP.  This is done by using the
+"attention" or "break" button on the console followed by the letter of
+the alphabet for the control character you want, followed by a newline
+character.  When you hit the break key, the system will type "CTRL/",
+and you should respond by typing the appropriate character. If you
+want a Control-Z, for example, you would type the letter "Z" followed
+by a newline. The various control characters have the same meaning as
+on ITS MACSYMA.  The only one that is different is Control-Z which
+rather than "returning" to a monitor level instead calls a new
+invocation of the monitor at a higher level i.e. it is the same thing
+as a normal Multics quit signal.  A "start" command will start the
+macsyma moving again.  Hitting "break" twice has the same effect as
+typing Control-Z.
+
+5.(6)The character to use with the DEMO command to continue the demo
+is 3return1.  To terminate a demo, type any character followed by a
+3return1.
+.end
+.subsec(Files and File names,ffn)
+
+There are two different ways of referring to files in the Multics
+hierarchy. MACSYMA commands that take file names as arguments can be given the
+Multics file name enclosed in double quotes as a single argument. An
+alternative form of reference is one that maps the ITS way of referring to
+files with two or three arguments into a reasonable Multics filename.  Thus:
+
+.example
+(c1) batch("random.demo");
+(c1) batch(">udd>Project>JRUser>random.demo");
+(c1) batch(random,demo);
+.end
+
+would all refer to the same file if the current working directory were
+">udd>Project>JRUser".  
+
+There are two directories which users will find useful,
+3>lib>macsyma>demo>1 and 3>lib>macsyma>share>1.
+These are the equivalents of the ITS DEMO; and SHAREn; directories.
+Demo files and share packages listed in other sections of this manual
+will (if they have been transported to Multics) reside in these directories.
+There is a naming scheme adopted for these files which will allow you
+to determine which command to use to access a given file:
+.example
+xxxx.macsyma    ->  a batchable (i.e. MACSYMA readable) file, use batch
+xxxx.lisp       ->  a lisp file, use loadfile
+xxxx.fasl       ->  a compiled lisp file, use loadfile
+xxxx.usage      ->  a text file, to be printed
+xxxx.demo       ->  a demo file, MACSYMA readable, use demo or batch
+.end
+
+Multics MACSYMA has some additional functions for dealing with the file
+system.  The functions PWD and CWD work similarly to the Multics "print_wdir"
+and "change_wdir" commands.  As with other Multics commands, the LOADFILE and
+BATCH functions will work with respect to the working directory when a
+relative pathname is specified.
+
+.example
+(c1) cwd(">udd>Mathlab>Tensor");
+(d1)                       [>udd>Mathlab>Tensor]
+
+(c2) pwd();
+(d2)                       [>udd>Mathlab>Tensor]
+
+(c3) cwd();
+(d3)                       [>udd>Project>JRUser]
+.end
+
+
+.subsec(Plotting,mp)
+
+Setting the variable MULTGRAPH to TRUE will enable the Multics plotting
+package.  In this mode, the functions PLOT and PLOT3D will generate their
+output via the Multics graphics system, rather than assuming a
+character-oriented output device.  Before doing this, the Multics
+"setup_graphics" command must be issued from command level.  For instance,
+"setup_graphics tek_4013" should be typed if a Tektronix 4013 console is to be
+used.  In this mode, the variable PLOT3DSIZE [20] may be used to control the
+resolution of 3D plots.
+
+.subsec(Interacting with the Multics Monitor,iwtmm)
+
+The MACSYMA function CLINE (for Command Line) may be used to pass an arbitrary
+line to the command processor.
+
+.example
+(c1) cline("who");
+.end
+
+will print a list of those people currently logged in to the system.
+
+A major advantage of the Multics implementation over the PDP10 implementation
+is the much larger address space available to the MACSYMA user.  The address
+space is so large that available disk space on the system becomes the first
+constraint encountered when running space-intensive problems.  By default, the
+LISP system will construct its data structures in the process directory.  The
+maximum size (or "disk quota") of a process directory is a per-system
+parameter.  On the MIT-Multics system, it is 1024 records, which may be
+insufficient for certain large problems.  The Multics command line "get_quota
+[process_dir]" will display the maximum and current size of the process
+directory in terms of records (1 record is 1024 36-bit words).  It may be
+useful to insert the statement
+
+.example
+cline ("get_quota [process_dir]");
+.end
+
+at a key point in a space-intensive MACSYMA program.  The LISP system can also
+be directed to construct its data structures in some other directory than the
+process directory.  The Multics command "set_lisp_temp_dir" performs this
+action.  Thus, one can create a directory with a large disk quota and use it
+for creating temporary storage.
+
+To exit temporarily from your MACSYMA to do something at monitor level, you
+type two "break"s in succession, or use control-Z.  You may return to your
+MACSYMA by giving the 3start1 command.
+
+.subsec(|On-line Help|,olh)
+
+The MACSYMA Primer has not yet been transported to Multics.
+However, the DESCRIBE command works.  The DESCRIBE database may not be
+quite as up to date as the ITS version, and its references to files are
+at present in ITS format.
+
+The SEND, MAIL, and BUG commands work, and will send mail to the maintainers
+on ITS who deal with Multics MACSYMA.  It is recommended however that you use
+the Multics mail program to communicate, sending problems to
+3multics-macsyma-bugs -at MIT-MC1.
+
+.subsec(Special Documentation,sdoc)
+
+There is a version of the MACSYMA Primer [Mo5], "MACSYMA Primer for
+Multics", which is available from MIT's Information Processing
+Services.
+.end "multics"
+
+.begin "vax"
+
+.appnd(Vaxima on Berkeley Unix)
+
+.require "manual;nvax >" source
+
+.end "vax"
+
+.begin "primer" indent 4,0
+
+.appnd(A MACSYMA Grammar Primer)
+
+The concepts MACSYMA deals with are primarily
+mathematical, and its grammar has been designed to reflect this
+emphasis by making the representation of expressions as natural as
+possible.  All the usual mathematical operators are predefined, and
+MACSYMA commands are expressed exclusively in functional
+notation.  In
+addition, MACSYMA provides a flexible syntax extension
+capability for users who require additional operators.
+
+For the purposes of this appendix, the internal
+representation of a MACSYMA expression can best be described
+in terms of function calls.  All expressions are represented as
+appropriately nested function calls; all actions are the result of
+function evaluations.  This primer is intended to introduce the
+reader to MACSYMA's syntax and and syntax extension
+capabilities and to help him utilize these features most effectively
+in syntactically expressing the semantics of the job he wants done.
+
+It is assumed here that the reader is already familiar
+with the rules of formation for lexemes, i.e. integers, real
+numbers, atoms, and strings.  At present these rules are somewhat
+confusing and should be mastered before proceeding $see<quoted!strings> .
+.isolate(5The Parser*)
+When a user types a string of characters to MACSYMA,
+it is first broken up into lexemes by a lexical-scanning program.  For
+example the input "IF X>0 THEN X ELSE -X" becomes
+(IF  X  >  0  THEN  X  ELSE  -  X).  This sequence of
+lexemes is then passed to an "extended operator precedence parser
+with types" and converted into MACSYMA's internal
+representation, i.e. suitably nested function calls.  In this case,
+the result would be as follows:
+
+.isolate(|"IF"(">"(X,0),X,"-"(X))|)
+
+Such functional notation is always legal MACSYMA syntax, and
+it will be used throughout this appendix, as above, to represent the
+meaning of various syntactic constructions.
+
+
+        Every lexeme in MACSYMA is either an "operator", a
+"delimiter", or an "operand".  The operators and delimiters taken
+together are sometimes referred to as the "keywords" of
+MACSYMA.  With each operator is associated a
+specific parsing function which prescribes how its arguments are to
+be selected from the input.  Thus, for example, the arguments of an
+infix operator like ">" are to be found, one to the left and
+one to the right of the operator.  The resulting internal
+representation is a function call of the operator on its arguments.
+For example, in the sentence above, ">" has as arguments "X" and
+"0", and the internal representation of "X>0" is ">"(X,0).
+
+
+        A delimiter is a reserved lexeme used by certain operators
+to mark their arguments.  A delimiter may not be used as an operand
+but has no special parsing function associated with it.  In the
+sentence above, "THEN" and "ELSE" are delimiters, used by the
+operator "IF" to mark its second and third arguments.
+
+
+        An operand is a lexeme with no special parsing properties.
+All lexemes, unless otherwise specified, are operands.  Operands
+serve as the arguments of operators to form function calls which may
+then in term serve as arguments to other operators.  In the example
+sentence, "X" and "0" are operands; ">"(X,0), X, and "-"(X) also
+appear as operands to the operator "IF".  Note that any operator
+may be used as an operand by enclosing it in double quotes, e.g. INFIX("&").
+
+
+        The process of parsing is one of recognizing the operators,
+delimiters, and operands in a sequence of lexemes and correctly
+identifying the arguments to the operators in order to construct the
+function nesting implicit in the sequence.  There are only seven
+types of operators in MACSYMA, most of which should be
+familiar to mathematicians.  These seven types are described below.
+.if lines < 7 then next page
+.isolate(5PREFIX OPERATORS*)
+
+A PREFIX operator is one which signifies a function of one argument, which
+argument immediately follows an occurrence of the operator.  Some examples are:
+
+.begin group turn on "\"; tabs  5,20,35
+\NOT TRUE \means  \"NOT" (TRUE)
+
+\- A \means \"-" (A)
+
+.end
+
+This resembles the usual functional notation except that the parentheses
+surrounding the argument are here unnecessary.  Of course any expression may be
+embedded to arbitrary depth within another as in the following.
+
+.begin group turn on "\"; tabs  5,20,35
+\NOT NOT TRUE \means \"NOT" ("NOT" (TRUE)) = TRUE
+
+.end
+
+.isolate(5POSTFIX OPERATORS*)
+
+POSTFIX operators like the PREFIX variety denote functions of a single 
+argument,
+but in this case the argument immediately precedes an occurrence of the 
+operator
+in the input string.
+
+.begin group turn on "\"; tabs  5,20,35
+\3 ! \means \"!" (3)
+
+\A !! \means \"!!" (A)
+.end
+
+.isolate(5INFIX OPERATORS*)
+
+INFIX operators are used to denote functions of two arguments, one given before
+the operator and one after. Again some examples:
+
+.begin group turn on "\"; tabs  5,20,35
+\A^2 \means \"^" (A,2)
+
+
+\3^3 > 10 \means \">" ("^" (3,3), 10)
+
+.end 
+A variation of the INFIX operator is the NARY.
+
+.isolate(5NARY OPERATORS*)
+
+An NARY operator is used to denote a function of any number of arguments, each
+of which is separated by an occurrence of the operator.
+
+.begin group turn on "\"; tabs  5,26,36
+\A*B*C \means \"*" (A,B,C)
+
+\A>B AND TRUE AND C<D \means \"AND"(">"(A,B),TRUE,"<"(C,D))
+
+.end continue
+are all examples of NARY operators.
+
+.isolate(5SPECIAL OPERATORS*)
+
+NARY operators are useful for functions whose arguments are in one way or other
+homogeneous.  For other functions of many arguments, special forms are 
+required.
+A familiar example is the conditional statement.
+
+.begin group turn on "\"; tabs  5,30,40
+\IF A>2 THEN A-1 ELSE A \means \"IF"(">"(A,2),"-"(A,1),A)
+
+.end
+
+Here the operator "IF" denotes a function of three arguments; the first is 
+found
+immediately after the "IF"; the others are introduced arguments signalled by 
+the
+occurrence of the delimiters associated with "IF", namely "THEN" and "ELSE".
+Once again, delimiters are not in themselves operators but are
+merely used by operators to mark introduced arguments.
+Using a delimiter out of the
+context of the operators for which it was defined will result in a syntax 
+error.
+
+
+Another example of an operator with introduced arguments is the iteration
+statement.  Here the delimiters precede their defining operator.
+
+.example
+FOR I FROM 2 STEP 3 THRU 10 UNLESS A>10 DO PRINT(A)
+
+.end
+
+In this example each of the indicated segments contributes an argument to the
+"DO" function.  It happens that in MACSYMA any of these arguments may be
+omitted, or if given they can be given in any order.  Thus the following are 
+all
+legal, though not necessarily equivalent, sentences.
+
+.example
+THRU 10 DO S:S^2
+FOR I FROM 2 THRU 5 DO PRINT (A[I])
+THRU 5 UNLESS A>1000 DO A:A!
+
+.end
+
+When arguments are omitted as above or like the "ELSE" argument of the "IF"
+operator, the corresponding "holes" are filled with predetermined default
+values.  These are listed in the dictionary below.  Also the "DO" statement has
+some additional flexibility.  The "STEP" argument can be replaced by a "NEXT"
+expression which denotes what the iteration variable is to be set to on each
+pass thru the loop rather than the value by which it is to be incremented; and
+there are permitted arbitrarily many "WHILE" or "UNLESS" clauses as termination
+conditions.  Some examples with answers:
+
+.example
+THRU 3 DO PRINT (A)
+A
+A
+A
+                               DONE
+FOR I STEP 2 THRU 3 DO PRINT (I)
+1
+3
+                              DONE
+FOR I NEXT I+2 UNLESS I>3 DO PRINT (I)
+1
+3
+                              DONE
+
+.end
+
+
+.isolate(5NOFIX OPERATORS*)
+
+NOFIX operators are used to denote functions of no arguments.  The mere 
+presence
+of such an operator in a sentence will cause the corresponding function to be
+evaluated.
+
+.begin group turn on "\"; tabs  5,20,35
+\QUIT \means \"QUIT" ()
+
+\LOGOUT \means \"LOGOUT" ()
+
+.end
+
+Care should be taken in using these operators, however, since they tend to look
+much like variables but semantically are very different.
+
+.isolate(5MATCHFIX OPERATORS*)
+
+MATCHFIX operators are used to denote functions of any number of arguments 
+which are passed to the function as a list.  The arguments occur between the 
+main operator and its "matching" delimiter.  For example:
+
+.begin group turn on "\"; tabs  5,20,35
+[) A, B, C (] \means \[)" (A,B,C)
+
+.end
+
+        A legal sentence in MACSYMA is a correct sequence of
+operators from these
+seven categories and their operands.  By "correct" here we mean that due 
+respect
+has been shown the type of the operator, e.g. not giving two arguments to a
+PREFIX operator, and that the two sole grammatical rules in the language have
+not been violated.  These rules concern the "binding powers" of
+MACSYMA's keywords and the "parts of speech" legal in each
+argument slot.
+
+
+.isolate(5BINDING POWERS*)
+
+
+        The binding powers of keywords are used to resolve
+ambiguities of argument association such as that in the following example.
+
+.isolate(- 233 !)
+
+Is this "-"("!"(233)) or "!"("-"(233)); or, in other words, which
+operator gets the operand "233" and which, the resulting function
+call?  It is a convention in MACSYMA that the keyword with
+the higher binding power gets the disputed argument and the other is
+then applied to the result.  In this case, the "left binding power"
+of "!" (160) is greater than the "right binding power" of "-" (100);
+and so "233" is associated with "!" and the resulting function call
+becomes the argument for "-".
+
+        Each keyword must possess a left and a right binding power
+to resolve such conflicts.  Some of these numbers are superfluous,
+such as the left binding power of a prefix operator; and in such
+cases the binding power is arbitrarily taken to be 200.  Currently
+the range of binding powers is 0 to 200.
+
+
+.isolate(5PARTS OF SPEECH*)
+
+
+        From natural language the notion of "part of speech" should
+be familiar.  MACSYMA also has parts of speech and
+constraints on which parts of speech are legal in various contexts.
+Whereas binding powers are necessary to resolve ambiguities af
+argument assignment, parts of speech exist solely to detect
+unintentional syntax errors.
+2
+.begin narrow 5,5
+Every operator possesses a part of speech constraint on each of its
+argument slots.  Any operand filling a slot must satisfy the
+associated constraint, or a syntax error will result.
+
+.end
+1
+.scon
+There are only three parts of speech predefined in MACSYMA,
+namely EXPR, CLAUSE, and ANY.  An EXPR is
+essentially a mathematical expression; a CLAUSE, a mathematical
+predicate or a command.  Thus "A+B" is an EXPR but not a
+CLAUSE; and "A+B>2" is a CLAUSE but not an EXPR.
+The part of speech ANY is used to signify objects which may be
+either CLAUSEs or EXPRs, such as "F(X)".  The parts of
+speech required by MACSYMA's predefined operators are listed
+in the dictionary below.
+
+.isolate(5SYNTAX EXTENSION*)
+
+        While MACSYMA's syntax should be adequate for most
+ordinary applications, it is possible to define new operators or
+eliminate predefined ones that get in the user's way.  The extension
+mechanism is rather straightforward and should be evident from the
+examples below.
+
+.example
+(C1) PREFIX("DDX")$
+
+(C2) DDX Y$             means                   "DDX"(Y)
+
+(C3) INFIX("<-")$
+
+(C4) A<-DDX Y$          means               "<-"(A,"DDX"(Y))
+
+.end
+
+        An appreciation of the concepts and rules introduced in this
+primer should be all that is necessary to use the syntax extension
+capabilities successfully.  The only form of syntax extension
+available is the definition of new operators.  For each of the
+types of operator except SPECIAL, there is a corresponding creation function 
+that
+will give the lexeme specified the corresponding parsing properties.
+Thus "PREFIX("DDX")" will make "DDX" a prefix operator
+just like "-" or "NOT".  Of course, certain extension functions
+require additional information such as the matching keyword for a
+matchfix operator.  In addition, binding powers and parts of speech
+must be specified for all keywords defined.  This is done by passing
+additional arguments to the extension functions.  If a user does not
+specify these additional parameters, MACSYMA will assign
+default values.  The six extension functions with binding powers
+and parts of speech defaults (enclosed in brackets) are summarized below.
+.skip 1
+.begin group 
+.inline function(PREFIX,|operator, rbp[180], rpos[ANY], pos[ANY]|)
+
+.inline function(POSTFIX,|operator, lbp[180], lpos[ANY], pos[ANY]|)
+
+.inline function(INFIX,|operator, lbp[180], rbp[180], lpos[ANY], rpos[ANY],pos[ANY]|)
+
+
+.inline function(NARY,|operator, bp[180], argpos[ANY], pos[ANY]|)
+
+.inline function(NOFIX|operator, pos[ANY]|)
+
+.inline function(MATCHFIX,|operator, match, argpos[ANY], pos[ANY]|)
+
+.end
+
+The defaults have been provided so that a user who does not wish to
+concern himself with parts of speech or binding powers may simply
+omit those arguments to the extension functions.  Thus the following
+are all equivalent.
+
+.example
+PREFIX("DDX",180,ANY,ANY)$
+PREFIX("DDX",180)$
+PREFIX("DDX")$
+.END
+
+        It is also possible to remove the syntax properties of an
+operator by using the functions REMOVE or KILL.
+Specifically, "REMOVE("DDX",OP)" or "KILL("DDX")"
+will return "DDX" to operand status; but in the second case all
+the other properties of "DDX" will also be removed.
+
+        The following is an example of syntax extension to permit
+the use of set notation.
+3
+.begin verbatim
+
+(C1) MATCHFIX("{","}")$
+
+(C2) INFIX("|")$
+
+(C3) {X|X>0};
+(D3)                            {X|X>0}
+(C4) {X|X<2};
+(D4)                            {X|X<2}
+
+(C5) INFIX(".U.")$
+
+(C6) INFIX(".I.")$
+.end
+1
+Now assuming the functions ".U." and ".I." have been appropriately
+defined as union and intersection, the following interaction can occur.
+3
+.begin verbatim
+(C7) D3.U.D4;
+(D7)                            UNIVERSE
+
+(C8) D3.I.D4;
+(D8)                            {X|X>0 AND X<2}
+
+(C9) {1,2,3}$
+
+(C10) {3,4,5}$
+
+(C11) D9.U.D9.I.D10;
+(D11)                           {3}
+.end
+1
+Line C11 was parsed as ((D9.U.D9).I.D10) whereas the
+usual convention would call for the alternate parsing
+(D9.U.(D9.I.D10)), which would have resulted in {1,2,3}
+as value.  The problem here is that the default binding powers for
+".U." and ".I." are identical; so the parser associates them in
+left to right order.  To obtain the usual parsing, the syntax
+definitions in lines C5 and C6 must give ".I." a higher left binding
+power than ".U."'s right binding power as in the following.
+3
+.begin verbatim
+(C12) INFIX(".U.",100,100)$
+
+(C13) INFIX(".I.",120,120)$
+
+(C14) D9.U.D9.I.D10;
+(D14)                           {1,2,3}
+
+(C15) REMOVE(".U.",OPERATOR)$
+
+(C16) D9.U.D10;
+Syntax error
+D9 .U. ***$*** D10
+Please rephrase or edit
+.end
+
+.skip 1
+1
+.once flush left
+5A DICTIONARY OF MACSYMA'S KEYWORDS*
+
+
+        The following is a list of all the keywords in
+MACSYMA,  categorized with respect to type.  With each
+keyword is given the information necessary to recreate its syntactic
+behavior.  The abbreviations "lbp", "rbp", "lpos", "rpos", "bp", and
+"pos" stand for "left binding power", "right binding power", left
+part of speech", "right part of speech", "binding power", and "part of
+speech".  The reader should consult the text of this primer to
+understand the significance of these parameters.  It should also be
+noted that some lexemes, like "-", have two syntactic types.
+
+
+.begin group nofill turn on "\" tabs 5,35,45,55
+
+.once center
+2PREFIX OPERATORS1
+
+\\rbp\rpos\pos
+
+\'\190\ANY\ANY
+\''\190\ANY\---
+\+\100\EXPR\EXPR
+\-\100\EXPR\EXPR
+\NOT\70\CLAUSE\CLAUSE
+
+.end
+.skip 1
+.begin group nofill turn on "\" tabs 5,15,25,55
+.once center 
+2POSTFIX OPERATORS1
+
+\\lbp\lpos\pos
+
+\!\160\EXPR\EXPR
+\!!\160\EXPR\ANY
+.end
+.skip 1
+.begin group nofill turn on "\" tabs 5,15,25,35,45,55
+.once center
+2INFIX OPERATORS1
+
+\\lbp\lpos\rbp\rpos\pos
+
+\#\80\ANY\80\ANY\CLAUSE
+\**\140\EXPR\139\EXPR\EXPR
+\ .\110\ANY\109\ANY\ANY
+\:\180\ANY\20\ANY\ANY
+\::\180\ANY\20\ANY\ANY
+\:=\180\ANY\20\ANY\ANY
+\<\80\EXPR\80\EXPR\CLAUSE
+\<=\80\EXPR\80\EXPR\CLAUSE
+\=\80\EXPR\80\EXPR\CLAUSE
+\>\80\EXPR\80\EXPR\CLAUSE
+\>=\80\EXPR\80\EXPR\CLAUSE
+\^\140\EXPR\139\EXPR\EXPR
+\^^\135\ANY\134\ANY\ANY
+
+.end
+.skip 1
+.begin group nofill turn on "\" tabs 5,15,25,55
+.once center
+2NARY OPERATORS1
+
+\\bp\argpos\pos
+
+\*\120\EXPR\EXPR
+\+\100\EXPR\EXPR
+\,\10\ANY\ANY
+\-\100\EXPR\EXPR
+\/\120\EXPR\EXPR
+\AND\60\CLAUSE\CLAUSE
+\OR\50\CLAUSE\CLAUSE
+.end
+.skip 1
+.begin group nofill turn on "\" tabs 5,15,25,35,45,55
+.once center
+2SPECIAL OPERATORS1
+
+\\lbp\lpos\rbp\rpos\pos
+
+\(\200\ANY\MATCHFIX for right arg       ANY
+\[\200\ANY\MATCHFIX for right arg       ANY
+\DO\200\\25\ANY\ANY
+\\FOR\\optional
+\\FROM\\optional
+\\IN\\optional
+\\STEP or NEXT\\optional
+\\THRU\optional
+\\WHILE\\any number of occurrences
+\\UNLESS\\any number of occurrences
+\IF\200\\45\CLAUSE\ANY
+\\THEN
+\\ELSE\\optional
+.end
+.skip 1
+.begin group nofill turn on "\" tabs 5,15,25,55
+.once center
+2MATCHFIX OPERATORS1
+
+\\match\argpos\pos
+
+\(\)\ANY\ANY
+\[\]\ANY\ANY
+.end
+.skip 1
+.begin group nofill turn on "\" tabs 5,15,25,35,45
+.once center
+2DELIMITERS1
+
+\\op\lbp\rbp\rpos
+
+\ELSE\IF\5\25\ANY
+\FOR\DO\30\200\ANY
+\FROM\DO\30\95\EXPR
+\IN\DO\30\95\ANY
+\NEXT\DO\30\45\ANY
+\STEP\DO\30\95\EXPR
+\THEN\IF\5\25\ANY
+\THRU\DO\30\95\EXPR
+\UNLESS\DO\30\45\CLAUSE
+\WHILE\DO\30\45\CLAUSE
+
+.end
+
+.end "primer"
+
+
+
+.begin "examples" turn on ""
+
+.appnd(Illustrative Examples)
+
+.skip 2
+.begin indent 4,0
+This appendix shows a complete interaction with MACSYMA.  Three examples are 
+given.
+First an ordinary second-order differential equation is solved by two methods.
+  (1)
+by using pattern matching and solving the characteristic equation and (2) by 
+using
+Laplace transforms.  The second example shows the conversion of an expression 
+from
+one coordinate system to another and the third example shows a truncated power
+series solution of a differential equation.
+.end
+.skip 2
+.ONCE CENTER
+2Example 11
+
+.example
+(C1) BATCH(MANEG1,DEMO,DSK,DEMO);
+
+(C2) /* The following routine returns the homog.-part soln. to 2nd
+        order linear diff'l eqns. with const. coeffs. */
+
+MATCHDECLARE([B,C],RATNUMP,F,FREEOF(U))$
+
+(C3) ALIAS(D,DIFF)$
+
+(C4) DEFMATCH(SOLDE,'D(U,X,2) + B*'D(U,X) + C*U = F,U,X)$
+
+.BEGIN GROUP
+(C5) SOLDER(EQN,U,X) := 
+   BLOCK([B,C,F,DISC,R1,R2,ALPHA,BETA],
+         IF SOLDE(EQN,U,X) = FALSE THEN RETURN(FALSE) 
+         ELSE (DISC: B^2 - 4*C, ALPHA: -B/2,
+               IF DISC = 0 THEN RETURN(%E^(ALPHA*X) * (A1 + A2*X))
+               ELSE (BETA: SQRT(DISC)/2,
+                     IF DISC > 0
+                     THEN (R1: ALPHA + BETA, R2: ALPHA - BETA,
+                           RETURN(A1*%E^(R1*X) + A2*%E^(R2*X)))
+                     ELSE (BETA: %I*BETA,
+                           RETURN(%E^(ALPHA*X) * (A1*COS(BETA*X)
+                                                  + A2*SIN(BETA*X)))))))$
+.END
+
+(C6) /* An example - The method of undetermined coeffs. for
+        obtaining the particular soln. as well */
+
+DE: 'D(Y,X,2) - 'D(Y,X) - 6*Y = SIN(X);
+
+.BEGIN GROUP
+                            2
+                           d Y   dY
+(D6)                       --- - -- - 6 Y = SIN(X)
+                             2   dX
+                           dX
+.END
+
+(C7) YH(X) := ''(SOLDER(%,Y,X));
+                                      3 X        - 2 X
+(D7)                    YH(X) := A1 %E    + A2 %E
+
+(C8) YP(X) := B1*SIN(X) + B2*COS(X)$
+
+(C9) YG(X) := YH(X) + YP(X)$
+
+(C10) PLUGIN: EV(DE,DIFF,EXPAND,Y=YP(X));
+
+(D10)     B2 SIN(X) - 7 B1 SIN(X) - 7 B2 COS(X) - B1 COS(X) = SIN(X)
+
+(C11) EQN1: COEFF(PLUGIN,SIN(X));
+
+(D11)                           B2 - 7 B1 = 1
+
+(C12) EQN2: COEFF(PLUGIN,COS(X));
+
+(D12)                          - 7 B2 - B1 = 0
+
+(C13) GLOBALSOLVE: TRUE$
+
+(C14) SOLN: LINSOLVE([EQN1,EQN2],[B1,B2]);
+
+.BEGIN GROUP
+                                     7        1
+(D14)                        [B1 = - --, B2 = --]
+                                     50       50
+.END
+
+(C15) YG(X);
+
+.BEGIN GROUP
+                   7 SIN(X)   COS(X)        3 X        - 2 X
+(D15)            - -------- + ------ + A1 %E    + A2 %E
+                      50        50
+.END
+
+(C16) /* Plugging in initial conditions of Y(0)=1 and Y'(0)=0 */
+
+EQN1: YG(0) = 1;
+
+.BEGIN GROUP
+                                         1
+(D16)                          A2 + A1 + -- = 1
+                                         50
+.END
+
+(C17) DIFF(YG(X),X);
+
+.BEGIN GROUP
+                 SIN(X)   7 COS(X)          3 X          - 2 X
+(D17)          - ------ - -------- + 3 A1 %E    - 2 A2 %E
+                   50        50
+.END
+
+(C18) EQN2: EV(%,X=0) = 0;
+
+.BEGIN GROUP
+                                            7
+(D18)                       - 2 A2 + 3 A1 - -- = 0
+                                            50
+.END
+
+(C19) SOLN: LINSOLVE([EQN1,EQN2],[A1,A2]);
+
+.BEGIN GROUP
+                                    21       14
+(D19)                         [A1 = --, A2 = --]
+                                    50       25
+.END
+
+(C20) YG(X);
+
+.BEGIN GROUP
+                                            3 X        - 2 X
+                   7 SIN(X)   COS(X)   21 %E      14 %E
+(D20)            - -------- + ------ + -------- + ----------
+                      50        50        50          25
+.END
+
+(C21) /* Resetting of options */
+
+GLOBALSOLVE: FALSE$
+
+(C22) /* Solution by Laplace transforms */
+
+DE: SUBST(Y(X),Y,DE);
+
+.BEGIN GROUP
+                    2
+                   d            d
+(D22)              --- (Y(X)) - -- (Y(X)) - 6 Y(X) = SIN(X)
+                     2          dX
+                   dX
+.END
+
+(C23) [ATVALUE(Y(X),X=0,1), ATVALUE('DIFF(Y(X),X),X=0,0)];
+(D23)                               [1, 0]
+
+(C24) LAPLACE(DE,X,S);
+
+.BEGIN GROUP
+       2
+(D24) S  LAPLACE(Y(X), X, S) - S LAPLACE(Y(X), X, S) - 6 LAPLACE(Y(X), X, S)
+
+                                                                          1
+                                                              - S + 1 = ------
+                                                                         2
+                                                                        S  + 1
+.END
+
+(C25) LINSOLVE([%],['LAPLACE(Y(X),X,S)]);
+
+.BEGIN GROUP
+                                             3    2
+                                            S  - S  + S
+(D25)           [LAPLACE(Y(X), X, S) = ----------------------]
+                                        4    3      2
+                                       S  - S  - 5 S  - S - 6
+.END
+
+(C26) ILT(FIRST(%),S,X);
+
+.BEGIN GROUP
+                                                3 X        - 2 X
+                       7 SIN(X)   COS(X)   21 %E      14 %E
+(D26)         Y(X) = - -------- + ------ + -------- + ----------
+                          50        50        50          25
+.END
+
+
+.next page
+.ONCE center
+2Example 21
+(C1) BATCH(MANEG2,DEMO,DSK,DEMO);
+
+(C2) /* Conversion of the Laplacian from Cartesian Coords. to 
+   Cylindrical Coords. */
+
+/* Cause derivatives to display with subscripts */
+
+DERIVABBREV:TRUE$
+
+(C3) /* Order X, Y and Z so they will be grouped nicely */
+
+ORDERLESS(Z,Y,X)$
+
+(C4) /* U(X,Y,Z) becomes U(R,T,Z) in cylindrical coordinates
+             R stands for RHO and T for THETA */
+
+DEPENDS(U,[R,T,Z])$
+
+(C5) /* Input the transformation rules from the 
+   Cartesian system to the Cylindrical system */
+
+GRADEF(R,X,X/R)$
+
+(C6) GRADEF(R,Y,Y/R)$
+
+(C7) GRADEF(T,X,-Y/R^2)$
+
+(C8) GRADEF(T,Y,X/R^2)$
+
+(C9) /* Set EXPOP to cause parenthesized expressions
+   to be EXPANDed automatically */
+
+EXPOP:1$
+
+(C10) /* Now just input the Laplacian in Cart. Coords.,
+   and let the Chain Rule do its thing */
+
+DIFF(U,X,2)+DIFF(U,Y,2)+DIFF(U,Z,2);
+.begin group
+a
+
+       2         2         2         2                2       2
+      X  U      Y  U      X  U      Y  U      2 U    X  U    Y  U
+          T T       T T       R R       R R      R       R       R
+(D10) ------- + ------- + ------- + ------- + ---- - ----- - ----- + U
+         4         4         2         2       R       3       3      Z Z
+        R         R         R         R               R       R
+
+.end
+
+.begin group
+(C11) SUBST(R^2-X^2,Y^2,%);
+
+                           U             U
+                            T T           R
+(D11)                      ---- + U    + -- + U
+                             2     R R   R     Z Z
+                            R
+.end
+
+(D12)                              BATCH DONE
+.END
+
+.skip to column 1
+.once center
+2Example 3*
+
+.begin fill adjust indent 0,0; skip 1
+1The following differential equation: 
+.skip 1
+.once center
+T^4*B(T)^3*DIFF(B(T),T,2)+(1-K*T^2)*B(T)^4-T^4=0
+.scon
+is known to have a solution of the form:
+.once center
+B(T)=T+A3*T^3+A5*T^5+...+A11*T^11+...
+.scon
+valid for small T.  The problem
+is to find the coefficients A3 through A11 as functions of K. We use RATWEIGHT
+ and
+RATWTLVL to truncate on powers of T above 14.  (This problem originated in 
+"Bessel
+Functions for Large Arguments" by Goldstein and Thaler, in Math. Tables and 
+Other
+Aids to Computation, (now called Mathematics of Computation) XII, no. 61, p.18,
+January 1958.) 
+.end
+(C1) BATCH(MANEG3,DEMO,DSK,DEMO);
+
+
+.begin group
+(C2) EQ:T^4*B(T)^3*DIFF(B(T),T,2)+(1-K*T^2)*B(T)^4-T^4;
+                           2
+                 4  3     d                     2   4       4
+(D2)            T  B (T) (--- (B(T))) + (1 - K T ) B (T) - T
+                            2
+                          dT
+.end
+
+.begin group
+
+(C3) TRIAL:T+SUM(A[2*I+1]*T^(2*I+1),I,1,5);
+                      11       9       7       5       3
+(D3)             A   T   + A  T  + A  T  + A  T  + A  T  + T
+                  11        9       7       5       3
+.end
+
+(C4) POWERDISP:TRUE$
+
+(C5) RATWEIGHT(T,1)$
+
+(C6) RATWTLVL:14$
+
+.begin group
+(C7) EQ,B(T)=TRIAL,DIFF;
+        4    4                  3          5          7            9
+(D7) - T  + T  (6 A  T + 20 A  T  + 42 A  T  + 72 A  T  + 110 A   T )
+                   3         5          7          9           11
+
+          3       5       7       9        11 3
+ (T + A  T  + A  T  + A  T  + A  T  + A   T  )
+       3       5       7       9       11
+
+           2           3       5       7       9        11 4
+ + (1 - K T ) (T + A  T  + A  T  + A  T  + A  T  + A   T  )
+                    3       5       7       9       11
+.end
+
+.begin group
+(C8) EXPANDEDEQ:RAT(%,T);
+                    6              2                   8
+(D8)/R/ (4 A  - K) T  + (6 A  + 6 A  + 4 A  - 4 A  K) T
+            3               3      3      5      3
+
+        2      3                                  2             10
+ + (18 A  + 4 A  + (20 + 12 A ) A  + 4 A  + (- 6 A  - 4 A ) K) T
+        3      3             3   5      7         3      5
+
+        3    4                2          2
+ + (18 A  + A  + (78 A  + 12 A ) A  + 6 A  + (42 + 12 A ) A  + 4 A
+        3    3        3       3   5      5             3   7      9
+
+         3                        12       4        2      3
+ + (- 4 A  - 12 A  A  - 4 A ) K) T   + (6 A  + (96 A  + 4 A ) A
+         3       3  5      7               3        3      3   5
+
+                 2                 2
+ + (60 + 12 A ) A  + (144 A  + 12 A  + 12 A ) A  + (72 + 12 A ) A  + 4 A
+             3   5         3       3       5   7             3   9      11
+
+       4       2         2                        14
+ + (- A  - 12 A  A  - 6 A  - 12 A  A  - 4 A ) K) T
+       3       3  5      5       3  7      9
+.end
+
+
+.begin group
+(C9) COEFF(EXPANDEDEQ,T,6);
+(D9)/R/                            4 A  - K
+                                      3
+.end
+.begin group
+
+(C10) ANS3:SOLVE(%,A[3]);
+                                         K
+(D10)                              [A  = -]
+                                     3   4
+.end
+.begin group
+(C11) COEFF(EXPANDEDEQ,T,8);
+                                   2
+(D11)/R/                 6 A  + 6 A  + 4 A  - 4 A  K
+                            3      3      5      3
+.end
+.begin group
+
+(C12) %,ANS3;
+                                                 2
+                             - 32 A  - 12 K + 5 K
+                                   5
+(D12)/R/                   - ---------------------
+                                       8
+.end
+.begin group
+
+(C13) SOLVE(%,A[5]);
+                                               2
+                                   - 12 K + 5 K
+(D13)                        [A  = -------------]
+                               5        32
+.end
+.begin group
+(C14) /* etc */
+
+FOR I:3 THRU 11 STEP 2 DO
+        COEFFICIENT[I]:COEFF(EXPANDEDEQ,T,I+3)$
+.end
+.begin group
+
+(C15) FOR I:3 THRU 11 STEP 2 DO
+        (SOL[I]:ANS:SOLVE(COEFFICIENT[I],A[I]),
+        FOR J:I+2 STEP 2 THRU 11 DO
+        COEFFICIENT[J]:EV(COEFFICIENT[J],ANS))$
+.end
+
+(C16) RATEXPAND:TRUE$
+
+.begin group
+(C17) FOR I:3 THRU 11 STEP 2 DO PRINT(RATSIMP(EV(SOL[I])))$
+      K
+[A  = -] 
+  3   4
+                 2
+        3 K   5 K
+[A  = - --- + ----] 
+  5      8     32
+                 2       3
+      15 K   37 K    15 K
+[A  = ---- - ----- + -----] 
+  7    8      32      128
+                      2        3        4
+        315 K   1821 K    611 K    195 K
+[A  = - ----- + ------- - ------ + ------] 
+  9      16       128      256      2048
+                      2          3         4        5
+       2835 K   2223 K    29811 K    4199 K    663 K
+[A   = ------ - ------- + -------- - ------- + ------] 
+  11     8         8        512       1024      8192
+
+.end
+
+(D18)                             BATCH DONE
+
+.END
+.end "examples"
+
+.begin "glossary" turn on "" for "","" for "%", "" indent 0,8 preface 1
+
+.appnd(Glossary For The Programming Novice)
+
+.skip 5
+
+2algorithm1 - a method, specified with sufficient precision to be 
+programmed for a computer, to resolve any one of a  well-defined class of problems.
+
+
+2arguments1 - the expressions which are the
+values of the formal parameters when a function is called.
+
+2assignment1 - the process of associating a value with a variable.
+
+2atomic1 - (in the sense of high level programming languages) cannot be broken down
+into smaller parts, e.g. a number, a string, or a name.
+
+2binding1 - the process of assigning values to the formal parameters in a 
+function definition or to the local parameters in a block in such a way that, 
+upon exit from the function or block, the previous values of the parameters 
+are restored.
+
+2bound variable1 - a variable which has been assigned a value 
+(see binding).
+
+2break point1 - a point at which a computation is temporarily suspended 
+and control
+returned to the console, permitting the user to explore the state of the
+computation.
+
+2bug1 - an error in a program caused by improper coding which may be due
+to unanticipated types of arguments being given to the program, faulty logic, 
+etc.
+
+2command line1 - the input line typed to MACSYMA,  terminated by  ; or $.
+
+2constant1 - any number or atomic symbol whose value does not vary, or an 
+expression
+made up  only of such quantities.
+
+2CRE form1 - Canonical Rational Expression form.  This is one 
+of the several
+internal representations of MACSYMA expressions (see 4.1).  It is especially
+suitable for rational expressions (polynomials or ratios of polynomials).  It
+is also contagious in that whenever any expression is added to or multiplied 
+by a
+CRE form the result will be in CRE form.
+
+2DDT1 - originally a program used
+for debugging of other programs but modified in ITS
+to include the functions of a monitor.
+
+2default value1 - the initial value of a variable before any
+assignments to it.  Usually referred to as "the default".  This is
+the value the system will use in computation if you do not make any
+assignment to it.
+
+2evaluation1 - the process of replacing variables and function calls in an
+ expression
+by their values.
+
+2expansion1 -  the transformation of a product of sums into a sum of 
+products by applying the distributive laws.
+
+2expression1 - a syntactically legal sequence of characters composed of 
+constants,
+variables, functions, and operators.
+
+
+2flag1 - a variable whose value is usually either TRUE or FALSE, e.g. 
+NUMER.
+
+2formal parameters1 - the atomic variables appearing in the  function 
+header (the left-hand side of a function definition).
+
+2hashing1 - a  method  of storing sparse vectors and arrays through the 
+use of a function, which for given arguments produces a number in a range of 
+possible values.
+
+2indicator1 - the name of a property, e.g. GRADEF.
+
+2internal representation1 - the representation of MACSYMA expressions in 
+LISP.
+
+2ITS1 - the time sharing system used on the PDP-10 at the MIT Laboratory
+for Computer Science.
+
+2LISP1 - A LISt Processing programming language  used extensively 
+in non-numerical applications.  The LISP in which MACSYMA resides 
+is called MACLISP.
+
+2local parameters1 - atomic variables which are bound within a function or
+ block.
+
+2property1 - a piece of information known about or associated with a 
+variable.  Some specific properties are used in MACSYMA for simplification and
+ evaluation, e.g. the GRADEF property for SIN.
+
+2property list1 - for a given variable, the set of all properties 
+associated with the variable. 
+
+2quoted string1 - a sequence of characters enclosed in quotation marks, 
+used as a comment, message, etc.
+
+2rational expression1 - a polynomial or the ratio of two polynomials.  Sometimes used as a synonym for CRE form.
+
+2scalar* - an expression which is not (or is assumed not to be)  a list or
+ matrix.
+
+ 
+2semantics1 - rules for determining the meaning of any legal 
+(syntactically correct)  sentence
+in a language.
+
+2simplification1 - the process of reducing the "complexity" of an 
+expression (relative to some criterion or measure) by applying known (or 
+assumed) relations in the form of rules which transform the original 
+expression into an "equivalent" one.
+
+2string1 - a sequence of characters consisting  of digits, letters, 
+special characters ($,%,#) or break characters (space,tab).
+
+2subscripted function1 - a type of array each of whose elements
+is a function expression.
+
+2subscripted variable1 - a variable, e.g. A[0], in subscripted form. 
+
+2switch1 - a variable which can take on only a small number
+of values (usually just two).  It is used to determine which branch of a 
+condition to follow.
+
+2syntax1 - rules for determining whether a sequence of
+characters is a legal sentence in that language.  If not, then a parsing error
+ results.
+In MACSYMA, the rules are implemented as a parsing procedure which converts an
+ input string into MACSYMA's internal representation.
+
+2terminator1 - a character which signals the end of a sequence of 
+characters.  In a
+MACSYMA command line the terminators are semi-colon and dollar sign.
+
+2variable1 - an atomic symbol. A variable that evaluates to a value is an 
+assigned 
+variable.  If no value has been assigned to a variable, the variable itself
+is returned as the result of evaluation.
+
+.end "glossary"
+
+
+
+.begin "bibliography" turn on "\";tabs 6,7; indent 0,8 compact preface 1
+
+.appnd(Bibliography and References)
+
+.skip 5
+[A1] A.C.M. Proceedings of the Second Symposium on Symbolic and
+Algebraic Manipulation, Los Angeles, Calif., March, 1971.  +
+
+[A2] A.C.M. Communications -  August 1971  Vol. 14  No. 8 +
+
+[A3] A.C.M. Journal - October 1971  Vol. 18  No. 4  +
+
+[Av] Avgoustis, Yannis. "Symbolic Laplace Transforms of Special Functions."
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Ba1] Barton,D.A. and R. Zippel  "A Polynomial Decomposition Algorithm"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Be1] Berlekamp, E. R.  "Factoring Polynomials Over Large Finite
+Fields" - Mathematics of Computation
+Vol. 24  No. 111  July 1970
+
+[Br1] Brown, W. S.  "On Euclid's Algorithm and the Computation of
+Polynomial Greatest Common Divisors" in [A3]
+
+[Ca1] Caviness,B.F. and R. Fateman, "Simplification of Radical Expressions"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Co1] Collins, G. E. "The Calculation of Multivariate Polynomial
+Resultants" in [A3]
+
+[Do]\\Doohovskoy, Alexander. "Varieties of Operator Manipulation." 
+Proceedings of the MACSYMA Users' Conference, NASA, 
+Berkeley, CA, July 1977.
+
+[Ea1] Eastlake, D., et. al.  "ITS 1.5 Reference Manual"
+A.I. Memo 161A    July 1969 *
+
+[Fa1] Fateman, R. J. "The User-Level Semantic Matching Capability
+in MACSYMA" - in [A1]
+
+[Fa2] ---  "Essays in Algebraic Simplification" - Ph.D. Thesis
+MAC TR-95   April 1972 **
+
+[Fa3] --- "Rationally Simplifying Non-Rational Expressions" 
+SIGSAM Bulletin July 1972 No. 23 *
+
+[Fa4] --- "On the Implementation of Modular Algorithms"
+SIAM National Meeting. June 1973
+
+[Fa5] ---  "On the Computation of Powers of Sparse Polynomials"  
+MIT Studies in Applied Mathematics   Vol. 53  No. 2  June 1974  *
+
+[Fa6] ---  "Polynomial Multiplication, Powers, and Asymptotic Analysis,
+Some Comments" - SIAM Journal of Computing  Vol. 3 Sept. 1974, pp.196-213.
+
+[Fa7] ---  "On the Multiplication of Poisson Series" , Celestial Mechanics, 
+Vol 10, No. 2, Oct. 1974, pp. 243-247. 
+
+[Fa8] --- "A Case History in Interactive Problem Solving"
+SIGSAM Bulletin No. 28, Dec. 1973 +
+
+[Fa9] --- "The MACSYMA Big-Floating-Point Arithmetic System"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Fa10] --- "An Approach to Automatic Asymptotic Expansions"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Gene1] Genesereth, Michael R. "The Difficulties of Using MACSYMA and the 
+Function of User Aids." 
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Gene2] --- "An Automated Consultant for MACSYMA." 
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Gent1] Gentleman, W.M. and S.C. Johnson, "The Evaluation of Determinants by 
+Expansion by Minors and the General Problem of Substitution"  Mathematics of 
+Computation,Volume 28,Number 126,April 1974,pp. 543-548.
+
+[Go1] Golden, Jeffrey P. "MACSYMA's Symbolic Ordinary Differential Equation 
+Solver." Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Go2] --- "The Evaluation of Atomic Variables in MACSYMA."
+Proceedings of the MACSYMA Users' Conference, NASA, Berkeley, CA,
+July 1977.      
+
+[Lew1] Golden, V. Ellen, "An Introduction to ITS for the MACSYMA User", April,
+ 1981.  *
+
+.begin turn on ""
+
+[Kn1] Knuth, D. "Seminumerical Algorithms" in The Art of Computer
+Programming, Vol. 2  Addison-Wesley Publishers 1969
+
+.end
+
+[Lew2] Lewis, V. Ellen, "User Aids for MACSYMA." Proceedings of the 
+MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977. 
+
+[Ma1] Martin, W. A.  "Computer Input/Output of Mathematical
+Expressions" in [A1]
+
+[Ma2] ---  "Determining the Equivalence of Algebraic Expressions
+by Hash Coding" in [A1, A3]
+
+[Ma3] ---  "Symbolic Mathematical Laboratory" - Ph.D. Thesis
+MAC TR-36  January 1967   AD-657-283 ***
+
+[Ma4] --- and Fateman, R. J. - "The MACSYMA System" in [A1]
+
+[Mn1] Moon, D., et. al "LISP Reference Manual"   *
+
+[Mo1] Moses, J.  "Algebraic Simplification - A Guide for the
+Perplexed" - in [A1, A2]
+
+[Mo2] ---  "Symbolic Integration - The Stormy Decade" - in [A1, A2]
+
+[Mo3] ---  "Towards a General Theory of Special Functions"
+Communications of the Assocation for Computing Machinery
+July 1972  Vol. 15  No. 7  +
+
+[Mo4] ---  "Symbolic Integration" - Ph.D. Thesis - MAC TR-47
+December 1967   AD-662-666 ***
+
+[Mo5] ---  "MACSYMA Primer", October 1977 *
+
+[Mo6] --- and Yun, D. Y.   "The EZ GCD Algorithm" - Procedings of
+the ACM convention  August 1973.  +
+
+[Mo7] --- "The Evolution of Algebraic Manipulation Algorithms"
+Proceedings of IFIP conference August 1974, Stockholm.
+
+[Mo8] --- "MACSYMA - The Fifth Year" SIGSAM Bulletin - August 1974. *
+
+[Mo9] --- "An Introduction to the Risch Integration Algorithm."
+Proceedings of the ACM Annual Conference, ACM, Houston, Tx., Oct. 1976.
+
+[Mo10] --- "The Variety of Variables in Mathematical Expressions."
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Mo11] --- and Cohen, Jacques. "Summation of Rational Exponential Expressions 
+in Closed Form." Proceedings of the MACSYMA Users' Conference, NASA, 
+
+[Os1] Osman, E.  "DDT Reference Manual" - A.I. Memo 147A
+Sept 1971 *
+
+[St1] Steele, Guy L., Jr. "Data Representations in PDP-10 MACLISP." 
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[St2] --- "Fast Arithmetic in MACLISP." Proceedings of the MACSYMA Users' 
+Conference, NASA, Berkeley, CA, July 1977.
+
+[Tr1] Trager,B. "Algebraic Factoring and Rational Function Integration"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Tr2] --- and D.Y.Y.Yun "Completing nth Powers of Polynomials"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Wa1] Wang, P. "Automatic Computation of Limits" - in [A1]
+
+[Wa2] ---  "Application of MACSYMA to an Asymptotic Expansion
+Problem" - Proceedings of the ACM Annual Conference
+August 1972  Vol. 2  +
+
+[Wa3] ---  "Evaluation of Definite Integrals by Symbolic
+Manipulation" - Ph.D. Thesis - MAC TR-92  October 1971 **
+
+[Wa4] --- and Rothschild, L. "Factoring Multivariate Polynomials
+over the Integers" -  Mathematics of Computation, vol. 29 (131) , pp. 935-950.
+  *
+
+[Wa5] Wang,P.  "Multivariate Polynomials over Algebraic Number Fields" - 
+Mathematics of Computation, Vol. 30, (134),pp. 324-336.
+
+[Wa6] --- "On the Expansion of Sparse Symbolic Determinants"
+Proceedings of the International Confference on System Sciences, Jan. 4-6,1977 
+Honolulu, Hawaii
+
+[Wa7] --- "An Improved Multivariate Polynomial Factoring Algorithm"
+Mathematics of Computation (to appear)
+
+[Wa8] --- and T. Minamikawa  "Taking Advantage of Zero Entries in the Exact 
+Inverse of Sparse Matrices, Proceedings of the 1976 ACM Symposium on Symbolic 
+and Algebraic Computation,
+August 10-12, 1976. +
+
+[Wa9] --- "Preserving Sparseness in Multivariate Polynomial Factorization." 
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Wa10] --- "Matrix Computations in MACSYMA." 
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Wh1] White, Jon L. 
+"Lisp: Program is Data - A Historical Perspective on MACLISP."
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+[Wh2] --- "Lisp: Data is Program - A Tutorial in LISP." Proceedings
+of the MACSYMA Users' Conference, NASA, Berkeley, CA,
+July 1977.
+
+[Yu1] Yun, D. Y. "The Hensel Lemma in Symbolic Manipulation"
+Ph.D. Thesis - MAC TR-138, November 1974 *
+
+[Yu2] --- "On Algorithms for Solving Systems of Polynomial Equations"
+SIGSAM Bulletin - Sept. 1973 +
+
+[Zi1] Zippel, R.  "Power Series Expansions in MACSYMA"
+Proceedings of the Conference on Mathematical Software II
+Purdue University, May 29, 1974
+
+[Zi2] --- "Univariate Power Series Expansions in Algebraic Manipulation"
+Proceedings of the 1976 ACM Symposium on Symbolic and Algebraic Computation,
+August 10-12, 1976. +
+
+[Zi3] --- "Radical Simplification Made Easy." 
+Proceedings of the MACSYMA Users' Conference, NASA,
+Berkeley, CA, July 1977.
+
+.next page
+.once center
+Where to Obtain Publications
+.skip 4
+.nofill
+*    Available from:
+
+      Mathlab Group
+      MIT Laboratory for Computer Science  NE43-828
+      545 Technology Square
+      Cambridge, Mass. 02139
+.skip 1
+**   Available for a charge from:
+      MIT Laboratory for Computer Science
+      Publications - NE43-417A
+      545 Technology Square
+      Cambridge, Mass. 02139
+.skip 1
+***  Available for a charge from:
+      National Technical Information Service (NTIS)
+      Operations Division
+      Springfield, Va. 22151
+      (Include AD number given in Bibliography with order)
+.skip 1
++     Available from:
+      The Association for Computing Machinery (ACM)
+      1133 Avenue of the Americas
+      New York, N.Y. 10036
+.end "bibliography"
+
+
+
+
+.begin "fexprs"
+
+.appnd(MACSYMA Functions and Argument Evaluation)
+
+Most MACSYMA functions, including all user-defined functions,$$More 
+flexibility for user-defined functions will soon be available* are processed 
+by MACSYMA's evaluator in a straightforward manner:  the arguments to the 
+function are evaluated (left-to-right), the function is applied to the 
+evaluated arguments, and then the result is returned.    
+
+However, there are two classes of functions which are not subsumed under this 
+simple scheme.   In the first class,  some or all of the arguments are NOT 
+evaluated.  This class includes
+
+.example
+ALIAS ALLOC APPENDFILE ARRAY BATCH BATCON CLOSEFILE
+COMPFILE DECLARE DEFINE DELFILE DEMO DISPFUN DISPLAY
+FASSAVE GRADEF KILL LABELS LOADFILE LOCAL MATCHDECLARE 
+MODEDECLARE PLAYBACK QPUT REMARRAY REMFILE REMFUNCTION 
+REMOVE REMRULE REMVALUE RESTORE SAVE STORE STRING STRINGOUT 
+TIME TRACE TRANSLATE UNSTORE UNTRACE WRITEFILE
+.end
+
+There is another class of functions which 2control1 the evaluation of 
+their arguments; "control" involves the order of evaluation of the arguments 
+as well as their form.  For example, order of evaluation is important in SUM,
+PROD, and the plotting functions;  on the other hand, the EV command takes 
+advantage of the structure of the arguments as well.    This  class includes 
+
+.example
+CATCH ERRCATCH EV FORTRAN FORTMX FULLMAP FULLMAPL
+GRIND MAKELIST PRODUCT SUBSTINPART SUBSTPART SUM 
+.end
+.scon
+and the plotting functions.
+
+In addition, certain MACSYMA "operators" (see Appendix II) do not evaluate
+some of their arguments, such as ":", ":=", "'". On the other hand, MACSYMA 
+constructs such as  BLOCK, the various forms of DO, and logical operators 
+such as AND,OR, IF...THEN...ELSE control the evaluation of their arguments 
+.end "fexprs"
+
+
+

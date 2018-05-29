@@ -1,0 +1,141 @@
+.chap (Miscellaneous Hints and Facilities,hints)
+
+Care should be taken in cases where an expression containing $var<%/> is re-evaluated
+since the value of % changes each time a new line is computed.  This  is shown in
+the following example.
+
+.example group
+(C1) (X+Y)^3$
+(C2) DIFF(%,X);
+                                2
+(D2)                   3 (Y + X)
+(C3)  Y:X^2+1$
+(C4)  ''C2;
+(D4)                  2 X
+
+.end
+
+In line C4 the user may have intended to re-evaluate C2 thinking that
+the % still referred to D1 while it actually referred to D3.  Note the
+use of the ' ' operator to re-evaluate a previous expression.
+$see<evaluation>
+
+The following interrupt characters typed 2while holding down the
+control key* have special functions.  They may be typed at any
+time--- even in the middle of a command line---and take effect
+immediately.
+
+^ 1 (control-shift-N on some terminals) - enters top-level LISP
+after resetting all locally bound variables and breaking out of all
+functions.  It is not possible to continue an interrupted calculation
+after a control-^, but typing (CONTINUE) will return to MACSYMA.
+
+5A1 - makes a breakpoint in MACSYMA and suspends the computation.
+At this point the user is in a MACSYMA break loop.  If a user function
+was being executed at the time of the break, its values may be printed
+or changed.  Aside from this, it is almost like being at top-level
+MACSYMA.  To exit and resume the computation type EXIT;
+$see<debugging>.
+
+5X1 - quits a computation started while in a control-A break without quitting the
+top-level computation. Specifically this means:
+.begin indent 5,10;turn on ""
+(a)(11)If you were at toplevel, it will be as if you typed ^G.
+.break
+(b)(11)If you were in a MACSYMA-BREAK, it quits back to the break.
+.break
+(c)(11)If you were at LISP-TOPLEVEL or LISP-BREAK, it does what typing ^X to LISP
+does, namely an (ERROR 'QUIT).
+.end
+
+5]1 - (control-shift-M on some terminals) prints the time used so far in a computation
+(without interrupting it).
+
+5U1 - the User-interrupt-character.  To use this feature,
+one sets TTYINTFUN (default FALSE meaning feature not in use) to a
+function of no arguments.  Then whenever ^U is
+typed, this function is run.  E.g. suppose you have a FOR statement
+loop which increments I, and you want an easy way of checking on the
+value of I while the FOR statement is running.  You can do:
+TTYINTFUN:PRINTI$ PRINTI():=PRINT(I)$ , then whenever you type (e.g.)
+^U you get the check you want.  (Another character may be chosen for
+this function, by resetting TTYINTNUM[21] to the ascii value of some
+other character.)
+
+5K1 - reprints the current input line.  This is useful when many rubouts have obscured the
+line (on hardcopy devices).
+
+5Y1 - gets the last command string.  (The last thing you typed on a C-line)
+
+5L1 - clears the screen on display consoles and reprints the current line.
+
+5W1 - stops printout at the console while the computation continues. (If the user is connected to MACSYMA via the ARPA network, printout will not stop until the Arpanet buffer is emptied.) The switch
+$var<TTYOFF/FALSE> if set to TRUE also stops the printout. This is useful for
+temporarily turning off the display for functions which might generate a lot of
+printing like BATCH.  Setting the switch to FALSE causes printing to be resumed.
+
+5S1 - turns printout off until just before the next C-line which 
+prompts for input from the console is to be printed.  (Typing 
+^V or a quit character will also resume printout.)
+^S should prove useful for shutting off long D-line displays and 
+all printout from running a BATCH file.  One just issues a call to 
+BATCH, and types ^S any time after the batch starts.  Printout will 
+resume when the batch is done (or when necessary, e.g. to allocate 
+space).
+
+5V1 - resumes printout at the console turned off by control-W or control-S.
+
+5G1 - aborts a computation and returns control
+to top-level MACSYMA.  This is like control-^ immediately followed by
+($fun<CONTINUE>) and is useful for breaking out of infinite loops or for
+terminating a computation prematurely.
+
+5B1 - makes a "breakpoint" in MACSYMA, enters LISP,
+and prints the time used in
+the current computation.  Control-B does not reset any values.  Altmode (or
+Escape) P (for proceed) followed by a space will return to MACSYMA and resume
+the computation.
+
+5H1 - (or BACKSPACE) is not used by MACSYMA.  (It no longer gives a LISP breakpoint, type ^B to get that.)  Typing ^H will print out a message 
+telling you to use the RUBOUT or DEL(ETE) key to erase a character, and 
+will then simulate a ^K, i.e. reprint the current string, to clear the air.
+
+5D1 - causes garbage collection statistics to be printed out each
+time a garbage collection takes place [Mn1].  Typing it again will
+turn off this feature.  See Chapter
+$ref<storman>.
+
+.skip 1
+Two of the many MACSYMA variables or options mentioned later on are of special
+interest and will be described here.
+
+(1) The value of $var<LINEL/> gives the number of characters which are printed on a line.
+It is initially set by MACSYMA to the line length of the type of terminal being used (as
+far as is known) but may be reset at any time by the user. The user may have to reset it in DDT with :TCTYP as well.  See [Lew1].
+
+(2) If the variable $var<SHOWTIME/FALSE> is TRUE then the computation time
+will be printed automatically with each output expression.
+
+Sometimes when a user gives a command line the message "... being loaded" will
+be printed.  This means that a function being used in the command line and/or
+the associated programs are not in the initially loaded MACSYMA but are being
+loaded in now via the dynamic loader.  Infrequently used or inessential functions are not
+initially loaded into MACSYMA in an effort to save space.
+
+When in LISP typing (CONTINUE) or control-G will return to MACSYMA.
+
+MACSYMA provides the facility for the user to have an initialization
+file which gets loaded automatically before line (C1) is printed.
+Such a file should have for a first file name the user's login name
+and for a second file name MACSYM.  If the user has his own directory,
+this file goes there, or he may place it on his home directory.
+This file must be in the format for
+the $fun<LOADFILE> function $see<disk!storage>, i.e. it must contain
+LISP code.  It may be created via the $fun<SAVE> function
+$see<disk!storage> or by translating a $fun<BATCH> file
+$see<compilation>.  It is possible to have this "init" file load in
+a file which is in BATCH (i.e. MACSYMA code) format, $see<batchap>.
+
+A user who knows LISP should note that preceding a name with a  ?  causes the corresponding LISP atom to be invoked.  For example,  ?FIXP(4.2); returns FALSE, where  FIXP is the name of a LISP system function.
+
+

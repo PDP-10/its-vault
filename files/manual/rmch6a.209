@@ -1,0 +1,2570 @@
+@Comment<(c) Copyright 1983 Massachusetts Institute of Technology>
+@comment<Enhancements (c) Copyright 1983 Symbolics, Inc.>
+@Chapter[MACSYMA Functions and Variables]
+@Label[Mfunctions]
+
+Following is a list of all MACSYMA functions divided into functional
+classes.  MACSYMA variables which affect the operation of some
+functions are described under the appropriate function with their
+default values given.  These are sometimes referred to as MACSYMA
+options.
+
+@Section[General Purpose Functions]
+@Label[general!functions]
+
+@SubSection[Evaluation and Simplification Functions]
+@Label[evsimpfun]
+
+@begin(function)
+@fcn[Name="EV", Args="exp, arg1, ..., argn"]
+is one of MACSYMA's most powerful and versatile commands. It
+evaluates the expression @i[exp] in the environment specified by the
+@i[argi].  This is done in steps, as follows: @begin(enumerate) First
+the environment is set up by scanning the @i[argi] which may be as
+follows:
+
+@begin(itemize)
+SIMP @Index[SIMP] causes @i[exp] to be simplified regardless of the
+setting of the switch SIMP which inhibits simplification if FALSE.
+
+NOEVAL @Index[NOEVAL] suppresses the evaluation phase of EV (see step
+(4) below).  This is useful in conjunction with the other switches and
+in causing @i[exp] to be resimplified without being reevaluated.
+
+EVAL @Index[EVAL] causes an extra post-evaluation of @i[exp] to occur.
+(See step (5) below.)
+
+INFEVAL @Index[INFEVAL] leads to an "infinite evaluation" mode.  EV
+repeatedly evaluates an expression until it stops changing.  To
+prevent a variable, say X, from being evaluated away in this mode,
+simply include X='X as an argument to EV.  Of course expressions such
+as EV(X,X=X+1,INFEVAL); will generate an infinite loop.  @i[CAVEAT
+EVALUATOR].
+
+EXPAND @Index[EXPAND] causes expansion.
+
+EXPAND(@i[m,n]) causes expansion, setting the values of MAXPOSEX and
+MAXNEGEX to @i[m] and @i[n] respectively. (see the EXPAND function
+below)
+
+DETOUT @Index[DETOUT] causes any matrix inverses computed in @i[exp]
+to have their determinant kept outside of the inverse rather than
+dividing through each element.
+
+DIFF @Index[DIFF] causes all differentiations indicated in @i[exp] to
+be performed.  (see the DIFF function below.)
+
+DERIVLIST @Index[DERIVLIST](@i[var1],...,@i[vark]) causes only
+differentiations with respect to the indicated variables.
+
+FLOAT @Index[FLOAT] causes non-integral rational numbers and bigfloats
+to be converted to floating point.
+
+NUMER @Index[NUMER] causes some mathematical functions (including
+exponentiation) with numerical arguments to be evaluated in floating
+point (see @Ref[Simple!Functions]). It causes variables in @i[exp] which
+have been given numervals (see @Ref[uspropfun]) to be replaced by their
+values.  It also sets the FLOAT switch on.
+
+PRED @Index[PRED] causes predicates, which are expressions that evaluate to
+TRUE or FALSE, to be evaluated.
+
+NOUNS @Index[NOUNS] converts all nouns occurring in @i[exp] to verbs.
+
+E where E is an atom declared to be an EVFLAG @Index[EVFLAG]
+(see @Ref[MACSYMA!properties]) causes E to be bound to TRUE during the
+evaluation of @i[exp].
+
+@i[V:expression] (or alternatively @i[V=expression]) causes @i[V] to
+be bound to the value of @i[expression] during the evaluation of
+@i[exp].  Note that if @i[V] is a MACSYMA option, then @i[expression]
+is used for its value during the evaluation of @i[exp].  If more than
+one argument to EV is of this type then the binding is done in
+parallel.  If @i[V] is a non-atomic expression then a substitution
+rather than a binding is performed.
+
+E where E is a function name declared to be an EVFUN (see
+@Ref[property!specification]) causes E to be applied to @i[exp].
+
+Any other function names (e.g. SUM) cause evaluation of occurrences of those
+names in @i[exp] as though they were verbs (see @Ref[evaluation]).
+
+In addition a function occurring in @i[exp] (say F(args)) may be
+defined locally for the purpose of this evaluation of @i[exp] by
+giving F(args):=body as an argument to EV.
+
+If an atom not mentioned above or a subscripted variable or
+subscripted expression is given as an argument, it is evaluated, and
+if the result is an equation or assignment then the indicated binding
+or substitution is performed.  If the result is a list then the
+members of the list are treated as if they were additional arguments
+given to EV. This permits a list of equations to be given (e.g. [X=1,
+Y=A**2] ) or a list of names of equations (e.g. [E1,E2] where E1 and
+E2 are equations) such as that returned by SOLVE @Index[SOLVE]. (see
+@Ref[SOLVE])
+
+The @i[argi] of EV usually may be given in any order, but since they
+are picked up left to right the order may influence the result.  This
+is strictly true of substitution equations which are handled in
+sequence, left to right, and EVFUNS which are composed, e.g.
+EV(@i[exp],RATSIMP,RECTFORM) is handled as RECTFORM(RATSIMP(@i[exp])).
+The SIMP, NUMER, FLOAT, PRED, and INFEVAL switches may also be set
+locally in a block, or globally at the "top level" in MACSYMA so that
+they will remain in effect until being reset.  Setting INFEVAL:TRUE
+locally will cause all evaluations occurring via explicit calls to EV
+to be done "infinitely".
+
+If @i[exp] is in CRE form (see @Ref[rep]) then EV will return a result
+in CRE form provided the NUMER and FLOAT switches are both FALSE.
+@end(itemize)
+
+During step (1), a list is made of the non-subscripted variables
+appearing on the left side of equations in the @i[argi] or in the
+value of some @i[argi] if the value is an equation.  The variables,
+including subscripted variables, in the expression @i[exp] are
+replaced by their global values, except for those appearing in this
+list.  Usually, @i[exp] is just a label or %, as in (C2) below, so
+this step simply retrieves the expression named by the label, so that
+EV may work on it.
+
+If any substitutions are indicated by the @i[argi], they are carried out now.
+
+The resulting expression is then re-evaluated (unless one of the
+@i[argi] is NOEVAL) and simplified according the the @i[argi].  Note
+that any function calls in @i[exp] will be carried out after the
+variables in it are evaluated and that EV(F(X)) thus may behave like
+F(EV(X)).
+
+If one of the @i[argi] is EVAL, steps (3) and (4) are repeated.
+@end(enumerate)
+
+@center(@i[Examples])
+
+@Begin[Example]
+(C1) SIN(X)+COS(Y)+(W+1)**2+'DIFF(SIN(W),W);
+
+                            d                 2
+(D1)      COS(Y) + SIN(X) + --SIN(W) + (W + 1)
+                            dW
+@hinge
+(C2) EV(%,SIN,EXPAND,DIFF,X=2,Y=1);
+
+                    2
+(D2)      COS(W) + W  + 2 W + COS(1) + 1.90929742
+@End[Example]
+An alternate "top level" syntax has been provided for EV, whereby one
+may just type in its arguments, without the EV().  That is, one may
+write simply @i[exp,arg1],...,@i[argn].  This is not permitted as part
+of another expression, i.e. in functions, blocks, etc.
+@i[exp,RESCAN] is equivalent to EV(@i[exp]).
+
+@Begin[Example]
+(C3) X+Y,X:A+Y,Y:2;
+(D3)                Y + A + 2
+@end[example]
+Notice the parallel binding process.
+@begin[example]
+(C5) 2*X-3*Y=3$
+@hinge
+(C6) -3*X+2*Y=-4$
+@hinge
+(C7) SOLVE([D5,D6]);
+solution
+                              1       6
+(D7)                 [ Y =  - - , X = - ]
+                              5       5
+@hinge
+(C8) D6,D7;
+(D8)               - 4 =  - 4
+@hinge
+(C9) X+1/X > GAMMA(1/2);
+
+                    1
+(D9)           X + - > SQRT(%PI)
+                    X
+@hinge
+(C10) %,NUMER,X=1/2;
+(D10)            2.5 > 1.7724539
+@hinge
+(C11) %,PRED;
+(D11)                  TRUE
+@End[Example]
+
+@fcn[Name="UNKNOWN", Args="exp"]
+returns  TRUE   iff  @i[exp]  contains an operator or function not known to the built-in simplifier.
+
+@fcn[Name="EXPAND", Args="exp"]
+causes products of sums and exponentiated sums to be multiplied out,
+numerators of rational expressions that are sums to be split into
+their respective terms, and multiplication, both commutative and
+non-commutative, to be distributed over addition at all levels of
+@i[exp].  For polynomials one may wish use RATEXPAND, which uses a more
+efficient algorithm (see below).
+
+Terms in @i[exp] whose exponents are less than @var<MAXNEGEX (default:
+1000)> or greater than @var<MAXPOSEX (default: 1000)> will not be
+EXPANDed.  However,
+
+EXPAND(@i[exp,p,n]) expands @i[exp], using @i[p] for MAXPOSEX and
+@i[n] for MAXNEGEX.  This helps the user control how much and what
+kinds of expansion are to take place.
+
+@var<EXPON (default: 0)> - the exponent of the largest negative power
+that is automatically expanded, independent of calls to EXPAND.  For
+example if EXPON is 4 then (X+1)**(-5) will not be automatically
+expanded.
+
+@var<EXPOP (default: 0)> - the highest positive exponent that is
+automatically expanded.  Thus (X+1)**3, when typed, will be
+automatically expanded only if EXPOP is greater than or equal to 3.
+If it is desired to have (X+1)**n expanded where n is greater than
+EXPOP then executing EXPAND((X+1)**n) will work only if MAXPOSEX is
+not less than n.
+
+@Begin[Example]
+(C1) (1/(X+Y)**4-3/(Y+Z)**3)**2;
+
+                              1          3     2
+(D1)                      (-------- - --------)
+                                  4          3
+                           (Y + X)    (Z + Y)
+@hinge
+(C2) EXPAND(%,2,0);
+
+                           6              9          1
+(D2)             - ----------------- + -------- + --------
+                          4        3          6          8
+                   (Y + X)  (Z + Y)    (Z + Y)    (Y + X)
+@hinge
+(C3) EXPAND(A.(B+C.(D+E)+F));
+(D3)            A . F + A . C . E + A . C . D + A . B
+@End[Example]
+
+@fcn[Name="RATEXPAND", Args="exp"]
+expands @i[exp] by multiplying out products of sums and exponentiated
+sums, combining fractions over a common denominator, cancelling the
+greatest common divisor of the numerator and denominator, then
+splitting the numerator, if it is a sum, into its respective terms
+divided by the denominator.  This is accomplished by converting
+@i[exp] to CRE form (see @Ref[rep]) and then back to general form.
+
+@var<RATEXPAND (default: FALSE)> - if TRUE will cause CRE expressions
+to be fully expanded when they are converted back to general form or
+displayed, while if it is FALSE then they will be put into a recursive
+form. (see RATSIMP below)
+
+@var<RATDENOMDIVIDE (default: TRUE)> - if FALSE will prevent the
+splitting of the terms of the numerator of RATEXPANDed expressions
+from occurring.
+
+@var<KEEPFLOAT (default: FALSE)> if set to TRUE will prevent floating
+point numbers from being rationalized when expressions that contain
+them are converted to CRE form.
+
+@var<GCD (default: SPMOD)> if FALSE will prevent the greatest common
+divisor from being taken when expressions are converted to CRE form.
+This will sometimes speed the calculation if gcds are not required.
+(cf. the function GCD (see @PageRef[rational!functions]))
+
+@Begin[Example]
+(C1) RATEXPAND((2*X-3*Y)**3);
+
+                3         2       2        3
+(D1)      - 27 Y  + 54 X Y  - 36 X  Y + 8 X
+@hinge
+(C2) (X-1)/(X+1)**2+1/(X-1);
+                              X - 1       1
+(D2)                         -------- + -----
+                                    2   X - 1
+                             (X + 1)
+@hinge
+(C3) EXPAND(D2);
+                         X              1           1
+(D3)                ------------ - ------------ + -----
+                     2              2             X - 1
+                    X  + 2 X + 1   X  + 2 X + 1
+@hinge
+(C4) RATEXPAND(D2);
+                             2
+                          2 X                 2
+(D4)                 --------------- + ---------------
+                      3    2            3    2
+                     X  + X  - X - 1   X  + X  - X - 1
+@End[Example]
+
+@fcn[Name="RATSIMP", Args="exp"]
+"rationally" simplifies (similar to RATEXPAND) the expression @i[exp]
+and all of its subexpressions including the arguments to non-rational
+functions.  The result is returned as the quotient of two polynomials
+in a recursive form, i.e. the coefficients of the main variable are
+polynomials in the other variables.  Variables may, as in RATEXPAND,
+include non-rational functions (e.g. SIN(X**2+1) ) but with RATSIMP,
+the arguments to non-rational functions are rationally simplified.
+Note that RATSIMP is affected by some of the variables that affect
+RATEXPAND.
+
+@var<RATSIMPEXPONS (default: FALSE)> - if TRUE will cause exponents of
+expressions to be RATSIMPed automatically during general simplification.
+
+@fcn[Name="RATSIMP", Args="exp,v1,...,vn"]
+enables rational simplification with the specification of variable
+ordering as in RATVARS.
+
+@Begin[Example]
+(C1) SIN(X/(X^2+X))=%E^((LOG(X)+1)**2-LOG(X)**2);
+
+                                           2          2
+                    X          (LOG(X) + 1)  - LOG (X)
+(D1)          SIN(------) = %E
+                   2
+                  X  + X
+@hinge
+(C2) RATSIMP(%);
+                                  1          2
+(D2)                        SIN(-----) = %E X
+                                X + 1
+@hinge
+(C3) ((X-1)**(3/2)-(X+1)*SQRT(X-1))/SQRT((X-1)*(X+1));
+
+                       3/2
+                (X - 1)    - SQRT(X - 1) (X + 1)
+(D3)            --------------------------------
+                    SQRT((X - 1)(X + 1))
+@hinge
+(C4) RATSIMP(%);
+                            2 SQRT(X-1)
+(D4)                      - -----------
+                                  2
+                            SQRT(X - 1)
+@hinge
+(C5)  X**(A+1/A),RATSIMPEXPONS:TRUE;
+
+                    2
+                   A  + 1
+                   ------
+                     A
+(D5)              X
+@End[Example]
+
+@fcn[Name="FULLRATSIMP", Args="exp"]
+When non-rational expressions are involved, one call
+to RATSIMP followed as is usual by non-rational ("general")
+simplification may not be sufficient to return a simplified result.
+Sometimes, more than one such call may be necessary.  The command
+FULLRATSIMP makes this process convenient.  FULLRATSIMP repeatedly
+applies RATSIMP followed by non-rational simplification to an
+expression until no further change occurs.  For example, consider
+the expression
+@Begin[Example]
+(C1) EXP:(X^(A/2)+1)^2*(X^(A/2)-1)^2/(X^A-1);
+                             A/2     2   A/2     2
+                           (X    - 1)  (X    + 1)
+(D1)                       -----------------------
+                                    A
+                                   X  - 1
+@Hinge
+(C2) RATSIMP(EXP);
+                                2 A      A
+                               X    - 2 X  + 1
+(D2)                           ---------------
+                                    A
+                                   X  - 1
+@Hinge
+(C3) FULLRATSIMP(EXP);
+                                     A
+(D3)                                X  - 1
+@End[Example]
+The problem may be seen by looking at 
+RAT(EXP);
+@Begin[Example]
+(C4) RAT(EXP);
+                             A/2 4       A/2 2
+                           (X   )  - 2 (X   )  + 1
+(D4)/R/                    -----------------------
+                                    A
+                                   X  - 1
+@End[Example]
+
+@fcn[Name="FULLRATSIMP", Args="exp,var1,...,varn"]
+takes one or more arguments similar 
+to RATSIMP above.
+
+@fcn[Name="RADCAN", Args="exp"]
+simplifies @i[exp], which can contain logs, exponentials, and
+radicals, by converting it into a form that is canonical over a large
+class of expressions and a given ordering of variables; that is, all
+functionally equivalent forms are mapped into a unique form.  For a
+somewhat larger class of expressions, RADCAN produces a regular form
+[Fa2].  Two equivalent expressions in this class will not necessarily
+have the same appearance, but their difference will be simplified by
+RADCAN to zero.  For some expressions RADCAN can be quite time
+consuming.  This is the cost of exploring certain relationships among
+the components of the expression for simplifications based on
+factoring and partial-fraction expansions of exponents.  (Because
+exploring all types of simplifications in which nested radicals can
+participate is very expensive, RADCAN will sometimes fail to discover
+simplied forms.  E.g. RADCAN is not able to reduce the expression
+SQRT(EXPAND((1+SQRT(X))@+[2]))-(1+SQRT(X)) to 0 where X @GreaterEqual 0.)  The
+variable @var<%E_TO_NUMLOG (default: FALSE)> may be useful also,
+(see @Ref[miscellaneous!functions]).
+
+
+@var<RADEXPAND (default: TRUE)> when set to FALSE will inhibit certain
+transformations: RADCAN(SQRT(1-X)) will remain SQRT(1-X) and will not
+become %I SQRT(X-1).  RADCAN(SQRT(X^2-2*X+1)) will remain SQRT(X^2-2*X
++ 1) and will not be transformed to X-1.  Another way to get this
+result is to set @var<DOMAIN (default: REAL> to COMPLEX.  The notion of a
+"domain" of simplification is still in its infancy, and controls
+little more than this at the moment.  This can be overridden by
+setting RADEXPAND to ALL irrespective of the setting of DOMAIN.
+
+ 
+@Begin[Example]
+(C1) (LOG(X**2+X)-LOG(X))**A/LOG(X+1)**(A/2);
+
+                          2               A
+                    (LOG(X  + X) - LOG(X))
+(D1)                -----------------------
+                                   A/2
+                         LOG(X + 1)
+@hinge
+(C2) RADCAN(%);
+                               A/2
+(D2)                 LOG(X + 1)
+@hinge
+(C3) LOG(A**(2*X)+2*A**X+1)/LOG(A**X+1);
+
+                   2 X      X
+              LOG(A    + 2 A  + 1)
+(D3)          --------------------
+                       X
+                  LOG(A  + 1)
+@hinge
+(C4) RADCAN(%);
+(D4)                  2
+@hinge
+(C5) (%E**X-1)/(%E**(X/2)+1);
+
+                       X
+                     %E  - 1
+(D5)                ---------
+                      X/2
+                    %E    + 1
+@hinge
+(C6) RADCAN(%);
+                      X/2
+(D6)                %E    - 1
+@End[Example]
+
+@fcn[Name="SCSIMP", Args="exp,rule1, rule2,...,rulen"]
+(Sequential Comparative Simplification) takes an expression (its first
+argument) and a set of identities, or rules (its other arguments) and
+tries simplifying.  If a smaller expression is obtained, the process
+repeats.  Otherwise after all simplifications are tried, it returns
+@i[exp].
+@Begin[Example]
+(C1) EXP:K^2*N^2+K^2*M^2*N^2-K^2*L^2*N^2-K^2*L^2*M^2*N^2;
+
+                    2  2  2  2    2  2  2    2  2  2    2  2
+(D1)             - K  L  M  N  + K  M  N  - K  L  N  + K  N
+@hinge
+(C2) EQ1:K^2+L^2=1;
+                                  2    2
+(D2)                             L  + K  = 1
+@hinge
+(C3) EQ2:N^2-M^2=1;
+                                  2    2
+(D3)                             N  - M  = 1
+@hinge
+(C4) SCSIMP(EXP,EQ1,EQ2);
+                                     4  4
+(D4)                                K  N
+@hinge
+(C5) EXQ:(K1*K4-K1*K2-K2*K3)/K3^2;
+
+                            K1 K4 - K2 K3 - K1 K2
+(D5)                        ---------------------
+                                       2
+                                     K3
+@hinge
+(C6) EQ3:K1*K4-K2*K3=0;
+(D6)                          K1 K4 - K2 K3 = 0
+@hinge
+(C7) EQ4:K1*K2+K3*K4=0;
+(D7)                          K3 K4 + K1 K2 = 0
+@hinge
+(C8) SCSIMP(EXQ,EQ3,EQ4);
+                                      K4
+(D8)                                  --
+                                      K3
+@End(example)
+
+@fcn[Name="COMBINE", Args="exp"]
+simplifies the sum @i[exp] by combining terms with the same
+denominator into a single term.
+
+@fcn[Name="RNCOMBINE", Args="exp"]
+transforms @i[exp] by combining all terms of @i[exp] that have
+identical denominators or denominators that differ from each other by
+numerical factors only.  This is slightly different from the behavior
+of COMBINE, which collects terms that have identical denominators.
+Setting PFEFORMAT:TRUE and using COMBINE will achieve results similar
+to those that can be obtained with RNCOMBINE, but RNCOMBINE takes the
+additional step of cross-multiplying numerical denominator factors.
+This results in neater forms, and the possiblity of recognizing some
+cancellations.
+
+@fcn[Name="MULTTHRU", Args="exp"]
+multiplies a factor (which should be a sum) of @i[exp] by the other
+factors of @i[exp]. That is @i[exp] is f1*f2*...*fn where at least one
+factor, say fi, is a sum of terms.  Each term in that sum is
+multiplied by the other factors in the product.  (Namely all the
+factors except fi).  MULTTHRU does not expand exponentiated sums.
+This function is the fastest way to distribute products (commutative
+or noncommutative) over sums.  Since quotients are represented as
+products (see @Ref[simp]) MULTTHRU can be used to divide sums by
+products as well.
+
+@fcn[Name="MULTTHRU", Args="exp1, exp2"]
+multiplies each term in @i[exp2] (which should be a sum or an
+equation) by @i[exp1].
+
+@Begin[Example]
+(C1) X/(X-Y)**2-1/(X-Y)-F(X)/(X-Y)**3;
+
+               1        X         F(X)
+(D1)       - ----- + -------- - --------
+             X - Y          2          3
+                     (X - Y)    (X - Y)
+@hinge
+(C2) MULTTHRU((X-Y)**3,%);
+                                2
+(D2)         X (X - Y) - (X - Y) - F(X)
+@hinge
+(C3) RATEXPAND(D2);
+                           2
+(D3)                    - Y  + X Y - F(X)
+@hinge
+(C4) ((A+B)**10*S**2+2*A*B*S+(A*B)**2)/(A*B*S**2);
+
+                         10  2              2  2
+                (B  + A )   S  + 2 A B S + A  B
+(D4)            --------------------------------
+                                   2
+                              A B S
+@hinge
+(C5) MULTTHRU(%);
+                                          10
+                        2   A B   (B  + A)
+(D5)                    - + --- + -------
+                        S    2      A B
+                            S
+@end(example)
+Notice that (B+A)**10 is not expanded.
+@begin(example)
+(C6) MULTTHRU(A.(B+C.(D+E)+F));
+(D6)                A . F + A . C . (E + D) + A . B
+@end(example)
+Compare with similar example under EXPAND.
+
+@fcn[Name="DISTRIB", Args="exp"]
+distributes sums over products.  It differs from EXPAND
+in that it works at only the top level of an expression, i.e. it does not
+recurse and it is faster than EXPAND.  It differs from MULTTHRU in
+that it expands all sums at that level. For example, 
+@begin(format)
+DISTRIB((A+B)*(C+D)) -> A C + A D + B C + B D 
+MULTTHRU ((A+B)*(C+D)) -> (A + B) C + (A + B) D
+
+DISTRIB (1/((A+B)*(C+D))) ->  1/ ((A+B) *(C+D))
+EXPAND(1/((A+B)*(C+D)),1,0) -> 1/(A C + A D + B C + B D)
+@end(format)
+
+The switch @var<NEGDISTRIB (default: TRUE)> may be set globally to control the
+distribution of -1 over an expression.  When it is TRUE it allows -1
+to be distributed over an expression.  E.g. -(X+Y) becomes -Y-X.
+Setting it to FALSE will allow -(X+Y) to be displayed like that.  This
+is sometimes useful but be very careful: like the SIMP flag, this is
+one flag you do not want to set to FALSE as a matter of course or
+necessarily for other than local use in your MACSYMA.
+
+@fcn[Name="XTHRU", Args="exp"]
+combines all terms of @i[exp], which should be a sum, over a common
+denominator, without expanding products and exponentiated sums as
+RATSIMP @Index[RATSIMP] does.  XTHRU cancels common factors in the
+numerator and denominator of rational expressions but only if the
+factors are explicit.  Sometimes it is better to use XTHRU before
+RATSIMPing an expression in order to cause explicit factors of the gcd
+of the numerator and denominator to be cancelled, thus simplifying the
+expression to be RATSIMPed.
+
+@Begin[Example]
+(C1) ((X+2)**20-2*Y)/(X+Y)**20+(X+Y)**-19-X/(X+Y)**20;
+
+                                    20
+                     1       (X + 2)   - 2 Y       X
+(D1)             --------- + --------------- - ---------
+                        19             20             20
+                 (Y + X)        (Y + X)        (Y + X)
+@hinge
+(C2) XTHRU(%);
+                                     20
+                              (X + 2)   - Y
+(D2)                          -------------
+                                       20
+                                (Y + X)
+@End[Example]
+
+@fcn[Name="PARTFRAC", Args="exp, var"]
+expands the expression @i[exp] in partial fractions with respect to
+the main variable, @i[var].  PARTFRAC does a complete partial fraction
+decomposition.  The algorithm employed is based on the fact that the
+denominators of the partial fraction expansion (the factors of the
+original denominator) are relatively prime.  The numerators can be
+written as linear combinations of denominators, and the expansion
+falls out.
+
+@Begin[Example]
+(C1) 2/(X+2)-1/(X+1)-X/(X+1)**2$
+@hinge
+(C2) RATSIMP(%);
+                                       X
+(D2)                        - -------------------
+                               3      2
+                              X  + 4 X  + 5 X + 2
+@hinge
+(C3) PARTFRAC(%,X);
+                             2       2        1
+(D3)                       ----- - ----- + --------
+                           X + 2   X + 1          2
+                                           (X + 1)
+@End[Example]
+
+@fcn[Name="FACTOR", Args="exp"]
+factors the expression @i[exp], containing any number of variables or
+functions, into factors irreducible over the integers.
+
+@fcn[Name="FACTOR", Args="exp, p"]
+factors @i[exp] over the field of integers with an element adjoined
+whose minimum polynomial is @i[p].
+
+@var<FACTORFLAG (default: FALSE)> if FALSE suppresses the factoring of integer
+factors of rational expressions.
+
+@var<DONTFACTOR (default: [])> may be set to a list of variables with
+respect to which factoring is not to occur.  Factoring also will not
+take place with respect to any variables that are less important
+(using the variable ordering assumed for CRE form) than those on the
+DONTFACTOR list. (see @Ref[rational!functions])
+
+@var<FACEXPAND (default: TRUE)> controls whether the irreducible factors
+returned by FACTOR are in expanded (the default) or recursive (normal
+CRE) form.
+
+@var<SAVEFACTORS (default: FALSE)> if TRUE causes the factors of an
+expression that is a product of factors to be saved by certain
+functions in order to speed up later factorizations of expressions
+containing some of the same factors.
+
+@var<BERLEFACT (default: TRUE)> if FALSE then the Kronecker factoring
+algorithm will be used otherwise the Berlekamp algorithm, which is the
+default, will be used. (see [Be1, Wa4])
+
+@var<NEWFAC (default: FALSE)> may be set to true to use the new
+factoring routines.
+
+@var<INTFACLIM (default: 1000)> is the largest divisor that will be tried when
+factoring a bignum integer.  If set to FALSE (this is the case when
+the user calls FACTOR explicitly), or if the integer is a fixnum (i.e.
+fits in one machine word), complete factorization of the integer will
+be attempted.  The setting of INTFACLIM is used for internal
+calls to FACTOR.  Thus, INTFACLIM may be reset to prevent MACSYMA from
+taking an inordinately long time factoring large integers.
+
+@fcn[Name="GCFACTOR", Args="n"]
+factors the gaussian integer n over the gaussians, which are numbers of the
+form a + b i where a and b are rational integers (i.e. ordinary
+integers).  Factors are normalized by making a and b non-negative.
+@Begin[Example]
+(C1) FACTOR(2**63-1);
+                        2
+(D1)                   7  73 127 337 92737 649657
+@hinge
+(C2) FACTOR(Z**2*(X+2*Y)-4*X-8*Y);
+(D2)                   (2 Y + X) (Z - 2) (Z + 2)
+@hinge
+(C3)  X**2*Y**2+2*X*Y**2+Y**2-X**2-2*X-1;
+                     2  2        2    2    2
+(D3)                X  Y  + 2 X Y  + Y  - X  - 2 X - 1
+@hinge
+(C4) DONTFACTOR:[X]$
+@hinge
+(C5) FACTOR(D3/36/(Y**2+2*Y+1));
+                            2
+                          (X  + 2 X + 1) (Y - 1)
+(D5)                      ----------------------
+                                36 (Y + 1)
+@hinge
+(C6) FACTOR(%E**(3*X)+1);
+                          X         2 X     X
+(D6)                   (%E  + 1) (%E    - %E  + 1)
+@hinge
+(C7) FACTOR(X**4+1,A**2-2);
+                    2              2
+(D7)              (X  - A X + 1) (X  + A X + 1)
+@End[Example]
+
+When FACTOR is applied to integers, note that the value returned by
+FACTOR when used in other computations may not lead to a simplified
+result.  Using D1 above, the user can check that D1 + 1; will not
+return 2@+[63]).
+
+@fcn[Name="FACTORSUM", Args="exp"]
+tries to group terms in factors of @i[exp] that are sums into groups
+of terms such that their sum is factorable.  It can recover the
+result of EXPAND((X+Y)^2+(Z+W)^2) but it can not
+recover EXPAND((X+1)^2+(X+Y)^2) because the terms have variables in common.
+@begin[Example] 
+(C1) (X+1)*((U+V)@+[2]+A*(W+Z)@+[2]),EXPAND;
+
+          2      2                            2      2
+(D1) A X Z  + A Z  + 2 A W X Z + 2 A W Z + A W  X + V  X 
+
+                         2        2    2            2
+            + 2 U V X + U  X + A W  + V  + 2 U V + U
+@hinge
+(C2) FACTORSUM(%);
+                                       2          2
+(D2)                 (X + 1) (A (Z + W)  + (V + U) )
+@end[Example]
+
+@fcn[Name="FACTOROUT", Args="exp,var1,var2,..."]
+rearranges the sum @i[exp] into a sum of terms of the form
+f(@i[var1,var2,]...)*g where g is a product of expressions not containing
+the @i[vari]'s and f is factored.
+@end(function)
+
+Another technique of factoring complex expressions uses the function
+SCANMAP (see Chapter @Ref[lisp!functions]).
+
+@begin(function)
+@fcn[Name="SQFR", Args="exp"]
+is similar to FACTOR except that the polynomial factors are
+"square-free."  That is, they have factors of degree one only.  This
+algorithm, which is also used by the first stage of FACTOR, utilizes
+the fact that a polynomial has in common with its n@i[th] derivative
+all its factors of degree > n.  Thus by taking gcds with the
+polynomial of the derivatives with respect to each variable in the
+polynomial, all factors of degree > 1 can be found.
+@Begin[Example]
+(C1) SQFR(4*X**4+4*X**3-3*X**2-4*X-1);
+
+                             2               2
+(D1)                       (X  - 1) (2 X + 1)
+@End[Example]
+
+@fcn[Name="GFACTOR", Args="exp"]
+factors the polynomial @i[exp] over the Gaussian integers,
+which are the ordinary integers with SQRT(-1) =
+%I adjoined.  This is like FACTOR(@i[exp],A**2+1).
+@Begin[Example]
+(C1)  GFACTOR(X**4-1);
+(D1)        (X - 1) (X + 1) (X + %I) (X - %I)
+@End[Example]
+
+@fcn[Name="GFACTORSUM", Args="exp"]
+is similar to FACTORSUM but applies GFACTOR instead of FACTOR.
+
+@fcn[Name="PARTITION", Args="exp, var"]
+returns a list of two expressions.  They are (1) the factors of
+@i[exp] (if it is a product), the terms of @i[exp] (if it is a sum),
+or the sublist of @i[exp] (if it is a list) that do not contain
+@i[var] and, (2) the factors, terms, or sublist that do.
+@Begin[Example]
+(C1) PARTITION(2*A*X*F(X),X);
+(D1)                 [ 2 A , X F(X) ]
+@hinge
+(C2) PARTITION(A+B,X);
+(D2)                 [ A + B , 0 ]
+@hinge
+(C3) PARTITION([A,B,F(A),C],A);
+(D3)               [[B,C],[A,F(A)]]
+@End[Example]
+
+@fcn[Name="NTHROOT", Args="p,n"]
+where @i[p] is a polynomial with integer coefficients and @i[n] is a
+positive integer returns @i[q], a polynomial over the integers, such
+that @i[q]@+[@i(n)]=@i[p] or prints an error message indicating that
+@i[p] is not a perfect nth power. This routine is much faster than
+either FACTOR or SQFR.
+
+@fcn[Name="LOGCONTRACT", Args="exp"]
+recursively scans an exp,
+transforming subexpressions of the form @i[a]1*LOG(@i[b]1) +
+@i[a]2*LOG(@i[b]2) + c into LOG(RATSIMP(@i[b]1^@i[a]1 *
+@i[b]2^@i[a]2)) + c
+@Begin[Example]
+(C1) 2*(A*LOG(X) + 2*A*LOG(Y))$
+@hinge
+(C2) LOGCONTRACT(%);
+                                        2  4
+(D2)                             A LOG(X  Y )
+@hinge
+(C3) LOGCONTRACT(LOG(SQRT(X+1)+SQRT(X)) + LOG(SQRT(X+1)-SQRT(X)));
+(D3)                                  0
+@end(example)
+If you do DECLARE(N,INTEGER); then LOGCONTRACT(2*A*N*LOG(X)); gives
+A*LOG(X^(2*N)).  The coefficients that "contract" in this manner are
+those such as the 2 and the N here which satisfy
+FEATUREP(coeff,INTEGER).  The user can control which coefficients are
+contracted by setting the option @var<LOGCONCOEFFP (default: FALSE)>
+to the name of a predicate function of one argument.  For example, if
+you like to generate SQRTs, you can do
+@Begin[Example]
+(C1) LOGCONCOEFFP:'LOGCONFUN$
+@hinge
+(C2) LOGCONFUN(M):=FEATUREP(M,INTEGER) OR RATNUMP(M)$
+@hinge
+(C3) LOGCONTRACT(1/2*LOG(X)); 
+(D3)                             LOG(SQRT(X)).
+@End[Example]
+
+@fcn[Name="ROOTSCONTRACT", Args="exp"] 
+converts products of roots into roots of products. For example,
+ROOTSCONTRACT(SQRT(X)*Y^(3/2)); gives SQRT(X*Y^3).
+There is an option @var<ROOTSCONMODE (default: TRUE)>,
+which affects ROOTSCONTRACT as follows:
+@begin(format)
+@tabclear()
+@tabset(.5inches,2.5inches,4.5inches)
+@\Problem@\Value of@\Result of applying
+@\@\ROOTSCONMODE@\ROOTSCONTRACT
+@\X@+[1/2]*Y@+[3/2]@\FALSE@\(X*Y@+[3])@+[1/2]
+@\X@+[1/2]*Y@+[1/4]@\FALSE@\X@+[1/2]*Y@+[1/4]
+@\X@+[1/2]*Y@+[1/4]@\TRUE@\(X*Y@+[1/2])@+[1/2]
+@\X@+[1/2]*Y@+[1/3]@\TRUE@\X@+[1/2]*Y@+[1/3]
+@\X@+[1/2]*Y@+[1/4]@\ALL@\(X@+[2]*Y)@+[1/4]
+@\X@+[1/2]*Y@+[1/3]@\ALL@\(X@+[3]*Y@+[2])@+[1/6]
+@End[format]
+
+The above examples and more may be tried out by typing
+EXAMPLE(ROOTSCONTRACT); .  When ROOTSCONMODE is FALSE, ROOTSCONTRACT
+contracts only wrt rational number exponents whose denominators are
+the same.  The key to the ROOTSCONMODE:TRUE examples is simply that 2
+divides into 4 but not into 3.  ROOTSCONMODE:ALL involves taking the
+lcm (least common multiple) of the denominators of the exponents.
+
+When RADEXPAND is TRUE and DOMAIN is REAL (their defaults), 
+ROOTSCONTRACT converts ABS into SQRT.
+For example, ROOTSCONTRACT(ABS(X)*SQRT(Y)); gives SQRT(X^2*Y) .
+
+ROOTSCONTRACT uses RATSIMP in a manner similar to LOGCONTRACT.  
+@Begin[Example]
+(C1) ROOTSCONMODE:TRUE$
+@hinge
+(C2) ROOTSCONTRACT(SQRT(SQRT(5)+5)-5^(1/4)*SQRT(SQRT(5)+1));
+(D2)                                  0
+@End[Example]
+@end(function)
+
+@SubSection[Sums and Products]
+@Label[sumsandprods]
+
+@begin(function)
+@fcn[Name="SUM", Args="exp, ind, lo, hi"]
+performs a summation of the values of @i[exp] as the index @i[ind]
+varies from @i[lo] to @i[hi].  If the upper and lower limits differ by
+an integer then each term in the sum is evaluated and added together.
+Otherwise, if @var<SIMPSUM (default: FALSE)> is TRUE the result is simplified.  This
+simplification may sometimes be able to produce a closed form.  If
+SIMPSUM is FALSE or if 'SUM is used, the value is a sum noun form
+which is a representation of the sigma notation used in mathematics.
+
+If @i[hi] is one less than @i[lo], we have an "empty sum" and SUM
+returns 0 rather than erring out.
+
+Sums can be differentiated, added, subtracted, or multiplied with some
+automatic simplification being performed.
+
+@var<SUMEXPAND (default: FALSE)> if TRUE, causes products of sums and
+exponentiated sums to be converted into nested sums.
+If FALSE, they are left alone.
+@Begin[Example]
+(C1) SUMEXPAND:TRUE$
+@hinge
+(C2) SUM(F(I),I,0,M)*SUM(G(J),J,0,N);
+
+                           M      N
+                          ====   ====
+                          \      \
+(D2)                       >      >     F(I1) G(I2)
+                          /      /
+                          ====   ====
+                          I1 = 0 I2 = 0
+@hinge
+(C3) SUM(F(I),I,0,M)^2;
+
+                           M      M
+                          ====   ====
+                          \      \
+(D3)                       >      >     F(I3) F(I4)
+                          /      /
+                          ====   ====
+                          I3 = 0 I4 = 0
+@end[Example]
+
+@var<CAUCHYSUM (default: FALSE)> When multiplying together sums with
+INF as their upper limit, if set to TRUE then the Cauchy product will
+be used rather than the usual product.  In the Cauchy product the
+index of the inner summation is a function of the index of the outer
+one rather than varying independently.
+
+@var<GENINDEX (default: I)> is the alphabetic prefix used to generate
+the next variable of summation when necessary.
+
+@var<GENSUMNUM (default: 0)> is the numeric suffix used to generate
+the next variable of summation.  If it is set to FALSE then the index
+will consist only of GENINDEX with no numeric suffix.
+
+@var<SUMHACK (default: FALSE)> if set to true allows SUM(I,I,3,1); to
+give -2, based on the identity SUM(F(I),I,A,B) = -
+SUM(F(I),I,B+1,A-1), when A>B.
+
+@Begin[Example]
+(C1) SIMPSUM:TRUE$
+@hinge
+(C2) SUM(I**2+2**I,I,0,N);
+
+                         3      2
+              N + 1   2 N  + 3 N  + N
+(D2)         2      + --------------- - 1
+                             6
+@hinge
+(C3) SUM(3**(-I),I,1,INF);
+
+                          1
+(D3)                      -
+                          2
+@hinge
+(C4) SUM(I^2,I,1,4)*SUM(1/I^2,I,1,INF);
+
+                                       2
+(D5)                              5 %PI
+@End[Example]
+
+@fcn[Name="SUMCONTRACT", Args="expr"]
+combines all sums of an addition that have
+upper and lower bounds that differ by constants. The result is an
+expression that contains one summation for each set of such summations
+added to all appropriate extra terms that had to be extracted to form
+this sum.  SUMCONTRACT  combines all compatible sums and use one of
+the indices from one of the sums if it can, and then tries to form a
+reasonable index if it cannot use any of those supplied.  It may be necessary
+to do an INTOSUM(@i[expr]) before the SUMCONTRACT.
+
+@fcn[Name="INTOSUM", Args="expr"]
+takes all factors that a summation is multiplied by, and puts them
+inside the summation.  If the index is used in the outside expression,
+then INTOSUM tries to find a reasonable index, as it
+does for SUMCONTRACT. This is the reverse of the
+OUTATIVE property of summations, but note that it does not remove this
+property, it only bypasses it.  In some cases,
+a SCANMAP(MULTTHRU,@i[expr]) may be necessary
+before the INTOSUM.
+
+@fcn[Name="BASHINDICES", Args="expr"]
+transforms the expression @i[expr] by giving each summation and
+product a unique index. This gives CHANGEVAR @index[CHANGEVAR] greater
+precision when it is working with summations or products.  The form of
+the unique index is J@i[number]. The quantity @i[number] is determined
+by referring to GENSUMNUM, which can be changed by the user.  For
+example, GENSUMNUM:0 resets it.
+
+@fcn[Name="NICEINDICES", Args="expr"]
+will take the expression and change all the
+indices of sums and products to something easily understandable. It
+makes each index it can "I" , unless "I" is in the internal
+expression, in which case it sequentially tries
+J,K,L,M,N,I0,I1,I2,I3,I4,...  until it finds a legal index.
+
+The user may set the variable @var<NICEINDICESPREF (default: [I,J,K,L,M,N])>,
+the list that NICEINDICES uses to find its "nice
+indices".  This allows the user to set an order of preference for the
+"nice indices".  E.g.  NICEINDICESPREF:[Q,R,S,T,INDEX].  Then if
+NICEINDICES finds that it cannot use any of these as indices in a
+particular summation, it uses the first as a base to try and tack on
+numbers.  Here, if the list is exhausted, Q0, then Q1, etc, will be
+tried.
+
+@fcn[Name="NUSUM", Args="exp,var,low,high"]
+performs indefinite summation of @i[exp] with respect to @i[var] using
+a decision procedure due to R.W. Gosper.  @i[exp] and the potential
+answer must be expressible as products of nth powers, factorials,
+binomials, and rational functions.  The terms "definite" and
+"indefinite summation" are used analogously to "definite" and
+"indefinite integration".  To sum indefinitely means to give a closed
+form for the sum over intervals of variable length, not just e.g. 0 to
+inf.  Thus, since there is no formula for the general partial sum of
+the binomial series, NUSUM can not do it.
+
+@fcn[Name="UNSUM", Args="fun,n"]
+is the first backward difference  @i[fun(n) - fun(n-1)].
+
+@fcn[Name="FUNCSOLVE", Args="eqn,g(t)"]
+gives [g(t) = ...]  or [], depending on whether
+or not there exists a rational fcn g(t) satisfying @i[eqn], which must be
+a first order, linear polynomial in (for this case) g(t) and g(t+1).
+
+Warning: this is a very rudimentary implementation--many safety checks
+and obvious generalizations are missing.
+
+@Begin[Example]
+(C1) NUSUM(N*N!,N,0,N);
+(D1)                             (N + 1)! - 1
+@Hinge
+(C2) NUSUM(N^4*4^N/BINOMIAL(2*N,N),N,0,N);
+
+                           4        3       2              N
+            2 (N + 1) (63 N  + 112 N  + 18 N  - 22 N + 3) 4     2
+(D2)        ------------------------------------------------ - ---
+                          693 BINOMIAL(2 N, N)                 231
+@hinge
+(C3) UNSUM(%,N);
+                                     4  N
+                                    N  4
+(D3)                           ----------------
+                               BINOMIAL(2 N, N)
+@End[Example]
+
+NUSUM and UNSUM now also know a little about sums and differences 
+of finite products:
+@Begin[Example]
+(C4) UNSUM(PROD(I^2,I,1,N),N);
+                           N - 1
+                           /===\
+                            ! !   2
+(D4)                      ( ! !  I ) (N - 1) (N + 1)
+                            ! !
+                           I = 1
+@hinge
+(C5) NUSUM(%,N,1,N);
+                                   N
+                                 /===\
+                                  ! !   2
+(D5)                              ! !  I  - 1
+                                  ! !
+                                 I = 1
+@hinge
+(C6) FUNCSOLVE((N+1)*F(N)-(N+3)*F(N+1)/(N+1) = (N-1)/(N+2),F(N));
+                                 N
+(D6)               F(N) = ---------------
+                          (N + 1) (N + 2)
+@end[Example]
+
+@fcn[name= "PRODUCT",args= "exp, ind, lo, hi"]
+gives the product of the values of @i[exp] as the index @i[ind] varies
+from @i[lo] to @i[hi].  The evaluation is similar to that of SUM.  No
+simplification of products is available at this time.  If @i[hi] is
+one less than @i[lo], we have an "empty product" and PRODUCT returns 1
+rather than erring out.
+@Begin[Example]
+(C1)  PRODUCT(X+I*(I+1)/2,I,1,4);
+(D1)             (X + 1) (X + 3) (X + 6) (X + 10)
+@End[Example]
+
+@var<PRODHACK (default: FALSE)> - if set to TRUE then PRODUCT(F(I),I,3,1); 
+will yield 1/F(2), by the identity 
+PRODUCT(F(I),I,A,B) = 1/PRODUCT(F(I),I,B+1,A-1) when A>B.
+@end(function)
+
+@SubSection[Differentiation and Integration Functions]
+@Label[difintfun]
+
+@begin(function)
+@fcn[Name="DIFF", Args="exp, v1, n1, v2, n2, ..."]
+differentiates @i[exp] with respect to each @i[vi], @i[ni] times.
+If just the first derivative with respect to one variable is desired
+then the form DIFF(@i[exp,v]) may be used.  If the noun form of the
+function is required (as, for example, when writing a differential
+equation), 'DIFF should be used and this will display in a two
+dimensional format.  (See Section @Ref[evsimpfun]) on how to
+convert 'DIFF ("derivative") into DIFF ("differentiate") via the EV
+command.)
+
+@var<DERIVABBREV (default: FALSE)> if TRUE will cause derivatives to
+display as subscripts.
+
+DIFF(@i[exp]) gives the "total differential", that is, the sum of the
+derivatives of @i[exp] with respect to each of its variables times the function
+DEL of the variable.  No further simplification of DEL is offered. 
+
+@Begin[Example]
+(C1) DIFF(EXP(F(X)),X,2);
+                             2
+                      F(X)  d             F(X)  d         2
+(D1)                %E     (--- F(X)) + %E     (-- (F(X)))
+                              2                 dX
+                            dX
+@hinge
+(C2) DERIVABBREV:TRUE$
+@hinge
+(C3) 'INTEGRATE(F(X,Y),Y,G(X),H(X));
+                                H(X)
+                               /
+                               [
+(D3)                           I     F(X, Y) dY
+                               ]
+                               /
+                                G(X)
+@Hinge
+(C4) DIFF(%,X);
+            H(X)
+           /
+           [
+(D4)       I     F(X, Y)  dY + F(X, H(X)) H(X)  - F(X, G(X)) G(X)
+           ]            X                     X                  X
+           /
+            G(X)
+@End[Example]
+
+@fcn[Name="DEPENDS", Args="funlist1,varlist1,funlist2,varlist2,..."]
+declares functional dependencies for variables to be used by DIFF.
+DEPENDS([F,G],[X,Y],[R,S],[U,V,W],U,T) informs DIFF that F and G
+depend on X and Y, that R and S depend on U,V, and W, and that U
+depends on T.  The arguments to DEPENDS are evaluated.  The
+variables in each @i[funlist] are declared to depend on all the
+variables in the next @i[varlist].@Foot[In this command, lists of length
+one can be typed in directly as atoms.] A @i[funlist] can contain the
+name of an atomic variable or array.  In the latter case, it is
+assumed that all the elements of the array depend on all the variables
+in the succeeding @i[varlist].  Initially, DIFF(F,X) is 0; executing
+DEPENDS(F,X) causes future differentiations of F with respect to X to
+give DF/DX or F[X] (if DERIVABBREV:TRUE).
+
+@Begin[Example]
+(C1) DEPENDS([F,G],[X,Y],[R,S],[U,V,W],U,T);
+(D1)           [F(X, Y), G(X, Y), R(U, V, W), S(U, V, W), U(T)]
+@hinge
+(C2) DEPENDENCIES;
+(D2)           [F(X, Y), G(X, Y), R(U, V, W), S(U, V, W), U(T)]
+@Hinge
+(C3) DIFF(R.S,U);
+                               dR           dS
+(D3)                           -- . S + R . --
+                               dU           dU
+@End[Example]
+
+Since MACSYMA knows the chain rule for symbolic derivatives, it takes
+advantage of the given dependencies as follows:
+
+@Begin[Example]
+(C4) DIFF(R.S,T);
+                           dR dU             dS dU
+(D4)                      (-- --) . S + R . (-- --)
+                           dU dT             dU dT
+@End[Example]
+If we set 
+@Begin[Example]
+(C5) DERIVABBREV:TRUE;
+(D5)                                 TRUE
+@End[Example]
+then re-executing the command C4, we obtain
+@Begin[Example]
+(C6) ''C4;
+(D6)                      (R  U ) . S + R . (S  U )
+                            U  T              U  T
+@End[Example]
+To eliminate a previously declared dependency, the REMOVE command can
+be used.  For example, to say that R no longer depends on U as
+declared in C1, the user can type REMOVE(R,DEPENDENCY).  This will
+eliminate all dependencies that may have been declared for R. @index[REMOVE]
+@Begin[Example]
+(C7) REMOVE(R,DEPENDENCY);
+(D7)                                 DONE
+@hinge
+(C8) ''C4;
+(D8)                             R . (S  U )
+                                       U  T
+@End[Example]
+@u(@i[CAVEAT]): DIFF @i[is the @u[only]] MACSYMA @i[command that uses
+DEPENDENCIES information].  The arguments to INTEGRATE, LAPLACE etc.
+must be given their dependencies explicitly in the command, e.g.,
+INTEGRATE(F(X),X). @index[Dependencies] @index[Integration dependencies]
+
+@fcn[Name="GRADEF", Args="f(x1, ..., xn), g1, ..., gn"]
+defines the derivatives of the function @i[f] with respect to its n
+arguments.  That is, d@i[f]/d@i[xi] = @i[gi], etc.  If fewer than n
+gradients, say i, are given, then they refer to the first i arguments
+of @i[f].  The @i[xi] are merely dummy variables as in function
+definition headers and are used to indicate the i@i[th] argument of
+@i[f].  All arguments to GRADEF except the first are evaluated so that
+if @i[g] is a defined function then it is invoked and the result is
+used.
+
+Gradients are needed when, for example, a function is not known
+explicitly but its first derivatives are and it is desired to obtain
+higher order derivatives.  GRADEF may also be used to redefine the
+derivatives of MACSYMA's predefined functions (e.g.
+GRADEF(SIN(X),SQRT(1-SIN(X)**2)) ).  It is not permissible to use
+GRADEF on subscripted functions.
+
+GRADEFS is a list of the functions that have been given gradients by
+use of the GRADEF command. @index[GRADEFS]
+
+PRINTPROPS([@i[f1,f2,]...],GRADEF) (see @Ref[MACSYMA!properties]) may
+be used to display the gradefs of the functions @i[f1,f2,...].
+@index[PRINTPROPS]
+
+REMOVE([@i[f1,f2,]...],GRADEF) may be used to eliminate the GRADEF
+property from the functions @i[f1,f2,...].
+
+@Begin[Example]
+(C1) DEPENDS(Y,X)$
+@hinge
+(C2) GRADEF(F(X,Y),X**2,G(X,Y))$
+@hinge
+(C3) DIFF(F(X,Y),X);
+                                     dY    2
+(D3)                         G(X, Y) -- + X
+                                     dX
+@hinge
+(C4) GRADEF(J(N,Z), 'DIFF(J(N,Z),N),J(N-1,Z)-N/Z*J(N,Z))$
+@hinge
+(C5) RATSIMP(DIFF(J(2,X),X,2));
+                       2
+              J(0, X) X  - 3 J(1, X) X + 6 J(2, X)
+(D5)          ------------------------------------
+                                2
+                               X
+@End[Example]
+(The example above computes the second derivative of a Bessel
+function of order two.  A subscripted function e.g. J[N], could not
+have been used because a gradient for it cannot be defined using
+GRADEF.)
+
+@fcn[Name="GRADEF", Args="a,v,exp"]
+may be used to state that the derivative of the atomic variable
+@i[a] with respect to @i[v] is @i[exp].  This automatically does a
+DEPENDS(@i[a],@i[v]).  For examples, see example 2 of Appendix IV.
+
+PRINTPROPS([@i[a1,a2],...],ATOMGRAD @Index[ATOMGRAD]) (see
+@Ref[MACSYMA!properties]) may be used to display the atomic gradient
+properties of @i[a1,a2,...]
+
+REMOVE([@i[a1,a2,]...],ATOMGRAD) may be used to eliminate the ATOMGRAD
+property from @i[a1,a2,...].
+
+@fcn[Name="INTEGRATE", Args="exp, var"]
+integrates @i[exp] with respect to @i[var] or returns an integral
+expression (the noun form) if it cannot perform the integration.
+Generally speaking, MACSYMA only handles integrals that are integrable
+in terms of the "elementary functions" (rational functions,
+trigonometrics, logs, exponentials, radicals, etc.) and a few
+extensions (error function, dilogarithm).  It does not handle
+integrals in terms of unknown functions such as g(x) and h(x) (see
+note below).  Roughly speaking three stages are used:
+@begin(enumerate)
+INTEGRATE sees if the integrand is of the form
+F(G(X))*DIFF(G(X),X) by testing whether the derivative of some
+subexpression (i.e. G(X) in the above case) divides the integrand.  If
+so it looks up F in a table of integrals and substitutes G(X) for X in
+the integral of F.  This may make use of gradients in taking the
+derivative.  (If an unknown function appears in the integrand it must
+be eliminated in this stage or else INTEGRATE will return the noun
+form of the integrand.)
+
+INTEGRATE tries to match the integrand to a form for which a
+specific method can be used, e.g. trigonometric substitutions.
+
+If the first two stages fail it uses the Risch algorithm. (see [Mo2, Mo4])
+@end[enumerate]
+
+@u(@i[CAVEAT]): INTEGRATE @i[knows only about explicit dependencies]. It
+is not affected by DEPENDENCIES set up with the DEPENDS command.
+
+@fcn[Name="INTEGRATE", Args="exp, var, low, high"]
+finds the definite integral of @i[exp] with respect to @i[var] from
+@i[low] to @i[high] or returns the noun form if it cannot 
+perform the integration.  Several methods are used,including direct
+substitution in the indefinite integral and contour integration (see
+[Wa3]).  Improper integrals may use the names INF @Index[INF] for positive
+infinity and MINF @Index[MINF] for negative infinity.  If an integral "form"
+is desired for manipulation (for example, an integral that cannot be
+computed until some numbers are substituted for some parameters), the
+noun form 'INTEGRATE may be used and this will display with an
+integral sign.  See Note below.
+
+@var<LOGABS (default: FALSE)> causes integration of an expression
+where logs are generated, e.g. INTEGRATE(1/X,X), to return the answer
+in terms of LOG(...).  If LOGABS is set to TRUE, the answer will be
+given in terms of LOG(ABS(...)).  For definite integration, the
+LOGABS:TRUE setting is used, because here "evaluation" of the
+indefinite integral at the endpoints is often needed.
+
+The function LDEFINT @Index[LDEFINT] uses LIMIT @Index[LIMIT] (see
+@Ref[difintfun]) to evaluate the indefinite integral at the lower and
+upper limits.
+
+Sometimes during integration the user may be asked what the sign of an
+expression is.  Suitable responses are POS; , ZERO; , or NEG; .
+There is a switch @var<ASSUME_POS (default: FALSE)> such that if 
+set to TRUE, MACSYMA will assume one's parameters are positive.
+(see @Ref[decass]).
+
+@Begin[Example]
+(C1) INTEGRATE(SIN(X)**3,X);
+                    3
+                 COS (X)
+(D1)             ------- - COS(X)
+                    3
+@hinge
+(C2) INTEGRATE(X**A/(X+1)**(5/2),X,0,INF);
+IS  A + 1  POSITIVE, NEGATIVE, OR ZERO?
+
+POS;
+
+   2 A + 2
+IS ------- AN INTEGER?
+      5
+YES;
+
+IS  2 A - 3  POSITIVE, NEGATIVE, OR ZERO?
+
+NEG;
+                            3
+(D2)            BETA(A + 1, - - A)
+                            2
+@hinge
+(C3) GRADEF(Q(X),SIN(X**2));
+(D3)                              Q(X)
+@hinge
+(C4) DIFF(LOG(Q(R(X))),X);
+                           d             2
+                          (-- R(X)) SIN(R (X))
+                           dX
+(D4)                      --------------------
+                                Q(R(X))
+@hinge
+(C5) INTEGRATE(%,X);
+(D5)                          LOG(Q(R(X)))
+@End[Example]
+
+Note: The fact that MACSYMA does not perform certain integrals does
+not always imply that the integral does not exist in closed form.  In
+the example below the integration call returns the noun form but the
+integral can be found fairly easily.  For example, one can compute the
+roots of X@+[3]+X+1 = 0 to rewrite the integrand in the form
+1/((X-A)*(X-B)*(X-C)) where A, B and C are the roots. MACSYMA will
+integrate this equivalent form although the integral is quite
+complicated.
+@Begin[Example]
+(C6) INTEGRATE(1/(X^3+X+1),X);
+                          /
+                          [     1
+(D6)                      I ---------- dX
+                          ]  3
+                          / X  + X + 1
+@End[Example]
+
+@fcn[Name="DEFINT", Args="exp, var, low, high"]
+DEFinite INTegration, the same as INTEGRATE(@i[exp,var,low,high]).
+
+@fcn[Name="RISCH", Args="exp, var"]
+integrates @i[exp] with respect to @i[var] using the transcendental
+case of the Risch algorithm.  (The algebraic case of the Risch
+algorithm has not been implemented.)  This currently handles the cases
+of nested exponentials and logarithms that the main part of INTEGRATE
+@Index[INTEGRATE] can not do.  INTEGRATE will automatically apply
+RISCH if given these cases.
+
+@var<ERFFLAG (default: TRUE)> - if FALSE prevents RISCH from
+introducing the ERF function in the answer if there were none in the
+integrand to begin with.
+@Begin[Example]
+(C1) RISCH(X^2*ERF(X),X);
+                                                              2
+                   3                      2                - X
+              %PI X  ERF(X) + (SQRT(%PI) X  + SQRT(%PI)) %E
+(D1)          -------------------------------------------------
+                                    3 %PI
+@hinge
+(C2) DIFF(%,X),RATSIMP;
+                                   2
+(D2)                              X  ERF(X)
+@End[Example]
+
+@fcn[Name="CHANGEVAR", Args="exp,f(x,y),y,x"]
+makes the change of variable given by f(x,y) = 0 in all integrals occurring in 
+@i[exp] with integration with respect to x;  y is the new variable.
+@Begin[Example]
+(C1) ASSUME(A>0)$
+@hinge
+(C2) 'INTEGRATE(%E^(SQRT(A)*SQRT(Y)),Y,0,4);
+                      4
+                     /
+                     [    SQRT(A) SQRT(Y)
+(D2)                 I  %E                dY
+                     ]
+                     /
+                      0
+@hinge
+(C3) CHANGEVAR(%,Y-Z^2/A,Z,Y);
+                      0
+                     /
+                     [                ABS(Z)
+                   2 I            Z %E       dZ
+                     ]
+                     /
+                      - 2 SQRT(A)
+(D3)             - ----------------------------
+                                A
+@hinge
+(C4) FORGET(A>0)$
+@end[Example]
+CHANGEVAR may also be used to changes in the indices of a sum or product.
+However, it must be realized that when a change is made in a sum or product,
+this change must be a shift, i.e. I=J+ ..., not a higher degree function.
+For example:
+@Begin[Example]
+(C5) SUM(A[I]*X^(I-2),I,0,INF);
+
+                         INF
+                         ====
+                         \         I - 2
+(D5)                      >    A  X
+                         /      I
+                         ====
+                         I = 0
+@hinge
+(C6) CHANGEVAR(%,I-2-N,N,I);
+
+                        INF
+                        ====
+                        \               N
+(D6)                     >      A      X
+                        /        N + 2
+                        ====
+                        N = - 2
+@End[Example]
+
+@fcn[Name="LIMIT", Args="exp, var, val, dir"]
+finds the limit of @i[exp] as the real variable @i[var] approaches
+the value @i[val] from the direction @i[dir].  @i[Dir] may have the
+value PLUS for a limit from above, MINUS for a limit from below, or
+may be omitted (implying a two-sided limit is to be computed).  For
+the method see [Wa3].  LIMIT uses the following special symbols: INF
+(positive infinity) and MINF (negative infinity).  On output it may
+also use UND (undefined), IND (indefinite but bounded) and INFINITY
+(complex infinity).  If LIMIT is called on FIB(@i[n]), it will convert
+this to the closed form definition, involving the constant
+@index(%PHI) %PHI (default: (SQRT(5)+1)/2 = 1.618033989).
+
+@var<LHOSPITALLIM (default: 4)> is the maximum number of times
+l'Hospital's rule is used in LIMIT.  This prevents infinite looping in
+cases like LIMIT(COT(X)/CSC(X),X,0).
+
+@var<TLIMSWITCH (default: FALSE)> if true will cause the limit package
+to use Taylor series when possible.
+
+@var<LIMSUBST (default: FALSE)> prevents LIMIT from attempting
+substitutions on unknown forms.  This is used to avoid bugs like
+LIMIT(F(N)/F(N+1),N,INF); giving 1.  Setting LIMSUBST to TRUE will
+allow such substitutions.
+
+@Begin[Example]
+(C1) LIMIT(X*LOG(X),X,0,PLUS);
+(D1)                 0
+@hinge
+(C2) LIMIT((1+X)**(1/X),X,0);
+(D2)                 %E
+@hinge
+(C3) LIMIT(%E**X/X,X,INF);
+(D3)                 INF
+@hinge
+(C4) LIMIT(SIN(1/X),X,0);
+(D4)                 IND
+@End[Example]
+LIMIT is often called upon to simplify constant expressions like INF-1,
+so for such expressions LIMIT will accept only one argument:
+@Begin[Example]
+(C5) LIMIT(INF-1);
+(D5)                 INF
+@End[Example]
+
+@fcn[Name="TLIMIT", Args="exp,var,val,dir"] 
+is just the function LIMIT with TLIMSWITCH set to TRUE.
+
+@fcn[Name="LDEFINT", Args="exp,var,low,high"]
+yields the definite integral of @i[exp] by using LIMIT to evaluate
+the indefinite integral of @i[exp] with respect to @i[var] at the
+upper limit @i[high] and at the lower limit @i[low].
+
+@fcn[Name="TLDEFINT", Args="exp,var,low,high"]
+is just LDEFINT with TLIMSWITCH set to TRUE.
+
+@fcn[Name="RESIDUE", Args="exp, var, val"]
+computes the residue in the complex plane of the expression @i[exp]
+when the variable @i[var] assumes the value @i[val].  The residue is
+the coefficient of (@i[var]-@i[val])^(-1) in the Laurent series for
+@i[exp].
+@Begin[Example]
+(C1) RESIDUE(S/(S**2+A**2),S,A*%I);
+                        1
+(D1)                    -
+                        2
+@hinge
+(C2) RESIDUE(SIN(A*X)/X**4,X,0);
+                        3
+                       A
+(D2)                 - --
+                       6
+@End[Example]
+
+@fcn[Name="ODE2", Args="diffeq,depvar,indvar"]
+solves ordinary differential equations, @i[diffeq], of first or second
+order. The dependent and independent variables are specified as the
+second and third arguments.  When it is successful, ODE2 returns either an
+explicit or implicit solution for the dependent variable.  The symbol
+@i[%C] is used to represent the constant in the case of first order
+equations and @i[%K1,%K2] represent the constants for second order
+equations.  If for some reason ODE2 cannot obtain a solution, it
+returns FALSE, sometimes printing an error message.@index[%c] @index[%k]
+
+ODE2 includes a recognizer for the Bessel equation 
+@Begin[Example]
+(X-PT)^2*'DIFF(Y,X,2)+(X-PT)*'DIFF(Y,X)+((X-PT)^2-NU^2)*Y=0 
+@End[Example]
+for which it returns solutions in terms of { %J[NU], %Y[NU] } 
+If NU is an integer, and otherwise in terms of { %J[NU], %J[-NU] }, 
+except that it treats NU=1/2 as a special case.@index[%J] @index[%Y]
+@Begin[Example]
+(C1) X^2*'DIFF(Y,X) + 3*X*Y = SIN(X)/X;
+                         2 dY           SIN(X)
+(D1)                    X  -- + 3 X Y = ------
+                           dX             X
+@hinge
+(C2) ODE2(%,Y,X);
+                                %C - COS(X)
+(D2)                        Y = -----------
+                                     3
+                                    X
+@End[Example]
+
+@fcn[Name="DESOLVE", Args="[eq1,...,eqn],[var1,...,varn]"]
+where the @i[eq]'s are differential equations in the dependent variables
+var1,...,varn.  The functional relationships must be explicitly
+indicated in both the equations and the variables. For example
+@Begin[Example]
+(C1) 'DIFF(F,X,2)=SIN(X)+'DIFF(G,X);
+(C2) 'DIFF(F,X)+X^2-F=2*'DIFF(G,X,2);
+@End[Example]
+is not the proper format.  The correct way is:
+@Begin[Example]
+(C3) 'DIFF(F(X),X,2)=SIN(X)+'DIFF(G(X),X);
+(C4) 'DIFF(F(X),X)+X^2-F(X)=2*'DIFF(G(X),X,2);
+@End[Example]
+The quotes are not necessary since DIFF will return the noun forms anyway.
+
+The call is then DESOLVE([D3,D4],[F(X),G(X)]);
+
+If initial conditions at 0 are known, they should be supplied before
+calling DESOLVE by using ATVALUE.
+@Begin[Example]
+(C5) 'DIFF(F(X),X)='DIFF(G(X),X)+SIN(X);
+                        d           d
+(D5)                   -- (F(X)) = -- (G(X)) + SIN(X)
+                        dX          dX
+@hinge
+(C6) 'DIFF(G(X),X,2)='DIFF(F(X),X)-COS(X);
+                         2
+                        d            d
+(D6)                   --- (G(X)) = -- (F(X)) - COS(X)
+                          2          dX
+                        dX
+@hinge
+(C7) ATVALUE('DIFF(G(X),X),X=0,A);
+(D7)                                A
+@hinge
+(C8) ATVALUE(F(X),X=0,1);
+(D8)                                1
+@hinge
+(C9) DESOLVE([D11,D12],[F(X),G(X)]);
+                X                            X
+(D9) [F(X)=A %E  - A+1, G(X) = COS(X) + A %E  - A + G(0) - 1]
+@hinge
+/* VERIFICATION */
+(C10) [D11,D12],D16,DIFF;
+                  X       X      X                X
+(D10)        [A %E  = A %E , A %E  - COS(X) = A %E  - COS(X)]
+@End[Example]
+If DESOLVE cannot obtain a solution, it returns FALSE.
+@end[function
+
+@SubSection[Numerical Integration]
+@Label[numint]
+
+The original version of this program was written by Richard Fateman.
+In the latest version there are two ways of calling the function
+ROMBERG:@Foot[Note the change from the original version of the program]
+
+1) An inefficient way that resembles a call to INTEGRATE (the definite 
+integral version):
+
+@fcn(name="ROMBERG",args="integrand,variable,lower limit,upper limit")
+
+For example,
+@Begin[Example]
+(C1) SHOWTIME:TRUE$
+@hinge
+(C2) ROMBERG(SIN(Y),Y,1,%PI);
+time= 54 msec.
+(D2)                          1.5403023
+@hinge
+(C3) F(X):=1/(X^5+X+1)$
+time= 1 msec.
+@hinge
+(C4) ROMBERG(F(X),X,1.5,0);
+time= 216 msec.
+(D3)                          -.075293843
+@End[Example]
+
+2) An efficient way that is more like the old ROMBERG function:
+
+@fcn(name="ROMBERG",args="function name,lower limit,upper limit")
+
+The first argument must be a TRANSLATEd or compiled function.  (If it is
+compiled it must be declared to return a FLONUM.)  If the first argument
+is not already TRANSLATEd, ROMBERG will not attempt to TRANSLATE it but
+will give an error.  As an example consider the function f defined above,
+@Begin[Example]
+(C5) F(X):=(MODE_DECLARE([FUNCTION(F),X],FLOAT),1/(X^5+X+1));
+time= 1 msec.
+                                                        1
+(D5) F(X) := (MODE_DECLARE([FUNCTION(F), X], FLOAT), ----------)
+                                                     5
+                                                    X  + X + 1
+@hinge
+(C6) TRANSLATE(F)$
+time= 10 msec.
+@hinge
+(C7) ROMBERG(F,1.5,0);
+time= 13 msec.
+(D7)                        - 0.75293843
+@End[Example]
+
+The accuracy of the integration is governed by the global variables
+@var<ROMBERGTOL (default: 1.E-4)> and @var<ROMBERGIT (default: 11)>.
+ROMBERG will return a result if the relative difference in successive
+approximations is less than ROMBERGTOL.  It will try halving the
+stepsize ROMBERGIT times before it gives up.
+
+ROMBERG may be called recursively and thus can do double and triple
+integrals.  In this case , it is even  more important to TRANSLATE the 
+functions and to use the second way of calling ROMBERG. 
+@Begin[Example]
+(C8) INTEGRATE(INTEGRATE(X*Y/(X+Y),Y,0,X/2),X,1,3);
+time= 305 msec.
+Is  X  positive, negative, or zero?
+pos;
+                         3               9
+                   2 LOG(-) - 1   18 LOG(-) - 18 LOG(3) - 9
+                         2               2
+(D8)               ------------ - -------------------------
+                        6                     2
+@hinge
+(C9) %,NUMER;
+time= 6 msec.
+(D9)                         0.819302335
+@hinge
+(C10) F(Y):=(MODE_DECLARE([FUNCTION(F),X,Y],FLOAT),X*Y/(X+Y))$
+time= 2 msec.
+@hinge
+(C11) G(X):=(MODE_DECLARE([FUNCTION(F,G),X],FLOAT),ROMBERG(F,0,X/2))$
+time= 1 msec.
+@hinge
+(C12) TRANSLATE(F,G)$
+time= 6 msec.
+@hinge
+(C13) ROMBERG(G,1,3);
+time= 32 msec.
+(D13)                         0.8193023
+@End[Example]
+
+@Section[Part Selection and Substitution]
+@Label[pss]
+
+The functions in this section are used to extract or replace parts of
+expressions.
+
+@SubSection[The Part Functions]
+@Label[partfun]
+
+The Part functions make it possible to reference or replace any part
+of any MACSYMA expression.  A part of a displayed expression is
+referred to by a set of indices that are non-negative integers.  For
+example, in exponentiation the base is considered part 1 and the
+exponent part 2.  In a quotient the numerator is part 1 and the
+denominator part 2.  In a sum or product the i@i[th] term or factor is
+part i. In any expression the main operator is part 0.  For -X the 0th
+part is -, for A^B it is ^, for DIFF(F(X),X) it is DIFF, etc.  Note
+that unary minus is considered an operator.
+
+In MACSYMA the user has some control of the way in which expressions
+are displayed.  The ordering of factors in a product or terms in a sum
+may be changed by the user (see pages @PageRef[ordering!functions]) and
+@PageRef[rational!functions]).  The ordering of parts in the displayed
+form of an expression may differ from the ordering in the internal
+representation of the expression.
+
+@begin(function)
+@fcn[Name="PART", Args="exp, n1, ..., nk"]
+deals with the displayed form of @i[exp]. It obtains the part of
+@i[exp] as specified by the indices @i[n]1,...,@i[nk].  First part
+@i[n]1 of @i[exp] is obtained, then part @i[n]2 of that, etc.  The
+result is part @i[nk] of ... part @i[n]2 of part @i[n]1 of @i[exp].
+Thus PART(Z+2*Y,2,1) yields 2.  PART can be used to obtain an element
+of a list, a row of a matrix, etc.
+@Begin[Example]
+(C1)  X+Y/Z**2;
+                        Y
+(D1)                   -- + X
+                        2
+                       Z
+@hinge
+(C2) PART(D1,1,2,2);
+(D2)                    2
+@hinge
+(C3) 'INTEGRATE(F(X),X,A,B)+X;
+                      B
+                     /
+                     [
+(D3)                 I F(X)dX + X
+                     ]
+                     /
+                     A
+@hinge
+(C4) PART(%,1,1);
+(D4)                  F(X)
+@End[Example]
+
+@fcn[Name="INPART", Args="exp,n1,...,nk"]
+is similar to PART but works on the internal representation of the
+expression (see @Ref[simp]) rather than the displayed form and thus may be
+faster since no formatting is done.  Care should be taken with respect
+to the order of subexpressions in sums and products (since the order
+of variables in the internal form is often different from that in the
+displayed form) and in dealing with unary minus, subtraction, and
+division (since these operators are removed from the expression).
+PART(X+Y,0) or INPART(X+Y,0) yield +, though in order to refer to the
+operator it must be enclosed in "s.  For example ...IF
+INPART(D9,0)="+" THEN ...
+@Begin[Example]
+(C1)  X+Y+W*Z;
+(D1)                  W Z + Y + X
+@hinge
+(C2)  INPART(D1,3,2);
+(D2)                  Z
+@hinge
+(C3)  PART(D1,1,2);
+(D3)                  Z
+@hinge
+(C4) 'LIMIT(F(X)**G(X+1),X,0,MINUS);
+                                      G(X + 1)
+(D4)                      LIMIT   F(X)
+                          X ->0-
+@hinge
+(C5) INPART(%,1,2);
+(D5)                            G(X + 1)
+@End[Example]
+
+@fcn[Name="ARGS", Args="exp"]
+returns a list of the args of exp.  I.e. it is
+essentially equivalent to SUBSTPART("[",exp,0) .
+
+@var<INFLAG (default: FALSE)> if set to TRUE, the functions for part
+extraction will look at the internal form of @i[exp].  Also, setting
+INFLAG to TRUE and calling PART/SUBSTPART is the same as calling
+INPART/SUBSTINPART.  The functions affected by the setting of INFLAG
+are: PART @Index[PART], SUBSTPART @Index[SUBSTPART], FIRST
+@Index[FIRST], REST @Index[REST], LAST @Index[LAST], LENGTH
+@Index[LENGTH], the FOR ... IN construct, MAP @Index[MAP], FULLMAP
+@Index[FULLMAP], MAPLIST @Index[MAPLIST], REVEAL @Index[REVEAL] ARGS
+@Index[ARGS] and PICKAPART @Index[PICKAPART].
+
+@fcn[Name="ALLBUT", Args="arg1,arg2,..."]
+works with the PART commands (i.e. PART, INPART, SUBSTPART,
+SUBSTINPART, DPART, and LPART).  For example, if EXPR is E+D+C+B+A,
+then PART(EXPR,[2,5]); gives D+A, while PART(EXPR,ALLBUT(2,5)); gives
+E+C+B.  (ALLBUT also works with the KILL command, which see.)
+
+@fcn[Name="DISPFORM", Args="exp"] 
+returns the external representation of @i[exp] (wrt its main
+operator).  This should be useful in conjunction with PART which also
+deals with the external representation.  Suppose EXP is -A .  Then the
+internal representation of EXP is "*"(-1,A), while the external
+representation is "-"(A). 
+
+DISPFORM(@i[exp],ALL) converts the entire expression (not just the
+top-level) to external format.  For example, if EXP:SIN(SQRT(X)), then
+FREEOF(SQRT,EXP) and FREEOF(SQRT,DISPFORM(EXP)) give TRUE, while
+FREEOF(SQRT,DISPFORM(EXP,ALL)) gives FALSE.
+
+@fcn[Name="NOUNIFY", Args="f"]
+returns the noun form of the function name @i[f].  This is needed if
+one wishes to refer to the name of a verb function as if it were a
+noun.  Note that some verb functions will return their noun forms if
+they can not be evaluated for certain arguments.  This is also the
+form returned if a function call is preceded by a quote.
+@Begin[Example]
+(C6) IS(INPART(D4,0)=NOUNIFY(LIMIT));
+(D6)                              TRUE
+@End[Example]
+
+@fcn[Name="APPLY_NOUNS", Args="exp"]
+causes the application of noun forms in an
+expression.  E.g. EXP:'DIFF(X^2/2,X); APPLY_NOUNS(EXP); gives X.  This
+gives the same result as EV(EXP,NOUNS); except that it can be faster
+and use less storage.  It also can be used in translated code, where
+EV may cause problems.  Note that it is called APPLY_NOUNS, not
+"EV_NOUNS", because what it does is to @u[apply] the rules corresponding to
+the noun-form operators, which is not evaluation.
+
+@fcn[Name="VERBIFY", Args="f"]
+returns the function name @i[f] in its verb form.
+
+@fcn[Name="BOX", Args="exp"]
+returns @i[exp] enclosed in a box. The box is actually part of the
+expression. BOX(@i[exp,label]) encloses @i[exp] in a labeled box.
+@i[label] is a name which will be truncated in display if it is too
+long.  Simplification will occur within and outside of a BOXed
+expression but simplifications that require interactions across the
+box boundary will not take place.
+
+@var<BOXCHAR (default: ")> - is the character used to draw the box in
+this and in the DPART and LPART functions.
+
+@fcn[Name="DPART", Args="exp, n1, ..., nk"]
+selects the same subexpression as PART, but instead of just returning that
+subexpression as its value, it returns the whole expression with the selected
+subexpression displayed inside a box.  The box is actually part of the expression.
+@Begin[Example]
+(C1) DPART(X+Y/Z**2,1,2,1);
+                       Y
+(D1)                  ---- + X
+                         2
+                     """""
+                     " Z "
+                     """""
+@End[Example]
+
+@fcn[Name="LPART", Args="label, exp, n1, ..., nk"]
+is similar to DPART but uses a labeled box. A labeled box is similar to the one
+produced by DPART but it has a name in the top line.
+
+@fcn[Name="REMBOX", Args="exp, arg"]
+removes boxes from @i[exp] according to @i[arg].  If @i[arg] is
+UNLABELED then all unlabeled boxes are removed.  If @i[arg] is
+the name of some label then only boxes with that label are removed.
+If @i[arg] is omitted then all boxes labeled and unlabeled are
+removed.
+@end(function)
+
+@SubSection[The Substitution Functions]
+@Label[substfuns]
+
+@begin(function)
+@fcn[Name="SUBST", Args="a, b, c"]
+substitutes @i[a] for all occurrences of @i[b] in @i[c].  @i[b] must
+be an atom or a complete subexpression of @i[c].  For example, X+Y+Z
+is a complete subexpression of 2*(X+Y+Z)/W while X+Y is not. When
+@i[b] does not have these characteristics, one may sometimes use
+SUBSTPART or RATSUBST (see below).  Alternatively, if @i[b] is of the
+form e/f then one could use SUBST(a*f,e,c) while if @i[b] is of the
+form e**(1/f) then one could use SUBST(a**f,e,c).  The SUBST command
+also discerns the X@+[Y] in X@+(-Y) so that SUBST(A,SQRT(X),1/SQRT(X))
+yields 1/A.
+
+@i[a] and @i[b] may also be operators of an expression (enclosed in
+"s) or they may be function names.  If one wishes to substitute for
+the independent variable in derivative forms then the AT function (see
+below) should be used.
+
+SUBST(@i[eq1,exp]) or SUBST([@i(eq1),...,@i(eqk)],@i[exp]) are other
+permissible forms. The @i[eqi] are equations indicating substitutions
+to be made.  For each equation, the right side will be substituted for
+the left in the expression @i[exp].
+
+For expressions in CRE representation (see @Ref[rep]), SUBST, like
+many of MACSYMA's general simplification commands, works on the
+RATDISREPed form of the expression.
+
+@var<DERIVSUBST (default: FALSE)> if TRUE permits substitutions
+such as SUBST(X,'DIFF(Y,T),'DIFF(Y,T,2)); to return 'DIFF(X,T).
+
+@var<EXPTSUBST (default: FALSE)> if TRUE permits substitutions such
+as Y for %E^X in %E^(A*X) to take place.
+
+@var<OPSUBST (default: TRUE)> if FALSE, SUBST will not attempt to
+substitute into the operator of an expression.  E.g. (OPSUBST:FALSE,
+SUBST(X^2,R,R+R[0])); will work.
+
+@Begin[Example]
+(C1) SUBST(A,X+Y,X+(X+Y)**2+Y);
+                                 2
+(D1)                    Y + X + A
+@hinge
+(C2) SUBST(-%I,%I,A+B*%I);
+(D2)                             A - %I B
+@end(example)
+(Note that C2 is one way of obtaining
+the complex conjugate of an analytic expression.)  The following
+examples illustrate the difference between substitution (as performed
+by SUBST) and binding (as performed by EV @Index[EV]).
+@begin(example)
+(C3) SUBST(X=0,DIFF(SIN(X),X));
+(D3)                           1
+@hinge
+(C4) DIFF(SIN(X),X),X=0;
+Non-variable 2nd arg to DIFF : 0
+@hinge
+(C5) MATRIX([A,B],[C,D]);
+                                [ A  B ]
+(D5)                            [      ]
+                                [ C  D ]
+@hinge
+(C6) SUBST("[",MATRIX,%);
+(D6)                        [[A, B], [C, D]]
+@End[Example]
+
+@fcn[Name="RATSUBST", Args="a, b, c"]
+substitutes @i[a] for @i[b] in @i[c].  @i[b] may be a sum, product, power, etc. 
+RATSUBST knows something of the meaning of expressions whereas SUBST does a
+purely syntactic substitution.  Thus SUBST(A,X+Y,X+Y+Z) returns X+Y+Z whereas
+RATSUBST would return Z+A.
+
+@var<RADSUBSTFLAG (default: FALSE) if TRUE permits RATSUBST to make
+substitutions such as U for SQRT(X) in X.
+@Begin[Example]
+(C1) RATSUBST(A,X*Y^2,X^4*Y^8+X^4*Y^3);
+                  3      4
+(D1)           A X  Y + A
+@hinge
+(C2) 1 + COS(X) + COS(X)^2 + COS(X)^3 + COS(X)^4;
+            4         3         2
+(D2)     COS (X) + COS (X) + COS (X) + COS(X) + 1
+@hinge
+(C3) RATSUBST(1-SIN(X)^2,COS(X)^2,%);
+            4           2                     2
+(D3)     SIN (X) - 3 SIN (X) + COS(X) (2 - SIN (X)) + 3
+@End[Example]
+
+@fcn[Name="LRATSUBST", Args="list,exp"]
+is analogous to SUBST(@i[list_of_equations,exp])
+except that it uses RATSUBST instead of SUBST.  The first argument of
+LRATSUBST must be an equation or a list of equations identical in
+format to that accepted by SUBST (see above).  The
+substitutions are made in the order given by the list of equations,
+that is, from left to right.
+@Begin[Example]
+(C1) LRATSUBST([A^2=B,C^2=D],(A+E)*C*(A+C));
+(D1)                       (D + A C) E + A D + B C
+@hinge
+(C2) LRATSUBST(A^2=B,A^3);
+(D2)                                 A B
+@End[Example]
+
+@fcn[Name="FULLRATSUBST", Args="a,b,c"]
+is the same as RATSUBST except that it calls
+itself recursively on its result until that result stops changing.
+This function is useful when the replacement expression and the
+replaced expression have one or more variables in common.
+FULLRATSUBST will also accept its arguments in the format of
+LRATSUBST.  That is, the first argument may be a single substitution
+equation or a list of such equations, while the second argument is the
+expression being processed.
+@Begin[Example]
+(C1) RATSUBST(B*A,A^2,A^3);
+                                      2
+(D1)                                 A  B
+@hinge
+(C2) FULLRATSUBST(B*A,A^2,A^3);
+                                        2
+(D2)                                 A B
+@hinge
+(C3) FULLRATSUBST([A^2=B,B^2=C,C^2=A],A^3*B*C);
+(D3)                                  B
+@hinge
+(C4) FULLRATSUBST(A^2=B*A,A^3);
+                                        2
+(D4)                                 A B
+@End[Example]
+Since FULLRATSUBST goes over the expression recursively, care should
+be taken lest infinite recursion cause the calculation to err out with
+"REGPDL overflow".
+
+@fcn[Name="SUBSTPART", Args="x, exp, n1, ..., nk"]
+substitutes @i[x] for the subexpression picked out by the rest of the
+arguments as in PART.  It returns the new value of @i[exp].
+
+@i[x] may be some operator to be
+substituted for an operator of @i[exp].  In this case it is enclosed in "s
+(E.g. C4 below, or SUBSTPART("+",A*B,0); -> B + A).
+@Begin[Example]
+(C1) 1/(X^2+2);
+                                    1
+(D1)                              ------
+                                   2
+                                  X  + 2
+@hinge
+(C2) SUBSTPART(3/2,%,2,1,2);
+                                    1
+(D2)                             --------
+                                  3/2
+                                 X    + 2
+@hinge
+(C3) A*X+F(B,Y);
+(D3)                          A X + F(B, Y)
+@hinge
+(C4) SUBSTPART("+",%,1,0);
+(D4)                         X + F(B, Y) + A
+@hinge
+(C5) X^2 + X + 1$
+@hinge
+(C6) SUBSTPART("[",%,0);
+                                    2
+(D6)                              [X , X, 1]
+@End[Example]
+
+@fcn[Name="SUBSTINPART", Args="x, exp, n1, ..."]
+is like SUBSTPART but works on the internal representation of @i[exp].
+@Begin[Example]
+(C1) X.'DIFF(F(X),X,2);
+                                   2
+                                  d
+(D1)                         X . (--- F(X))
+                                    2
+                                  dX
+@hinge
+(C2) SUBSTINPART(D^2,%,2);
+                                      2
+(D2)                             X . D
+@hinge
+
+(C3) SUBSTINPART(F1,F[1](X+1),0);
+(D3)                            F1(X + 1)
+@End[Example]
+
+@fcn[Name="SUBLIS", Args="list,expr"]
+allows multiple substitutions into an expression in parallel.
+SUBLIS([@i[sym1 = exp1 , sym2 = exp2 , ...]], @i[form]); Substitutes
+for each occurrence of @i[symi] in form the appropriate @i[expi].  A
+@i[sym] MUST be a symbol.  An @i[exp] may be any expression.  @i[Form]
+may be any expression. The new expression, with appropriate
+substitutions made, is the value returned.
+
+@var<SUBLIS_APPLY_LAMBDA (default: TRUE) controls whether LAMBDA's 
+substituted are applied in simplification after the SUBLIS or whether you 
+have to do an EV to get things to apply. TRUE means do the application.
+
+SUBLIS will preserve sharing where possible. eg, SUBLIS([A=B],C+D);
+returns a pointer to the original C+D since no substitution is needed.
+SUBLIS does substitutions in parallel. eg, SUBLIS([A=B,B=A],SIN(A)+COS(B)); 
+returns SIN(B)+COS(A).
+SUBLIS will preserve CRE form, too. eg, 
+@Begin[Example]
+(C1) RAT(X^3+A*X+B)$
+@hinge
+(C2) SUBLIS([A=B,B=A],%);
+                               3
+(D2)/R/                       X  + B X + A
+@End[Example]
+If a form is in CRE form, RATDISREP is called on it,
+the substitution is done and if there is no change, the
+original CRE form is returned; if there was a change, RAT is called
+on the result of the substitution to return the CRE form.
+@blankspace(3lines)
+@i[Additional Information]
+
+If the last argument to a Part function is a list of indices then
+several subexpressions are picked out, each one corresponding to an
+index of the list.  Thus PART(X+Y+Z,[1,3]) is Z+X.
+
+PIECE Index[PIECE] holds the last expression selected when using the
+Part functions.  It is set during the execution of the function and
+thus may be referred to in the function itself as shown below.
+
+If @var<PARTSWITCH (default: FALSE)> is set to TRUE then END is
+returned when a selected part of an expression does not exist,
+otherwise an error message is given.
+
+@Begin[Example]
+(C1)  27*Y**3+54*X*Y**2+36*X**2*Y+Y+8*X**3+X+1;
+            3         2       2            3
+(D1)    27 Y  + 54 X Y  + 36 X  Y + Y + 8 X  + X + 1
+@hinge
+(C2)  PART(D1,2,[1,3]);
+                  2
+(D2)          54 Y
+@hinge
+(C3)  SQRT(PIECE/54);
+(D3)            ABS(Y)
+@hinge
+(C4)  SUBSTPART(FACTOR(PIECE),D1,[1,2,3,5]);
+                          3
+(D4)           (3 Y + 2 X) + Y + X + 1
+@hinge
+(C5) 1/X+Y/X-1/Z;
+                                 1   Y   1
+(D5)                           - - + - + -
+                                 Z   X   X
+@hinge
+(C6) SUBSTPART(XTHRU(PIECE),%,[2,3]);
+                                Y + 1   1
+(D6)                            ----- - -
+                                  X     Z
+@End[Example]
+
+@fcn[Name="ATVALUE", Args="form, list, value"]
+enables the user to assign the boundary value @i[value] to @i[form]
+at the points specified by @i[list].
+@Begin[Example]
+(C1) ATVALUE(F(X,Y),[X=0,Y=1],A^2)$
+@end[Example]
+The @i[form] must be a function, f(v1,v2,...) , or a derivative,
+DIFF(f(v1,v2,...),vi,ni,vj,nj,...) in which the functional arguments
+explicitly appear (ni is the order of differentiation with respect
+vi).
+
+The @i[list] of equations determine the "boundary" at which the
+@i[value] is given; @i[list] may be a list of equations, as above, or
+a single equation, vi = exp.
+
+The symbols @@1, @@2,... will be used to represent the functional
+variables v1,v2,... when atvalues are displayed.
+
+PRINTPROPS([@i[f1, f2,]...], ATVALUE)
+will display the atvalues of the functions @i[f1,f2],... as specified
+in previously given uses of the ATVALUE function. (see
+@Ref[MACSYMA!properties]) If the list contains just one element then
+the element can be given without being in a list.  If a first argument
+of ALL is given then atvalues for all functions that have them will be
+displayed.
+
+@fcn[Name="AT", Args="exp, list"]
+will evaluate @i[exp] (which may be any expression) with the
+variables assuming the values as specified for them in the @i[list] of
+equations or the single equation similar to that given to the ATVALUE
+function.  If a subexpression depends on any of the variables in
+@i[list] but it hasn't had an atvalue specified and it can not be
+evaluated then a noun form of the AT will be returned which will
+display in a two-dimensional form.
+
+@Begin[Example]
+(C1) ATVALUE(F(X,Y),[X=0,Y=1],A**2);
+                                     2
+(D1)                                A
+@hinge
+(C2) ATVALUE('DIFF(F(X,Y),X),X=0,Y+1);
+(D2)                              @@2 + 1
+@hinge
+(C3) PRINTPROPS(ALL,ATVALUE);
+                                  !
+                      D           !
+                     --- F(@@1, @@2)!       = @@2 + 1
+                     D@@1          !
+                                  !@@1 = 0
+
+                                        2
+                             F(0, 1) = A
+
+(D3)                               DONE
+@hinge
+(C4) DIFF(4*F(X,Y)^2-U(X,Y)^2,X);
+                   d                        d
+(D4)    8 F(X, Y) (-- F(X, Y)) - 2 U(X, Y) (-- U(X, Y))
+                   dX                       dX
+@hinge
+(C5) AT(%,[X=0,Y=1]);
+               2               d         !
+(D5)       16 A  - 2 U(0, 1) ( -- U(X, Y)!            )
+                               dX        !
+                                         !X = 0, Y = 1
+@End[Example]
+@end[Function]
+
+@SubSection[More Functions for Part Extraction]
+@Label[extracting!expressions]
+
+@begin(function)
+@fcn[Name="LISTOFVARS", Args="exp"]
+yields a list of the variables in @i[exp].
+
+@var<LISTCONSTVARS (default: FALSE)> - if TRUE will cause LISTOFVARS
+to include %E, %PI, %I, and any variables declared constant (see
+@Ref[property!specification]) in the list it returns if they appear in
+@i[exp].  The default is to omit these.
+
+@var<LISTDUMMYVARS (default: TRUE)> - if FALSE, "dummy variables" in
+the expression will not be included in the list returned by
+LISTOFVARS.  "Dummy variables" are mathematical things like the index
+of a sum or product, the limit variable, and the definite integration
+variable.
+
+@Begin[Example]
+(C1) LISTOFVARS(F(X[1]+Y)/G**(2+A));
+(D1)                            [ G, A, X, Y]
+@hinge
+(C2) LISTOFVARS('SUM(F(I),I,0,N));
+(D2)                                [I, N]
+@hinge
+(C3) LISTDUMMYVARS:FALSE$
+@hinge
+(C4) LISTOFVARS('SUM(F(I),I,0,N));
+(D4)                                 [N]
+@End[Example]
+
+@fcn[Name="COEFF", Args="exp, v, n"]
+obtains the coefficient of @i[v]^@i[n] in @i[exp].  @i[n] may be
+omitted if it is 1.  @i[v] may be an atom, or complete subexpression
+of @i[exp] e.g., X, SIN(X), A[I+1], X+Y, etc. (In the last case the
+expression (X+Y) should occur in @i[exp]).  For example, X+Y is a
+complete subexpression of (X+Y)*(C+D+E) but C+D is not.  Similarly,
+X*Y is a complete subexpression of X*Y + C*D*E, but C*D is not.
+Sometimes it may be necessary to expand or factor @i[exp] in order to
+make @i[v@+(n)] explicit.  This is not done automatically by COEFF.
+(Also see the RATCOEF command.)
+@Begin[Example]
+(C1) COEFF(2*A*TAN(X)+TAN(X)+B=5*TAN(X)+3,TAN(X));
+(D1)                         2 A + 1 = 5
+@hinge
+(C2) COEFF(Y+X*%E**X+1,X,0);
+(D2)                            Y + 1
+@End[Example]
+
+@fcn[Name="RATCOEF", Args="exp, v, n"]
+returns the coefficient, C, of the expression @i[v]@+(@i[n]) in the
+expression @i[exp].  @i[n] may be omitted if it is 1.  C will be free
+(except possibly in a non-rational sense) of the variables in @i[v].
+If no coefficient of this type exists, zero will be returned.  RATCOEF
+expands and rationally simplifies its first argument and thus it may
+produce answers different from those of COEFF which is purely
+syntactic.  Thus RATCOEF((X+1)/Y+X,X) returns (Y+1)/Y whereas COEFF
+returns 1.  RATCOEF(@i[exp,v],0), viewing @i[exp] as a sum, gives a
+sum of those terms that do not contain @i[v].  If @i[v] occurs to any
+negative powers, RATCOEF should not be used.  Since @i[exp] is
+rationally simplified before it is examined, coefficients may not
+appear quite the way they were envisioned.
+@Begin[Example]
+(C1) S:A*X+B*X+5$
+@hinge
+(C2) RATCOEF(S,A+B);
+(D2)                               X
+@End[Example]
+
+@fcn[Name="BOTHCOEF", Args="exp, var"]
+returns a list whose first member is the coefficient of @i[var] in
+@i[exp] (as found by RATCOEF if @i[exp] is in CRE form otherwise by
+COEFF) and whose second member is the remaining part of @i[exp].  That
+is, [A,B] where @i[exp]=A*@i[var]+B.
+@Begin[Example]
+(C1) ISLINEAR(EXP,VAR):=BLOCK([C],
+        C:BOTHCOEF(RAT(EXP,VAR),VAR),
+        IS(FREEOF(VAR,C) AND C[1]#0))$
+@hinge
+(C2) ISLINEAR((R**2-(X-R)**2)/X,X);
+(D2)                              TRUE
+@End[Example]
+
+@fcn[Name="ISOLATE", Args="exp, var"]
+returns @i[exp] with those subexpressions that are sums and which do
+not contain @i[var] replaced by intermediate expression labels (these
+being atomic symbols like E1, E2, ...). This is often useful to avoid
+unnecessary expansion of subexpressions that do not contain the
+variable of interest.  Since the intermediate labels are bound to the
+subexpressions they can all be substituted back by evaluating the
+expression in which they occur.  (See also the DISOLATE
+@Index[DISOLATE] function in the SHARE directory.)
+
+@var<EXPTISOLATE (default: FALSE)> if TRUE will cause ISOLATE to
+examine exponents of atoms (like %E) that contain @i[var].
+@Begin[Example]
+(C1) (A+B)^4*(1+X*(2*X+(C+D)^2));
+                           4                  2
+(D1)                (B + A)  (X (2 X + (D + C) ) + 1)
+@hinge
+(C2) ISOLATE(%,X);
+                                        2
+(E2)                             (D + C)
+                                        4
+(E3)                             (B + A)
+(D3)                      E3 (X (2 X + E2) + 1)
+@hinge
+(C4) RATEXPAND(D3)$
+@hinge
+(C5) EV(%);
+               4  2          4        2            4
+(D5)  2 (B + A)  X  + (B + A)  (D + C)  X + (B + A)
+@hinge
+(C6) (A+B)*(X+A+B)^2*EXP(X^2+A*X+B);
+                                           2
+                                      2   X  + A X + B
+(D6)               (B + A) (X + B + A)  %E
+@hinge
+(C7) ISOLATE(%,X),EXPTISOLATE:TRUE;
+(E7)                              B + A
+                                     B
+(E8)                               %E
+                                           2
+                                      2   X  + A X
+(D8)                    E7 E8 (X + E7)  %E
+@End[Example]
+
+@var<ISOLATE_WRT_TIMES (default: FALSE)> if set to TRUE, then ISOLATE
+will also isolate wrt products.  E.g. compare both settings of the
+switch on ISOLATE(EXPAND((A+B+C)@+[2]),C); .
+
+@fcn[Name="PICKAPART", Args="exp,depth"]
+will assign E labels to all subexpressions of @i[exp] down to the
+specified integer @i[depth].  This is useful for dealing with large
+expressions and for automatically assigning parts of an expression to
+a variable without having to use the Part functions.
+@begin[Example]
+(C1) EXP:(A+B)/2+SIN(X^2)/3-LOG(1+SQRT(X+1));
+                                              2
+                                         SIN(X )   B + A
+(D1)           - LOG(SQRT(X + 1) + 1) + ------- + -----
+                                           3        2
+@hinge
+(C2) PICKAPART(%,1);
+(E2)                    - LOG(SQRT(X + 1) + 1)
+                                    2
+                               SIN(X )
+(E3)                           -------
+                                  3
+
+                                B + A
+(E4)                            -----
+                                  2
+(D4)                         E4 + E3 + E2
+@end[Example]
+
+@fcn[Name="REVEAL", Args="exp,depth"]
+will display @i[exp] to the specified integer @i[depth] with
+the length of each part indicated.  Sums will be displayed as
+Sum(n) and products as Product(n) where n is the
+number of subparts of the sum or product.  Exponentials will
+be displayed as Expt.
+@begin[Example]
+(C1) INTEGRATE(1/(X@-[51]+2),X)$
+@hinge
+(C2) REVEAL(%,2);
+(D2)                   Negterm + Quotient + Quotient
+@hinge
+(C3) REVEAL(D1,3);
+                                     ATAN         LOG
+(D3)                 - Quotient + ---------- + ----------
+                                  Product(2)   Product(2)
+@end[Example] 
+
+@fcn[Name="NUMFACTOR", Args="exp"]
+gives the numerical factor multiplying the expression @i[exp] which
+should be a single term.  If the gcd of all the term coefficients in a
+sum is desired the CONTENT function (see @Ref[rational!functions]) may
+be used.
+@Begin[Example]
+(C1) GAMMA(7/2);
+(D1)               15 SQRT(%PI)
+                   ------------
+                        8
+@hinge
+(C2) NUMFACTOR(%);
+                    15
+(D2)                --
+                     8
+@End[Example]
+
+@fcn[Name="HIPOW", Args="exp, v"]
+gives the highest explicit exponent of @i[v] in @i[exp].  Sometimes
+it may be necessary to expand @i[exp] since this is not done
+automatically by HIPOW.  Thus HIPOW(Y^3*X^2+X*Y^4,X) is 2.
+
+@fcn[Name="LOPOW", Args="exp, v"]
+gives the lowest exponent of @i[v] that explicitly appears in @i[exp].  Thus
+LOPOW((X+Y)^2+(X+Y)^A,X+Y) is MIN(A,2).
+
+@fcn[Name="DERIVDEGREE", Args="exp, dv, iv"]
+finds the highest degree of the derivative of the dependent variable
+@i[dv] with respect to the independent variable @i[iv] occurring in
+@i[exp].
+@Begin[Example]
+(C1) 'DIFF(Y,X,2)+'DIFF(Y,Z,3)*2+'DIFF(Y,X)*X**2
+@hinge
+(C2) DERIVDEGREE(%,Y,X);
+(D2)                           2
+@End[Example]
+
+@fcn[Name="LHS", Args="eqn"]
+returns the left side of the equation @i[eqn].  If @i[eqn] is not an
+equation, then LHS(@i[eqn]) = @i[eqn].
+
+@fcn[Name="RHS", Args="eqn"]
+returns the right side of the equation @i[eqn].  If @i[eqn] is not an
+equation, then RHS(@i[eqn]) = 0.
+
+@fcn[Name="NUM", Args="exp"]
+obtains the numerator, exp1, of the rational expression @i[exp] =
+exp1/exp2.
+
+@fcn[Name="DENOM", Args="exp"]
+returns the denominator, exp2, of the rational expression @i[exp] =
+exp1/exp2.
+@end[Function]
+
+The above two commands do not alter the internal representations of
+expressions and have the desirable property that for all expressions
+NUM(exp)/DENOM(exp) is the same as exp.
+
+@begin(function)
+@fcn[Name="FIRST", Args="exp"]
+yields the first part of @i[exp] which may result in the first
+element of a list, the first row of a matrix, the first term of a sum,
+etc.  Note that FIRST and the following two functions work on the form
+of @i[exp] that is displayed not the form that is typed on input.  If
+the variable INFLAG @index[INFLAG] is set to TRUE however,
+these functions will look at the internal form of @i[exp].  Note that
+the simplifier re-orders expressions (see @Ref[simp]).  Thus
+FIRST(X+Y) will be X if INFLAG is TRUE and Y if INFLAG is FALSE.
+(FIRST(Y+X) gives the same results).
+
+@fcn[Name="REST", Args="exp, n"]
+yields @i[exp] with its first @i[n] elements removed if @i[n] is
+positive and its last @i[-n] elements removed if @i[n] is negative.
+If @i[n] is 1 it may be omitted.  @i[Exp] may be a list, matrix, or
+other expression.  If INFLAG:TRUE the internal form of @i[exp] will be
+used.
+
+@fcn[Name="LAST", Args="exp"]
+yields the last part (term, row, element, etc.) of the @i[exp].
+If INFLAG:TRUE the internal form of @i[exp] will be used.
+
+@fcn[Name="DELETE", Args="exp1, exp2"]
+removes all occurrences of @i[exp1] from @i[exp2].  @i[Exp1] may be a
+term of @i[exp2] (if it is a sum) or a factor of @i[exp2] (if it is a
+product).
+@Begin[Example]
+(C1)  DELETE(SIN(X),X+SIN(X)+Y);
+(D1)               Y + X
+@End[Example]
+
+@fcn[Name="DELETE", Args="exp1, exp2, integer"]
+removes the first @i[integer] occurrences of @i[exp1] from @i[exp2].
+Of course, if there are fewer than @i[integer] occurrences of @i[exp1]
+in @i[exp2] then all occurrences will be deleted.
+
+@fcn[Name="LENGTH", Args="exp"]
+gives the number of parts in the external (displayed) form of
+@i[exp].  For lists this is the number of elements, for matrices it is
+the number of rows, and for sums it is the number of terms. (See
+DISPFORM) The LENGTH command is affected by the setting of INFLAG
+@Index[INFLAG].  So, e.g.  LENGTH(A/(B*C)); gives 2 if INFLAG is FALSE
+(Assuming EXPTDISPFLAG is TRUE), but 3 if INFLAG is TRUE (the internal
+representation is essentially A*B^-1*C^-1).
+
+@fcn[Name="NTERMS", Args="exp"]
+gives the number of terms that @i[exp] would have if it were fully
+expanded out and no cancellations or combination of terms occurred.
+Note that expressions like SIN(E), SQRT(E), EXP(E), etc. count as just
+one term regardless of how many terms E has (if it is a sum).
+@end[Function]
+
+@SubSection[Dealing with Complex Variables]
+@Label[complex!variables] 
+
+The next several functions deal with complex variables.  The user
+should note the following conventions used in MACSYMA.
+
+@begin(enumerate)
+all variables are assumed to take on real values exclusively unless
+they are DECLAREd to be COMPLEX;
+
+all functions are assumed to be real-valued unless they are
+DECLAREd to be COMPLEX;
+
+the complex argument is maintained in the half-open interval
+(-@g[p],@g[p]] whenever possible;
+
+the argument of 0 is (arbitrarily) assumed to be 0, although
+normally the user need not worry about this, since 0*%E^(%I*0) is
+simplified to 0;
+
+trigonometric functions are normally assumed to take on their
+principal values.
+@end(enumerate)
+
+@begin(function)
+@fcn[Name="REALPART", Args="exp"]
+gives the real part of @i[exp].  REALPART and IMAGPART will work on
+expressions involving trigonometric and hyperbolic functions, as well
+as SQRT, LOG, and exponentiation.
+
+@fcn[Name="IMAGPART", Args="exp"]
+returns the imaginary part of the expression @i[exp].
+@end(function)
+
+The real or imaginary part of an expression of the form Z@-[78], where
+Z is not purely real, will be algebraic if n <= MAXPOSEX; otherwise,
+for compactness,it will be expressed as ABS(Z)@+[N] * COS(N*ARG Z) or
+ABS(Z)@+[N] * SIN(N*ARG Z).
+
+@begin(function)
+@fcn[Name="RECTFORM", Args="exp"]
+returns an expression of the form A + B*%I, where A and B are purely
+real.
+
+@fcn[Name="POLARFORM", Args="exp"]
+returns  R*%E^(%I*THETA) where R and THETA are purely real.
+POLARFORM binds %EMODE to FALSE while it is working.
+@end(function)
+
+CAVEAT: Simplification of algebraic and transcendental functions of a
+complex variable may give rise to apparent factors, %I.  For example,
+SQRT(-C+D) may be transformed to %I*SQRT(C-D).
+
+@begin(function)
+@fcn[Name="CABS", Args="exp"] 
+returns the complex absolute value (the complex modulus) of @i[exp].
+
+@fcn[Name="CARG", Args="exp"]
+returns the argument (phase angle) of @i[exp].  Due to the conventions
+and restrictions (described above), principal value cannot be
+guaranteed unless @i[exp] is numeric.
+@end(function)
+
+@Begin[Example]
+(C1) RECTFORM(SIN(2*%I+X));
+(D1)                COSH(2) SIN(X) + %I SINH(2) COS(X)
+@hinge
+(C2) POLARFORM(%);
+              2       2          2       2
+(D2) SQRT(COSH (2) SIN (X) + SINH (2) COS (X))
+
+                      %I ATAN2(SINH(2) COS(X), COSH(2) SIN(X))
+                    %E
+@hinge
+(C3) RECTFORM(LOG(3+4*%I));
+                                             4
+(D3)                       LOG(5) + %I ATAN(---)
+                                             3
+@hinge
+(C4) POLARFORM(%);
+              2          2  4      %I ATAN2(ATAN2(4, 3), LOG(5))
+(D4)  SQRT(LOG (5) + ATAN (---)) %E
+                            3
+@hinge
+(C5) RECTFORM((2+3.5*%I)^.25),NUMER;
+(D5)                    0.368258808 %I + 1.36826627
+@hinge
+(C6) POLARFORM(D5);
+                                    0.262912527 %I
+(D6)                     1.416957 %E
+@End[Example]

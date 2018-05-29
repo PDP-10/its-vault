@@ -1,0 +1,519 @@
+@Comment<(c) Copyright 1983 Massachusetts Institute of Technology>
+@comment<Updates (c) Copyright 1983 Symbolics, Inc.>
+@Chapter[List Handling and LISP-like functions]
+@Label[lisp!functions]
+
+@begin(function)
+@fcn[Name="APPLY", Args="function, list"]
+gives the result of applying the @i[function] to the @i[list] of its
+arguments.  This is useful when it is desired to compute the arguments
+to a function before applying that function.  For example, if L is the
+list [1, 5, -10.2, 4, 3], then APPLY(MIN,L) gives -10.2.  APPLY is
+also useful when calling functions which do not have their arguments
+evaluated if it is desired to cause evaluation of them.  For example,
+if FILESPEC is a variable bound to the list [TEST, CASE] then
+APPLY(CLOSEFILE,FILESPEC) is equivalent to CLOSEFILE(TEST,CASE).  In
+general the first argument to APPLY should be preceded by a ' to to
+make it evaluate to itself.  Since some atomic variables have the same
+name as certain functions the values of the variable would be used
+rather than the function because APPLY has its first argument
+evaluated as well as its second.
+
+@fcn[Name="FUNMAKE", Args="name,[arg1,...,argn]"]
+returns @i[name](arg1,...,argn) without calling the function @i[name].
+
+@fcn[Name="ARRAYMAKE", Args="name,[i1,i2,...]"]
+returns  @i[name][@i[i1,i2,...]].
+
+@fcn[Name="MAP", Args="fn, exp1, exp2, ..."]
+returns an expression whose leading operator is the same as that of
+the @i[expi] but whose subparts are the results of applying @i[fn] to
+the corresponding subparts of the @i[expi].  @i[Fn] is either the name
+of a function of n arguments (where n is the number of @i[expi]) or is
+a LAMBDA form of n arguments.
+
+@var<MAPERROR (default: TRUE)> - if FALSE will cause all of the
+mapping functions to (1) stop when they finish going down the shortest
+@i[expi] if not all of the @i[expi] are of the same length and (2)
+apply @i[fn] to [@i[exp1, exp2,...]] if the @i[expi] are not all the
+same type of object. If MAPERROR is TRUE then an error message will be
+given in the above two instances.
+
+One of the uses of this function is to MAP a function (e.g. PARTFRAC)
+onto each term of a very large expression where it ordinarily wouldn't
+be possible to use the function on the entire expression due to an
+exhaustion of list storage space in the course of the computation.
+
+@Begin[Example]
+(C1) MAP(F,X+A*Y+B*Z);
+(D1)                        F(B Z) + F(A Y) + F(X)
+@hinge
+(C2) MAP(LAMBDA([U],PARTFRAC(U,X)),X+1/(X^3+4*X^2+5*X+2));
+
+                           1       1        1
+(D2)                     ----- - ----- + -------- + X
+                         X + 2   X + 1          2
+                                         (X + 1)
+@hinge
+(C3) MAP(RATSIMP, X/(X^2+X)+(Y^2+Y)/Y);
+                                      1
+(D3)                            Y + ----- + 1
+                                    X + 1
+@hinge
+(C4) MAP("=",[A,B],[-0.5,3]);
+(D4)                          [A = - 0.5, B = 3]
+@End[Example]
+
+@fcn[Name="MAPATOM", Args="expr"]
+is TRUE if and only if @i[expr] is treated by the MAPping routines as
+an "atom", a unit.  "Mapatoms" are atoms, numbers (including rational
+numbers), and subscripted variables.
+
+@fcn[Name="MAPLIST", Args="fn, exp1, exp2, ..."]
+yields a list of the applications of @i[fn] to the parts of the
+@i[expi].  This differs from MAP(@i[fn,exp1,exp2,...]) which returns
+an expression with the same main operator as expi has (except for
+simplifications and the case where MAP does an APPLY).  @i[Fn] is of
+the same form as in MAP.
+
+@fcn[Name="FULLMAP", Args="fn, exp1, ..."]
+is similar to MAP but it will keep mapping down all subexpressions
+until the main operators of the exp@i[i] (if there are more than one)
+are no longer the same or until "mapatoms" (see above) are met.
+
+The user should be aware that FULLMAP is used by the MACSYMA
+simplifier for certain matrix manipulations; thus, the user might see
+an error message concerning FULLMAP even though FULLMAP was not
+explicitly called by the user.
+
+@Begin[Example]
+(C1) A+B*C$
+@hinge
+(C2) FULLMAP(G,%);
+(D2)              G(B) G(C) + G(A)
+@hinge
+(C3)  MAP(G,D1);
+(D3)                G(B C) + G(A)
+@End[Example]
+
+@fcn[Name="FULLMAPL", Args="fn, list1, ..."]
+is similar to FULLMAP but it only maps onto lists and matrices
+@Begin[Example]
+(C1) FULLMAPL("+",[3,[4,5]],[[A,1],[0,-1.5]]);
+(D1)                      [[A + 3, 4], [4, 3.5]]
+@End[Example]
+
+@fcn[Name="SCANMAP", Args="function,exp"]
+recursively applies @i[function] to @i[exp] in a "top-down" manner.
+This is most useful when "complete" factorization is desired, for
+example:
+@Begin[Example]
+(C1) EXP:(A^2+2*A+1)*Y + X^2$
+@hinge
+(C2) SCANMAP(FACTOR,EXP);
+                                    2      2
+(D2)                         (A + 1)  Y + X
+@End[Example]
+Note the way in which SCANMAP applies the given function FACTOR to the
+constituent subexpressions of @i[exp]; if another form of @i[exp] is
+presented to SCANMAP then the result may be different.  Thus, D2 is
+not recovered when SCANMAP is applied to the expanded form of @i[exp]:
+@Begin[Example]
+(C3) SCANMAP(FACTOR,EXPAND(EXP));
+                           2                  2
+(D3)                      A  Y + 2 A Y + Y + X
+@End[Example]
+Here is another example of the way in which SCANMAP recursively
+applies a given function to all subexpressions, including exponents:
+@Begin[Example]
+(C4) EXPR : U*V^(A*X+B) + C$
+@hinge
+(C5) SCANMAP('F, EXPR);
+                    F(F(F(A) F(X)) + F(B))
+(D5) F(F(F(U) F(F(V)                      )) + F(C))
+@End[Example]
+
+SCANMAP(@i[function,exp,BOTTOMUP])
+applies @i[function]
+to @i[exp] in a "bottom-up" manner.  E.g., for undefined F,
+SCANMAP(F,A*X+B) -> F(A*X+B) -> F(F(A*X)+F(B)) ->
+F(F(F(A)*F(X))+F(B)).  SCANMAP(F,A*X+B,BOTTOMUP) -> F(A)*F(X)+F(B) ->
+F(F(A)*F(X))+F(B) -> F(F(F(A)*F(X))+F(B)).  (In this case, you get the
+same answer both ways.)
+
+@fcn[Name="APPEND", Args="list1, list2, ..."]
+returns a single list of the elements of @i[list1] followed by the
+elements of @i[list2],...  APPEND also works on
+general expressions, e.g. APPEND(F(A,B), F(C,D,E)); -> F(A,B,C,D,E).
+@Begin[Example]
+(C1) APPEND([Y+X,0,-3.2],[2.5E20,X]);
+(D1)             [Y+X, 0, -3.2, 2.5E20, X]
+@End[Example]
+
+@fcn[Name="CONS", Args="exp, list"]
+returns a new list constructed of the element @i[exp] as its first
+element, followed by the elements of @i[list].  CONS also works on
+other expressions, e.g. CONS(X, F(A,B,C)); -> F(X,A,B,C).
+
+@fcn[Name="ENDCONS", Args="exp, list"]
+returns a new list consisting of the elements of @i[list] followed by
+@i[exp].  ENDCONS also works on general expressions, e.g.  ENDCONS(X,
+F(A,B,C)); -> F(A,B,C,X).
+
+@fcn[Name="MEMBER", Args="exp, list"]
+returns TRUE if @i[exp] occurs as a member of @i[list] (not within a
+member).  Otherwise FALSE is returned.  Member also works on non-list
+expressions, e.g. MEMBER(B, F(A,B,C)); -> TRUE.
+
+@fcn[Name="SUBLIST", Args="list,fun"]
+returns the list of elements of @i[list] for which the function
+@i[fun] returns TRUE.  E.g., SUBLIST([1,2,3,4],EVENP); returns [2,4].
+
+@fcn[Name="REVERSE", Args="list"]
+reverses the order of the members of @i[list] (not the members
+themselves).  REVERSE also works on general expressions, e.g.
+REVERSE(A=B); gives B=A.
+@end(function)
+
+The functions FIRST @Index[FIRST], REST @Index[REST], LAST
+@Index[LAST], DELETE @Index[DELETE], LENGTH @Index[LENGTH] (see
+@PageRef[extracting!expressions]) also work on lists.
+
+@center(@i[Examples])
+@begin[example]
+(C1) UNION(X,Y):=IF X = [] THEN Y ELSE
+           IF MEMBER(T:FIRST(X),Y) THEN UNION(REST(X),Y)
+           ELSE CONS(T,UNION(REST(X),Y))$
+@hinge
+(C2) UNION([A,B,1,1/2,X**2],[-X**2,A,Y,1/2]);
+                                2     2        1
+(D2)                   [B , 1, X,  - X , A, Y, -]
+                                               2
+@end[example]
+In this example T is assigned the value of FIRST(X) in the call to
+MEMBER and is referenced later in CONS(T,UNION(...)).
+@Begin[Example]
+(C3) BERNPOLY(X,5);
+                               4      3
+                        5   5 X    5 X    X
+(D3)                   X  - ---- + ---- - -
+                             2      3     6
+@hinge
+(C4) MAPLIST(NUMFACTOR,%);
+                             5  5    1
+(D4)                   [1, - -, -, - -]
+                             2  3    6
+@hinge
+(C5) APPLY(MIN,%);
+                                  5
+(D5)                            - -
+                                  2
+@End[Example]
+
+@begin(function)
+@fcn[Name="MAKELIST", Args="exp,var,lo,hi"]
+returns 
+a list as value.  @i[lo] and @i[hi] must be integers.
+In this case MAKELIST is analogous to SUM.
+
+@fcn[Name="MAKELIST", Args="exp,var,list"]
+returns 
+a list as value.  In this
+second case MAKELIST is similar to MAP.
+@Begin[Example]
+(C1)MAKELIST(CONCAT(X,I),I,1,6);
+(D1)                      [X1,X2,X3,X4,X5,X6]
+@hinge
+(C2)MAKELIST(X=Y,Y,[A,B,C])
+(D2)                         [X=A,X=B,X=C]
+@End[Example]
+Note that in the example in C2, the equation is mapped over the list
+[A,B,C].
+@end(function
+
+@Section[Property Specification Functions]
+@Label[property!specification]
+
+The functions in this section are used to specify properties for
+atomic variables.  A property is a piece of information which may be
+utilized during the user's session with MACSYMA.  MODE_DECLARE (see
+section @Ref[compilation]) is one example of a property specification
+function.  Also, the subsequent section deals with functions for
+pattern matching and includes the function MATCHDECLARE.  As these are
+somewhat complicated they are described in other sections.  However,
+along with DECLARE (see below) and other functions, they all perform
+the task of setting up information which is used later.
+
+For most types of properties there exists a name which is an indicator
+of that property.  For example the command GRADEF(F(X),SIN(X**2));
+causes F to receive a "gradef" property of LAMBDA([X],SIN(X**2)).
+(The indicator is GRADEF and the property is the lambda expression).
+
+The presence of some properties is signified merely by the presence of
+the indicator and requires no additional information.  These
+indicators are known as flags.  For example %I has associated with it
+the flag CONSTANT.  We can also speak of "constant" as being a
+property of %I.
+
+There are three principal operations which are needed by the user in
+dealing with properties.  He must be able to set up the property, to
+display it, and to remove it.  Also he may sometimes want to know what
+properties he set up in his MACSYMA.  There are several lists (known
+as information lists) which contain all of the atoms that possess a
+particular property. Moreover, the value of the variable
+INFOLISTS @Index[INFOLISTS] is a list of the names of all of the information
+lists in MACSYMA. These are:
+
+LABELS @Index[LABELS] - all bound C,D, and E labels.
+
+VALUES @Index[VALUES] - all bound atoms, i.e. user variables, not MACSYMA
+Options or Switches, (set up by : , :: , or functional binding).
+
+FUNCTIONS @Index[FUNCTIONS] -  all user defined functions (set up by f(x):=...).
+
+ARRAYS @Index[ARRAYS] - declared and undeclared arrays (set up by : , :: , or :=...)
+
+MACROS @Index[MACROS] - any Macros defined by the user. (See page @PageRef[macr]).
+
+MYOPTIONS @Index[MYOPTIONS] - all options ever reset by the user (whether or not they get reset to their default value). 
+
+RULES @Index[RULES] - user defined pattern matching and simplification rules (set up by
+TELLSIMP @Index[TELLSIMP], TELLSIMPAFTER @Index[TELLSIMPAFTER], DEFMATCH @Index[DEFMATCH], or, DEFRULE @Index[DEFRULE].)
+
+ALIASES @Index[ALIASES] - atoms which have a user defined alias (set up by the ALIAS @Index[ALIAS],
+ORDERGREAT @Index[ORDERGREAT], ORDERLESS @Index[ORDERLESS] functions or by DECLAREing the atom a NOUN).
+
+DEPENDENCIES @Index[DEPENDENCIES] - atoms which have functional dependencies (set up by the
+DEPENDS @Index[DEPENDS] or GRADEF @Index[GRADEF] functions).
+
+GRADEFS @Index[GRADEFS] - functions which have user defined derivatives (set up by the
+GRADEF @Index[GRADEF] function (i.e. GRADEF(f(x1, ..., xn), g1, ..., gn).)
+
+PROPS @Index[PROPS] - atoms which have any property other than those mentioned above,
+such as atvalues, matchdeclares, etc. as well as properties specified in the
+DECLARE function.
+
+LET_RULE_PACKAGES @Index[LET_RULE_PACKAGES] - a list of all the user-defined let rule packages
+plus the special package DEFAULT_LET_RULE_PACKAGE.
+(DEFAULT_LET_RULE_PACKAGE is the name of the rule package used when
+one is not explicitly set by the user.)
+
+In addition to these information lists similar lists may be generated
+by the function @fcn(name="PROPVARS",arge="prop") which yields a list
+of those atoms on the PROPS list which have the property indicated by
+@i[prop].  Thus PROPVARS(ATVALUE) will yield a list of atoms which
+have atvalues.
+
+@SubSection[Functions for Handling MACSYMA Properties]
+@Label[MACSYMA!properties]
+
+@begin(function)
+@fcn[Name="DECLARE", Args="a1, f1, a2, f2, ..."]
+gives the atom @i[ai] the flag @i[fi].  The @i[ai]'s and @i[fi]'s may also be
+lists of atoms and flags respectively in which case each of the atoms gets all of the properties.  The possible flags and their meanings are:
+
+CONSTANT @Index[CONSTANT] - makes @i[ai] a constant as is %PI.
+
+SCALAR @Index[SCALAR] - makes @i[ai] a scalar.
+
+NONSCALAR @Index[NONSCALAR] - makes @i[ai] behave as does a list or matrix with respect to the dot operator. (see @PageRef[dotop])
+
+NOUN @Index[NOUN] - makes the function @i[ai] a "noun", which means that it
+won't be evaluated automatically. (see @PageRef[evaluation])
+
+ALPHABETIC @Index[ALPHABETIC] - adds @i[ai] to MACSYMA's alphabet (initially A-Z,%
+and _).  Thus, DECLARE("@",ALPHABETIC) enables NEW@VALUE to be used as
+a name.
+
+EVFUN @Index[EVFUN] - makes @i[ai] known to the EV function so that it
+will get applied if its name is mentioned.  Initial evfuns are FACTOR
+@Index[FACTOR], TRIGEXPAND @Index[TRIGEXPAND], TRIGREDUCE
+@Index[TRIGREDUCE], BFLOAT @Index[BFLOAT], RATSIMP @Index[RATSIMP],
+RATEXPAND @Index[RATEXPAND], RADCAN @Index[RADCAN], LOGCONTRACT
+@Index[LOGCONTRACT], RECTFORM @Index[RECTFORM], ROOTSCONTRACT
+@Index[ROOTSCONTRACT], FULLRATSIMP @Index[FULLRATSIMP] and POLARFORM
+@Index[POLARFORM].
+
+EVFLAG @Index[EVFLAG] - makes @i[ai] known to the EV @Index[EV]
+function so that it will be bound to TRUE during the execution of EV
+if it is mentioned.  Initial evflags are FLOAT @Index[FLOAT], PRED
+@Index[PRED], SIMP @Index[SIMP], NUMER @Index[NUMER], DETOUT
+@Index[DETOUT], EXPONENTIALIZE @Index[EXPONENTIALIZE], DEMOIVRE
+@Index[DEMOIVRE], KEEPFLOAT @Index[KEEPFLOAT], LISTARITH
+@Index[LISTARITH], TRIGEXPAND @Index[TRIGEXPAND], SIMPSUM
+@Index[SIMPSUM], ALGEBRAIC @Index[ALGEBRAIC], RATALGDENOM
+@Index[RATALGDENOM], FACTORFLAG @Index[FACTORFLAG], %EMODE
+@Index[%EMODE], LOGARC @Index[LOGARC], LOGNUMER @Index[LOGNUMER],
+RADEXPAND @Index[RADEXPAND], RATSIMPEXPONS @Index[RATSIMPEXPONS],
+RATMX @Index[RATMX], RATFAC @Index[RATFAC], INFEVAL @Index[INFEVAL],
+%ENUMER @Index[%ENUMER], PROGRAMMODE @Index[PROGRAMMODE], LOGNEGINT
+@Index[LOGNEGINT], LOGABS @Index[LOGABS], LETRAT @Index[LETRAT],
+HALFANGLES @Index[HALFANGLES], EXPTISOLATE @Index[EXPTISOLATE],
+ISOLATE_WRT_TIMES @Index[ISOLATE_WRT_TIMES], SUMEXPAND
+@Index[SUMEXPAND], CAUCHYSUM @Index[CAUCHYSUM], M1PBRANCH
+@Index[M1PBRANCH], DOTSCRULES @Index[DOTSCRULES], and LOGEXPAND
+@Index[LOGEXPAND].
+
+MAINVAR @Index[MAINVAR] - makes @i[ai] a MAINVAR.  The ordering scale for
+atoms: numbers < constants (e.g. %E, %PI) < scalars < other variables <
+mainvars.
+
+ADDITIVE @Index[ADDITIVE] - makes the simplifier treat the function @i[ai] so that: 
+(1) If @i[ai] is univariate, whenever the simplifier encounters @i[ai]
+applied to a sum, @i[ai] will be distributed over that sum.  I.e.
+F(Y+X); will simplify to F(Y)+F(X).  (2) If @i[ai] is a function of 2
+or more arguments, additivity is defined as additivity in the first
+argument to @i[ai], as in the case of 'SUM or
+'INTEGRATE, i.e. F(H(X)+G(X),X); will simplify to F(H(X),X)+F(G(X),X).
+This simplification does not occur when @i[ai] is applied to
+expressions of the form SUM(X[I],I,lower-limit,upper-limit).
+
+OUTATIVE @Index[OUTATIVE] - makes the simplifier treat the function @i[ai] so
+that: (1) If @i[ai] is univariate, whenever the simplifier encounters
+@i[ai] applied to a product, that product will be partitioned into
+factors that are constant and factors that are not and the constant
+factors will be pulled out.  I.e. F(A*X); will simplify to A*F(X)
+where A is a constant.  Non-atomic constant factors will not be pulled
+out.  (2) If @i[ai] is a function of 2 or more arguments, outativity
+is defined as in the case of 'SUM or 'INTEGRATE, i.e. F(A*G(X),X);
+will simplify to A*F(G(X),X) for A free-of X.  Initially, 'SUM,
+'INTEGRATE, and 'LIMIT are declared to be OUTATIVE.
+
+LINEAR @Index[LINEAR] - makes the simplifier treat the function @i[ai] so
+that: (1) If @i[ai] is univariate "expansion" of the form F(X+Y) ->
+F(X)+F(Y), F(A*X) -> A*F(X) takes place where A is a "constant".  (2)
+If @i[ai] is a function
+of 2 or more arguments, "linearity" is defined to be as
+in the case of 'SUM or 'INTEGRATE, i.e. F(A*X+B,X) ->
+A*F(X,X)+B*F(1,X) for A,B FREEOF X.  (LINEAR is just ADDITIVE +
+OUTATIVE.)
+
+MULTIPLICATIVE @Index[MULTIPLICATIVE] - makes the simplifier treat the function @i[ai]
+so that: (1) If @i[ai] is univariate, whenever the simplifier
+encounters @i[ai] applied to a product, @i[ai] will be distributed
+over that product.  I.e. F(X*Y); will simplify to F(X)*F(Y).  (2) If
+@i[ai] is a function of 2 or more arguments, multiplicativity is
+defined as multiplicativity in the first argument to @i[ai], i.e.
+F(G(X)*H(X),X); will simplify to F(G(X),X)*F(H(X),X).  This
+simplification does not occur when @i[ai] is applied to expressions of the
+form PRODUCT(X[I],I,lower-limit,upper-limit).
+
+LASSOCIATIVE @Index[LASSOCIATIVE] - tells the simplifier to treat the function @i[ai]
+as left-associative.  E.g.  G(G(A,B),G(C,D)) will simplify to
+G(G(G(A,B),C),D).
+
+RASSOCIATIVE @Index[RASSOCIATIVE] - tells the simplifier to treat the function
+@i[ai] as right-associative.  E.g.  G(G(A,B),G(C,D)) will simplify to
+G(A,G(B,G(C,D))).
+
+COMMUTATIVE @Index[COMMUTATIVE] - tells the simplifier to treat the function @i[ai]
+as a commutative function.  E.g. H(X,Z,Y) will simplify to H(X, Y, Z).
+This is the same as SYMMETRIC.
+
+SYMMETRIC @Index[SYMMETRIC] - tells the simplifier to treat the function @i[ai]
+as a symmetric function.  E.g. H(X,Z,Y) will simplify to H(X, Y, Z).
+This is the same as COMMUTATIVE.
+
+ANTISYMMETRIC @Index[ANTISYMMETRIC] - tells the simplifier to treat the function
+@i[ai] as antisymmetric.  E.g. H(X,Z,Y) will simplify to - H(X, Y, Z).
+That is, it will give (-1)@+[n] times the result given by SYMMETRIC or
+COMMUTATIVE, where n is the number of interchanges of two arguments
+necessary to convert it to that form.
+
+NARY @Index[NARY] - tells the simplifier to treat the function @i[ai] as an
+N-ary function.  E.g. J(J(A,B),J(C,D)) will simplify to J(A, B, C, D).
+
+BINDTEST @Index[BINDTEST] -  causes @i[ai] to signal an error if it ever is used in a computation
+unbound (see Chapter @Ref[debugmac]).
+
+@fcn[Name="ARRAYINFO", Args="a"]
+returns a list of information about the array @i[a].  For hashed
+arrays it returns a list of "HASHED", the number of subscripts, and
+the subscripts of every element which has a value.  For declared
+arrays it returns a list of "DECLARED", the number of subscripts, and
+the bounds that were given the the ARRAY function when it was called
+on @i[a].
+@Begin[Example]
+(C1) B[1,X]:1$
+@hinge
+(C2) ARRAY(F,2,3)$
+@hinge
+(C3) ARRAYINFO(B);
+(D3)            [HASHED, 2, [1, X]]
+@hinge
+(C4) ARRAYINFO(F);
+(D4)            [DECLARED, 2, [2, 3]]
+@End[Example]
+
+@fcn[Name="PROPERTIES", Args="a"]
+will yield a list showing the names of all the properties associated with
+the atom @i[a].
+
+@fcn[Name="PRINTPROPS", Args="a, i"]
+will display the property with the indicator @i[i] associated with
+the atom @i[a]. @i[a] may also be a list of atoms or the atom ALL in
+which case all of the atoms with the given property will be used.  For
+example, PRINTPROPS([F,G],ATVALUE).  PRINTPROPS is for properties that
+cannot otherwise be displayed, i.e. for ATVALUE,ATOMGRAD,GRADEF, and
+MATCHDECLARE.
+
+@fcn[Name="REMOVE", Args="a1, p1, a2, p2, ..."]
+removes the property @i[pi] from the atom @i[ai].  @i[Ai] and @i[pi]
+may also be lists as with DECLARE.  @i[Pi] may be any property e.g.
+FUNCTION, MODE_DECLARE, etc.  It may also be TRANSFUN implying that
+the translated LISP version of the function is to be removed.  This is
+useful if one wishes to have the MACSYMA version of the function
+executed rather than the translated version. @i[Pi] may also be OP or
+OPERATOR to remove a syntax extension given to @i[ai] (see Appendix
+II).  If @i[ai] is "ALL" then the property indicated by @i[pi] is
+removed from all atoms which have it.  Unlike the more specific remove
+functions (REMVALUE, REMARRAY, REMFUNCTION, and REMRULE) REMOVE does
+not indicate when a given property is non-existent; it always returns
+"DONE".
+@end(function)
+
+@SubSection[Functions for Handling Users' Properties]
+@Label[uspropfun]
+
+@begin(function)
+@fcn[Name="PUT", Args="a, p, i"]
+associates with the atom @i[a] the property @i[p] with the indicator
+@i[i].  This enables the user to give an atom any arbitrary property.
+
+@fcn[Name="QPUT", Args="a, p, i"]
+is similar to PUT but it doesn't have its arguments evaluated.
+
+@fcn[Name="GET", Args="a, i"]
+retrieves the user property indicated by @i[i] associated with atom @i[a] or
+returns FALSE if @i[a] doesn't have property @i[i].
+@end(function)
+@Begin[Example]
+(C1) PUT(%E,TRANSCENDENTAL,TYPE);
+(D1)                          TRANSCENDENTAL
+@hinge
+(C2) PUT(%PI,TRANSCENDENTAL,TYPE)$
+@hinge
+(C3) PUT(%I,'ALGEBRAIC,TYPE)$
+@hinge
+(C4) TYPEOF(X) := BLOCK([Q], IF NUMBERP(X) THEN RETURN('ALGEBRAIC),
+                   IF NOT ATOM(X) THEN RETURN(MAPLIST(TYPEOF, X)),
+                   Q : GET(X, TYPE),
+                   IF Q=FALSE THEN ERROR("NOT NUMERIC") ELSE Q)$
+@hinge
+(C5) TYPEOF(2*%E+X*%PI);
+
+NOT NUMERIC
+@hinge
+(C6) TYPEOF(%PI+2*%E);
+(D6)          [TRANSCENDENTAL, [ALGEBRAIC, TRANSCENDENTAL]]
+@End[Example]
+
+@fcn[Name="REM", Args="a, i"]
+removes the property indicated by @i[i] from the atom @i[a].
+
+@fcn[Name="NUMERVAL", Args="var1, exp1, var2, exp2, ..."]
+declares @i[vari] to have a numerical value of @i[exp1] which is
+evaluated and substituted for the variable in any expressions in which
+the variable occurs if the NUMER @Index[NUMER] flag is TRUE. (see the
+EV function, sec. @Ref[evsimpfun]).
+@end(function)

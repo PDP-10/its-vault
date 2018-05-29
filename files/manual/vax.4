@@ -1,0 +1,214 @@
+Addendum to the Mathlab/MIT MACSYMA Reference Manual
+for VAX/UNIX version and VAX/VMS version
+
+Most features will work exactly as on the ITS/PDP-10 MIT-MC system,
+with the exception of items mentioned here.  Some of
+the differences represent extensions or restrictions
+reflecting the features available in the current VAX/UNIX operating system.
+In general, the VAX/VMS system will lag behind UNIX in features requiring
+interaction with the operating system because we do not generally
+use VMS at Berkeley.
+
+Some of the differences have to do with the 32-bit
+machine word of the  VAX vs. the 36 bit word on the
+PDP-10.
+
+.begin indent 0,5;turn on ""
+1.(6)In general, commands and output are in lower case.
+
+2.(6)Loadfile, Save, Writefile, Batch:  the file description
+is not of the form [<6letters> , <6letters>, <dsk>, <6letters>]
+(e.g. [foo,bar,dsk,share] )  but a simple atomic name,
+(e.g. foobar).  It is possible to use more complicated file
+names, such as "../foo/bar.longname"  but then the double-quotes
+are required.
+For VMS systems, a file named dr0:[foo.bar.baz]stuff.mac can
+be referenced as "/dr0:/foo/bar/baz/stuff.mac" in Vaxima.  A file in the
+current working directory named stuff.mac can be refered to simply
+as "stuff.mac".
+At present we have not converted Store to the VAX,
+since it seems somewhat less important with the larger
+virtual memory.  (File names on vms, in other directories??)
+
+3.(6)We have not tried to support compilation of macsyma functions or
+files yet, although they can be translated to lisp by
+the translate command. The latest translation features are
+not available because this sub-system
+is in a state of flux.  
+
+4.(6) Floating point numbers are double precision, and the
+associated constants, scientific subroutines, etc. are
+correspondingly more precise (and accurate, we hope).
+
+5.(6) Programs which run out of storage on the PDP-10 may
+run successfully on the VAX, however the address space
+available to a user is in practice restricted by operating
+system constraints, some of which have been incorporated as
+parameters in the Lisp system.  An error message which states
+that "you have run out of static structure space" indicates that
+you will have to have a reconfigured Lisp system to grow larger.
+You should save
+your computation and make a larger Lisp system and Vaxima.  This
+takes about 3 or 4 cpu minutes.  Since the current allocation is
+much larger than the PDP-10, you should also take this opportunity
+to ask if you really want to continue with the computation.  Large
+jobs tend to run rather poorly unless you have a lightly loaded
+system or high priority.
+.break continue
+The message "[fasl hole filled up]"  which you may provoke by using
+the fasl program, is merely informative, and is not an indication
+of trouble.
+.break continue
+If the Macsyma variable `gprint' is set to a non false value then
+after each garbage collection a summary of current memory allocation
+will be printed out in this form: "[*list:553{87%}; fixnum:23{27%}].
+The meaning of this is that after garbage collection and subsequent
+allocation of new data space, there are 553 (512 byte) pages of list data and
+23 pages of fixnum data. 87% of the list space is used and 27% of the fixnum
+space is used.  The * before list indicates that it was list space which ran
+out and caused the garbage collection.  The allocation of storage is
+automatic; you will never be asked to make a decision about which data
+space to allocate.
+
+6.(6)You will not encounter difficulties loading out-of-core
+files (the "nocore" message) since all the files fit in core. 
+Some rarely used files are not loaded but will be loaded automatically should
+they be needed.
+The size of a
+VAX MACSYMA is approximately 2.3 megabytes (and can be more);
+at least 1 megabyte is shared between users.  Typical "working sets"
+are much smaller than that; how much smaller is a question
+being studied.  There is a limit on the size to which a particular
+system can grow (currently about 4 megabytes), which can be exceeded
+by re-compilation of the Lisp system and construction of a larger MACSYMA,
+as indicated above.
+There are
+other limits on the size of a job that are imposed by the operating
+system configuration and the number of other jobs using the paging
+device.  Clearly you cannot exercise a 64 megabyte address space unless
+you have 64 megabytes of disk space.
+
+7.(6)You do not have an infinitude of control characters to
+enter break loops, turn on garbage collection messages, etc.
+You can halt computation with a designated character 
+(default is <rubout> or ^C at Berkeley). 
+This is discussed under debugging, below.
+.break continue
+Your UNIX erase character (often backspace at Berkeley) and
+your line-kill character (often @ or ^U at Berkeley) and your
+word-kill (default ^W) are
+used by Macsyma too.  You can change these with the unix
+commands "stty" or "tset".
+.break continue
+You can invoke the UNIX shell by typing shell(); at
+a command line. Alternatively, you can type ^Z, in the latest
+UNIX shell, to stop your job and suspend it in background.
+Many options are available at this point, including "fg"
+which returns to your job in the foreground.
+To return from the shell(); command  to macsyma,
+type exit <return>.  To exit from MACSYMA and kill your MACSYMA
+job, type exit();  Other unix commands can be executed from
+MACSYMA by invoking the exec command on a string argument: 
+exec("whoami"); or exec("ls -l"); for example.  An integer
+return-code is the value of such a command, zero if no error.
+
+(7) The command line must be followed by a ; or a $ , and
+THEN a <return>. Similarly, for ^K ^L <esc> ?? and other
+such macsyma line-oriented control characters: these must be followed
+by a <return> to take effect immediately. The edit escape
+ <esc> <return>
+will put you in the screen-oriented editor VI.
+
+Details for VMS:  rubout works to erase a character, control-Y exits
+to VMS DCL level, control-B exits from Macsyma top-level to lisp.
+(reset) returns to Macsyma. (Other things may work too)
+(8,9) removed..
+(10) Batch files should be in lower case not upper case.
+(Changing to lower case is trivial with unix; though this
+should be fixed so case is irrelevant). tr A-Z a-z <Upperfile >Lowerfile does it.
+
+(11) The describe command  is using a somewhat older database, and
+may not be installed on your system, since it requires extra files.
+It can be but has not been moved to VMS yet.
+The simple version of Plot (not Plot2) is available. A new plotting
+package that interfaces with the UNIX graph/plot package, for output
+on daisy-wheel printers, dot-plotters, tektronix scopes, etc, is
+in use at Berkeley, but is not yet in a exportable form.
+
+(12) Those commands defined only in the "share" directories have not
+been moved, in general.  Exceptions: nusum, ode2. In general, you
+will have to have the appropriate directory search path to include
+share.  This is user-settable within macsyma though. Example:
+<to be supplied>
+
+(13) Bugs which have been found in the VAX version may be the result
+of genuine bugs in the code, and can be exhibited at MIT-MC, or
+may be the result of differences in the underlying system.  Finding
+out the origin of bugs sometimes requires trying out the problem
+on each system.
+
+(14) Adding features to the system can be done by defining functions
+in a file (compiled if appropriate) and loading them in via the 
+"mdoit" file  (see  "How to make a Vaxima").  It is appropriate
+to put a description of each new command in the directory .../descrips
+so that the users can access info via the describe command and the
+apropos command.  Because MIT is changing this part of the system,
+it is liable to change on the VAX when MIT stabilizes on a new system.
+Making a new system on VMS is currently much more
+complicated, and requires a UNIX licensed system for the software tools.
+
+(15) Interaction with IMSL library, Augment pre-compiler, and interval
+arithmetic, the KCS IEEE arithmetic simulation, troff/eqn typesetting
+are not available on VMS. Interaction with the IMSL library requires
+an IMSL-licensed system.
+
+(16) For zero-finding on the VAX,
+the user may use the IMSL library routine through a lisp interface
+(need details here).
+
+
+(17) Debugging.
+The TRACE stuff is roughly equivalent to that described in the manual,
+but the character-interrupt handling is somewhat different.
+
+You have an interrupt character, usually <rubout> or ^C, which you have
+chosen as your standard under UNIX. If you wish to halt a computation,
+you can type this interrupt character one, two, or three times.
+
+The first character will cause an interrupt at a clean place in your
+computation, at the interface between compiled and interpreted code,
+or at a garbage collection.  If the interrupt does not happen promptly
+enough for you, you may type the second interrupt.  This will snap
+"transfer links" between compiled code functions, and then cause an
+interrupt at the next function-call.  As a side effect, it will slow
+down execution until the transfer links are re-established at the first
+execution of a particular transfer.
+It is possible to cause a very tight loop with no function calls in
+it, in which case the third interrupt will stop the computation
+cold.  Even using this drastic interrupt, it is quite likely that
+you will be able to restart your computation out of the break (after
+doing computation within the break).
+  Anyway, within the break, you will be asked to chose among several
+alternatives, which currently include: just return (after displaying
+the time if showtime was set to true or all); return to the top-level
+of macsyma; enter a lisp break, enter a macsyma-break.  A menu can
+be displayed by typing "h" for help.
+  Usually it is possible to get more debugging information from the
+lisp system (at a cost in execution speed) by typing debugging(true);
+to macsyma  (or (debugging t) to lisp).  The relevant functions which
+will be more helpful in these cases are the lisp functions
+(baktrace) and (showstack).  If you are in a debugging break, the
+prompt will have a D to its left.
+
+It is also possible to quit out of your job by typing ^Z since
+the current Berkeley VAX UNIX support ^Z multiple-job handling similar
+to the ITS MIT system.  See your UNIX manual for details.
+
+(18) Phototypeset output can be obtained by several routes, the
+most straightforward is to use the writefile command in macsyma
+or the script command in UNIX to put your character stream into
+a file, and turn on the "EQN" display processor by the command
+photot-init  (need details ...)
+Then the resulting file can be run through the equation processor
+and the typesetter (at Berkeley, the dot-plotter), by
+eqn filename | vtroff

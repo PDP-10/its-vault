@@ -1,0 +1,2177 @@
+1
+.chap (Introduction,intro)
+
+MACSYMA (Project 2MAC*'s 2SY*mbolic 2MA*nipulation System) is a large
+computer programming system written in LISP [Mn1] used for performing symbolic
+as well as numerical mathematical manipulations. It is being developed by the Mathlab
+Group of the MIT Laboratory for Computer Science (formerly Project MAC).
+
+
+     With MACSYMA the user can differentiate, integrate,
+take limits, solve systems of linear or polynomial equations, factor
+polynomials, expand functions in Laurent or Taylor series, solve differential equations (using direct or transform methods), compute Poisson series, plot curves, and manipulate matrices and tensors. MACSYMA has a language similar to ALGOL-60 to permit the user to write his own programs for transforming symbolic expressions.
+
+This manual is intended to be a complete reference for the principal features of
+MACSYMA as of the date shown on the cover.  It is not meant to be a tutorial nor
+does it discuss all of the issues involved in the efficient manipulation of
+algebraic expressions. New features under development are, for the most part,
+not mentioned.
+
+The user who is unacquainted with certain concepts of computer programming may
+find this document difficult on first reading.  The novice will benefit by first 
+reading the 2MACSYMA Primer1 [Mo5] and 2An Introduction to ITS for the MACSYMA User1 [Lew1]. This document serves as both a reference
+manual and as a user's manual.  When it is used as a user's manual, any sections not of interest
+should be skipped.  Sections which may be passed over on first reading are
+indicated by the symbol [] around the section number.
+
+It is recommended that this manual be re-read from time to time after the user
+has worked with MACSYMA so that certain parts which were unclear on prior
+readings will be better understood in the context of increased familiarity with
+the system.
+
+In a programming system such as MACSYMA there are often many ways to go
+about solving a given problem as well as many constraints and frustrations which
+must be dealt with.  Some ways will not succeed due to space or time constraints
+and others may work but may be unnecessarily slow.  Frequently a better
+understanding of the computer facilities will lead to a reformulation of the
+problem lending itself to a much improved solution. For some insight into the
+subject see [A1, Mo1, Mo2].
+.skip to column 1;
+.sec(Logging in and out,logging!in)
+
+.tty_"Did you check out with JM about mentioning 20's and Vaxima?!!!"
+
+MACSYMA is implemented on DEC PDP-10 computers which use the ITS
+operating system, on Honeywell 6180 computers using the Multics
+operating system, on DEC-20 systems, and on DEC-Vaxes. The following
+section concerns the protocol for usage on the PDP-10 at MIT known as
+the MC (MACSYMA Consortium) machine.  Appendix I of this manual
+concerns the use of MACSYMA on Multics.
+
+A user may gain access to the PDP-10 computer
+at MIT by (1) finding a terminal connected to it or (2) finding one on which he
+can dial to it over public telephone lines or (3) logging into it over the ARPA
+network.  Once this is done the user should be communicating with the ITS time
+sharing system.  To login he should type a control-Z (depressing the control key
+while typing the letter Z) which loads in DDT [Lew1] (the top level system
+program).  Then he should type :LOGIN followed by a space and his user name. 
+(All system commands, i.e. those which begin with a colon, are terminated by a
+carriage return).  At this point the user can start up any of several system
+programs available (PEEK, TECO, etc.) by typing a : followed by the name of the
+program.  In particular :MACSYM loads in and begins execution of MACSYMA. After
+printing some descriptive information, including the version number, MACSYMA
+prints (C1) which means that it is ready to accept input from the user.  The
+entire sequence is shown below with the computer's output indented.  ^2char1 $$
+The user should note that there is a separate character, ^, which is often used for exponentiation (as in  line (C1) below).  Although the two characters print in the same way the user should have no difficulty distinguishing between them. In the example, the "^5" could not be "control-5" since the context strongly indicates exponentiation.* means the control key is to be held down while the next character 2char1 is typed. 
+.example 
+     MC ITS nnnn CONSOLE ii FREE $$nnnn represents a version number which changes from time to time;  ii identifies the console.*
+^Z $$Not printed on console*
+     MC ITS nnnn DDT mmm
+:LOGIN SMITH
+     Password:
+     [OK]
+:MACSYM
+     This is MACSYMA vvv
+
+     FIXVVV N DSK MACSYM being loaded
+     Loading done$$The "fix file" is the place for temporary fixes for MACSYMA between versions.  We pride ourselves on rapid turnaround on bug-fixes, so it is actually rare to see a MACSYMA which does not have a fix file.*
+
+     (C1) NROOTS(2*X^5-X+5,-4,8);
+
+     (D1)                1
+
+^Z
+     [DDT]
+:LOGOUT
+     MC ITS nnnn CONSOLE ii FREE
+
+.end
+
+In line (C1) the user has typed a command which asks for the number of realroots
+between -4 and 8 of a quintic polynomial.  In line (D1) MACSYMA has printed the
+answer. The ^Z causes an exit from MACSYMA to DDT after which the system typed
+"[DDT]" to indicate that the user is being returned to monitor level.  Typing :LOGOUT causes
+the system to delete all the user's jobs (in this case MACSYMA was the only job)
+and to log him out of ITS.  When the user finishes he should always log the
+console out before he leaves.
+
+.sec(General Information, geninf)
+
+Command lines to MACSYMA are strings of characters representing
+mathematical expressions involving equations, arrays, functions, and
+programs.  Extra spaces, tabs, and carriage returns are ignored
+(except when these occur in quoted strings).
+
+Command lines are terminated by ";" or "$" (dollar sign).  A  ";"  causes the command line to be evaluated and the result displayed.  The terminator  "$"  causes the command line to be evaluated but the result is not displayed.
+
+When typing command lines, depressing the "rubout" or "delete" key deletes the previous character (on hardcopy devices and displays which cannot  backspace, the deleted character is echoed).  By typing  "control-K" ,  the user obtains a copy of the current command line free of any echoed erasures.  The two characters  ??  delete the whole command line, and cause the line number to be redisplayed.
+
+The command (input) lines are indexed by labels of the form "(Ci)"
+where i is incremented with each new command line typed by the user.
+Similarly, the results of computations are also indexed.  There are
+two types of output lines.  The ordinary output line is indexed by a
+label of the form "(Di)" ; thus, usually the ith input-output pair
+will be (Ci)-(Di).  Sometimes, however, a computation produces several
+intermediate results (for example, several solutions to an equation);
+it is convenient to be able to reference these intermediate lines of
+output.  They are indexed by labels of the form "(Ej)" where j is
+incremented by one for each intermediate line.  For example,
+
+.example
+.begin group
+
+(C1)  SOLVE(X^2 + B*X + C, X);
+
+				     2
+			       SQRT(B  - 4 C) + B
+(E1) 			 X = - ------------------
+				       2
+.end
+.begin group
+					 2
+			       B - SQRT(B  - 4 C)
+(E2) 			 X = - ------------------
+				       2
+.end
+(D2) 				 [E1, E2]
+.end
+
+Note that there is no line D1 since intermediate results were produced and thus the line index was incremented.  The general pattern of indexing is of the form
+.skip 1
+.once center
+Ci, Ei,Ei+1,...,Ej, Dj .
+
+A command line may refer to the results of any previously indexed line (even if it was not displayed) through the use of the line labels.  For example, the user might say SUBSTITUTE(7,B,E2); which would substitute 7 for B in the expression E2 above.   The immediately preceding D-line  is conveniently referenced by the symbol "%".  
+
+If the input line contains a syntax error, it will be reprinted and the location of the error will be indicated as closely as possible by a special string, ***$*** .
+
+From a C-line, the user in need of assistance can type:
+
+.function(SEND,|"message"|)
+which will send your 2message* to all MACSYMA system programmers who
+are logged in at that time.  If no appropriate recipient is available,
+the message will be sent to MACSYMA's mail file where it will be seen
+and will be answered.  E.g.  SEND("Help!"); .  2message1 may be more
+than one line long and must be enclosed in double quotes.  SEND();
+prints out an explanation of how to use it.
+.endfunction
+
+.function(SEND,|name,"message"|)
+will send your message to the person whose user 2name* you include.
+.endfunction
+
+.function(BUG,|"message"|)
+sends a bug note to MACSYMA.  The syntax is the same as for SEND.  BUG();
+gives information about its usage.
+.endfunction
+
+.function(MAIL,|"message"|)
+sends mail to MACSYMA using the syntax of SEND.  Like SEND it may take an
+optional first argument of a person's user name.   MAIL(); gives information
+about its usage.
+.endfunction
+
+The SEND, MAIL, and BUG commands will also accept expressions as arguments
+in messages, so that
+.example
+BUG(C1,"Returns",D1,"Is this right?");
+.end continue
+will display the value of line C1 in the message, print  "Returns" as
+text on a line by itself, then display D1's value, and finally print
+"Is this right?" on a line by itself.  This saves retyping of long expressions
+to send to MACSYMA mail or as bug messages.
+
+.function(DESCRIBE,entity)
+takes as argument any MACSYMA 2command, option*, or 2concept* and
+prints out a description of that entity.
+.endfunction
+
+.function(EXAMPLE,command)
+gives examples (in DEMO mode) of the use of selected functions in MACSYMA. 
+.endfunction
+
+.function(PRIMER)
+provides an on-line primer for the novice including an introduction to MACSYMA syntax, assignment and function definition, and the simplification commands.
+The primer is also available from DDT level with the command :TEACHMACSYMA.
+.endfunction
+
+.sec(Levels of Control,control!levels)
+
+When :MACSYM is typed,  a LISP system extended with MACSYMA programs is loaded
+into main memory from auxiliary storage. Special top level programs read in, evaluate, simplify, and display the user's expressions.  All of
+the functions to be presented in subsequent sections are actually LISP programs
+which, when they are called, may invoke many other LISP programs in a process
+that is invisible to the user. 
+
+Switching between DDT, MACSYMA, and the LISP system in which it is embedded is
+accomplished by typing the following characters:
+
+Control-^ typed while in MACSYMA causes LISP to be entered.  The user can now type any LISP S-expression and have it evaluated.  Typing ($fun<CONTINUE>) or ^G (control-G) causes MACSYMA to be re-entered.
+
+^Z causes an immediate exit to DDT.  If one is already in DDT then ?? is
+printed.  At this point the user can run some other program like PEEK or TECO
+[Lew1].  When in DDT, typing :CONTINUE causes the current job to be resumed.
+(:JOB MACSYM should be typed first if the user wishes to re-enter a MACSYMA
+which is not the current job).
+.begin group
+.sec (Miscellaneous Information, miscellaneous!information)
+
+Files in the ITS system have two names each of at most 6 characters.
+They are referenced by giving the two names as well as the device
+(default is DSK) and the directory name where the file resides
+(default is the same as the user's login name, or is an assigned
+directory, see below).  A > sign may be used for the second file name
+and stands for the name which is the largest numerically if there
+exists a file with the given first name and a numeric second name;
+otherwise, the > sign represents the "greatest" name in an
+alphanumeric sense. A < sign may be similarly used for the "least"
+name.
+.end
+Any of the four descriptors (1st name, 2nd name, device, user) may be omitted
+and either the default or the value given in a previous command (if there was
+one given) will be used.
+
+For those without a disk directory of their own, there are a number of
+USERS2i1 directories available, currently USERS0 thru USERS9.  Each
+user will be automatically assigned to one of these alphabetically by
+his user name. The DDT command :HSNAME may be used (:HSNAME
+2Username1) to find out which directory one has been assigned to.
+When placing a file on this directory the user should indicate in some
+manner (such as by the first file name) the name of the user who
+created it.
+
+There is a special mail file on the ITS system for holding comments
+from users which are of general interest and for listing changes to
+MACSYMA which occur from time to time. The DDT command :MAIL MACSYM
+followed by a carriage return and text terminated by a control-C is
+used to place comments in this mail file.  The user's login name and
+time of message are added automatically.  (Control-D may be used to
+cancel this or any other DDT command prematurely).  If the user
+encounters any bugs in MACSYMA then he should report these in MACSYMA
+mail.  Mail may also be sent to other users by using the :MAIL command
+followed by the user's login name, or by the MAIL command in MACSYMA.
+If the user has received mail the message --MAIL-- will appear on his
+console after he logs in.  Typing a space will cause the mail to be
+printed.  The DDT command :PRMAIL MACSYM is used to print out the
+MACSYMA mail file.  The user should do this occasionally to be
+informed of changes to the system and of other users' comments.
+:PRMAIL may also be used to print out any user's mail by following it
+with the user's login name.  Control-S may be used to silence the
+printout.  In addition, the command :PRINT MACSYM;UPDATE > may be used
+to print a file describing updates to MACSYMA since the last version
+of the manual.  The update file should be checked regularly so the
+user can be informed of changes to MACSYMA.
+
+For further information on DDT commands see [Lew1].  Typing :? will list the commands
+with a brief description.  In particular, one command worth noting is :KILL which kills
+the current job.
+
+2An Introduction to ITS  for the MACSYMA User1 [Lew1] and the 2MACSYMA Primer1 [Mo5] are very useful to the novice.
+
+.chap (MACSYMA's Data Types and Statement Types,datatypes)
+
+This section describes the kinds of expressions MACSYMA permits and their meanings.
+Chapters 5 and 6 should be referred to where necessary in order to clarify the examples presented.  Default values of options are indicated in square brackets, [...].
+
+.sec (Numbers)
+
+Numbers are integers, rational numbers, floating point numbers, or
+"bigfloats".  Integers consist of a string of digits not containing a period;
+rational numbers are the quotient of two integers and are written as
+numerator/denominator; floating point numbers are written as in FORTRAN, i.e.
+strings of digits containing a period and optionally followed by an integer
+exponent beginning with the letter E; and bigfloats are written exactly like
+floating point numbers except using the letter B rather than E (the B must be
+included to indicate a bigfloat).  Negative numbers begin with a minus sign. 
+There is no limit on the number of digits in an integer or rational number but
+non-zero floating point numbers on the PDP-10 must have absolute value
+between .14E-38 and
+1.7E38 and are limited to approximately 8 digits precision.  This is the
+hardware limitation of the computer. Bigfloats may have any number of digits. 
+The default precision is 16 but the user can change this by setting the 
+$var<FPPREC/16> to an integer representing the desired precision.
+
+.example center
+-17253733574534    6.023E23  -1.6E-19   
+
+37.567834987250832568B-98        3.14159     227
+
+-3354665557331/66724255465544   -.7B0
+.end
+
+.sec (Names)
+
+Names are used to designate variables, functions, and arrays.  A name consists
+of a string of letters (which may include % and _) and digits.  It may also include
+other characters but these must be preceded with a \ when typed in.  Names can
+be of any length and must begin with a letter (unless the leading character is a
+\).  Lower case letters may be typed, but they are normally converted into the
+corresponding upper case letters.
+
+.example center
+%PI   EPSILON   X10Y30ISASTRANGENAME   \*SPECIAL  STANDARD_DEVIATION
+.end
+
+.sec (Quoted Strings, quoted!strings)
+
+A string of characters of any length may be constructed by enclosing the string
+in quotation marks.  To include a quotation mark, semicolon, or dollar sign in
+the string it is necessary to precede it with a \ when typed in.  Quoted strings
+are useful as messages (such as those giving instructions for entering data) or
+in as descriptive titles for printed data.
+
+Certain names that are reserved because of their function as keywords (operators
+or delimiters) are listed in Appendix II.  If these are used out of their normal
+context they must be enclosed in quotation marks as quoted strings.
+
+.example center
+
+"INPUT AMOUNT IN \$"    "RIEMANN'S \"ZETA\" FUNCTION"
+.end
+
+.sec (Atomic Variables and Assignment,atomic!variables)
+
+A name which may be assigned an arbitrary value is a variable.  A variable might
+or might not be subscripted $see<arrays>.  A non-subscripted variable is
+designated as an "atomic variable".  Atomic variables are assigned values by
+writing the name of the variable followed by a : followed by an expression
+representing the value to be assigned to the variable.  A variable can be
+assigned a new value at any time.  The value of a variable can be a number, a
+matrix, a list, or any MACSYMA expression. If a variable is not assigned a value
+then it just represents itself. There are many variables which have already been
+assigned values.  These are called "MACSYMA" variables  or options. They are provided in order
+to give the user some control over the way in which MACSYMA performs its
+operations.  2The user should choose
+names other than these for his variables.1  The index to this manual distinguishes these "MACSYMA" variables and options with a colon (":") between the variable and its default value.   In the text of the manual,  the default value is indicated with square brackets as in the next sentence. $var<MYOPTIONS/[]> is a MACSYMA variable---an "infolist" $see<property!specification>---which is a list of all the MACSYMA options ever reset by the user. 
+
+Some simple examples of assignment follow.  (The comments in
+parentheses are only for the reader's benefit and are not actually
+typed to or by MACSYMA.)  Note that MACSYMA automatically assigns
+labels Ci to the user's input lines and Di to the output lines.  These
+labels behave as assigned variables and can be referenced by the user.
+
+.example group turn on "_\"; tabs 8, 16, 24, 33;
+line label\expression \\comment
+
+(C1)\\A:16$\\(integer)
+(C2)\\LAMBDA: -3/37$\(rational number)
+(C3)\\X:D1;\\(X is assigned the value of D1)
+(D3)\\     16
+(C4)\\RHO:SIGMA;\(since SIGMA has no value at this
+\\\\ time RHO is assigned the symbol SIGMA)
+(D4)\\     SIGMA
+(C5)\\SIGMA: .005$\(floating point)
+(C6)\\RHO;\\(RHO still has its old value since
+(D6)\\     SIGMA\\it hasn't been reassigned a new one)
+
+.end
+
+Since the value assigned may be any expression it may in particular be another
+assignment and therefore multiple assignments are permitted.  Thus A:B:C:X+1 assigns X+1
+to A, B, and C.
+
+It is important to note that the expression assigned to the variable is not re-copied.
+Only a pointer to the expression is assigned.  Thus in the above example,
+only one copy of X+1 is created.
+
+The MACSYMA variable $var<VALUES/>  $see<property!specification> gives a list $see<lists> of all the user's atomic
+variables which have been bound (i.e. have been assigned values).
+
+The assignment operator :: assigns the value of the expression on its right to
+the 2value* of the quantity on its left, which must evaluate to an atomic
+variable or subscripted variable (sec. $ref<arrays>).  Thus continuing with the above
+examples:
+
+.example group turn on "\"; tabs  8, 20, 32, 44;
+(C7)\RHO::LAMBDA$\\1(Note that the :: causes the value of*
+(C8)\SIGMA;\\1LAMBDA, i.e. -3/37, to be assigned to*
+(D8)\    -3/37\\1the value of RHO, i.e. SIGMA.)*
+(C9)\VALUES;
+(D9)\	[A, LAMBDA, X, RHO, SIGMA]
+.end
+
+.sec (Mathematical Operators, mathematical!operators)
+
+Mathematical expressions are constructed by using the following operators and also
+functions $see<functions!arrays>.  The usage and priorities from highest to lowest are:
+
+.example group turn on "\"; narrow 8; tabs  4, 24, 32, 40, 48, 56;
+\Operator Name     \Symbol     \Usage
+
+\factorials        \!!  !      \postfix
+\exponentiation    \** or ^    \infix
+\non-commutative   \^^         \infix
+\  exponentiation
+\non-commutative   \.          \infix
+\  multiplication
+\div'sn  mult'pn   \/   *      \infix
+\negation          \-          \prefix
+\add'n   subt'n    \+   -      \infix
+
+.end
+
+If an operator is referred to out of context it must be enclosed in quotation marks.
+
+$fun<EXPT> is used to display exponentiation when the base or exponent become unwieldy.
+
+! is the factorial which is the product of all the integers from 1 up to its
+argument.  Thus 5! = 1*2*3*4*5 = 120.  The value of the option $var<FACTLIM/-1> gives the highest factorial which is automatically expanded.  If
+it is -1 then all integers are expanded.
+
+!! stands for double factorial which is defined as the product of all the
+consecutive odd (or even) integers from 1 (or 2) to the odd (or even) argument. 
+Thus 8!! is 2*4*6*8 = 384.
+
+Period is used for non-commutative product.  It must be preceded and followed by
+a space when any ambiguity can arise with respect to floating point numbers. 
+Non-commutative exponentiation is used in the usual sense that  M^^2 means M . M.
+
+Operators of equal priority are performed left to right.  Parentheses can be used to
+change the order of evaluation.  Also functional application has the highest priority.
+Thus SIN(A*X^Y/Z!)^2 means (SIN(A*(X^Y)/(Z!)))^2
+
+The operands may be any MACSYMA expressions whose values are the correct types
+of data.  Note that every statement in MACSYMA yields a value even if the value
+is only a trivial one.
+
+MACSYMA has no restriction on the mixing of modes of operands.  Integers, rationals, floating point numbers, and 
+bigfloats may be freely intermixed in an expression;  when conversions are necessary,  the priority of conversion is in the order of the types just mentioned.
+If floating point numbers or bigfloats of differing precision are combined in a
+operation, they will be converted to floating point or bigfloat numbers  of the current precision by
+padding with zeroes or by dropping off low order digits and rounding.
+
+Floating point underflow will return 0.0 unless the MACSYMA variable $var<ZUNDERFLOW/TRUE> $$The square brackets enclose default options* is FALSE  in which case an error will be signaled.
+
+.sec (Functions and Arrays,functions!arrays)
+
+.subsec(Functions)
+
+A function is written as a name followed by the arguments to the function
+separated by commas and enclosed in parentheses.  The arguments may be any
+MACSYMA expressions.
+
+A function of a fixed number of arguments can be defined in MACSYMA by using the
+:= operator.  The left side of a function definition consists of the name of the
+function followed by the list of formal parameters enclosed in parentheses.  The
+right side consists of the function body.  When a function is called, the formal
+parameters will be bound to the actual arguments, any free variables in the
+function body will take on the values which they have at the time of the call,
+and the function body will be evaluated. It is permissible to define functions
+which are recursive to an arbitrary depth. Care should be taken when passing an
+expression which contains a variable with the same name as a formal parameter to
+a function defined with that formal parameter as circularity could result when it is
+evaluated $see<evaluation>.
+
+The MACSYMA variable $var<FUNCTIONS/> is a list of all user defined non-subscripted
+functions.
+
+The MACSYMA function $fun<DISPFUN> may be used to display the definition of a
+function $see<utility!functions>.
+
+.example
+(C1) F(X):=X^2+Y$
+
+(C2) F(2);
+
+(D2)               Y + 4
+
+(C3) Y:7$
+
+(C4) F(2);
+(D4)                 11
+.end
+If we now define another function, using Y as a dummy variable, the
+effect of MACSYMA's dynamic binding scheme can be seen.  Each time
+Y is evaluated, it will use the 2most recent1 binding.
+.example
+(C5) G(Y,Z):=F(Z)+3*Y;
+
+(D5)       G(Y, Z) := F(Z) + 3 Y
+
+(C6) G(2*Y+Z,-.5);
+
+(D6)              3 (Z + 14) + Z + 14.25
+
+(C7) FUNCTIONS;
+(D7)          [F(X), G(Y, Z)]
+
+.end
+
+Some more explanation of how this function G is being evaluated is necessary:
+the value of Y is of particular importance.  Note the following sequence
+of events:
+
+(1) The arguments to G are evaluated giving Z+14 and -.5 (Y has the value 7).
+
+(2) G is then invoked and has its formal parameters bound.  Y to Z+14 (the first
+argument) and Z to -.5 (the second argument).  The evaluation of G then causes F
+to be invoked on the argument -.5
+
+(3) F has its formal parameter X bound to -.5 and returns the result of the evaluation
+X^2+Y with the current bindings which gives Z+14.25.  
+
+(4) The evaluation of G continues with 3*Y which yields 3*(Z+14).  This is added to the
+result from (3) and returned.
+
+.subsec (Arrays)
+
+Arrays enable one to refer to a collection of elements by using a
+single name.  An element of an array is referred to by a subscripted
+variable which is a name followed by a list of subscripts enclosed in
+square brackets.  Arrays in MACSYMA are of two types$$For efficient
+translation, the user can also inform MACSYMA of arrays all of whose
+elements are of a single type, e.g. FIXNUM, FLOAT, or whose elements
+are all known before being referenced, called a COMPLETE array.
+$see<compilation>.* -
+declared or undeclared.  Declared arrays are similar to FORTRAN
+arrays.  The user declares the number of dimensions and indicates the
+maximum value of each subscript.  The system then allocates space for
+the entire array.  To declare an array the user types:
+.skip 1
+.inline function(ARRAY,|name, dim1, dim2, ..., dimk|)
+.scon
+This sets up a k-dimensional array.  A maximum of five dimensions may
+be used.  The subscripts for the i2th* dimension are the integers running from
+0 to 2dimi*.  If the user assigns to a subscripted variable without declaring
+the corresponding array, an undeclared array is set up.
+
+Undeclared arrays, otherwise known as hashed arrays (because hash coding is done
+on the subscripts), are more general than declared arrays.  The user does not
+declare their maximum size, and they grow dynamically by hashing as more
+elements are assigned values. The subscripts of undeclared arrays need not even
+be numbers.  However, unless an array is rather sparse, it is probably more
+efficient to declare it when possible than to leave it undeclared.  The ARRAY
+function can be used to transform an undeclared array into a declared array.
+
+Array elements can be assigned values explicitly with the : operator or
+implicitly by means of an associated function, and the values assigned may be
+any MACSYMA expression. To understand implicit assignment we must understand
+what MACSYMA does when asked to evaluate a subscripted variable.  MACSYMA first
+evaluates the subscripts left to right. Then it does an array access to see if
+the requested array element already has a value. If it does, the value is
+returned.  If it does not, MACSYMA checks to see whether the array has an
+associated function (see below).  If not, the subscripted variable (with the
+subscripts evaluated) is returned.  (This is standard MACSYMA practice - if
+there is no value for a variable, the variable itself is returned when an
+evaluation is done.)  If there is an associated function, the parameters of the
+function are bound to the given subscripts, and the function body is evaluated. 
+The value of the function call is stored in the appropriate array element and
+returned.  Note that once an element is computed by the associated function it
+is stored so that next time it is needed it will not be recomputed. A
+consequence of this is that unless the user uses the $fun<KILL>, $fun<REMVALUE>,
+or $fun<REMARRAY> functions (sec. $ref<freeing!storage>) to kill an array element or the
+entire array, the associated function will never be called a second time on the
+same arguments.  Thus the user should be aware that even if he redefines the
+associated function, those values which already exist will stay around.  Of
+course individual array elements can be changed by assignment at any time.
+
+These associated functions are defined with the := operator.  Their definition
+looks exactly the same as ordinary function definitions, except that the
+parameters in the left side of the definition are enclosed in brackets instead
+of parentheses.
+
+In order to use a subscripted variable as a single entity without it
+being an array and without ever assigning a value to it, it should be
+prefixed by an apostrophe to avoid it being confused with a non-subscripted
+variable of the same name.  For example SUBST(0,W,W+'W[0]).
+
+The MACSYMA variable $var<ARRAYS/> is a list of all the arrays that have been allocated,
+both declared and undeclared.
+
+$fun<DISPFUN> $see<display!functions> may be used to display the definition of an array
+associated function.
+
+$fun<ARRAYINFO> $see<MACSYMA!properties> may be used to find out whether an array is
+declared or undeclared, how large it is, how many subscripts it has, and which elements
+have values in the case of an undeclared array.
+
+.example
+(C1) A[N]:=N*A[N-1]$
+
+(C2) A[0]:1$
+
+(C3) A[5];
+(D3)                120
+
+(C4) A[N]:=N$
+
+(C5) A[6];
+(D5)                 6
+
+.begin fill
+1(Note that the definition in C4 is being used because
+A[6] has no value up to this time.)*
+.end
+
+(C6) A[4];
+(D6)                24
+
+.begin fill
+1(Since A[4] was assigned a value as a result of A[5]
+being computed, the new definition is not used.)
+.end
+
+.end
+
+If one is going to define a recursive function which is to be called several
+times then if may be more efficient to use an array with an associated function
+for initialization.  The reason is that once an element is computed it is stored
+and thus need not be computed again whereas with a non-subscripted function, each recursive call
+may cause a repeat of a past computation.
+
+.subsec(Lambda Notation,lambda!notation)
+
+The $fun<LAMBDA> notation is used for unnamed functions in order to indicate the
+correspondence between the variables of the function and the arguments which are
+to be substituted for them.  It is useful when one desires to pass functional
+arguments to other functions or when one wants to apply a function just once
+without having to define it with :=.
+
+.example
+(C1) F:LAMBDA([X,Y,Z],X^2+Y^2+Z^2);
+.begin group
+                                        2    2    2
+(D1)                 LAMBDA([X, Y, Z], Z  + Y  + X )
+.end
+
+(C2) F(1,2,A);
+.begin group
+                                   2
+(D2)                              A  + 5
+.end
+.end
+
+MACSYMA also permits operators to be used in a functional notation;  however, in order
+not to get a syntax error they must be surrounded by "s.
+
+.example
+.begin group
+
+(C3) "+"(1,2,A);
+(D3)                              A + 3
+.end
+.end
+
+.subsec ("Subscripted Functions (Arrays of Functions)",subscripted!functions,1)
+
+It is possible for the value of an array element to be a lambda expression. 
+Thus if the assignment F[1]:LAMBDA([X],X^2+1) were performed, then F[1] could be
+used in the ordinary prefix functional sense with its arguments following in
+parentheses, e.g. F[1](3) would yield the value 10. There is an alternative
+syntax available for assigning a lambda expression to an array which introduces
+the notion of a "subscripted function".  In the above case one could also type
+F[1](X):=X^2+1 and this would be entirely equivalent. Other elements of the
+array could be assigned different lambda expressions (or any MACSYMA
+expressions).  If there is an algorithm for computing the different functions to
+be stored in an array on the basis of the subscripts alone, then one may use an
+associated function. For example, F[K]:=LAMBDA([X],X^K+1).  Again an alternative
+syntax of F[K](X):=X^K+1 may be used. The left side of the definition consists
+of the function name followed by the subscripts, enclosed in brackets, followed
+by the arguments, enclosed in parentheses.  The subscripts (which are not
+evaluated at definition time) must be either all numeric or all symbolic. Note
+that subscripted functions are treated exactly like arrays so all of the
+information in sec. $ref<arrays> applies.  In particular when a subscripted function is
+referenced, the element is immediately retrieved and applied to its arguments if
+it exists; otherwise it is computed (this time only) and then applied. 
+Consequently, two evaluations of the definition are performed.  Thus consider
+the definition F[K](E):=COEFF(E,X,K) and the call F[2](3*X^2-1).  Although the
+user may have thought that this would return the coefficient of X^2 in 3*X^2-1,
+i.e. 3, it will return 0.  The reason is that F[2] is first computed by
+evaluating the definition yielding 0, since E has not been bound at this time. 
+Note that F[K](E):= SUBST(K,'J,'(COEFF(E,X,J))) would return the desired result as would  F(K,E):=COEFF(E,X,K).  Thus the user
+should be clear about the distinction between subscripted functions (a type of
+array) and ordinary functions. Also a subscripted function should not be
+redefined without $fun<KILL>'ing or $fun<REMARRAY>'ing it first; otherwise the
+elements which have already been stored will be used.
+
+The $var<ARRAYS/[]> list $see<Arrays> also includes subscripted functions.
+
+The function $fun<ARRAYINFO> $see<MACSYMA!properties> may also be used on subscripted
+functions.
+
+.example
+(C1) T[N](X):=RATSIMP(2*X*T[N-1](X)-T[N-2](X))$
+.scon
+1This generates the Chebyshev polynomials.*
+.scon
+(C2) T[0](X):=1$
+(C3) T[1](X):=X$
+
+(C4) T[4](Y);
+.begin group
+                           4      2
+(D4)                    8 Y  - 8 Y  + 1
+.end
+
+
+(C5) G[N](X):=SUM(EV(X),I,N,N+2)$
+
+(C6) H(N,X):=SUM(EV(X),I,N,N+2)$
+
+.BEGIN GROUP
+(C7) G[2](I^2);
+                           2
+(D7)                    3 I
+
+(C8) H(2,I^2);
+(D8)                    29
+.end
+.end
+.scon
+The following illustrates a definition for the Legendre polynomials.
+.example
+(C9) P[N](X):=RATSIMP(1/(2^N*N!)*DIFF((X^2-1)^N,X,N))$
+
+(C10) Q(N,X):=RATSIMP(1/(2^N*N!)*DIFF((X^2-1)^N,X,N))$
+
+.BEGIN GROUP
+(C11) P[2];
+					 2
+				      3 X  - 1
+(D11)                     LAMBDA([X], --------)
+					 2
+(C12) P[2](Y+1);
+				      2
+			     3 (Y + 1)  - 1
+(D12)                        --------------
+				   2
+.END
+.BEGIN GROUP
+(C13) Q(2,Y+1);
+				2
+			     3 Y  + 6 Y + 2
+(D13)                        --------------
+				   2
+.END
+(C14) P[2](5);
+(D14)                               37
+.begin group
+(C15) Q(2,5);
+5
+attempt to differentiate wrt a number
+.end
+.end
+
+.subsec (Additional Information About Functions,functions!continued,1)
+
+In order to pass a function as an argument to another function you need only
+give its name in the argument list of the call.  It may then be used in the
+called function by following the name of the corresponding formal parameter
+with a parenthesized list of arguments.  Subscripted functions $see<subscripted!functions> are passed by
+giving the name followed by the subscripts in brackets.  Arrays can be passed by
+giving the name of the array in the argument list and they can be referenced by
+subscripting the corresponding formal parameter.
+
+When passing names of functions or arrays one must take care that there is no
+atomic variable with the same name which is bound because then that value rather
+than the name will be passed.  In this case the name should be preceded by a '
+$see<evaluation> to prevent it from being evaluated.
+
+In order to assign to a formal parameter of a function so that the
+corresponding actual parameter gets changed (and remains changed) when the
+function is exited, then the :: operator rather than the : operator should be
+used.
+
+
+.example group
+(C7) F[I,J](X,Y):=X^I + Y^J;
+
+                             I     J
+(D7)         F    (X, Y) := X  +  Y
+              I, J
+
+(C8)  G(FUN,ARG1,ARG2):=PRINT(FUN," APPLIED TO ",ARG1," AND ",
+                ARG2," IS ",FUN(ARG1,ARG2))$
+
+.begin group
+(C9)  G(F[2,1],SIN(%PI),2*A);
+
+                2
+LAMBDA([X,Y],Y+X ) APPLIED TO 0 AND 2 A IS 2 A
+
+(D9)                    2 A
+.end
+.end
+
+
+.sec (Lists)
+
+Lists are ordered sets of elements which can be any MACSYMA
+expressions.  They are written enclosed in brackets with elements
+separated by commas.  If the value of a variable is a list, its
+elements may be obtained or assigned to by subscripting as with
+arrays.  If A is both the name of an array and the name of a list,
+its use as an array takes precedence.
+In certain cases lists are treated like vectors (row or
+column matrices).  $see<matrices> Lists are sometimes used as
+arguments to MACSYMA functions (e.g. MATRIX, SOLVE, etc.).  Chapter
+$ref<lisp!functions> describes functions for many list operations such
+as deleting elements, selecting an element, reversing a list, etc.
+
+.example
+(C1)   [X^2,Y/3,-2]$
+
+(C2)   %[1]*X;
+.begin group
+                         3
+(D2)                    X
+.end
+
+(C3)   [A,D1,D2];
+.begin group
+                               2  Y          3
+(D3)                    [A , [X , - , -2] , X ]
+                                  3
+.end
+.end
+.begin group
+.sec (Matrices)
+
+A matrix is a 2-dimensional ordered set of elements.  It is represented internally using a list of lists all of the same length which stand for the rows of
+the matrix.  Matrices may be constructed by using the function $fun<MATRIX>
+whose arguments are lists representing the rows of the matrix.  (The functions
+$fun<ENTERMATRIX> and $fun<GENMATRIX> may also be used to construct a matrix
+$see<matrix!functions>.)
+.end
+The operators + , - , * , and / may be used between two matrices and take effect
+elementwise.  (A matrix minus itself gives the zero matrix of the same size.) 
+They may also be used between a scalar and a matrix and the scalar will be
+operated on with each element of the matrix.  $$In MACSYMA a scalar is an expression consisting of numbers, constants, and atoms declared SCALAR.*
+
+Matrix multiplication is signified by using the dot operator (non-commutative
+product).  Raising a matrix to a power (multiplying it by itself) is
+accomplished by use of the ^^ operator.  That is, M.M is equivalent to M^^2. 
+The inverse of a matrix may be obtained by using a negative exponent, i.e.
+M^^-1.
+
+If the switch $var<LISTARITH/TRUE> is TRUE then 
+.begin narrow 8,5
+.scon
+1) Lists will behave arithmetically: they can be added to one another, etc.
+.scon
+2) In matrix operations they can be used as row or column vectors and will be
+converted to such when necessary.
+.end
+
+An element of a matrix may be referenced by subscripting the matrix as
+with arrays but the same name should not be used to stand for both a
+matrix and an array, or the array use will take precedence.
+
+There are many functions for operating on matrices as well as many
+options which can be set to give the user much flexibility and control
+over matrix operations (these are described in sec.
+$ref<matrix!functions>).  If a matrix is too wide to be displayed all
+at once, it is displayed column by column or as a list of lists.
+
+.example
+(C1) M:MATRIX([A,0],[B,1]);
+
+.begin group
+			    [ A  0 ]
+(D1)                        [      ]
+			    [ B  1 ]
+.end
+
+(C2) M[1,1]*%;
+.begin group
+			   [  2     ]
+(D2)                       [ A    0 ]
+			   [        ]
+			   [ A B  A ]
+.end
+
+(C3) M*M;
+.begin group
+			   [  2    ]
+			   [ A   0 ]
+(D3)                       [       ]
+			   [  2    ]
+			   [ B   1 ]
+.end
+
+(C4) M.M;
+.begin group
+			 [    2       ]
+(D4)                     [   A      0 ]
+			 [            ]
+			 [ A B + B  1 ]
+.end
+
+(C5) D2-D4+1;
+.begin group
+			 [  1     1 ]
+(D5)                     [          ]
+			 [ 1 - B  A ]
+.end
+(C6) M^-1;
+Division by 0
+
+
+.begin group
+(C7) M^^-1;
+			       [  1     ]
+			       [  -   0 ]
+			       [  A     ]
+(D7)                           [        ]
+			       [   B    ]
+			       [ - -  1 ]
+			       [   A    ]
+.end
+
+(C8) [X,Y].M;
+
+(D8) 			[ B Y + A X  Y]
+
+.end
+
+.sec (Equations)
+
+An equation is formed in MACSYMA simply by using an equal sign between any two
+expressions.  Equations may be added or subtracted, and they may be multiplied
+or divided by any expression.  They may be operated on just
+as any MACSYMA expression can be and may serve as arguments to functions.
+
+.example
+(C1) X+1=Y^2$
+
+(C2) X-1=2*Y+1$
+
+(C3) D1+D2;
+.begin group
+                         2
+(D3)              2 X = Y  + 2 Y + 1
+.end
+
+(C4) D1/Y;
+.begin group
+                      X + 1
+(D4)                  ----- = Y
+                        Y
+.end
+
+(C5) 1/%;
+.begin group
+                        Y     1
+(D5)                  ----- = -
+                      X + 1   Y
+.end
+.end
+
+.sec (IF Statement,if!statement,1)
+
+The $fun<IF> statement is used for conditional execution.  The syntax is
+.begin turn on "_"
+
+_IF 2condition* THEN 2expression1* ELSE 2expression2*.
+.end
+.scon
+The result of an IF statement is 2expression1* if 2condition* is
+true and 2expression2* if it is false.  2expression1* and
+2expression2* are any MACSYMA expressions (including nested IF
+statements), and 2condition1 is an expression (known as a
+"predicate") which evaluates to
+TRUE or FALSE and is composed of relational and logical operators
+which are as follows:
+
+.example group turn on "\"; narrow 8; tabs  4, 24, 32, 36, 48, 56;
+\1Operator name\Symbol\\Type
+
+\greater than\>\\relational infix
+\equal to\= , EQUAL\"  "
+\not equal to\#\\"  "
+\less than\<\\"  "
+\greater than\>=
+\ or equal to\\\"  "
+\less than\<=
+\ or equal to\\\"  "
+\and\AND\\logical infix
+\or\OR\\"  "
+\not\NOT\\logical prefix
+
+.end
+
+The relational operators all have equal priorities which are less than the
+priorities of the arithmetic operators and greater than that of the logical
+operators.  The priority of NOT is greater than that of AND which is greater
+than that of OR.   The difference between  "=" and  EQUAL is discussed in sec. $ref<decass>.
+
+If the ELSE clause is omitted, this will be the same as if
+ ELSE FALSE were specified.  In order to have several expressions evaluated after the
+THEN or ELSE clauses, the expressions may be enclosed in a compound statement $see<compound!statement> but care should be taken to return the desired
+value.  The switch $var<PREDERROR/TRUE> determines the action taken if a clause is not universally true or universally false $see<decass>. 
+.example
+(C1)  FIB[N]:= IF N=1 OR N=2 THEN 1
+            ELSE FIB[N-1]+FIB[N-2]$
+
+(C2)  FIB[1]+FIB[2];
+(D2)                    2
+(C3)  FIB[3];
+(D3)                    2
+(C4)  FIB[5];
+(D4)                    5
+
+(C5)  ETA(MU,NU):= IF MU=NU THEN MU
+             ELSE  IF  MU>NU  THEN MU-NU
+             ELSE MU+NU$
+
+(C6)  ETA(5,6);
+(D6)                    11
+
+(C7)  ETA(ETA(7,7),ETA(1,2));
+
+(D7)                    4
+
+(C8)   IF NOT 5>=2 AND 6<=5 OR 4+1>3 THEN A ELSE B;
+
+(D8)                    A
+.end
+
+.sec (Compound Statements,compound!statement,1)
+
+In order to execute a sequence of statements in a context where a single
+statement is permitted then the user may group these statements into a 2compound statement1 by separating them with commas and enclosing the whole group in
+parentheses.  The value of a compound statement is the value of the last
+statement in the group.
+
+Compound statements are also useful for grouping together a sequence of related calculations
+when a computation cannot easily be expressed in a single MACSYMA statement.
+
+.example group
+(C1) IF X=Y THEN (X:X+1, Y:Y-1)
+       ELSE (S:0, FOR I:1 THRU X DO (S:S+F(I), Y:Y-G(Y)))$
+.end
+
+.sec (Program Blocks,program!blocks,1)
+
+Blocks in MACSYMA are somewhat analogous to subroutines in FORTRAN or
+procedures in ALGOL or PL/I.  Blocks are like compound statements but
+also enable the user to tag statements within the block and to assign
+"dummy" variables to values which are local to the block. The syntax
+is:
+
+.inline function(BLOCK,|[v1, ... vk], statement1,..., statementj|)
+.scon
+where the 2vi* are atomic variables, possibly with initial assignments
+(see bleow) which are local to the BLOCK and
+the 2statements* are any MACSYMA expressions.  If no variables are
+to be made local then the list may be omitted.
+
+A block uses these local variables to avoid conflict with variables
+having the same names used outside of the block (i.e. global to the
+block) and to free up storage used by local computation upon exit
+from the block.  In this case, upon entry to the block, the global values are
+saved onto a stack and are inaccessible while the block is being
+executed.  The local variables then are unbound so that they evaluate
+to themselves.  They may be bound to arbitrary values within the block
+but when the block is exited the saved values are restored to these
+variables.  The values created in the block for these local variables
+are lost.  Where a variable is used within a block and is not in the
+list of local variables for that block it will be the same as the
+variable used outside of the block.
+
+In order to save and restore other local properties besides VALUE,
+namely ARRAY (except for complete arrays - $see<compilation>),
+FUNCTION, DEPENDENCIES, ATVALUE, MATCHDECLARE, ATOMGRAD, CONSTANT, SCALAR and
+NONSCALAR$$All of these properties except for FUNCTION are related
+more closely to the use of the name as a variable rather than as a
+function.* $see<property!specification>, the function $fun<LOCAL>
+should be used inside of the block with arguments being the names of
+the variables $see<miscfun>.
+
+The value of the block is the value of the last statement or the value
+of the argument to the function $fun<RETURN> which may be used to exit
+explicitly from the block. The function $fun<GO> may be used to
+transfer control to the statement of the block that is tagged with the
+argument to GO.  To tag a statement, precede it by an atomic argument
+as another statement in the BLOCK.  For example:
+BLOCK([X],X:1,LOOP,X:X+1,...,GO(LOOP),...).  The argument to GO must be
+the name of a tag appearing within the BLOCK.  For example GO(IF X>Y THEN
+PLACE1 ELSE COMPUTEPLACE(X)).  One cannot use GO to transfer to a tag
+in a BLOCK other than the one containing the GO.
+
+Blocks typically appear on the right side of a function definition but can be used in
+other places as well.
+
+.example
+.begin group
+(C1) HESSIAN(F):=BLOCK([DFXX,DFXY,DFXZ,DFYY,DFYZ,DFZZ],
+      DFXX:DIFF(F,X,2),DFXY:DIFF(F,X,1,Y,1),
+      DFXZ:DIFF(F,X,1,Z,1),DFYY:DIFF(F,Y,2),
+      DFYZ:DIFF(F,Y,1,Z,1),DFZZ:DIFF(F,Z,2),
+      DETERMINANT(MATRIX([DFXX,DFXY,DFXZ],[DFXY,DFYY,DFYZ],
+              [DFXZ,DFYZ,DFZZ])))$
+.end
+
+(C2) HESSIAN(X^3-3*A*X*Y*Z+Y^3);
+
+.begin group
+                          3             2  3       2  3
+(D2)                - 54 A  X Y Z - 54 A  Y  - 54 A  X
+.end
+
+(C3)  SUBST(1,Z,QUOTIENT(%,-54*A^2));
+
+.begin group
+                               3            3
+(D3)                          X  + A Y X + Y
+.end
+
+.end
+
+The above example computes the Hessian of a cubic curve (the Folium of
+Descartes) which turns out to be invariant under this transformation, i.e. the
+result is of the same form.
+
+The example below illustrates the saving and restoring of values described at the
+beginning of this section.
+
+.example
+(C4) F(X):=BLOCK([Y], LOCAL(A), Y:4, A[Y]:X, DISPLAY(A[Y]))$
+
+(C5) Y:2$
+
+(C6) A[Y+2]:0$
+
+(C7) F(9);
+.begin group
+                                  A  = 9
+                                   4
+.end
+
+(D7)                              DONE
+
+(C8) A[Y+2];
+(D8)                                0
+
+.once fill indent 0,0
+1If LOCAL(A) had not been used, the value on line D8 would have been 9.
+
+.end
+
+.sec (The DO Statement,do!statements,1)
+
+The $fun<DO> statement is used for performing iteration.  Due to its great generality
+the DO statement will be described in two parts.  First the usual form will be
+given which is analogous to that used in several other programming languages
+(FORTRAN, ALGOL, PL/I, etc.); then the other features will be mentioned.
+
+.subsec (Commonly Used Forms,common!forms,1)
+
+There are three variants of this form that differ only in their terminating
+conditions.  They are:
+.skip 1
+.BEGIN GROUP NOFILL INDENT 0
+1(a)  5$fun<FOR> 2variable : 2initial-value 5STEP 2increment
+      5THRU 2limit 5DO 2body
+
+(b)  5FOR 2variable : 2initial-value 5STEP 2increment
+      5WHILE 2condition 5DO 2body
+
+(c)  5FOR 2variable : 2initial-value 5STEP 2increment
+      5UNLESS 2condition 5DO 2body1
+
+.once fill indent 0,0
+(Alternatively, the STEP may be given after the termination condition
+or limit. )
+
+.end
+
+The 2initial-value*, 2increment*, 2limit*, and 2body* can be
+any expressions.  To iterate over several statements, the 2body* can
+be made into a compound statement $see<compound!statement> or a
+$fun<BLOCK> $see<program!blocks>.  The 2condition* (or predicate) is
+as in the IF statement.  If the 2increment* is 1 then "STEP 1" may
+be omitted.
+
+The execution of the DO statement proceeds by first assigning the
+2initial-value* to the 2variable* (henceforth called the control-variable). 
+Then: (1) If the control-variable has exceeded the 2limit* of a THRU
+specification, or if the 2condition* of the UNLESS is TRUE, or if the
+2condition* of the WHILE is FALSE then the DO terminates. (2) The 2body* is
+evaluated.  (3) The 2increment* is added to the control-variable.  The process
+from (1) to (3) is performed repeatedly until the termination condition is
+satisfied.  One may also give several termination conditions in which case the
+DO terminates when any of them is satisfied.
+
+In general the THRU test is satisfied when the control-variable is greater than
+the 2limit* if the 2increment* was non-negative, or when the
+control-variable is less than the 2limit* if the 2increment* was negative. 
+The 2increment* and 2limit* may be non-numeric expressions as long as this
+inequality can be determined.  However, unless the 2increment* is syntactically
+negative (e.g. is a negative number) at the time the DO statement is input,
+MACSYMA assumes it will be positive when the DO is executed.  If it is not
+positive, then the DO may not terminate properly.
+
+Note that the 2limit*, 2increment*, and termination 2condition* are
+evaluated each time through the loop.  Thus if any of these involve much
+computation, and yield a result that does not change during all the executions
+of the 2body*, then it is more efficient to set a variable to their value
+prior to the DO and use this variable in the DO form.
+
+The value normally returned by a DO statement is the atom DONE, as
+every statement in MACSYMA returns a value.  However, the function
+$fun<RETURN> $see<program!blocks> may be used inside the body to exit
+the DO prematurely and give it any desired value.  Note however that a
+$fun<RETURN> within a DO that occurs in a $fun<BLOCK> will exit only
+the DO and not the BLOCK.  Note also that the $fun<GO> function may
+not be used to exit from a DO into a surrounding $fun<BLOCK>.
+
+The control-variable is always local to the DO and thus any variable
+may be used without affecting the value of a variable with the same
+name outside of the DO.  The control-variable is unbound (or resumes its
+global value, if any) after the DO terminates.
+
+.example
+(C1)   FOR A:-3 THRU 26 STEP 7 DO LDISPLAY(A)$
+(E1)          A = -3
+(E2)          A =  4
+(E3)          A = 11
+(E4)          A = 18
+(E5)          A = 25
+
+.once fill indent 0,0
+1The function LDISPLAY generates intermediate labels;  DISPLAY does not.*
+.SCON
+(C6)   S:0$
+(C7)   FOR I:1 WHILE I<=10 DO S:S+I;
+(D7)          DONE
+(C8)   S;
+(D8)          55
+
+.once fill indent 0,0
+1Note that the condition in C7 is equivalent to UNLESS I > 10 and also THRU 10*
+.SCON
+(C9)   SERIES:1$
+(C10)  TERM:EXP(SIN(X))$
+(C11)  FOR P:1 UNLESS P>7 DO
+          (TERM:DIFF(TERM,X)/P,
+          SERIES:SERIES+SUBST(X=0,TERM)*X^P)$
+(C12)   SERIES;
+.begin group
+                7    6     5    4    2
+(D12)          X    X     X    X    X
+               -- - --- - -- - -- + -- + X + 1
+               96   240   15   8    2
+.end
+.end
+.bcon
+1which gives 8 terms of the Taylor series for e^[sin(x)].*
+.example
+(C13) POLY:0$
+.begin group
+(C14) FOR I:1 THRU 5 DO
+        FOR J:I STEP -1 THRU 1 DO
+           POLY:POLY+I*X^J$
+.end
+
+(C15) POLY;
+.begin group
+              5      4       3       2
+(D15)      5 X  + 9 X  + 12 X  + 14 X  + 15 X
+.end
+
+(C16) GUESS:-3.0$
+
+.begin group
+(C17) FOR I:1 THRU 10 DO (GUESS:SUBST(GUESS,X,.5*(X+10/X)),
+         IF ABS(GUESS^2-10)<.00005 THEN RETURN(GUESS));
+.end
+
+(D17)                  - 3.1622807
+
+.end
+
+This example computes the negative square root of 10 using the Newton-Raphson
+iteration a maximum of 10 times.  Had the convergence criterion not been met the value
+returned would have been "DONE".
+
+.subsec (Additional Forms of the DO Statement,additional!do,1)
+
+Instead of always adding a quantity to the control-variable one may sometimes wish
+to change it in some other way for each iteration.  In this case one may use "NEXT
+2expression*" instead of "STEP increment".  This will cause the control-variable to be set
+to the result of evaluating 2expression* each time through the loop.
+
+.example group
+(C1)  FOR COUNT:2 NEXT 3*COUNT THRU 20
+         DO DISPLAY(COUNT)$
+
+                    COUNT = 2
+                    COUNT = 6
+                    COUNT = 18
+
+.end
+
+As an alternative to $fun<FOR> variable:value ...$fun<DO>... the syntax
+.skip once nofill center
+FOR variable FROM value ...DO...
+.end continue
+may be used.  This permits the "FROM value" to be placed after the step or next
+value or after the termination condition.  If "FROM value" is omitted then 1 is used as
+the initial value.
+
+Sometimes one may be interested in performing an iteration where the
+control-variable is never actually used.  It is thus permissible to give only the
+termination conditions omitting the initialization and updating information as in the
+following example to compute the square-root of 5 using a poor initial guess.
+
+.example group
+(C1) X:1000
+(C2)  THRU 10 WHILE X#0.0 DO X:.5*(X+5.0/X)$
+(C3) X;
+(D3)               2.236068
+
+.end
+
+If it is desired one may even omit the termination conditions entirely and just
+give "DO body" which will continue to evaluate the body indefinitely.  In this
+case the function $fun<RETURN> $see<compound!statement> should be used to
+terminate execution of the DO.
+
+.example
+.begin group
+(C1) NEWTON(F,GUESS):=BLOCK([NUMER,Y],LOCAL(DF),NUMER:TRUE,
+        DEFINE(DF(X),DIFF(F(X),X)),
+         DO (Y:DF(GUESS), IF Y=0.0 THEN ERROR(
+          "DERIVATIVE AT",GUESS," IS ZERO"),
+         GUESS:GUESS-F(GUESS)/Y,
+         IF ABS(F(GUESS))<5.0E-6 THEN RETURN(GUESS)))$
+.end
+
+(C2) SQR(X):=X^2-5.0$
+
+(C3) NEWTON(SQR,1000);
+(D3)                    2.236068
+
+.end
+
+(Note that RETURN, when executed, causes the current value of GUESS to be
+returned as the value of the DO.  The $fun<BLOCK> is exited and this value of
+the DO is returned as the value of the BLOCK because the DO is the last
+statement in the block.)
+
+One other form of the $fun<DO> is available in MACSYMA.  The syntax is:
+
+.example once center
+5FOR 2variable 5IN 2list [end-tests] 5DO 2body
+
+.end
+1
+
+The members of the 2list* $see<lists> are any expressions which will successively be
+assigned to the variable on each iteration of the 2body*.  The optional 2end-tests* can be
+used to terminate execution of the DO; otherwise it will terminate when the 2list* is
+exhausted or when a RETURN is executed in the 2body*.    (In fact, 2list* may be any non-atomic expression, and successive parts are taken.)
+
+.example
+(C1)  FOR F IN [LOG, RHO, ATAN] DO LDISP(F(1.0))$
+
+(E1) 				      0
+
+(E2) 				    RHO(1)
+
+				     %PI
+(E3) 				     ---
+				      4
+
+(C4) EV(E3,NUMER);
+
+(D4)                             0.78539816
+.end
+
+.sec (Syntax Extension,syntax!extension,1)
+
+It is possible to add new operators to MACSYMA (infix, prefix, postfix, unary,
+or matchfix with given precedences), to remove existing operators, or to redefine the
+precedence of existing operators.  Details may be found in Appendix II.
+
+
+.chap (What a Serious User Should Know,serious)
+
+Usually the user need not be concerned with the internal workings of MACSYMA, but
+some knowledge of the representation of expressions and of the way in which they are
+evaluated, simplified, and displayed should be acquired in order to use MACSYMA more
+easily, efficiently, and effectively.
+
+.sec (Representation,rep)
+
+After an expression is read by MACSYMA it is automatically translated (i.e. lexically 
+scanned and parsed) to a LISP "internal" form.  This is the form in which
+MACSYMA's programs deal with expressions.  Initially the translated expression
+is in "general" form but certain functions convert this to other forms.
+
+(1) 5The general form* represents non-atomic expressions as LISP lists whose first
+element is the main operator of the expression and whose remaining elements are the
+operands also represented in this form.  Thus, after simplification, 2*X+3/4 is represented essentially $$Ignoring the flags MACSYMA places on operators* 
+as (PLUS (RAT 3 4) (TIMES 2 X)).  F(X)-LOG(X) is represented as
+(PLUS (F X) (TIMES -1 (LOG X))).  Any expression which MACSYMA deals with can be
+represented in this form.
+
+(2) 5Canonical Rational Expressions* constitute a second kind of
+representation which is especially suitable for expanded polynomials
+and rational functions (as well as for partially factored polynomials
+and rational functions when RATFAC[FALSE] is set to TRUE,
+$see<rational!functions>).  In this 5CRE form* an ordering of
+variables (from most to least main) is assumed for each expression.
+Polynomials are represented recursively by a list consisting of the
+main variable followed by a series of pairs of expressions, one for
+each term of the polynomial.  The first member of each pair is the
+exponent of the main variable in that term and the second member is
+the coefficient of that term which could be a number or a polynomial
+in another variable again represented in this form.  Thus the
+principal part of the CRE form of 3*X^2-1 is (X 2 3 0 -1) and that of
+2*X*Y+X-3 is (Y 1 (X 1 2) 0 (X 1 1 0 -3)) assuming Y is the main
+variable, and is (X 1 (Y 1 2 0 1) 0 -3) assuming X is the main
+variable. "Main"-ness is usually determined by reverse alphabetical
+order.  In the case of sums like X-Y, the display is X-Y, however
+(unless the flag $var<NEGSUMDISPFLAG/TRUE> is set to FALSE).
+
+The "variables" of a CRE expression needn't be atomic.  In fact any
+subexpression whose main operator is not + - * / or ^ with integer
+power will be considered a "variable" of the expression (in CRE form)
+in which it occurs.  For example the CRE variables of the expression
+X+SIN(X+1)+2*SQRT(X)+1 are X, SQRT(X), and SIN(X+1).  If the user does
+not specify an ordering of variables by using the RATVARS function
+$see<rational!functions> MACSYMA will choose an alphabetic one.
+
+In general, CRE's represent rational expressions, that is, ratios of polynomials,
+where the numerator and denominator have no common factors, and the denominator is
+positive.  The internal form is essentially a pair of polynomials (the numerator and
+denominator) preceded by the variable ordering list.
+
+If an expression to be displayed is in CRE form or if it contains  any subexpressions in CRE form,
+the symbol /R/ will follow the line label.
+
+(3) An 5extended CRE form* is used for the representation of Taylor series. The notion of a rational expression is
+extended so that the exponents of the variables can be positive or negative rational
+numbers rather than just positive integers and the coefficients can themselves be 
+rational expressions as described above in (2) rather than just polynomials.  These are
+represented internally by a recursive polynomial form which is similar to and is a generalization
+of CRE form, but carries additional information such as the degree of truncation. 
+
+As with CRE form, the symbol /T/ follows the line label of such expressions.
+
+(4) When $var<RATFAC/FALSE> is TRUE, expressions are brought into
+5partially factored form1: numerator and denominator are relatively
+prime products of recursively constructed primitive polynomial
+kernels.  Kernels at the same level within numerator and denominator
+may not be relatively prime.  In the future, kernels may be further
+specified to be square-free.
+
+(5) Another internal form is used to represent Poisson series.  This
+specialized representation of trigonometric series is described in
+section $ref<poissfun>.
+
+.sec(Evaluation)
+
+After MACSYMA parses a command line the expression is evaluated and simplified
+and the result is displayed.  Often the two-phase process of evaluation and
+simplification is referred to simply as "evaluation."  In this section though,
+we use the word "evaluation" to refer only to the evaluation stage proper and
+not to the simplification stage.
+
+MACSYMA expressions consist of numbers, variables, function calls, and
+operators.  When an expression is read by MACSYMA the parsing program
+translates it into LISP preserving the order and the result is the
+value of the current C line.  The evaluation phase proceeds by
+building up an expression which is similar in form to the input
+expression, but has certain substitutions.  The evaluator is
+recursive, and calls itself on all sub-expressions.
+
+When the evaluator sees a name, it checks to see whether the name has a value
+assigned to it.  If there is a value, that value is returned by the evaluator. 
+If there is no value assigned to the name, the evaluator just returns the name
+itself.  (For the means of assigning values to names refer to
+$ref<atomic!variables>.  For a description of the evaluation process as applied
+to subscripted names see $ref<arrays>).  Note that problems could arise if a
+variable is bound to an expression containing an occurrence of that variable
+since each time the variable is evaluated, the entire expression is substituted
+for each occurrence of the variable.  For example if Y has the value [X,Y,Z] and
+if the value of Y is evaluated the result is [X,[X,Y,Z],Z].
+
+MACSYMA distinguishes between two types of functions - nouns and verbs.  Most
+functions in the system, including all user-defined functions, are initially considered
+to be verb-type.  Undefined functions and some system functions are considered to be
+noun-type.  When the evaluator sees a function call, it evaluates the arguments to the
+function (unless that function is of a type which doesn't have its arguments evaluated, e.g. BATCH; for a list of such functions see Appendix VI).  Then, if the function is verb-type, the evaluator applies the
+function to the evaluated arguments and returns the value of the function.  For noun-type
+functions the evaluator returns an expression identical to the function call, except
+that the arguments are replaced by their evaluations.
+
+The user can explicitly declare a name to be noun-type by using the $fun<DECLARE>
+function $see<MACSYMA!properties>. $$The noun-ness applies to both the function use and array use of the name.  Note that nounifying a function name F doesn't affect occurrences of F that existed before F was nounified.*  For example, the function INTEGRATE normally
+tries to integrate its first argument.  After the command
+DECLARE(INTEGRATE,NOUN) is given however, INTEGRATE will not perform the
+integration.  Sometimes the user may give a verb function arguments which it is
+not equipped to deal with.  In certain cases the verb function will return the
+noun form of itself.  If this was because of some undefined functions in the
+expression, which the user defines at a later time, he can cause the noun-form
+to be re-evaluated at that time by giving the label of that line followed by the
+name of the unevaluated function separated with a comma as arguments of the
+function EV $see<general!functions>.  For example:
+
+.example
+(C1) DIFF(X*F(X),X);
+
+.begin group
+                     d
+(D1)              X (-- F(X)) + F(X)
+                     dX
+.end
+
+(C2) F(X):=SIN(X)$
+
+(C3) EV(D1,DIFF);
+(D3)              SIN(X) + X COS(X)
+
+.end
+
+Here we see that the expression returned by the evaluator is similar to the input
+expression.  The basic difference is that names which have values are replaced by their
+values and verb-type function calls are replaced by the result of applying the function
+to its arguments.
+
+MACSYMA has several special operators which give the user some control over the
+evaluation process.  The single-quote operator ' has the effect of preventing
+evaluation.  Thus an expression preceded by a single-quote evaluates to that
+expression.  A special case is the evaluation of a function call where the name
+of the function is preceded by a quote as in 'F(X).  In this instance the quote
+causes the function to be treated as though it were noun-type.
+
+To simply prevent evaluation of F(X) without converting F to a noun, use '(F(X)).
+
+The quote-quote operator, ' ' , causes an extra evaluation to occur. It is best considered as a macro character.  Inputting
+an expression preceded by a quote-quote has exactly the same effect as inputting
+the result of evaluating and simplifying the expression.  In other words when an
+inputted expression contains a sub-expression which begins with a quote-quote
+that sub-expression is replaced in the input string by the result of evaluating
+and simplifying the expression following the quote-quote.  This occurs at the
+time an expression is parsed.  In the case of evaluating a function call with a
+'' preceding the name of the function (i.e. ''F(x) ), the '' causes the function to be
+treated as if it were verb-type.
+
+.example
+.begin group
+(C1) X;
+(D1)                 X
+.end
+(C2) X:3$
+
+(C3) X;
+(D3)                 3
+
+(C4) 'X;
+(D4)                 X
+
+(C5) F(X):=X^2;
+.begin group
+                                    2
+(D5)                       F(X) := X
+.end
+
+(C6) 'F(2);
+(D6)                          F(2)
+
+(C7) EV(%,F);
+(D7)                           4
+
+(C8) '(F(2));
+(D8)                          F(2)
+
+(C9) ''%;
+
+1(''atom means evaluate the atom's value)*
+
+(D9)                           4
+
+(C10) DECLARE(INTEGRATE,NOUN)$
+
+.begin group
+(C11) INTEGRATE(Y^2,Y);
+                    /
+                   [  2
+(D11)              I Y DY
+                   ]
+                  /
+.end
+
+.begin group
+(C12) ''INTEGRATE(Y^2,Y);
+
+                      3
+                     Y
+(D12)                --
+                     3
+.end
+
+.begin group
+(C13) F(Y):=DIFF(Y*LOG(Y),Y,2);
+
+(D13) 			 F(Y) := DIFF(Y LOG(Y), Y, 2)
+.end
+
+.begin group
+(C14) F(Y):=''(DIFF(Y*LOG(Y),Y,2));
+                                     1
+(D14)                        F(Y) := -
+                                     Y
+.end
+
+.begin group
+(C15) C14;
+                                     1
+(D15)                        F(Y) := -
+                                     Y
+.end
+
+1(Notice that the input expression has been changed due to the use of ' '.)
+.end
+
+Referring to line (C14) above, suppose one wished to define the function F(Y) as
+DIFF(Y*LOG(Y),Y,I) within another function G(I) where the I in the definition of F(Y) is
+to be replaced by the argument to G when G is 2called*.
+
+G(I):=BLOCK(...,F(Y):=''(DIFF(Y*LOG(Y),Y,I)),...) will 2not* do the job because the
+.bcon
+'' operator will cause the differentiation to be carried out at parse time and thus either
+an error will result (if I is unbound) or the current global value of I will be used
+rather than the value of the argument to G when it is called.  Omitting the '' is also
+not desirable in this example because that would force the differentiation to be done each time F is called rather than at the time it is defined.  To remedy this one may use the command
+.function(DEFINE,|function(arguments),body|)
+.endfunction 
+.scon
+which is like 2function(arguments):=''body*
+but causes the evaluation of 2body1 to occur at the time DEFINE is evaluated.  Thus
+G(I):=BLOCK(...,DEFINE(F(Y),DIFF(Y*LOG(Y),Y,I)),...) will work properly.
+DEFINE may also be used for subscripted functions.
+
+.sec (Simplification,simp)
+
+The simplifier takes the output of the evaluator and tries to make the
+expression smaller and more manageable, using some built-in algebra.
+Unless the user takes some special action (such as setting the special
+variable SIMP to FALSE $see<general!functions> or calling FACTOR
+on an integer), MACSYMA will never
+output an unsimplified expression.  The simplifier re-orders
+expressions in order to obtain a standard form and the result is the
+value of the current D line.  Thus A+B+C or C+A+B or C+B+A if input,
+will all result in the same internal form, (PLUS A B C) which displays
+as C + B + A . The simplifier also changes the SQRT function to
+exponentiation to the 1/2 power and removes the difference and
+quotient operators from the expression by converting X-Y to X+(-1)*Y
+and X/Y to X*Y^[-1].
+
+Roughly speaking, the simplifier orders expressions on the basis of
+their subexpressions being ordered first.  Variables are ordered
+alphabetically i.e., from A to Z. Constants ($var<%E/>, $var<%PI/>,
+$var<%I/> and any atoms DECLAREd CONSTANT) come before variables and
+numbers come before constants.  Finally, functions are ordered
+according to their arguments$$Comparing first arguments first, second
+arguments second, etc.*, and according to their names in case their
+arguments are the same.  Thus Y+2*A*X-%PI would become (PLUS (TIMES -1
+%PI) (TIMES 2 A X) Y)).
+
+The user should be aware that the line between evaluation and simplification is
+not clear-cut.  For instance, SIN is a noun-function.  When the evaluator sees
+SIN(0), it returns SIN(0).  However, the simplifier notices this special case
+and changes this expression to 0.  So simplification will sometimes obscure the
+difference between noun and verb functions.
+
+[Mo1] mentions these and many other matters dealing with simplification.
+
+
+.chap (Miscellaneous Hints and Facilities,hints)
+
+Care should be taken in cases where an expression containing $var<%/> is re-evaluated
+since the value of % changes each time a new line is computed.  This  is shown in
+the following example.
+
+.example group
+(C1) (X+Y)^3$
+(C2) DIFF(%,X);
+                                2
+(D2)                   3 (Y + X)
+(C3)  Y:X^2+1$
+(C4)  ''C2;
+(D4)                  2 X
+
+.end
+
+In line C4 the user may have intended to re-evaluate C2 thinking that the % still
+referred to D1 while it actually referred to D3.  Note the use of the ' ' operator to
+re-evaluate a previous expression. $see<evaluation>
+
+The following interrupt characters typed 2while holding down the control key* have
+special functions.  They may be typed at any time--- even in the middle of a command line---and take effect immediately.
+
+^ 1 (control-shift-N on some terminals) - enters top-level LISP after resetting all locally bound variables and breaking out of all
+functions.  It is not possible to continue an interrupted calculation after a
+control-^, but typing (CONTINUE) will return to MACSYMA.
+
+5A1 - makes a breakpoint in MACSYMA and suspends the computation.  At this point
+the user is in a MACSYMA break loop.  If a user function was being executed at
+the time of the break, its values may be printed or changed.  Aside from this,
+it is almost like being at top-level MACSYMA.  To exit and resume the
+computation type EXIT; $see<debugging>.
+
+5X1 - quits a computation started while in a control-A break without quitting the
+top-level computation. Specifically this means:
+.begin indent 5,10;turn on ""
+(a)(11)If you were at toplevel, it will be as if you typed ^G.
+.break
+(b)(11)If you were in a MACSYMA-BREAK, it quits back to the break.
+.break
+(c)(11)If you were at LISP-TOPLEVEL or LISP-BREAK, it does what typing ^X to LISP
+does, namely an (ERROR 'QUIT).
+.end
+
+5]1 - (control-shift-M on some terminals) prints the time used so far in a computation
+(without interrupting it).
+
+5U1 - the User-interrupt-character.  To use this feature,
+one sets TTYINTFUN (default FALSE meaning feature not in use) to a
+function of no arguments.  Then whenever ^U is
+typed, this function is run.  E.g. suppose you have a FOR statement
+loop which increments I, and you want an easy way of checking on the
+value of I while the FOR statement is running.  You can do:
+TTYINTFUN:PRINTI$ PRINTI():=PRINT(I)$ , then whenever you type (e.g.)
+^U you get the check you want.  (Another character may be chosen for
+this function, by resetting TTYINTNUM[21] to the ascii value of some
+other character.)
+
+5K1 - reprints the current input line.  This is useful when many rubouts have obscured the
+line (on hardcopy devices).
+
+5Y1 - gets the last command string.  (The last thing you typed on a C-line)
+
+5L1 - clears the screen on display consoles and reprints the current line.
+
+5W1 - stops printout at the console while the computation continues. (If the user is connected to MACSYMA via the ARPA network, printout will not stop until the Arpanet buffer is emptied.) The switch
+$var<TTYOFF/FALSE> if set to TRUE also stops the printout. This is useful for
+temporarily turning off the display for functions which might generate a lot of
+printing like BATCH.  Setting the switch to FALSE causes printing to be resumed.
+
+5S1 - turns printout off until just before the next C-line which 
+prompts for input from the console is to be printed.  (Typing 
+^V or a quit character will also resume printout.)
+^S should prove useful for shutting off long D-line displays and 
+all printout from running a BATCH file.  One just issues a call to 
+BATCH, and types ^S any time after the batch starts.  Printout will 
+resume when the batch is done (or when necessary, e.g. to allocate 
+space).
+
+5V1 - resumes printout at the console turned off by control-W or control-S.
+
+5G1 - aborts a computation and returns control
+to top-level MACSYMA.  This is like control-^ immediately followed by
+($fun<CONTINUE>) and is useful for breaking out of infinite loops or for
+terminating a computation prematurely.
+
+5B1 - makes a "breakpoint" in MACSYMA, enters LISP,
+and prints the time used in
+the current computation.  Control-B does not reset any values.  Altmode (or
+Escape) P (for proceed) followed by a space will return to MACSYMA and resume
+the computation.
+
+5H1 - (or BACKSPACE) is not used by MACSYMA.  (It no longer gives a LISP breakpoint, type ^B to get that.)  Typing ^H will print out a message 
+telling you to use the RUBOUT or DEL(ETE) key to erase a character, and 
+will then simulate a ^K, i.e. reprint the current string, to clear the air.
+
+5D1 - causes garbage collection statistics to be printed out each
+time a garbage collection takes place [Mn1].  Typing it again will
+turn off this feature.  See Chapter
+$ref<storman>.
+
+.skip 1
+Two of the many MACSYMA variables or options mentioned later on are of special
+interest and will be described here.
+
+(1) The value of $var<LINEL/> gives the number of characters which are printed on a line.
+It is initially set by MACSYMA to the line length of the type of terminal being used (as
+far as is known) but may be reset at any time by the user. The user may have to reset it in DDT with :TCTYP as well.  See [Lew1].
+
+(2) If the variable $var<SHOWTIME/FALSE> is TRUE then the computation time
+will be printed automatically with each output expression.
+
+Sometimes when a user gives a command line the message "... being loaded" will
+be printed.  This means that a function being used in the command line and/or
+the associated programs are not in the initially loaded MACSYMA but are being
+loaded in now via the dynamic loader.  Infrequently used or inessential functions are not
+initially loaded into MACSYMA in an effort to save space.
+
+When in LISP typing (CONTINUE) or control-G will return to MACSYMA.
+
+MACSYMA provides the facility for the user to have an initialization
+file which gets loaded automatically before line (C1) is printed.
+Such a file should have for a first file name the user's login name
+and for a second file name MACSYM.  If the user has his own directory,
+this file goes there, or he may place it on his home directory.
+This file must be in the format for
+the $fun<LOADFILE> function $see<disk!storage>, i.e. it must contain
+LISP code.  It may be created via the $fun<SAVE> function
+$see<disk!storage> or by translating a $fun<BATCH> file
+$see<compilation>.
+
+A user who knows LISP should note that preceding a name with a  ?  causes the corresponding LISP atom to be invoked.  For example,  ?FIXP(4.2); returns FALSE, where  FIXP is the name of a LISP system function.
+
+
+.chap (Predefined Constants and Functions,predefined)
+
+.sec(Constants,predefined!constants)
+
+
+A number of common mathematical constants have special names in MACSYMA;
+
+.begin indent 4,0
+
+5$var<%E/>1 - the base of the natural logarithms.
+
+5$var<%PI/>1 - the transcendental number  .
+
+5$var<%I/>1 -  the square root of -1.
+
+5$var<INF/>1 -  real positive infinity.
+
+5$var<MINF/>1 -  real minus infinity.
+
+5$var<INFINITY/>1 -  complex infinity, an infinite magnitude of arbitrary phase angle.$$The infinity symbols have meaning only for certain functions, for example, LIMIT, INTEGRATE, SUM.*
+
+5$var<TRUE/>1 -  the Boolean constant, true. (T in LISP)
+
+5$var<FALSE/>1 -  the Boolean constant, false. (NIL in LISP)
+
+.end
+
+.sec(Functions,predefined!functions)
+
+All of the functions mentioned below take one argument (shown as X) unless
+stated otherwise.  The default values of MACSYMA variables which affect certain
+functions are given in brackets with the function.
+
+.next page
+.subsec(Simple Functions,simple!functions)
+
+.function(ABS,X)
+ - absolute value of X
+
+
+$var<ABSBOXCHAR/!> is the character used to draw absolute value
+signs around expressions  which are more than a single line high.
+
+.endfunction
+
+.function(FLOAT,exp)
+ - converts integers, rational numbers and bigfloats in 2exp1 to floating point numbers.  
+.endfunction
+
+.function(BFLOAT,X)
+ - converts all numbers and functions of numbers to bigfloat numbers.
+Setting $var<FPPREC/16> to N, sets the bigfloat precision to N digits.
+If $var<FLOAT2BF/FALSE> is FALSE a warning message is printed when a floating point number is converted into a bigfloat number (since this may lead to loss of precision).
+
+.endfunction
+
+
+.function(ENTIER,X)
+ - largest integer 7<* X.
+.endfunction
+
+.function(SIGNUM,X)
+ - if X<0 then -1 else if X>0 then 1 else 0.  If X is not numeric then a
+simplified but equivalent form is returned. For example, SIGNUM(-X) gives -SIGNUM(X). 
+.endfunction
+
+.function(POLYSIGN,X)
+ - same as SIGNUM but always returns a numerical result by looking at
+the numerical factor of the highest degree term in X.
+.endfunction
+
+.function(MIN,|X1, X2, ...|)
+yields the minimum of its arguments  (or returns a simplified form if some of
+its arguments are non-numeric).
+.endfunction
+
+.function(MAX,|X1, X2, ...|)
+yields the maximum of its arguments  (or returns a simplified form if some of
+its arguments are non-numeric).
+
+.endfunction
+
+.subsec(Miscellaneous Functions,miscellaneous!functions)
+
+.function(SQRT,X)
+- the square root of X. It is represented internally by X^(1/2).
+Also see $fun<ROOTSCONTRACT> in  section $ref<evsimpfun>.
+.endfunction
+
+.begin narrow 4
+$var<RADPRODEXPAND/TRUE> - if TRUE will cause nth roots of factors of a
+product which are powers of n to be pulled outside of the radical, e.g.
+SQRT(16*X^2) will become 4*X only if RADPRODEXPAND is TRUE.
+.end
+
+.function(ISQRT,X)
+- takes one integer arg and returns the "integer SQRT" of its absolute value.
+.endfunction
+
+.function(EXP,X)
+- the exponential function.  It is represented internally as %E^X.
+
+.endfunction
+
+.begin narrow 4
+$var<DEMOIVRE/FALSE> - if TRUE will cause %E^[A+B*%I] to become
+%E^A*(COS(B)+%I*SIN(B)) if B is free of %I.  A and B are not expanded.
+
+$var<%EMODE/TRUE> - when TRUE %E^[%PI*%I*X] will be simplified as follows:
+it will become COS(%PI*X)+%I*SIN(%PI*X) if X is an integer or a multiple of
+1/2, 1/3, 1/4, or 1/6 and thus will simplify further.  For other numerical X it will become %E^[%PI*%I*Y] where Y is X-2*k for some integer k such that ABS(Y)<1. If %EMODE is FALSE no simplification of %E^[%PI*%I*X] will take place.
+
+$var<%ENUMER/FALSE> - when TRUE will cause %E to be converted into 2.718...
+whenever NUMER is TRUE.   The default is that this conversion will take place only if the exponent in %E^X evaluates to a number.
+.end
+
+.function(LOG,X)
+- the natural logarithm.
+.endfunction
+.begin narrow 4
+$var<LOGEXPAND/TRUE> - causes LOG(A^B) to become B*LOG(A).  If it is set to
+ALL, LOG(A*B) will also simplify to LOG(A)+LOG(B).  If it is set to SUPER,
+then LOG(A/B) will also simplify to LOG(A)-LOG(B) for rational numbers
+a/b, a#1.  (LOG(1/B), for B integer, always simplifies.)  If it is set
+to FALSE, all of these simplifications will be turned off.
+
+$var<LOGSIMP/TRUE> - if FALSE then no simplification of %E to a power containing LOG's
+is done.
+
+$var<LOGNUMER/FALSE> - if TRUE then negative floating point arguments to LOG will always be converted to their absolute  value before the log is taken.  If NUMER is also  TRUE, then  negative integer arguments to LOG will also be converted to their absolute value.
+.end
+.scon
+The $fun<LOGCONTRACT> command  $see<evsimpfun> "contracts" expressions containing LOG.
+
+.function(PLOG,X)
+- the principal branch of the complex-valued natural logarithm with
+-%PI < arg(X) 7<* +%PI .
+.endfunction
+
+.function(BINOMIAL,|X, Y|)
+- the binomial coefficient X*(X-1)*...*(X-Y+1)/Y!. If X and Y are integers, the binomial coefficient is
+actually computed. If Y or X-Y is an integer, the binomial coefficient is
+simplified to a polynomial.
+
+.endfunction
+
+.function(RANDOM,X)
+ - returns a random integer between 0 and X-1.  If no argument is
+given then a random integer between -2^[35] and 2^[35]-1 is returned.  If X is FALSE
+then the random sequence is restarted from the beginning.
+.endfunction
+
+.function(FIB,X)
+ - the Xth Fibonacci number with FIB(0)=0, FIB(1)=1, and FIB(-N)=(-1)^[(N+1)]*FIB(N).  PREVFIB is FIB(X-1), the Fibonacci number preceding the last one computed.
+.endfunction
+
+.function(GENFACT,|X, Y, Z|)
+is the generalized factorial of X which is: X*(X-Z)*(X-2*Z)*...*(X-(Y-1)*Z). 
+Thus, for integral X, GENFACT(X,X,1)=X! and GENFACT(X,X/2,2)=X!!
+
+.endfunction
+
+.function(GAMMA,X)
+- the gamma function. GAMMA(I)=(I-1)!  for I a positive integer.
+
+.endfunction
+
+.begin narrow 4
+$var<GAMMALIM/1000000> controls simplification of the gamma function for
+integral and rational number arguments.  If the absolute value of the argument
+is not greater than GAMMALIM, then simplification will occur.  Note that the
+FACTLIM switch $see<mathematical!operators> controls simplification of the
+result of GAMMA of an integer argument as well.
+.end
+
+.function(BETA,|X, Y|)
+- same as GAMMA(X)*GAMMA(Y)/GAMMA(X+Y)
+
+.endfunction
+
+.function(ERF,X)
+ - the error function, whose derivative is:  2*EXP(-X^2)/SQRT(%PI).
+.endfunction
+
+.function(EULER,X)
+ - gives the Xth Euler number for integer X.
+.endfunction
+
+.function(BERN,X)
+- gives the Xth Bernoulli number for integer X.
+
+.endfunction
+
+.begin narrow 4
+$var<ZEROBERN/TRUE> if set to FALSE excludes the zero BERNOULLI numbers.
+.end
+
+.function(ZETA,X)
+ - gives the Riemann zeta function for certain integer values of X.
+.endfunction
+
+.function(PSI,X)
+ - derivative of LOG(GAMMA(X)).  At this time, MACSYMA does not have numerical
+evaluation capabilities for PSI.
+
+.endfunction
+
+.subsec(Trigonometric Functions,trigonometric!functions)
+
+
+This section outlines the way in which trigonometric functions are called in MACSYMA.  The user should also read Section 2 of the MACSYMA Primer [Mo5]
+
+.begin turn on "_"
+_2Circular Functions*
+
+_$fun<SIN>, $fun<COS>, $fun<TAN>, $fun<COT>, $fun<SEC>, $fun<CSC>
+
+_2Inverse Circular Functions*
+
+_$fun<ASIN>, $fun<ACOS> , $fun<ATAN> , $fun<ACOT> , $fun<ASEC> , $fun<ACSC>
+
+
+.function(ATAN2,|Y,X|)
+- yields the value of ATAN(Y/X) in the interval -%PI to %PI.
+
+.endfunction
+
+_2Hyperbolic Functions*
+
+_$fun<SINH> , $fun<COSH>  , $fun<TANH>  , $fun<COTH>, $fun<SECH>   , $fun<CSCH>
+
+
+_2Inverse Hyperbolic Functions*
+
+_$fun<ASINH> , $fun<ACOSH> ,$fun<ATANH> , $fun<ACOTH> , $fun<ASECH>, $fun<ACSCH>
+.end
+
+
+$var<TRIGSIGN/TRUE> - if TRUE permits simplification of negative arguments to
+trigonometric functions. E.g., SIN(-X) will become -SIN(X) only if TRIGSIGN is
+TRUE.
+
+$var<EXPONENTIALIZE/FALSE> - if TRUE will cause all circular and hyperbolic
+functions to be converted to exponential form.
+
+
+$var<LOGARC/FALSE> - if TRUE will cause the inverse circular and hyperbolic functions to be converted into logarithmic form
+
+.if lines < 7 then next page
+
+.example once center
+2Examples *
+.begin group
+
+(C1) SIN(%PI/12)+TAN(%PI/6);
+
+
+                                  %PI       1
+(D1)                          SIN(---) + -------
+                                   12    SQRT(3)
+.end
+(C2) EV(%,NUMER);
+(D2)          0.83616931
+
+(C3) BETA(1/2,2/5);
+
+.begin group
+                             2
+             SQRT(%PI) GAMMA(-)
+                             5
+(D3)         ------------------
+                       9
+                 GAMMA(--)
+                       10
+.end
+
+(C4) EV(%,NUMER);
+(D4)             3.67909235
+
+(C5) DIFF(ATANH(SQRT(X)),X);
+
+.begin group
+                      1
+(D5)          -----------------
+              2 SQRT(X) (1 - X)
+.end
+
+(C6) SOLVE(X^2+10^5*X+1);
+Solution
+
+(E6)                 X =  - SQRT(2499999999) - 50000
+
+(E7)                  X = SQRT(2499999999) - 50000
+
+(D7)                            [E6, E7]
+
+(C8) E7,NUMER;
+(D8)                        X = -4.8828125E-4
+
+(C9) BFLOAT(E7);
+(D9)                   X = - 9.999999747378752B-6
+
+(C10) FPPREC:25$
+
+(C11) SIN(.5B0);
+(D11)                4.794255386042030002732879B-1
+
+.end
+
+The trigonometric simplification routines  use declared information in some simple cases.  Declarations about variables are used as follows, e.g.
+
+.example
+
+(C5) DECLARE(J, INTEGER, E, EVEN, O, ODD)$
+
+(C6) SIN(X + (J*E + 1/2)*%PI)$
+
+(D6) 			  COS(X)
+
+(C7) SIN(X + (O + 1/2)*%PI);
+
+
+(D7) 			 - COS(X)
+
+.end
+
+
+
+.if lines < 10 then next page
+
+.sec(Complex Expressions,complex!expressions)
+
+A complex expression is specified in MACSYMA by adding the real part of the
+expression to %I times the imaginary part.  Thus the roots of the equation
+.bcon
+X^2-4*X+13=0 are 2+3*%I and 2-3*%I.
+
+.example once center
+2Examples*
+
+(C1) (SQRT(-4)+SQRT(2.25))^2;
+
+.begin group
+                        2
+(D1)        (2 %I + 1.5)
+.end
+
+(C2) EXPAND(%);
+
+           6.0 %I - 1.75
+
+(C3) EXPAND(SQRT(2*%I));
+
+(D3)           %I + 1
+
+.end
+
+Note that simplification of products of complex expressions can be effected by
+expanding the product.  Simplification of quotients, roots, and other functions of
+complex expressions can usually be accomplished by using the $fun<REALPART>, $fun<IMAGPART>, $fun<RECTFORM>, $fun<POLARFORM>, $fun<ABS>, $fun<CARG> functions $see<extracting!expressions>.

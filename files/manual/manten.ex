@@ -1,0 +1,164 @@
+
+(C2) BATCH(MANTEN,2,DSK,TENSOR)$
+
+(C3) LOADFILE(ITENSR,FASL,DSK,TENSOR)$
+
+ITENSR FASL DSK TENSOR being loaded 
+loading done
+
+(C4) INDEXED(CHR2)$
+
+(C5) DECLARE(E,CONSTANT);
+(D5) 				     DONE
+
+(C6) DEFCON(E);
+(D6) 				     DONE
+
+(C7) DEFCON(E,E,DELTA)$
+
+(C8) METRIC(G);
+(D8) 				     DONE
+
+(C9) COMPONENTS(G([M,N],[]),E([M,N],[])+L*(2*P([],[])*E([M,N],[])-4*P([M,
+N],[]
+))+L^2*(2*P([],[])^2*E([M,N],[])-8*P([],[])*P([M,N],[])+8*P([M],[Q])*P([Q
+
+,N],[])))$
+
+(C10) COMPONENTS(G([],[M,N]),E([],[M,N])-L*(2*P([],[])*E([],[M,N])-4*P([]
+,[M,N]
+))+L^2*(2*P([],[])^2*E([],[M,N])-8*P([],[])*P([],[M,N])+8*P([],[M,Q])*P([
+
+Q],[N])))$
+
+(C11) SHOW(G([A,B],[]));
+       2     Q			    2
+(E11) L  (8 P  P    - 8 P P    + 2 P  E	  ) + L (2 P E	  - 4 P	  ) + E
+	     A  Q B	   A B	       A B	      A B      A B     A B
+(D11) 				     E11
+
+(C12) SHOW(G([],[R,S]));
+       2     R Q  S	   R S	    2  R S	    R S	     R S       R S
+(E12) L  (8 P    P  - 8 P P    + 2 P  E	  ) - (2 P E    - 4 P   ) L + E
+		  Q
+(D12) 				     E12
+
+(C13) (RATVARS(L),RATWEIGHT(L,1),RATWTLVL:2);
+
+RATWT FASL DSK MAXOUT being loaded 
+loading done
+(D13) 				      2
+
+(C14) SHOW(EX:CONTRACT(RATEXPAND(G([M,R],[])*G([],[R,N]))));
+
+CONCAT FASL DSK MAXOUT being loaded 
+loading done
+		       N       N   2  #1       #1 N	   2
+(E14) 		  DELTA  + 16 P	  L  P   - 16 P	    P	  L
+		       M       #1     M		     #1 M
+(D14) 				     E14
+
+(C15) SHOW(RENAME(EX))$
+		       N       N   2  #1       #1 N	   2
+(E15) 		  DELTA  + 16 P	  L  P   - 16 P	    P	  L
+		       M       #1     M		     #1 M
+
+(C16) SHOW(CAN(EX));
+
+BINOM FASL DSK MAXOUT being loaded 
+loading done
+					 N
+(E16) 				    DELTA
+					 M
+(D16) 				     E16
+
+(C17) RIEMANN([I,K,L],[L])$
+
+(C18) EV(%,EVAL)$
+
+(C19) EXP1:CONTRACT(RATEXPAND(%))$
+
+YOU HAVE RUN OUT OF LIST SPACE.
+DO YOU WANT MORE?
+TYPE ALL; NONE; A LEVEL-NO. OR THE NAME OF A SPACE.
+ALL;
+
+
+(C21) LOADFILE(ITENSR,14,DSK,TENSOR)$
+
+ITENSR 14 DSK TENSOR being loaded 
+loading done
+
+(C22) QUIT (into LISP)
+
+* 
+
+TRACE FASL COM TENSOR being loaded 
+loading done
+
+(DUMM) 
+QUIT
+(C22) CAN(EXP1);
+
+YOU HAVE RUN OUT OF LIST SPACE.
+DO YOU WANT MORE?
+TYPE ALL; NONE; A LEVEL-NO. OR THE NAME OF A SPACE.
+ALL;
+
+YOU HAVE RUN OUT OF LIST SPACE.
+DO YOU WANT MORE?
+TYPE ALL; NONE; A LEVEL-NO. OR THE NAME OF A SPACE.
+ALL;
+
+62063 MSEC.
+;BKPT LISP
+
+BAKTRACE
+BREAK_ *BREAK_MPAUSE PROG_ PROG_ COND_ COND_ PROG_ MAPCAR_ COND_ *APPLY_
+MEVAL1 MEVAL1_MEVAL MEVAL_MEVAL* MEVAL*_CONTINUE1 CONTINUE1_CONTINUE 
+
+NIL 
+
+
+71022 MSEC.
+;BKPT LISP
+
+
+$CANTERM UNBOUND VARIABLE
+
+(C23) QUIT (into LISP)
+
+* 
+QUIT
+(C23) CAN(EXP1);
+
+2548 MSEC.
+;BKPT LISP
+
+BAKTRACE
+BREAK_ *BREAK_MPAUSE COND_ +_ COND_ PROG_ COND_ MAPCAR_ COND_ *APPLY_MEVAL1 
+MEVAL1_MEVAL MEVAL_MEVAL* MEVAL*_CONTINUE1 CONTINUE1_CONTINUE 
+
+NIL 
+
+T 
+QUIT
+(C24) CAN(EXP1);
+
+141391 MSEC.
+;BKPT LISP
+
+BAKTRACE
+*BREAK_ *BREAK_MPAUSE MPAUSE_ SIMPTIMES_ SIMPTIMES_SIMPLIFYA SIMPLIFYA_ 
+SIMPLIFYA_SIMPLUS SIMPLUS_ SIMPLUS_SIMPLIFYA SIMPLIFYA_ SIMPLIFYA_SIMPLUS 
+SIMPLUS_ COND_ $CANFORM_ DO_ *APPLY_ *APPLY_MEVAL1 MEVAL1_ MEVAL1_MEVAL MEVAL_
+ MEVAL_MEVAL* MEVAL*_ MEVAL*_CONTINUE1 CONTINUE1_ CONTINUE1_CONTINUE 
+CONTINUE_ EVAL_ MAPC_ 
+
+NIL 
+
+
+154913 MSEC.
+;BKPT LISP
+QUIT
+(C25) CLOSEFILE(MANTEN ,EX);

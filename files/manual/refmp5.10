@@ -1,0 +1,883 @@
+.if partial then start
+.count chapter from 11 printing "1"
+.count section in chapter printing "!.1"
+.count subsection in section printing "!.1"
+.end
+
+.chap(The SHARE Directory,share)
+
+.skip 1
+
+     The SHARE directory contains programs, information files, etc. 
+which are considered to be of interest to the MACSYMA community.  
+Most files on SHARE; are not part of the MACSYMA system per se and must be 
+loaded individually by the user, e.g. LOADFILE(ITENSR,FASL,DSK,SHARE);. 
+Many files on SHARE; were contributed by MACSYMA users, and all 
+MACSYMA users are encouraged to do so.
+
+     Names for files on SHARE; should be chosen as appropriate.  
+However, the contributor will probably want to follow the conventions 
+discussed here.  A contributor will probably create some but not all 
+of the following files.  Examples may be seen on the SHARE directory.
+
+  
+   1)  NAME > is the file name of the MACSYMA BATCHable programs.  
+The > sign indicates a numeric second filename which is increased 
+whenever a new version is created.  
+
+   2)  NAME LISP is the file name of the LISP code for the programs 
+contained in the file NAME >.  This file is loaded into MACSYMA using 
+LOADFILE.  It was obtained by using the TRANSLATE command or was 
+written directly in LISP by the contributor. 
+
+   3)  NAME FASL is the file name of the FASL (fast-loadable) version 
+of NAME LISP, and was produced from NAME LISP by using the LISP 
+compiler.  It is loaded into MACSYMA using the LOADFILE command.
+
+   4)  NAME USAGE is the name of the documentation file for the 
+programs in NAME >.  It describes how the programs are used, inputs, 
+outputs, options, warnings, error messages, etc.  It may mention the 
+algorithms behind the programs, references, and whatever else the 
+user should know.  It should certainly indicate who programmed the 
+routines, especially his login name.  If the NAME USAGE file does 
+not exist, this information should be given in NAME > or elsewhere.
+
+   5)  NAME DEMO is the name of the demonstration file which may be 
+used in DEMOing NAME > or NAME LISP.
+
+   6)  NAME OUTPUT may be used to store sample output obtained from 
+running NAME > on some examples or from DEMOing the NAME DEMO file.
+
+   7)  Other file names may be used for information files providing 
+some information on some aspect of the MACSYMA system or for 
+describing some MACSYMA utility or for notes on some MACSYMA issues, 
+etc.
+
+     The SHARE > file is an index to the SHARE directory and is 
+intended to contain a short note on each of the programs on the SHARE 
+directory.  It should be updated by the SHARE; contributor as 
+appropriate.
+
+     Any comments or questions about the use of the SHARE directory 
+should be sent to JPG.
+
+
+.sec(|Simplification for ABS and SIGNUM|,absign)
+
+The file SHARE;ABSIMP > contains MACSYMA pattern-matching rules that
+extend the built-in simplification rules for the $fun<ABS> and $fun<SIGNUM>
+functions.  Among other things, use is made of global relations
+established with the built-in ASSUME function or by declarations such
+as DECLARE(M,EVEN, N,ODD)  for even or odd integers.  $fun<UNITRAMP>
+and $fun<UNITSTEP> functions are also defined in terms of ABS and SIGNUM.
+These routines were written by David Stoutemyer.
+
+.sec(Array Manipulation,array!man,1)
+
+The file  ARRAY FASL  provides various utility functions for handling arrays.
+
+.function(LISTARRAY,array)
+returns a list of the elements of a declared array.  the order
+is row-major.  You will get garbage if any of the elements have not been
+defined yet.
+.endfunction
+.function(FILLARRAY,|array,list-or-array|)
+fills 2array* from 2list-or-array*.  If 2array* is a
+floating-point (integer) array then 2list-or-array* should be either a
+list of floating-point (integer) numbers or another floating-point
+(integer) array.  If the dimensions of the arrays are different 2array*
+is filled in row-major order.  If there are not enough elements in
+2list-or-array* the last element is used to fill out the rest of
+2array*.  If there are too many the remaining ones are thrown away.
+FILLARRAY returns its first argument.
+.endfunction
+.function(REARRAY,|array,dim1, ... ,dimk|);
+can be used to change the size or dimensions of an array.  The
+new array will be filled with the elements of the old one in row-major
+order.  If the old array was too small, FALSE, 0.0 or 0 will be used to
+fill the remaining elements, depending on the type of the array.  The
+type of the array cannot be changed.
+.endfunction
+.function(ARRAYAPPLY,|array,[sub1, ... ,subk]|);
+is like APPLY except the first argument is an array.
+.endfunction
+.scon
+These routines were written by Charles Karney.
+
+.sec(Solving Differential Equations by Laplace Transforms,delap,1)
+
+DESOLN LISP contains a routine, written by Richard Bogen, for solving differential equations or systems of them by using Laplace transforms. The call is:
+
+.function(DESOLVE,|[eq1,...,eqn],[var1,...,varn]|)
+where the 2eq*'s are differential equations in the dependent variables
+var1,...,varn.  The functional relationships must be explicitly
+indicated in both the equations and the variables. For example
+
+.example
+(C1) 'DIFF(F,X,2)=SIN(X)+'DIFF(G,X);
+(C2) 'DIFF(F,X)+X^2-F=2*'DIFF(G,X,2);
+.end
+.scon
+is not the proper format.  The correct way is:
+
+.example
+(C3) 'DIFF(F(X),X,2)=SIN(X)+'DIFF(G(X),X);
+(C4) 'DIFF(F(X),X)+X^2-F(X)=2*'DIFF(G(X),X,2);
+.end
+The quotes are not necessary since DIFF will return the noun forms anyway.
+
+The call is then DESOLVE([D3,D4],[F(X),G(X)]);
+
+If initial conditions at 0 are known, they should be supplied before
+calling DESOLVE by using ATVALUE.
+.example
+
+(C11) 'DIFF(F(X),X)='DIFF(G(X),X)+SIN(X);
+.begin group
+			D         D
+(D11)                   -- F(X) = -- G(X) + SIN(X)
+			DX        DX
+.end
+(C12) 'DIFF(G(X),X,2)='DIFF(F(X),X)-COS(X);
+.begin group
+			 2
+			D          D
+(D12)                   --- G(X) = -- F(X) - COS(X)
+			  2        DX
+			DX
+.end
+(C13) ATVALUE('DIFF(G(X),X),X=0,A);
+(D13)                                A
+
+(C14) ATVALUE(F(X),X=0,1);
+(D14)                                1
+
+(C15) DESOLVE([D11,D12],[F(X),G(X)]);
+
+		X                            X
+(D16) [F(X)=A %E  - A+1, G(X) = COS(X) + A %E  - A + G(0) - 1]
+
+/* VERIFICATION */
+(C17) [D11,D12],D16,DIFF;
+		  X       X      X                X
+(D17)        [A %E  = A %E , A %E  - COS(X) = A %E  - COS(X)]
+.end
+.endfunction
+.scon
+
+.sec(Exterior Calculus of Differential Forms,cartan)
+
+     The exterior calculus of differential forms is a basic tool of differential geometry developed by Elie Cartan and has important applications in the theory of partial differential equations.   The present implementation is due to 
+F.B. Estabrook and H.D. Wahlquist.  The program is self-explanatory and can be accessed by doing
+
+                   BATCH([CARTAN,START,DSK,SHARE],ON)
+.scon
+which will give a description with examples.  
+
+The next six sections describe programs written by David Stoutemyer.
+
+.sec(Vector Analysis,vecan)
+
+The file VECT > contains a vector analysis package,  VECT DEMO contains a corresponding demonstration, and  VECT ORTH contains definitions of various orthogonal curvilinear coordinate systems.
+
+The vector analysis package can combine and simplify symbolic 
+expressions including dot products and cross products, together with
+the gradient, divergence, curl, and Laplacian operators.  The
+distribution of these operators over sums or products is under
+user control, as are various other expansions, including expansion
+into components in any specific orthogonal coordinate systems.
+There is also a capability for deriving the scalar or vector potential
+of a field.
+
+To establish 2indeterminate1, indeterminate2, ...1 as vector entities,
+type
+.example
+        DECLARE([2indeterminate1, indeterminate2, ...1], NONSCALAR) $
+.end
+.scon
+Vectors can also be represented as lists of components.
+
+"." is the dot-product operator, "~" is the cross-product operator,
+$fun<GRAD> is the gradient operator, $fun<DIV> is the divergence operator, $fun<CURL> is the curl or rotation operator, and $fun<LAPLACIAN> is DIV GRAD.
+
+Most non-controversial simplifications are automatic.  For additional
+simplification, there is a function which can be used in the form
+
+.inline function(VECTORSIMP,vectorexpression)
+.scon
+This function employs additional non-controversial simplifications,
+together with various optional expansions according to the settings
+of the following global flags:
+.scon
+$var<EXPANDALL/FALSE>
+.scon
+$var<EXPANDDOT/FALSE>, $var<EXPANDDOTPLUS/FALSE>
+.scon
+$var<EXPANDCROSS/FALSE>, $var<EXPANDCROSSPLUS/FALSE>, $var<EXPANDCROSSCROSS/FALSE>
+.scon
+$var<EXPANDGRAD/FALSE>, $var<EXPANDGRADPLUS/FALSE>, $var<EXPANDGRADPROD/FALSE>
+.scon
+$var<EXPANDDIV/FALSE>, $var<EXPANDDIVPLUS/FALSE>, $var<EXPANDDIVPROD/FALSE>
+.scon
+$var<EXPANDCURL/FALSE>, $var<EXPANDCURLPLUS/FALSE>, $var<EXPANDCURLCURL/FALSE>
+.scon
+$var<EXPANDLAPLACIAN/FALSE>, $var<EXPANDLAPLACIANPLUS/FALSE>, $var<EXPANDLAPLACIANPROD/FALSE>
+.scon
+The PLUS suffix refers to employing additivity or distributivity.
+The PROD suffix refers to the expansion for an operand that is any
+kind of product.  EXPANDCROSSCROSS refers to replacing p~(q~r)
+with (p.r)*q-(p.q)*r,  and EXPANDCURLCURL refers to replacing
+CURL CURL p with  GRAD DIV p + DIV GRAD p.  EXPANDCROSS:TRUE has the 
+same effect as EXPANDCROSSPLUS:EXPANDCROSSCROSS:TRUE, etc.  Two other
+flags, $var<EXPANDPLUS/FALSE> and $var<EXPANDPROD/FALSE>, have the same effect as setting all
+similarly suffixed flags true.  When TRUE, another flag named
+$var<EXPANDLAPLACIANTODIVGRAD/FALSE>, replaces the LAPLACIAN operator with the
+composition DIV GRAD.  All of these flags are initially FALSE.
+For convenience, all of these flags have been declared EVFLAG.
+
+For orthogonal curvilinear coordinates, the global variables
+$var<COORDINATES/[X,Y,Z]>, $var<DIMENSION/3>, $var<SF/[1,1,1]>, and $var<SFPROD/1> are set by the function invocation
+
+.inline function(SCALEFACTORS,coordinatetransform) 
+.scon
+Here 2coordinatetransform1 evaluates to the form
+[[expression1, expression2, ...], indeterminate1, indeterminat2, ...],
+where indeterminate1, indeterminate2, etc. are the curvilinear
+coordinate variables and where a set of rectangular Cartesian
+components is given in terms of
+the curvilinear coordinates by [expression1, expression2, ...].  COORDINATES
+is set to the vector [indeterminate1, indeterminate2, ...], and
+DIMENSION is set to the length of this vector.  SF[1], SF[2], ...,
+SF[DIMENSION] are set to the coordinate scale factors, and SFPROD is
+set to the product of these scale factors.  Initially, COORDINATES is
+[X, Y, Z], DIMENSION is 3, and SF[1]=SF[2]=SF[3]=SFPROD=1,
+corresponding to 3-dimensional rectangular Cartesian coordinates.
+
+To expand an expression into physical components in the current
+coordinate system, there is a function with usage of the form
+
+.inline function(EXPRESS,expression)
+.scon
+The result uses the noun form of any derivatives arising from
+expansion of the vector differential operators.
+To force evaluation of these derivatives,
+the built-in EV function can be used together with the DIFF evflag,
+after using the built-in DEPENDS function to establish any new
+implicit dependencies.
+
+The scalar potential of a given gradient vector, in the current
+coordinate system, is returned as the result of
+ 
+.inline function(POTENTIAL,givengradient)
+.scon
+The calculation makes use of the global variable $var<POTENTIALZEROLOC/0>,
+which must be NONLIST or of the form [indeterminatej=expressionj,
+indeterminatek=expressionk, ...], the former being equivalent to
+the nonlist expression
+for all right-hand sides in the latter.  The indicated right-hand
+sides are used as the lower limit of integration.  The success of
+the integrations may depend upon their values and order.
+POTENTIALZEROLOC is initially set to 0.
+
+The vector potential of a given curl vector, in the current
+coordinate system, is returned as the result of
+
+.inline function(VECTORPOTENTIAL,givencurl)
+.scon
+POTENTIALZEROLOC has a similar role as for POTENTIAL, but the order
+of the left-hand sides of the equations must be a cyclic permutation
+of the coordinate variables.
+
+EXPRESS, POTENTIAL, and VECTORPOTENTIAL can have a second argument
+like the argument of SCALEFACTORS, causing a corresponding
+invocation of SCALEFACTORS before the other computations.
+
+
+.sec(Dimensional Analysis,dimanal)
+
+The file DIMEN > contains functions for automatic dimensional analysis,
+and file DIMEN DEMO contains a demonstration.  Usage is of the form
+
+.inline function(NONDIMENSIONALIZE,|list of physical quantities|)
+
+The returned value is a sufficient list of nondimensional products of
+powers of the physical quantities.  A physical relation between only
+the given physical quantities must be expressible as a relation between
+the nondimensional quantities.  There are usually fewer nondimensional
+than physical quantities, which reduces the number of experiments or
+numerical computations necessary to establish the physical relation to
+a specified resolution, in comparison with the number if all but one
+dependent physical variable were independently varied.  Also, the 
+absence of any given physical quantity in the output reveals that
+either the quantity is irrelevant or others are necessary to describe
+the relation.
+
+
+The program already knows an extensive number of relations between
+physical quantities, such as  VELOCITY=LENGTH/TIME.  The user may over-ride or supplement the prespecified relations by typing
+
+.inline function(DIMENSION,|equation or list of equations|)
+.scon
+where each equation is of the form  indeterminate=expression, where
+expression is a product or quotient of powers of none or more of the
+indeterminates   CHARGE, TEMPERATURE, LENGTH, TIME, or MASS.  To see
+if a relation is already established type
+
+.once center
+GET(indeterminate, 'DIMENSION);
+
+The result of NONDIMENSIONALIZE usually depends upon the value of the
+global variable %PURE, which is set to a list of none or more of the
+indeterminates  ELECTRICPERMITTIVITYOFAVACUUM, BOLTZMANNSCONSTANT,
+SPEEDOFLIGHT, PLANCKSCONSTANT, GRAVITYCONSTANT, corresponding to the
+relation between charge and force, temperature and energy, length and
+time, length and momentum, and the inverse-square law of gravitation
+respectively.  Each included relation is used to eliminate one of
+CHARGE, TEMPERATURE, LENGTH, TIME, or MASS from the dimensional basis.
+To avoid omission of a possibly relevant nondimensional grouping,
+either include the relevant constant in %PURE or in the argument
+of NONDIMENSIONALIZE if the corresponding physical effect is thought to
+be relevant to the problem.  However, the inclusion of unnecessary
+constants, especially the latter three, tends to produce irrelevant or
+misleading dimensionless groupings, defeating the purpose of
+dimensional analysis.  As an extreme example, if all five constants are
+included in %PURE, all physical quantities are already dimensionless.
+%PURE is initially set to '[ELECTRICPERMITTIVITYOFVACUUM,
+BOLTZMANNSCONSTANT], which is best for most engineering work.
+%PURE must not include any of the other 3 constants without also
+including these 2.
+
+.sec(Analytic Optimization,Anopt,1)
+
+
+We now describe  a  package for finding the stationary points of a multivariate objective function, either unconstrained or subject
+to equality and/or inequality constraints.
+.scon
+RELEVANT FILES: OPTMIZ >  is a MACSYMA batch file containing the functions and option settings for optimization.  OPTMIZ DEMO  is a MACSYMA batch file demonstrating various ways of using the optimization functions. OPTMIZ OUTPUT  is a text file listing  OPTMIZ DEMO together with the output that it produces when executed.
+
+To use this package from a MACSYMA, first type  BATCH(OPTMIZ, ">", DSK, SHARE)
+Then the following command is available:
+
+.inline function(STAP,|OBJECTIVE, LEZEROS, EQZEROS, DECISIONVARS|);
+
+OBJECTIVE is an expression denoting the objective function or the
+   label of such an expression.
+LEZEROS is a list of expressions which are constrained to be less
+   than or equal to zero.  Use [] if no such constraints.
+EQZEROS is a list of expressions which are constrained to equal zero, or
+   the label of such a list.  Use [] if there are no such constraints.
+DECISIONVARS is a list of the decision variables or the label of
+   such a list.  One may use [] if all variables in objective and
+   constraintsare decision variables. For convenience, brackets may be omitted from one-expression lists, and  trailing [] arguments may be omitted.
+
+ROOTSEPSILON may affect the accuracy of results computed by  SOLVE
+   and REALROOTS  within STAP.  The default value of 1.0E-7 for this
+   MACSYMA global variable is as small as practical for pdp single-
+   precision floating-point arithmetic.  Larger values save cpu time.
+
+The class of functions that may be used and the practical limitations
+on the number of decision variables and constraints is primarily 
+dependent upon the capabilities of the built-in SOLVE function, 
+which is still under development.
+
+.sec(Variational Optimization,optvar,1)
+
+This section describes how to use a MACSYMA variational optimization
+package to analytically solve problems from the calculus of variations
+and the maximum principle, including optimal control.
+
+To use this package in a MACSYMA, first type  BATCH(OPTVAR,">", DSK, SHARE)
+ or LOADFILE(OPTVAR, LISP, DSK, SHARE). 
+
+To derive the Euler-Lagrange equations for a calculus-of-variations
+problem, type
+
+.inline function(EL,|F, YLIST, TLIST|);
+.scon
+F  is an expression or the label of an expression for the integrand
+   of the stationary functional, augmented by Lagrange multipliers
+   times the integrands of any isoperimetric constraints and/or
+   differential expressions constrained to equal zero.  The multipliers
+   should be written as functions of the independent variables in the
+   latter case.
+.scon
+YLIST  is a list of the dependent variables, or the label thereof.
+.bcon
+TLIST  is a list of the independent variables, or the label thereof.
+.scon
+For convenience, square brackets may be omitted from 1-element lists.
+EL displays one or more E-labeled equations, then returns a list
+of the E-labels.  These equations are the Euler-Lagrange equations,
+perhaps together with first integrals corresponding to conservation
+of energy and/or conservation of momentum.  The former will contain a
+constant of integration K[0], whereas the latter will contain constants
+of integration K[I], with positive I.  The latter will immediately
+follow the corresponding Euler-Lagrange equation.
+
+OPTVAR DEMO or OPTVAR OUTPUT illustrates some ways that the
+resulting differential equations may be solved analytically.
+
+To derive the Hamiltonian and auxiliary differential equations for
+an optimal control problem, type
+
+.inline function(HAM,ODES)
+.scon
+ODES  is a list of the first-order differential equations that govern the state variables.  Each differential equation must be of the form
+.example
+                'D(Y,T) = EXPRESSION
+.end
+.scon
+where  Y  is one of the dependent variables,  T is the independent
+variable, and EXPRESSION  depends upon the independent, dependent, and
+control variables.
+
+HAM displays two or more E-labeled expressions, then returns a list
+of the E-labels.  The first expression is the Hamiltonian, and the
+other expressiona are the auxiliary diferential equations,
+together with their general solutions,  AUX[I] = K[I], whenever the
+Ith differential equation is of the trivial form  'D(AUX[I],T) = 0.
+The K[I] are undetermined constants of integration.
+
+HAM is directly suitable for the autonomous time-optimal problem.
+Other problems may be converted to this form by introducing extra state
+variables, as described in most optimal-control texts or in the report
+referenced in  OPTVAR OUTPUT  and OPTVAR DEMO.
+
+.sec(Qualitative Analysis,qual,1)
+
+QUAL > contains MACSYMA functions for qualitative analysis
+of an expression, QUAL DEMO contains a demonstration, and 
+QUAL OUT contains the output from executing the demo.
+
+To use the functions do  ALLOC(2); LOADFILE(STOUTE,">",DSK,MRG); BATCH(QUAL, ">", DSK, SHARE);
+
+Top-level usage is of the form
+.inline function(QUAL,|<expression>, <variables>|)
+.scon
+where <expression> is any given expression, <variables> is a given indeterminate or list of indeterminates.  If omitted, this argument defaults to all of the indeterminates in the first argument.
+
+QUAL returns a list of E-labels of displayed equations, each of the
+form 
+.example
+        <property name> = <property value>
+.end
+.scon
+where  <property name> is one of the second-level function names below, and <property value> is the value returned by that function.  These second-level functions may also be used directly.  Usage is of the form
+.example
+            REVELATION(<expression>, <minimum>, <maximum>);
+            BOUNDS(<expression>);
+            SLOPES(<expression>, <variables>);
+            CURVATURE(<expression>, <variables>);
+            SYMMETRY(<expression>, <variables>);
+            PERIODS(<expression>, <variables>);
+            ZEROSANDPOLES(<expression>, <variables>);
+            STATIONARYPOINTS(<expression>, <variables>);
+            LIMITS(<expression>, <variables>);
+.end
+.scon
+where <expression>, <variables>, and their defaults are as for QUAL.
+
+
+.sec(Units Conversion,units,1)
+The file UNITS > contains assignments for automatic conversion to MKS
+metric units.  Usage example:  5*FT + METER + CM; simplifies to
+2.534*METER .
+
+Erroneously dimensionally inhomogeneous expressions are revealed by
+uncollected terms.  For example, 5*FT + SECOND;  does not simplify to one term.
+
+The supplied conversions comprise a rather complete set, but it should
+be clear how to supplement them or produce an analagous set for
+conversion to other units.
+
+.sec(The Eigen Package,eigen,1)
+
+The BATCH file EIGEN > contains a package of functions is written in top-level MACSYMA. Its purpose is to compute right eigenvectors, right unit  eigenvectors, eigenvalues, and similarity transforms.
+2
+    NOTE: This package currently will not handle systems with
+          multiple eigenvalues. Implementation of this capability
+          will await the ability to handle multiple roots from SOLVE.
+1
+.function(EVEC1,|M,mu,modes|)
+computes right eigenvectors of the matrix 2M*, given the eigenvalues 2mu*;  mu is a one dimensional array of the eigenvalues of 2M*.  2modes* is the order of the system.  EVEC1 returns a list of lists which are the eigenvectors; i.e., it returns a list of sublists, each of which contains the components of an eigenvector.
+.endfunction
+
+.function(EVEC2,|M,mu,modes|)
+is exactly the same as EVEC1 except that it constructs the list of eigenvectors differently from EVEC1. It is a toss-up as to which is faster.
+.endfunction
+
+.function(INPROD,|x,y|)
+computes the real inner product of two lists (not vectors). This inner product is the sum of the products of the respective components of the lists. The two lists used as arguments to INPROD must be of the same length.
+.endfunction
+
+.function(UEVEC,|M,mu,modes|)
+computes the unit eigenvectors of the matrix M.  That is, the eigenvectors are of unit length as defined by INPROD(x,x).  UEVEC merely calls evec1 to compute the eigenvectors, and then calls INPROD to compute the length of each eigenvector in turn and divides by this length.  UEVEC returns a list of vectors (not lists) which are the unit eigenvectors.   Since UEVEC calls EVEC1, the eigenvalues mu (defined as in EVEC1) must be distinct. 
+.endfunction
+
+.function(EVALS,|mat,lambda|)
+computes the eigenvalues of the matrix 2mat* and stores them in the one dimensional array 2lambda*. It returns the value "done". The array 2lambda* must be set up as an array before the call to EVALS.  Also, this function will not handle multiple eigenvalues. 
+.endfunction
+.function(SIMTRAN,mat)
+is the function which computes the similarity transformation mentioned above.  it merely calls the other functions such as EVALS, UEVEC, etc. to determine the eigenvalues and right unit eigenvectors.  For a symmetric matrix with distinct eigenvalues, the matrix formed by taking the unit eigenvectors as columns is an orthogonal matrix, as is its transpose. Thus if A is the original symmetric matrix (with distinct eigenvalues) and Q is the orthogonal matrix constructed as above, and QT is the transpose of Q, then
+.begin turn on "_"
+
+_QT*A*Q = D
+.end
+.scon
+where D is the diagonal matrix with the eigenvalues of A on the diagonal.  SIMTRAN takes the matrix 2mat* and fills the global array 2lambda* with the eigenvalues of 2mat*.  It also fills the globally defined matrices Q and QT with the matrices Q and QT as described above.
+
+The array 2lambda* and the matrices Q and QT must exist as an array and matrices (presumably loaded with dummy info) before the call to SIMTRAN. The matrix 2mat* should not have multiple eigenvalues for the reasons mentioned in previous comments.  
+.endfunction
+.sec(Elimination by Resultants,elimres,1)
+
+ELIM LISP contains a program, written by Richard Bogen, for eliminating variables from equations (or
+expressions assumed equal to zero) by taking successive resultants. the call
+is: 
+
+.inline function(ELIMINATE,|[eq1,eq2,...,eqn],[v1,v2,...,vk]|)
+
+This returns a list of n-k expressions with the k variables2 v1,...,vk1
+eliminated.  First 2v11 is eliminated yielding n-1 expressions, then 2v21
+is, etc.  If k=n then a single expression in a list is returned free of the
+variables 2v1,...,vk1.  In this case SOLVE is called to SOLVE the last
+resultant for the last variable.  If there are floating point numbers in the
+input expressions then KEEPFLOAT:TRUE should be done so as not to have them
+rationalized in taking the resultant. 
+
+.example
+                   		EXAMPLE
+
+(C5) .5*X^4+Y*X+Z; 
+                                           4
+(D5)                         Z +X Y + 0.5 X
+
+(C6) 3*X+5*Y-Z-1;  
+(D6)                        - Z + 5 Y + 3 X - 1
+
+(C7) Z^2+X^2-Y^2+5; 
+			      2    2   2 
+(D7)                         Z  - Y + X  + 5
+
+
+(C8) ELIMINATE([D7,D6,D5],[Y,Z]),KEEPFLOAT:TRUE; 
+
+	     8         6         5          4        3        2 
+(D8) [150.0 X - 375.0 X  + 50.0 X  + 275.0 X  + 100 X  + 550 X
+
+						      + 1400 X + 3100] 
+.end
+
+.sec(Integration of Special Forms,intspec,1)
+
+
+INTSCE LISP contains a routine, written by Richard Bogen, for integrating products of sines,cosines and exponentials of the form
+.example
+                EXP(A*X+B)*COS(C*X)^N*SIN(C*X)^M
+.end
+The call is
+.inline function(INTSCE,|expr,var|)
+2expr1 may be any expression, but if it is not in the above
+form then the regular integration program will be invoked
+if the switch $var<ERRINTSCE/true> is TRUE.  If it is FALSE
+then INTSCE will err out.
+
+
+
+.sec(Integral Equations,inteqs)
+
+The following package was written by Richard Bogen based on some routines of David Stoutemeyer.   It is still an experimental version, untranslated and uncompiled at present.  
+
+To load the package, do BATCH(INTEQN,">",DSK,RAB).
+
+CAVEAT:  To free some storage,  a  KILL(LABELS) is included in this file.  Therefore, before loading the integral equation package, the user should give names to any expressions he wants to keep.
+
+The usage is very simple. The main function is called IEQN.  It takes five arguments though only the first one is required. If trailing arguments are omitted they will default to preset values which will be announced.
+
+Two types of equations are considered. An integral equation of the 2second kind1 is of the form:
+.example
+.begin group
+			      B(X)
+			     /
+			     [
+(D3) 	   P(X) = Q(X, P(X), I	   W(X, U, P(X), P(U)) dU)   .
+			     ]
+			     /
+			      A(X)
+
+.end
+.end
+.scon
+An integral equation of the 2first kind1 is of the form:
+.example
+.begin group
+		     B(X)
+		    /
+		    [
+(D4) 		    I	  W(X, U, P(U)) dU = F(X)
+		    ]
+		    /
+		     A(X)
+
+.end
+.end
+.scon
+The unknown function in these equations is P(X) while Q,W,A, and B are given
+functions of the independent variable.
+Although these are the general forms, most of the solution
+techniques require particular forms of Q and W.
+
+The techniques used are:
+
+2For SECONDKIND equations1:
+.begin narrow 8,5
+.SCON
+FINITERANK: for degenerate (or separable) integrands.
+.bcon
+DIFFEQN: reduction to differential equation.
+.bcon
+TRANSFORM: Laplace Transform for convolution types.
+.bcon
+FREDSERIES: Fredholm-Carleman series for linear equations.
+.bcon
+TAILOR: Taylor series for quasi-linear variable-limit equations.
+.bcon
+NEUMANN: Neumann series for quasi-second kind equations.
+.bcon
+COLLOCATE: collocation using a power series form for P(X) evaluated at equally spaced points.
+.end
+.scon
+2For FIRSTKIND equations:1
+.begin narrow 8,5
+.SCON
+FINITERANK: for degenerate integrands.
+.bcon
+DIFFEQN: reduction to differential equation.
+.bcon
+ABEL: for singular integrands.
+.bcon
+TRANSFORM: see above
+.bcon
+COLLOCATE: see above
+.bcon
+FIRSTKINDSERIES: iteration technique similar to Neumann series.
+.end
+.scon
+Also, differentiation is used in certain cases to transform a FIRSTKIND into a SECONDKIND.
+.scon
+The calling sequence is
+.function(IEQN,|ie,unk,tech,n,guess|)
+where 2ie1 is  the integral equation; 2unk1 is the unknown function; 2tech1 is the technique to be tried from those given above (2tech1 = FIRST means: try the first technique which finds a solution; 2tech1 = ALL means: try all applicable techniques); 2n1 is the maximum number of terms to take for TAYLOR, NEUMANN, FIRSTKINDSERIES, or FREDSERIES (it is also the maximum depth of recursion for the differentiation method); 2guess1 is the initial guess for NEUMANN or FIRSTKINDSERIES.
+
+Default values for the 2nd thru 5th parameters are:
+.begin narrow 8,5
+.scon
+2unk1: P(X), where P is the first function encountered in an integrand which is unknown to MACSYMA and X is the variable which occurs as an argument to the first occurrence of P found outside of an integral in the case of SECONDKIND equations, or is the only other variable besides the variable of integration in FIRSTKIND equations.  If the attempt to search for X fails, the user will be asked to supply the independent variable;
+.bcon
+2tech1: FIRST;
+.bcon
+2n1: 1;
+.bcon
+2guess1: NONE,  which  will cause NEUMANN and FIRSTKINDSERIES too use F(X)  as an initial guess.
+.end
+.scon
+The value returned by IEQN is a list of labels of solution lists. The solution lists are printed as they are found unless the variable $var<IEQNPRINT/TRUE> is set to FALSE. These lists are of the form
+.once center
+[SOLUTION, TECHNIQUE USED, NTERMS, FLAG]
+.scon
+where FLAG is absent if the solution is exact.  Otherwise, it is the word APPROXIMATE or INCOMPLETE corresponding to an inexact or non-closed form solution,
+respectively. If a series method was used, NTERMS gives the
+number of terms taken (which could be less than the 2n1 given to IEQN if an error prevented generation of further terms).
+.endfunction
+
+For examples, do BATCH(INTEXS,">",DSK,RAB) which will load an array
+called EQ with about 43 sample integral equations. Then try IEQN(EQ[1]), IEQN(EQ[30],P(X),ALL), for instance.
+
+
+.sec(Numerical Techniques,numtech)
+.subsec(Numerical Integration,numint,1)
+
+ROMBER is a program for Romberg numerical integration written by Richard Fateman. The calling sequence is
+.inline function(ROMBERG,|f,a,b,lim|)
+.scon
+where f is a function name (elsewhere, f(x):= .., returns a number which must be floating), a and b are limits of integration, and lim is a limit (e.g. 1.0e-4) for the accuracy of the answer.  ROMBERG computes upper and lower 
+bounds on the integral, and goes through a maximum of 10 iterations 
+to satisfy limit.  if limit is unsatisfied, then it prints error 
+message.  It is much better than Simpson's rule, and is handier in 
+terms of usage.  It may be loaded by
+.example
+          BATCH(ROMBER,">",DSK,SHARE)
+.end
+.scon
+Also on ROMBER > is Simpson's rule, called by
+.inline function(SIMPSON,|f,a,b,n|)
+.scon
+ where n is number of subdivisions, which had better be an even integer.  
+for SIMPSON; f, a, and b, (and maybe n), need not be numbers. 
+
+To integrate the exponential function from 0 to 1 to a tolerance of 
+1.0E-4, try ROMBERG(?exp,0,1,1.0E-4); .  The time taken is 18 msec 
+(0.018 sec).  If one uses G(X):=EV(%E^X,NUMER) instead, and does 
+ROMBERG(g,0,1,1.0E-4); the time is still only 150 msec.
+
+.subsec(Fast Fourier Transforms,fft,1)
+
+The following describes some FFT routines written by Tom Knight.
+To load the routines do LOADFILE(FFT,FASL,DSK,SHARE);  The basic functions are: 
+FFT(Fast Fourier Transform), IFT (Inverse Fast Fourier Transform).
+
+These functions perform a (complex) fast fourier transform on either 1 or 2
+dimensional FLOATING-POINT arrays, obtained by:  ARRAY(array,FLOAT,dim1); or
+ARRAY(array,FLOAT,dim1,dim2);  for 1d arrays dim1 must equal 2^n-1, and
+for 2d arrays dim1=dim2=2^n-1 (i.e. the array is square).  (Recall that
+MACSYMA arrays are indexed from a 0 origin so that there will be 2^n and
+(2^n)^2 arrays elements in the above two cases.)
+
+The calling sequence is:
+.function(FFT,|real-array,imag-array|) 
+.endfunction
+.function(IFT,|real-array,imag-array|)
+.endfunction
+.scon
+The real and imaginary arrays must of course be the same size.  The transforms are done in place so that 2real-array1 and 2imag-array1 will contain the real and imaginary parts of the transform.
+
+Other functions included in this file are:
+
+.function(POLARTORECT,|magnitude-array,phase-array|)
+converts and magnitude phase arrays into real/imaginary form
+putting the real part in the magnitude array and the imaginary part
+into the phase array
+.endfunction
+.function(RECTTOPOLAR,|real-array,imag-array|)
+undoes POLARTORECT
+.endfunction
+
+(the above 4 functions return a list of their arguments)
+
+.subsec(Roots of Equations by Interpolation,interproots,1)
+
+The file INTPOL FASL, created by Charles Karney, contains the function
+
+.function(INTERPOLATE,|func,x,a,b|)
+which finds the zero of 2func* as 2x* varies.  The last two args give the range to look in.  The function must have a different sign at each endpoint.  If this condition is not met, the action of the of the function is governed by $var<INTPOLERROR/TRUE>).  If INTPOLERROR is TRUE then an error occurs,
+otherwise the value of INTPOLERROR is returned  (thus for plotting INTPOLERROR
+might be set to 0.0).  Otherwise (given that MACSYMA can evaluate the first
+argument in the specified range, and that it is continuous) INTERPOLATE is
+guaranteed to come up with the zero (or one of them if there is more than one
+zero).
+
+The accuracy of INTERPOLATE is governed by $var<INTPOLABS/0.0> and $var<INTPOLREL/0.0> which must be non-negative floating point numbers.  INTERPOLATE will stop when the first arg evaluates to something less than or equal to INTPOLABS or if successive approximants to the root differ by no more than INTPOLREL * <one of the approximants>.  The defaults values of INTPOLABS and INTPOLREL are 0.0 so INTERPOLATE gets as good an answer as is possible with the single precision arithmetic we have.  The first arg may be an equation.  The order of the last
+two args is irrelevant.  Thus
+.example
+INTERPOLATE(SIN(X)=X/2,X,%PI,.1);
+.end
+.scon
+is equivalent to
+.example
+INTERPOLATE(SIN(X)=X/2,X,.1,%PI);
+.end
+.scon
+The method used is a binary search in the range specified by the last two args.
+When it thinks the function is close enough to being linear,  it starts using
+linear interpolation.
+
+An alternative syntax has been added to interpolate, this replaces the first two arguments by a function name.  The function MUST be TRANSLATEd or compiled
+function of one argument.  No checking of the result is done, so make sure  the
+function returns a floating point number.
+
+.example
+
+F(X):=(MODEDECLARE(X,FLOAT),SIN(X)-X/2.0);
+INTERPOLATE(SIN(X)-X/2,X,0.1,%PI)	TIME= 60 MSEC
+INTERPOLATE(F(X),X,0.1,%PI);		TIME= 68 MSEC
+TRANSLATE(F);
+INTERPOLATE(F(X),X,0.1,%PI);		TIME= 26 MSEC
+INTERPOLATE(F,0.1,%PI);			TIME=  5 MSEC
+.end
+.endfunction
+
+.subsec(Special Functions,spec!fun,1)
+
+The file BESSEL FASL contains routines for computing numerical values for  various special functions.  If they are given non-numeric arguments they return themselves.
+
+2Bessel Functions*
+
+The following functions compute Bessel functions of integer order for real arguments.
+
+.function(J0,X) 
+returns the value of the zeroth order Bessel function at 2X*.
+.endfunction
+.function(J1,X)
+returns the value of the Bessel function of first order at 2X*
+.endfunction
+.function(JN,|X,N|)
+returns the 2N*'th order Bessel function.  In addition it sets up an array JARRAY of  N+1 elements, (numbered from 0 to ABS(N))  such that JARRAY[I] gives the value of the I'th order Bessel function  with argument X.  (If N < 0 then JARRAY[I] gives the (-I)'th Bessel function).
+.endfunction
+
+2Modified Bessel Functions*
+
+The following functions compute the Modified Bessel Functions I of integer orders for real arguments.
+
+.function(I0,X)
+returns the value of the modified Bessel function of zeroth order.
+.endfunction
+.function(I1,X)
+returns the value of the modified Bessel function of first order.
+.endfunction
+.function(IN,|X,N|)
+works the same way as JN(X,N), except that the array is called IARRAY.
+.endfunction
+
+Since the modified Bessel function blows up like EXP(ABS(X)) at infinity, they cannot be evaluated directly for ABS(X) > 83 (due to overflow).  The following functions avoid this problem:
+
+.function(G0,X)
+returns I0(X)*EXP(-ABS(X)).
+.endfunction
+.function(G1,X)
+returns I1(X)*EXP(-ABS(X)).
+.endfunction
+.function(GN,|X,N|)
+returns IN(X,N)*EXP(-ABS(X)). The array generated by GN is called GARRAY.
+.endfunction
+
+
+2Complex Bessel Function of positive fractional order*
+
+.function(BESSEL,|Z,A|)
+returns the Bessel function J for complex Z and real A 7>* 0.0 .  Also an array BESSELARRAY is set up such that BESSELARRAY[I] = J[I+A-ENTIER(A)](Z)
+.endfunction
+.function(AIRY,X)
+returns the Airy function Ai of real argument 2X*.
+.endfunction
+
+2Plasma Dispersion Function,* NZETA(Z).
+
+This function is related to the complex error function by 
+
+.example
+NZETA(Z) = %I*SQRT(%PI)*EXP(-Z^2)*(1-ERF(-%I*Z))
+.end
+
+
+.function(NZETA,Z)
+returns the complex value of the Plasma Dispersion Function for complex Z.
+.endfunction
+.function(NZETAR,Z)
+returns  REALPART(NZETA(Z)).
+.endfunction
+.function(NZETAI,Z)
+returns IMAGPART(NZETA(Z)).
+.endfunction
+
+
+2Normal distribution function*
+
+.function(GAUSS,|MEAN,SD|)
+returns a random floating point number from a normal distribution with mean 2MEAN* and standard deviation 2SD*
+.endfunction
+
+
+.subsec(Polynomial Zeros,poly!zero,1)
+
+.function(REALZERO,|poly,anything|)
+is a program to isolate zeros of a polynomial based on the Collins-Loos differentiation algorithm.  The 2nd argument,currently ignored, is reserved for some "epsilon" .  To access it, one must LOADFILE(eb,lap,dsk,rjf)$ , BATCH(collin,">",dsk,rjf)$, TRANSLATE(isolate,rr)$. It seems to be slower than REALROOTS for a similar task  (occasionally uses NROOTS, though it needn't).
+.endfunction

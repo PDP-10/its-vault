@@ -1,0 +1,265 @@
+@Comment<(c) Copyright 1983 Massachusetts Institute of Technology>
+@comment<Updates (c) Copyright 1983 Symbolics, Inc.>
+@Chapter[Batch Functions]
+@Label[batchap]
+
+@Section[Introduction]
+@Label[int]
+
+    The Batch set of functions in MACSYMA, namely BATCH, DEMO, BATCHLOAD,
+and BATCON (mnemonic for BATch CONtinue), provide a facility for executing
+command lines stored on a disk file rather than in the usual on-line
+mode. This facility has several uses, namely to provide a reservoir
+for working command lines, for giving error-free demonstrations, or
+helping in organizing one's thinking in complex problem-solving
+situations where modifications may be done via a text
+editor.
+
+    A batch file consists of a set of MACSYMA command lines, each with
+its terminating ; or $, which may be further separated by spaces,
+carriage-returns, form-feeds, and the like.  The BATCH and DEMO
+functions have both a simple and more complicated format, which are
+described below.
+
+@Section[The Simple Format]
+@Label[tsf]
+
+@fcn[Name="BATCH", Args="filename1, filename2, DSK, directory"]
+
+    (The same function format holds for DEMO as well.) The arguments
+to BATCH (or DEMO or BATCHLOAD) in this format specify the file which is to be
+batched.  Here, each file is specified by two filenames of at most six
+characters each, the device the file is on (which is normally DSK),
+and the user file directory.  E.g.  DEMO(TAYLOR,DEMO,DSK,DEMO) calls
+for "demonstrating" (see below) the file TAYLOR DEMO on the DEMO disk
+directory. Latter arguments to the BATCH or DEMO functions may always
+be omitted if they are known from previous file-manipulating
+functions.
+
+    The BATCH function calls for reading in the command lines from the
+file one at a time, echoing them on the user console, and executing
+them in turn.  Control is returned to the user console only when
+serious errors occur or when the end of the file is met.  Of course,
+the user may quit out of the file-processing by typing control-G at
+any point.  Control-S may be used to silence output to the console
+if the user is batching in a long file (such as a package from the SHARE
+directory) which he does not need to watch.  Output to the console
+will be resumed when the batch is done (or when necessary, e.g. should
+it be necessary to allocate more space).
+
+    BATCH files may contain LOAD @Index[LOAD] or LOADFILE
+@Index[LOADFILE] commands.
+
+    DEMO @Index[DEMO] differs from BATCH only in that it pauses after
+the execution of each command line, waiting for the user to type the
+appropriate character for the operating system which tells it to go
+on.  (On MC and TOPS-20 this is a space.  On Multics and UNIX systems
+this is a carriage return.)  If the user types any other character
+(any character followed by a carriage return on UNIX or Multics),
+file-processing will then terminate, giving control over to the user
+console.  (The user may actually continue processing from the file at
+any time - see the BATCON function below.)
+
+@begin[function]
+@fcn[Name="BATCHLOAD", Args="filespecification"]
+Batches in the file silently without
+terminal output or labels.  This is useful for batching in files which
+set up functions, where you don't want to have to watch the batch file
+print out.
+@end[function]
+
+If @var<BATCHKILL (default: FALSE)> is TRUE then the effect of all previous
+BATCH files is nullified because a KILL(ALL) and a RESET() will be
+done automatically when the next one is read in.  If BATCHKILL is
+bound to any other atom then a KILL of the value of BATCHKILL will be done.
+
+@Section[The More Complicated Format]
+@Label[tmcf]
+
+@fcn[Name="BATCH", Args="[fn1, fn2, DSK, directory],<index-specification>"]
+
+    The arguments to BATCH or DEMO in this mode are as follows:
+
+    The first argument is the file specification (as above), enclosed
+in brackets.
+
+    The index-specification is given by one or two arguments, the
+possibilities being: (In the following, m and n are positive
+integers.)
+
+@begin[enumerate]
+m.  This indicates that processing is to begin with the mth
+command line in the file.  Thus, the default for the
+index-specification is 1.
+
+m, n.  This indicates that only the mth command line through
+the nth command line are to be processed.
+
+a variable (say FOO).  FOO must be non-numeric and neither TRUE nor
+FALSE.  This causes file-processing to begin at FOO&& (see
+@PageRef[misc]) and continue until the end of the file.  This makes it
+unnecessary to count command lines as required by (i) above.
+
+variable (say FOO), continue-flag.  The continue-flag is
+either ON (the default, and unnecessary) or OFF.  If OFF, this enables
+one to separate a batch file into subfiles by prefixing a command line
+in the file with FOO&&.  By using FOO as the index-specification, one
+may execute only that subfile which begins with FOO and ends with some
+other variable&&, or the end of file.  If the continue-flag is ON,
+this causes mode 4 to operate as 3 above.
+@end[enumerate]
+
+    One can see that BATCH(TAYLOR,DEMO,DSK,DEMO) and
+BATCH([TAYLOR,DEMO,DSK,DEMO], 1) are equivalent.
+
+@Section[The BATCON Function]
+@Label[batconfun]
+
+    The BATCON @Index[BATCON] function is used to continue or change
+the last BATCH or DEMO function, without it being necessary to mention
+again BATCH or DEMO, or the file specification.  Of course, if one
+wishes to change any of these, a new call to BATCH or DEMO is
+required.
+
+    The possible arguments to BATCON are as follows:
+@begin(enumerate)
+a number
+
+number1, number2
+
+a variable
+
+variable, continue-flag
+@begin(multiple)
+The numeric arguments may involve the variable @var<BATCOUNT (default: 0)>
+which is set to the number of the last expression
+BATCHed in from the file.  Thus BATCON(BATCOUNT-1) will resume
+BATCHing from the expression before the last BATCHed in from before.
+One other mode is possible:
+@end(multiple)
+
+skip-flag.  The skip-flag is useful if an error has occurred
+while batching, or if the user wishes to interject command lines from
+the console while in DEMO-mode and then to continue processing from
+the file.  The skip-flag may be either TRUE or FALSE.  If FALSE, this
+indicates that processing is to continue with the last command line
+attempted (supposedly edited, in case of error); if TRUE, this
+indicates that processing is to continue with the next (untried)
+command line in the file.
+@end(enumerate)
+
+@Section[Miscellany]
+@Label[misc]
+
+@begin(enumerate)
+Comments may be added to batch files at any point, and will,
+of course, be treated as such when batching in the file.  A comment is
+any string beginning with /* and ending with */ as in PL/I.
+
+Any command line in a batch file may begin with variable&&.
+This labels that command line so that the file can be partitioned into
+subfiles.  If not in a subfile mode, this prefix will be treated as a
+comment.
+
+When using the batch functions, it is inconvenient to keep track of
+which Di label MACSYMA will assign to a computation; yet later command
+lines often need to refer to an earlier computation.  One way to get
+around this, of course, is for the user to explicitly label some of
+his command lines.  A function @var<%TH (default: [])> is also
+provided, such that %TH(i), where i is positive, refers to the result
+of the ith previous command line.  E.g., %TH(1) and the variable %
+both refer to the same computation.
+
+When BATCHing in several files it is possible for one file to
+unintentionally cause an error to occur in a subsequent one by
+duplication of names or settings of options.  If the variable
+@var<BATCHKILL (default: FALSE)> is TRUE however, then the effect of
+all previous BATCH files is nullified because a KILL(ALL) and a
+RESET() will be done automatically when the next one is read in.  If
+BATCHKILL is bound to any other atom then a KILL(BATCHKILL) will be
+done.  (The default value of BATCHKILL is FALSE meaning to do
+nothing.)
+
+While BATCHing in a file which takes a lot of time to process the user
+may leave his terminal unattended.  If an error occurs he may want
+some special action to be taken automatically.  By setting the option
+ERRORFUN to the name of a function of no arguments one can have that
+function executed when any error occurs.  Useful functions are QUIT
+and LOGOUT. However in the case of LOGOUT the user should also set the
+switch TTYOFF to TRUE to prevent his job from hanging up in the case
+it tries to output to the terminal (see Chapter @Ref[hints]). In
+addition if a file has been opened for writing, then a command to
+close it should be executed before the LOGOUT.  Also, the user may
+wish to set @var<DYNAMALLOC (default: FALSE)> to TRUE (see
+@Ref[storman]) so that his job will not hang if additional storage
+space is needed
+@begin(multiple)
+If the user is executing a function of his own and would like to
+signal an error he can use the functions ERROR and ERRCATCH (see @Ref[debugmac]).
+@end(multiple)
+
+On the MIT-MC machine, if the user does not have a directory of his
+own then he can use one of the USERS@i[i] directories to store his
+files.  He should identify them as his in some fashion such as using
+his login name for the first file names.
+
+The DEMO file directory contains many demonstration files
+which may be helpful to the user in learning to use MACSYMA.
+@end(enumerate)
+
+@Section[Utility for Checking and Indexing BATCH files]
+@Label[ufcaib]
+
+@begin(function)
+@fcn[Name="MAKE_INDEX_FILE", Args="filename"]
+- will parse a batch file without evaluating it.
+
+For example:
+MAKE_INDEX_FILE(KAM1,EXP,DSK,ODE); creates the file
+ODE;KAM1 PARSED, you only have to do this
+once.
+@end(function)
+
+The following four functions allow you to access expressions in the
+BATCH file:
+
+@begin(function)
+@fcn[Name="OPEN_INDEX_FILE", Args="filename"]
+- returns a symbol which represents the indexed file.  It is easiest to
+use if the user sets a variable to the value returned, or refers to it
+by its D-line number.  E.g.  F:OPEN_INDEX_FILE(KAM1,EXP,DSK,ODE); sets
+the variable F to the symbol which represents the indexed file object.
+
+@fcn[Name="INDEX_FILE_DIM", Args="symbol-returned-by-OPEN_INDEX_FILE"]
+- returns an integer indicating the number of expressions in the
+indexed file.
+
+@fcn[Name="READ_NTH_OBJECT", Args="n,symbol-returned-by-OPEN_INDEX_FILE"]
+- returns the n'th object in the indexed file. 
+@end(function)
+
+Example timings for the file ODE;KAM1 EXP above: it took a consistent
+0.045 seconds to access any expression in the file randomly. With
+BATCH and && labels it took 0.2 seconds to access the first expression
+in the file, and 5.9 seconds to access the 180'th.
+
+@begin(function)
+@fcn[Name="MAP_OVER_INDEX_FILE", Args="function, fileobject"]
+is convenient for generating an index list of properties of
+the objects in a file vs. their positions in the file.
+This function could be defined as
+@Begin[Example]
+MAP_OVER_INDEX_FILE(function, fileobject):=
+BLOCK([LIST:[]],
+      FOR j:1 THRU INDEX_FILE_DIM(fileobject)
+      DO LIST:CONS(APPLY(function,
+                         [read_nth_object(j,fileobject),j]),
+                   LIST),
+      REVERSE(LIST))$
+@end[example]
+Another application for this is in the testing of programs.
+e.g. the file may contain a sequence [ input, correct_output ] $
+[ input, correct_output ] $
+
+N.B. BATCH evaluates the input expressions, the above functions
+do not.

@@ -1,0 +1,348 @@
+@Comment<(c) Copyright 1983 Massachusetts Institute of Technology>
+@comment<Enhancements (c) Copyright 1983 Symbolics, Inc.>
+@Chapter[|Declaring and Using Mathematical Information|]
+@Label[declar]
+@comment<check  that "fdusm" isn't referred to anywhere... change to "declar">
+
+The commands in this chapter deal with the communication, use, and
+manipulation of mathematical information about objects and functions
+in MACSYMA.  Taken as a whole, this information comprises MACSYMA's
+relational data base.  Facts take the form of either "predicates" or
+"features".  A predicate is a well-formed formula consisting of a
+relation and its arguments, e.g. A > B, or is a composition of
+predicates using the logical operators NOT, AND, and OR.
+Alternatively, certain facts about mathematical objects and functions
+can be expressed more naturally as "features", i.e.  unary predicates.
+For example, one can say that a certain constant is an INTEGER or that
+a function is INCREASING.  Any feature, e.g. the linearity of F, can
+also be expressed as a predicate via the relation FEATUREP, as in
+FEATUREP(F,LINEAR).
+
+@Section[Declaring and Assuming]
+@Label[decass]
+
+The predicates and features communicated to MACSYMA with the ASSUME
+and DECLARE commands may be tested with IS and FEATUREP and removed
+with FORGET and REMOVE.  The facts in the relational data base are
+used by the simplifier and several commands, like SIGN, the IF
+statement, and INTEGRATE (certain integrations require sign
+information).  MACSYMA has a rudimentary inference capability enabling
+limited deductions from the data base.  It excels at taxonomic
+deductions, e.g. FEATUREP(N,EVEN) implies FEATUREP(N,INTEGER), and simple
+expression comparisons, e.g. X<0 and FEATUREP(N,EVEN) imply Y@+[2]+X@+[N]>0.
+The only sort of inequality information used by the inference
+mechanism at the moment are relations between variables and other
+variables and numbers.  Please note that all variables are assumed
+by the relational routines to take on real values exclusively unless
+they are DECLAREd to be COMPLEX.
+
+The operator "=" is a total relation that holds between two
+expressions if and only if the expressions are syntactically
+identical.  It is not a mathematical comparison.  Thus,
+IS((X+1)^2=X^2+2*X+1) would return FALSE.  The relation EQUAL, on
+the other hand, is a mathematical comparison of its two arguments.  A
+predicate involving EQUAL is true if and only if its arguments are
+mathematically equivalent in light of the current data base.  Thus,
+IS(EQUAL((X+1)^2,X^2+2*X+1)) would return TRUE.  The operators ">",
+">=", "<", and "<=" are also mathematical comparisons.
+
+MACSYMA currently recognizes and uses the following features of
+objects and functions: INTEGER, NONINTEGER, EVEN, ODD, RATIONAL,
+IRRATIONAL, REAL, IMAGINARY, COMPLEX, ANALYTIC, INCREASING,
+DECREASING, ODDFUN (odd function), EVENFUN (even function), POSFUN
+(positive function), COMMUTATIVE, LASSOCIATIVE, RASSOCIATIVE,
+SYMMETRIC, and ANTISYMMETRIC.  The variable FEATURES @Index[FEATURES]
+contains a list of these and any others the user may add with the
+DECLARE command.
+
+To change ordering, the user may wish to DECLARE some variable to be
+MAINVAR @Index[MAINVAR].  The ordering scale for atoms is essentially:
+numbers < constants (e.g. %E,%PI) < scalars < other variables <
+mainvars.  E.g. compare EXPAND((X+Y)^4); with (DECLARE(X,MAINVAR),
+EXPAND((X+Y)^4)); .  (Note: Care should be taken if you elect to use
+the above feature.  E.g. if you subtract an expression in which X is a
+MAINVAR from one in which X isn't a MAINVAR, resimplification e.g.
+with EV(expression,SIMP) may be necessary if cancellation is to occur.
+Also, if you SAVE an expression in which X is a MAINVAR, you probably
+should also SAVE X.)  For the general ordering scheme MACSYMA uses,
+(see page @PageRef[ordering!functions]).
+
+The variable OPPROPERTIES @Index[OPPROPERTIES] contains the list of
+the special operator-properties handled by the MACSYMA simplifier:
+LINEAR, ADDITIVE, MULTIPLICATIVE, OUTATIVE, EVENFUN, ODDFUN,
+COMMUTATIVE, SYMMETRIC, ANTISYMMETRIC, NARY, LASSOCIATIVE, and
+RASSOCIATIVE.
+
+@begin(function)
+@fcn[Name="ASSUME", Args="pred1, pred2, ..."]
+first checks the specified predicates for redundancy
+and consistency with the current data base.  If the predicates are
+consistent and non-redundant, they are added to the data base; if
+inconsistent or redundant, no action is taken.  ASSUME returns a list
+whose entries are the predicates added to the data base and the atoms
+REDUNDANT or INCONSISTENT where applicable.
+
+When using INTEGRATE, etc. one often introduces parameters which are
+real and positive or one's calculations can often be constructed so
+that this is true.  There is a switch @var<ASSUME_POS (default FALSE)>
+such that if set to TRUE, MACSYMA will assume one's parameters are
+positive.  The intention here is to reduce the number of questions
+MACSYMA must ask.  Obviously, ASSUME information or any contextual
+information present will take precedence.  The user can control what
+is considered to be a parameter for this purpose.  Parameters by
+default are those which satisfy SYMBOLP(x) OR SUBVARP(x).  The user
+can change this by setting the option @var<ASSUME_POS_PRED (default:
+FALSE)> to the name of a predicate function of one argument. Thus if
+you want only symbols to be parameters, you can do ASSUME_POS:TRUE
+ASSUME_POS_PRED:'SYMBOLP SIGN(A); -> POS, SIGN(A[1]); -> PNZ.
+
+@fcn[Name="FORGET", Args="pred1, pred2, ..."]
+removes the specified predicates from the data base.  Note that it
+does not guarantee that equivalent facts are removed.  FORGET also
+accepts lists of predicates as arguments.
+
+@fcn[Name="DECLARE", Args="a1, f1, a2, f2,..."]
+declares each @i[ai] to have the corresponding feature @i[f]i, e.g.
+DECLARE(F,INCREASING).  The @i[ai] and @i[fi] may also be lists of
+objects or features.
+
+@fcn[Name="REMOVE", Args="a1, f1, a2, f2, ..."]
+removes each feature @i[fi] from the corresponding object @i[a]i.
+The @i[ai] and @i[fi] may also be lists of objects or features.
+
+@fcn[Name="IS", Args="pred"]
+attempts to determine whether the specified predicate is provable
+from the facts in the current data base.  IS returns TRUE if the
+predicate is true for all values of its variables consistent with the
+data base and returns FALSE if it is false for all such values.
+Otherwise, its action depends on the setting of the switch
+@var<PREDERROR (default: TRUE)>. IS errs out if the value of
+PREDERROR is TRUE and returns UNKNOWN if PREDERROR is FALSE.
+
+@fcn[Name="FEATUREP", Args="a,f"]
+attempts to determine whether the object @i[a] has the feature @i[f]
+on the basis of the facts in the current data base.  If so, it returns
+TRUE, else FALSE.
+@Begin[Example]
+(C1) DECLARE(J,EVEN)$
+@hinge
+(C2) FEATUREP(J,INTEGER);
+(D2)                                TRUE
+@End[Example]
+
+@fcn[Name="SIGN", Args="exp"]
+attempts to determine the sign of its specified expression on the
+basis of the facts in the current data base.  It returns one of the
+following answers: POS (positive), NEG (negative), ZERO, PZ (positive
+or zero), NZ (negative or zero), PN (positive or negative), or PNZ
+(positive, negative, or zero, i.e. nothing known).  It can operate
+on nonatomic expressions which have been explicitly stored in the
+database.  For example, ASSUME(A+B>0); SIGN(A+B); will return POS.  
+@Begin[Example]
+(C3) ASSUME(A>=B,B>=C,C>=D,D>=A);
+(D3)                   [A >= B, B >= C, C >= D, D >= A]
+@hinge
+(C4) SIGN(B-C);
+(D4)                                 ZERO
+@hinge
+(C5) DECLARE(K,INTEGER,L,ODD,F,INCREASING)$
+@hinge
+(C6) ASSUME(X>0);
+(D6)                               [X > 0]
+@hinge
+(C7) F(X+3*Y^(L+24*K+1))-F(0);
+                             L + 24 K + 1
+(D7)                    F(3 Y             + X) - F(0)
+@hinge
+(C8) SIGN(%);
+(D8)                                 POS
+@End[Example]
+
+@fcn[Name="ASKSIGN", Args="exp"]
+first attempts to determine whether the specified expression is
+positive, negative, or zero.  If it cannot, it asks the user the
+necessary questions to complete its deduction.@Foot{If the user wishes
+to look at the expression more closely before replying, the variable
+@var<ASKEXP (default: [])> is set to it.  Typing control-A results in
+a MACSYMA break (See section @ref<hints>); the user may now analyze
+the expression in order to give an appropriate answer.}  The user's
+answer is recorded in the data base for the duration of the current
+computation (one "C-line"). The value of ASKSIGN is one of POS, NEG,
+or ZERO.
+
+@fcn[Name="ASKINTEGER", Args="exp,optional-arg"]
+attempts to determine from the data-base if @i[exp] is EVEN, ODD, or
+INTEGER.  @i[exp] is any valid MACSYMA expression and @i[optional-arg]
+is EVEN, ODD, or INTEGER and defaults to INTEGER if omitted.  It will
+ask the user if it cannot tell otherwise and attempt to install the
+information in the data base if possible.
+
+@var<DOMAIN (default: REAL)> - if set to COMPLEX, SQRT(X@+[2]) will remain
+SQRT(X@+[2]) instead of returning ABS(X).  The notion of a "domain" of
+simplification is still in its infancy, and controls little more than
+this at the moment.
+@end(function)
+
+The following function, when applicable, gives the user relational
+information.  However, it does NOT use the data base.
+
+@begin(function)
+@fcn[Name="ZEROEQUIV", Args="exp,var"]
+tests whether the expression @i[exp] in the single variable @i[var] is
+equivalent to zero.  It returns either TRUE, FALSE, or DONTKNOW.  For
+example ZEROEQUIV(SIN(2*X) - 2*SIN(X)*COS(X),X) returns TRUE and
+ZEROEQUIV(%E^X+X,X) returns FALSE.  On the other hand
+ZEROEQUIV(LOG(A*B) - LOG(A) - LOG(B),A) will return DONTKNOW because
+of the presence of an extra variable.  The restrictions are:
+@begin(enumerate)
+Do not use functions that MACSYMA does not know how to
+differentiate and evaluate.
+
+If the expression has poles on the real line, there may be
+errors in the result (but this is unlikely to occur).
+
+If the expression contains functions which are not solutions
+to first order differential equations there may be incorrect results.
+
+The algorithm uses floating-point evaluation at randomly
+chosen points using a corresponding "epsilon" for carefully selected
+subexpressions.  This is always somewhat hazardous, although the
+algorithm tries to minimize the potential for error.
+@end(enumerate)
+@end(function)
+
+@Section[Contexts]
+@Label[contexts]
+
+    The context mechanism makes it possible for a user to bind
+together and name a selected portion of his data base, called a
+@i[context].  Once this is done, the user can have MACSYMA assume or
+forget large numbers of facts merely by activating or deactivating
+their context.  Any symbolic atom can be a context, and the facts contained in
+that context will be retained in storage until the user destroys them
+individually by using FORGET or destroys them as a whole by using KILL
+to destroy the context to which they belong.  @index[FORGET] @index[KILL]
+
+    Contexts exist in a formal hierarchy, with the root always being
+the context GLOBAL, which contains information about MACSYMA that some
+functions need.  When in a given context, all the facts in that
+context are "active" (meaning that they are used in deductions and
+retrievals) as are all the facts in any context which is an inferior
+of that context.  When a fresh MACSYMA is started up, the user is in a
+context called INITIAL, which has GLOBAL as a subcontext.
+
+@begin(function)
+@fcn[Name="FACTS", Args="item"]
+If @i[item] is the name of a context then FACTS returns a list of the facts
+in the specified context.  If no argument is given, it
+lists the current context.  If @i[item] is not the name of a context
+then FACTS returns a list of the facts known about @i[item] in the current
+context.  Facts that are active, but in a different context, are not
+listed.  The facts are represented as KINDs, @Index[KIND] see line (C4) in
+the example below.
+
+@fcn[Name="NEWCONTEXT", Args="name"]
+creates a new (empty) context, called @i[name], which has
+GLOBAL as its only subcontext.  The new context created will become the
+currently active context. 
+
+@fcn[Name="SUPCONTEXT", Args="name,context"]
+will create a new context (called @i[name]) whose subcontext is @i[context].
+If context is not specified, the current context will be assumed.  If
+it is specified, context must exist.
+
+@var<CONTEXT (default: INITIAL). Whenever a user assumes a new fact,
+it is placed in the context named as the current value of the variable
+CONTEXT.  Similarly, FORGET references the current value of CONTEXT.
+To change contexts, simply bind CONTEXT to the desired context.  If
+the specified context does not exist it will be created by an
+invisible call to NEWCONTEXT.  The context specified by the value of
+CONTEXT is automatically activated.
+
+@var<CONTEXTS (default: [INITIAL,GLOBAL])> is a list of the contexts which
+currently exist, including the currently active context.
+
+@fcn[Name="KILLCONTEXT", Args="context1,context2,...,contextn"]
+kills the specified contexts.  If one of them is the current context,
+the new current context will become the first available subcontext of
+the current context that has not been killed.  If the first available
+unkilled context is GLOBAL then INITIAL is used instead.  If the
+INITIAL context is killed, a new INITIAL is created, which is empty of
+facts.  KILLCONTEXT does not allow the user to kill a context that is
+currently active, either because it is a subcontext of the current
+context, or by use of the function ACTIVATE.
+
+@fcn[Name="ACTIVATE", Args="cont1, cont2, ..."]
+causes the specified contexts @i[conti] to be activated.  The facts in
+these contexts are used in making deductions and retrieving
+information.  The facts in these contexts are not listed when FACTS();
+is done.  ACTIVATE does not check for contradictions when it
+activates old contexts.
+
+@fcn[Name="DEACTIVATE", Args="cont1, cont2, ..."]
+causes the specified contexts @i[conti] to be deactivated.
+
+@var<ACTIVECONTEXTS (default: [])> is a list of the contexts which are
+active by way of the ACTIVATE function, as opposed to being active
+because they are subcontexts of the current context.
+@end(function)
+
+@Begin[Example]
+(C1) CONTEXT:CON1$
+@hinge
+(C2) DECLARE(M,INTEGER)$
+@hinge
+(C3) FEATUREP(M,INTEGER);
+(D3)                                TRUE
+@hinge
+(C4) FACTS(M);
+(D4)                        [KIND(M,INTEGER)]
+@hinge
+(C5) CONTEXT:CON2$
+@hinge
+(C6) FEATUREP(M,INTEGER);
+(D6)                               FALSE
+@hinge
+(C7) DECLARE(N,INTEGER);
+(D7)                                DONE
+@hinge
+(C8) CONTEXT:CON1$
+@hinge
+(C9) FEATUREP(M,INTEGER);
+(D9)                                TRUE
+@hinge
+(C10) FEATUREP(N,INTEGER);
+(D10)                               FALSE
+@hinge
+(C11) ACTIVATE(CON2)$
+@hinge
+(C12) FEATUREP(N,INTEGER);
+(D12)                                TRUE
+@hinge
+(C13) CONTEXTS;
+(D13)                    [CON2, CON1, INITIAL, GLOBAL]
+@End[Example]
+
+@begin(function)
+@fcn[Name="LOCAL", Args="a1, a2, ..."]
+causes the external facts about the objects @i[a1], @i[a]2, ...  to be
+forgotten for the duration of the enclosing BLOCK, independent of
+context.  Any facts assumed about @i[a1], @i[a2], ... within the BLOCK
+containing the LOCAL will be forgotten upon exit, again independent of
+context.
+@end(function)
+
+@Begin[Example]
+(C1) DECLARE(P,INTEGER)$
+@hinge
+(C2) BLOCK(LOCAL(P),PRINT(FEATUREP(P,INTEGER)),DECLARE(P,IRRATIONAL))$
+FALSE
+@hinge
+(C3) FEATUREP(P,INTEGER);
+(D3)                                TRUE
+@hinge
+(C4) FEATUREP(P,IRRATIONAL);
+(D17)                               FALSE
+@End[Example]
+
+

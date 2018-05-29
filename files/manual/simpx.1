@@ -1,0 +1,139 @@
+(defprop mnctimes simpxnct operators)
+(defun onedel (l)
+       (do ((u l (cdr u))
+	    (v nil (cond ((onep1 (car u)) (endcons (car u) v))
+			 (t v))))
+	   ((null u) v)))
+
+(DEFUN SIMPxNCT (X CHECK Z) 
+       (PROG (W1 W) 
+	     (SETQ CHECK X)
+	     (setq w (cdr x)
+		   W1 (mapcar 'simpcheck w (mycopy z (length w))))
+
+;;;THIS DOES 0.FOO  OR FOO.0  SIMPLIFICATION
+	      (AND $DOT0SIMP  (memq 't (mapcar 'zerop1 w1)) (RETURN 0))
+
+;;;THIS DOES FOO.1 OR 1.FOO  CASES
+	      (AND $DOT1SIMP (return (onedel w1)))
+
+;;;THIS CODE HANDLES THE SPECIAL RULES FOR SCALARS IN
+;;;NONSCALAR EXPRESSIONS   M1.(S*M2) => S*(M1.M2) AND (S*M1).M2 => S*(M1.M2)
+	      (AND $DOTSCRULES (memq 't (mapcar '$NONSCALARP w1))
+		    (COND
+		     ((not (memq nil
+			    (mapcar '((lambda r)
+				      (not ($nonscalarp r))) w1)))
+		      (RETURN (MULn W1 nil)))
+		     (t (return
+		      (do ((w2 w1 (cdr w2))
+			   (w3 (car w2) (car w2))
+			   (sp nil (cond ((not ($nonscalarp w3))
+					  (nconc sp w3))
+					 (t (nconc sp (car (partition-ns w3))))))
+			   
+			   (nsp nil (cond ((not ($nonscalarp w3)) nsp)
+					  (t (nconc nsp (cadr (partition-ns w3)))))))
+			  ((null w2) 
+			   (simptimes
+			    (append '((mtimes)) (cons 1 sp)
+				    (list simplifya
+					  '(###
+((AND (MTIMESP W1) (CATCH
+			   (RETURN (OUTOFDOT (PARTITION-NS (CDR W1)) W2 1))
+						ONLYNONSCALARS)))
+			  ((AND (MTIMESP W2) (CATCH
+			   (RETURN (OUTOFDOT W1 (PARTITION-NS (CDR W2)) 2))
+						ONLYNONSCALARS)))))
+;;;THIS CODE HANDLES THE RULES FOR CONST.ANYTHING
+;;;AND ANY.CONST
+	      (AND $DOTCONSTRULES 
+		  (COND	((OR (AND (NOT ($NONSCALARP W1)) ($CONSTANTP W1))
+			     (AND (NOT ($NONSCALARP W2)) ($CONSTANTP W2)))
+			 (RETURN (MUL2 W1 W2)))
+			((AND (MTIMESP W1) ($CONSTANTP (CADR W1)))
+			 (CATCH (RETURN (OUTOFDOT (PARTITION-CONST (CDR W1)) W2 1))
+				ONLYNONSCALARS))
+			((AND (MTIMESP W2) ($CONSTANTP (CADR W2)))
+			      (CATCH (RETURN (OUTOFDOT W1
+						 (PARTITION-CONST (CDR W2)) 2))
+				      ONLYNONSCALARS))))
+;;; THIS CODE HANDLES A.A -> A^^2 TYPE CASES
+	      (AND   $DOTEXPTSIMP (OR (ZEROP $EXPOP) (NOT (MPLUSP W1)))
+       ((LAMBDA (X^ Y^ X^^ Y^^)
+	(COND	((ALIKE1 W1 W2) 
+		 (AND (MNCEXPTP W1) (SETQ X^ (CADR W1) X^^ (CADDR W1)))
+		 (RETURN (SIMPLIFYA (LIST '(MNCEXPT) X^ (MUL2 X^^ 2)) T))))
+	(COND 	((MNCEXPTP W1) (SETQ X^ (CADR W1) X^^ (CADDR W1)))
+		(T (SETQ X^ W1 X^^ 1)))
+	(COND 	((ATOM W2) (SETQ Y^ W2 Y^^ 1))
+		((EQ (CAAR W2) 'MNCEXPT) (SETQ Y^ (CADR W2) Y^^ (CADDR W2)))
+		(T (SETQ Y^ W2 Y^^ 1)))
+	(AND 	(ALIKE1 X^ Y^) 
+		(RETURN (SIMPLIFYA (LIST '(MNCEXPT) X^ (ADD2 X^^ Y^^)) T)))
+	(AND 	 $DOTASSOC (MNCTIMESP W2)
+	     (COND 	((MNCEXPTP (CADR W2))
+			 (SETQ Y^ (CADADR W2) Y^^ (CADDR (CADR W2))))
+			(T (SETQ Y^ (CADR W2) Y^^ 1)))
+	     (AND (ALIKE1 X^ Y^)
+		  (RETURN (SIMPLIFYA (LIST '(MNCTIMES)
+				    (SIMPLIFYA 
+					(LIST '(MNCEXPT) X^ (ADD2 X^^ Y^^)) T)
+			     (CADDR W2)) T)))))
+	W1 W2 1 1))
+;;; THIS CODE CARRIES OUT MATRIX OPERATIONS WHEN FLAGS ARE SET.
+	(AND (OR $DOALLMXOPS $DOMXMXOPS $DOMXNCTIMES) MLP1 MLP2 
+		(RETURN (TIMEX W1 W2)))
+(AND 	(OR $DOALLMXOPS $DOSCMXOPS)
+	(COND	((OR (AND MLP1 (NOT ($NONSCALARP W2)))
+		     (AND MLP2 (NOT ($NONSCALARP W1))))
+		 (RETURN (SIMPLIFYA (OUTERMAP1 'MNCTIMES W1 W2) T)))))
+;;; THIS CODE DOES EXPANDING (DISTRIBUTING) WHEN FLAGS ARE SET.
+	     (RETURN
+	      (COND
+	       ((NOT (OR (NOT (ZEROP $EXPOP)) $DOTDISTRIB)) CHECK)
+	       ((MPLUSP W1)
+		(ADDN (MAPCAR (FUNCTION (LAMBDA (C) (SIMPLIFYA (LIST '(MNCTIMES) C W2) T)))
+			      (CDR W1))
+		      T))
+	       ((MPLUSP W2)
+		(ADDN (MAPCAR (FUNCTION (LAMBDA (C) (SIMPLIFYA (LIST '(MNCTIMES) W1 C) T)))
+			      (CDR W2))
+		      T))
+	       (T CHECK)))))
+
+(DEFUN OUTOFDOT (XW1 XW2 XN) 
+       (COND ((= XN 1)
+	      (COND ((NULL (CAR XW1)) (THROW NIL ONLYNONSCALARS))
+		    (T 
+		     (SIMPTIMES 
+		      (APPEND '((MTIMES)) (CAR XW1)
+			      (LIST (SIMPLIFYA
+				     (LIST '(MNCTIMES)
+			        	   (MULN (CADR XW1) T) XW2) T)))
+			1 T))))
+	      ((= XN 2)
+	       (COND ((NULL (CAR XW2)) (THROW NIL ONLYNONSCALARS))
+		     (T 
+	      (SIMPTIMES (APPEND '((MTIMES)) (CAR XW2)
+	       (LIST (SIMPLIFYA 
+		 (LIST '(MNCTIMES) XW1 (MULN (CADR XW2) T)) T))) 1 T))))))
+
+(DEFUN PARTITION-CONST (X)
+	(DO ((L X (CDR L))
+	     (CONSTLIST NIL (CONS (CAR L) CONSTLIST)))
+	    ((OR (NULL L) (NOT (AND (NOT ($NONSCALARP (CAR L)))
+				    ($CONSTANTP (CAR L)))))
+	     (LIST (NREVERSE CONSTLIST) L))))
+ 
+(DEFUN PARTITION-NS (X)
+ ((LAMBDA (SP NSP) ; SP = SCALAR PART, NSP = NONSCALAR PART
+   (MAPC (FUNCTION 
+	  (LAMBDA (Z) (COND ((NOT ($NONSCALARP Z))
+			     (SETQ SP (NCONC SP (LIST Z))))
+			    (T (SETQ NSP (NCONC NSP (LIST Z)))))))
+	 X)
+   (LIST SP NSP)) NIL NIL))
+
+
+(defun mycopy (x n) (cond ((= n 0) nil) (t (cons x (mycopy x (- n 1))))))

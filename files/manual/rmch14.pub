@@ -1,0 +1,198 @@
+.<<(c) Copyright 1982 Massachusetts Institute of Technology>>
+.CHAP (Storage Management,storman)
+
+In the LISP system in which MACSYMA resides, the space requirements of the
+user's programs and data may be increased during the execution of the programs.
+This is in contrast to static storage allocation systems in which the storage is
+completely allocated before the programs are executed and consequently the
+storage requirements must be completely known before execution time and cannot
+be changed during program execution.  If they exceed the capacity of the memory
+space that has been allocated for them, the programs will not be allowed to run.
+
+With our LISP system, a certain amount of space is initially allocated, the
+programs are started running, and the amount of space utilized changes during
+execution.  If at some point the limit of available space is exceeded, program
+execution will be terminated.
+
+This LISP divides up the available memory spaces into several portions on the
+basis of what kind of data they will contain.
+
+.begin preface 1 indent 0,10
+BPS - (binary program space) for compiled functions and arrays.
+
+FIXNUM - for integers which fit into one machine word.
+
+FLONUM - for floating point numbers.
+
+BIGNUM - the first word of numbers bigger than one machine word.
+
+SYMBOL - for atomic symbols.
+
+ARRAY - for array indicators.
+
+LIST - for anything else not in the other spaces, e.g. uncompiled
+functions, symbolic expressions, etc.
+
+PDL - for several kinds of pushdown lists.
+.end
+.skip 1
+
+When a MACSYMA is started up, each space is initially allocated some fixed
+amount.  These spaces will grow as the user interacts with MACSYMA, each
+particular space growing as the user causes more objects to be created which
+reside in that space. For example, executing a command line which causes an
+out-of-core file to be loaded mainly increases BPS and LIST space.  Also new
+labelled expressions are created every time a command line is executed and these
+occupy LIST space.  Push down lists are used to store variables, return
+addresses, and other information related to the function calling mechanism.
+
+When a space (except for BPS and the PDLs) is used up, a process is initiated
+called "garbage collection" which attempts to free up storage so it can be
+reused rather than trying to increase the size of the spaces. In very simple
+terms, it marks every word in a particular storage space which is still being utilized
+and then links up the unmarked words (termed "garbage") on a chain to be used to
+store subsequently created data.  If this chain is not of a certain assigned
+minimal size, a special allocation routine is invoked. At this point several
+possibilities can occur, among which is the possiblity of increasing the size of
+the spaces. Before these are described however, there is something to be
+mentioned which the user should take note of. The initial allocations (later to
+be referred to as "level 0 allocations") are quite reasonable.  Many problems run
+quite well using these allocations.  If the user's problem does not run due to
+running out of storage, most often this is due to one of the following
+circumstances and not to the insufficiency of the allocations:
+
+.begin narrow 4 preface 1
+(1) The user has organized his problem poorly, thereby either not solving the
+problem he intended to solve, biting off too much in too short a time, or
+creating intermediate expression swell of perhaps incredible proportions.  He
+should get a feel for the size of all of his expressions and the behavior of
+MACSYMA's functions on them.
+
+(2) The user is retaining expressions in core that are useless to him.  Since
+MACSYMA maintains a complete history of the user's session, it does not release
+the storage occupied by the user's data unless explicitly instructed to do so.
+This can be accomplished in several ways. One way is by using the functions
+KILL, REMVALUE, REMFUNCTION, and REMARRAY $see<freeing!storage> which unbind an item from
+the expression it represents thus freeing up the storage occupied by the
+expression to be reclaimed on the next garbage collection. It is recommended
+that the user give a name to all labelled expressions which he wishes to keep
+around for a time, and then periodically do a KILL(LABELS).  He should also KILL
+functions and arrays which he no longer needs.  Killing a name will not
+accomplish much unless the labelled expression (D line) at which the assignment
+was done is also KILLed because the two symbols are holding onto the same
+expresson.
+
+If the above approach is unacceptable because the (intermediate or final)
+expressions which the user needs occupy a lot of storage,  he can store them on
+the disk (kill the corresponding label if any) and have them retrieved when
+needed.  This can be accomplished in the following two ways (see Chapter $ref<secstor>).
+
+The STORE function can be used to explicitly transfer expressions from main
+memory to disk.  These will be brought back into main memory each time they are
+referenced. Since the process of retrieving an expression from a large file may
+be rather time consuming, the user can use the UNSTORE function to bring an
+expression back to main memory and keep it there. However, in general an
+UNSTOREd expression will occupy more space then it originally did because
+several copies of common subexpressions will be created.  These were originally
+represented by pointers to a single copy.
+
+Another way to transfer expressions to the disk is by using the
+automatic storage mechanism.  This will cause expressions to be STOREd
+automatically in an effort to conserve space.  As with the explicit
+use of the STORE function, the expressions will be retrieved by
+MACSYMA when they are referenced. There are two heuristics which
+MACSYMA uses to decide when to store expressions.  One is to STORE all
+values, functions, arrays, and labelled expressions whenever available
+space becomes low.  This is the purpose of the DSKGC switch. The
+other heuristic is to periodically STORE a fixed number of labelled
+expressions whenever that many get created above a minimum number
+which are to be kept around.  The user can utilize this option by
+setting the switch DSKUSE to TRUE.  In addition if DSKALL is TRUE,
+then all values, functions, and arrays will be written at this time as
+well.
+
+(3) A recursive infinite loop has occurred because of a bug in either the user's
+code or in MACSYMA's code.  Such a loop would cause storage spaces to grow
+indefinitely if possible. It may be difficult for the user to recognize that
+this situation has occurred, as opposed to a real need for more space, yet such
+a situation can cause havoc to any dynamic allocation scheme. By typing a
+control-D the user will be informed whenever a garbage collection occurs and a
+printout such as the following will occur:
+.example
+
+;GC DUE TO ... SPACE
+;2729[33%] LIST, 1935[94%] FIXNUM, 511[99%] FLONUM,
+; 509[99%] BIGNUM, 629[15%] SYMBOL,
+; 480[93%] ARRAY WORDS FREE
+
+.end
+
+The numbers before the name of each space give the number of words of that space
+which are available. The percentages refer to the ratio of the available amount
+of space compared to the total amount (used plus unused). This may be of some
+help in determining whether the user's computation is doing what he expected.
+Typing a second control-D will turn off this g.c. printout.
+.end
+
+If the user feels that he is not in one of the above situations and that there is a
+real need for more space, he can avail himself of the following scheme:
+
+When a space, e.g. LIST is exhausted, MACSYMA
+will print:
+
+.example
+You have run out of LIST space
+Do you want more?
+Type ALL; NONE; a level-no.; or the name of a space;
+
+.end
+
+At this point the user can type a control-A and enter a (MACSYMA-BREAK).  He can
+then follow any of the procedures mentioned in (2) above.  After getting out of
+the break by typing EXIT; he can then type OK; which indicates that the user
+believes he has freed up enough space thus making reallocation unnecessary. If he
+is wrong, he will get the above message again.  He can also reply with the name
+of a space, i.e. one of FIXNUM, FLONUM, BIGNUM, SYMBOL, or ARRAY which will
+cause the size of that space to be expanded.  If he replies with LIST or ALL
+then not only will list space be increased, but so will every other space.  This
+is because if he needs more list space, then he probably needs more of the other
+spaces as well.  Replying LIST also increments the "allocation level" by one.
+There are 5 equi-spaced levels of allocation, ranging from the initial level 0
+to level 4. The user can also boost his MACSYMA up to that particular level of
+allocation immediately by replying with that level number.
+
+At level 4 the maximal allocation possible on the computer is just about
+exhausted so that there is no higher level.  Also, the amount of
+core space devoted to the allocatible storage spaces is 
+obviously inversely proportional to the number and size of out-of-core files which are loaded in.  If many out-of-core files
+are loaded in, allocation level 4 will not even be attainable.
+The user may wish for this reason alone to continue now and
+then with a fresh MACSYMA.  If the user's computation exceeds
+this level of storage it will error out with the message "...STORAGE CAPACITY
+EXCEEDED". Since the size of the spaces can't be decreased, it is important not
+to increase them unless it is necessary.
+
+If the user knows initially that his problem will require much space, the
+function $fun<ALLOC> is provided.  5ALLOC* takes any number of arguments which are the
+same as the replies to the "run out of space" question above.  It increases
+allocations accordingly.
+
+Lastly, if he is running a MACSYMA disowned, or for other reasons
+wishes storage space to be increased automatically as needed without
+having any questions asked, the user may set the switch
+$var<DYNAMALLOC/FALSE> to TRUE which will allocate additional space
+whenever necessary.  If DYNAMALLOC is set to PRINT, then it behaves as if 
+set to TRUE, but also a message e.g. "More LIST space was needed." is 
+printed whenever further allocation of a space e.g. LIST is necessary. 
+This should make it possible to keep track of space allocation when 
+necessary even if DYNAMALLOC is not FALSE.
+
+Like the other spaces BPS and the PDLs cannot be decreased.  BPS will
+continue to grow until the MACSYMA runs out of address space so
+caution should be exercised in causing out-of-core files to be loaded.
+For example, once the integration file is loaded into the user's
+MACSYMA it is there to stay even if he no longer uses it.  The
+allocation of the PDLs is sufficiently large, so that if they are ever
+caused to overflow it is probably due to a recursive infinite loop in
+the user's programs.
+

@@ -1,0 +1,2684 @@
+@Comment<(c) Copyright 1983 Massachusetts Institute of Technology>
+@comment<Enhancements (c) Copyright 1983 Symbolics, Inc.>
+@Chapter[|Complex Plotting and Graphics --- PLOT2|]
+@Label[plot2]
+
+This is the documentation for PLOT2 (SHARE;PLOT2 USAGE).  It is quite
+long.  If this is your first experience with PLOT2 read PLOT2 Primer
+(see @PageRef[prim]) which contains examples and brief explanations of
+the most common PLOT2 capabilities.  These examples are run for you by
+typing DEMO(PLOT2,DEMO,DSK,SHARE); (type spaces after the plots).
+Please look at SHARE;PLOT2 RECENT as well for updates as to the
+current state of affairs.  (Last revision of this document: August
+1981.)
+
+@Section[Introduction]
+@Label[plot!intro]
+
+This is a description of the functions contained in the following 7
+files:
+@Begin[Example]
+	APLOT2 > DSK CFFK
+	TEKPLT > DSK CFFK
+	PLOT3D > DSK CFFK
+	WORLD  > DSK CFFK
+	PRINT  > DSK CFFK
+	IFFUN  > DSK CFFK
+	EDIT   > DSK CFFK
+@End[Example]
+    All of the important functions will get loaded up as needed.
+
+    The capabilities of the routines described here include plotting
+of several curves on a single graph, plotting several graphs in
+different positions on the screen, saving plots, replotting plots
+with different scales without having to recompute any points,
+plotting of 3 dimensional surfaces, plotting of user defined dashed
+lines and symbols.
+
+    The devices supported are:  The Tektronix 4010, 4013, 4025 and
+4662, the Imlac PDS 1 and PDS 4 (using ARDS graphics conventions),
+the XGP, the Gould line-printer (in MIT building 38-246), the Dover, some
+Versatecs on the MFE-NET and, in a "preview" mode, printing and display
+consoles.
+
+    Mail concerning bugs/features in PLOT2 should be addressed to
+BUG-PLOT2.
+
+@Section[Two dimensional Plotting]
+@Label[2dplt]
+
+@SubSection[PLOT2]
+@Label[plt2]
+
+Easy examples
+@Begin[Example]
+  PLOT2(SIN(X), X, -%PI, %PI);	plots sin(X) against X as X takes on
+				PLOTNUM values between -%PI to %PI
+
+@comment<+++  1>
+
+@newpage
+  LST:[1,1,2,3,5,8,13,21,34];	A list of the first Fibonacci numbers
+  PLOT2(LST[I], I, 1, LENGTH(LST), INTEGER);	plots the elements of
+				list vs. the integer position in the
+				list
+
+@comment<+++  2>
+  F(X) := SQRT(X+%PI);
+  PLOT2(F(X), X, [-2,3,100.12]);    plots F(X) as X takes the values in
+				the values in the list
+
+@comment<+++  3>
+
+
+  PLOT2([X+1, X^2+1], X, -1, 1);    plots 2 curves on top of each other
+
+@comment<+++  4>
+@end[example]
+@NewPage
+Complete description
+
+@begin(function)
+@fcn[Name="PLOT2", Args="y-exprs, variable, var-range, optionals-args"]
+plots @i[y-exprs] as the y axis as @i[variable] (the x axis) takes on
+values specified by @i[var-range].
+
+@i[y-exprs] can take one of two forms:
+@begin(enumerate)
+@i[expr] plots a curve of @i[expr] against @i[variable];
+
+[@i(expr1), @i(expr2), ..., @i(expri), ..., @i(exprn)] plots
+n curves of @i[expri] against @i[variable].  @i[expri] gets evaluated
+in the following context FLOAT(EV(@i[expri], @i[variable]=@i[value
+gotten from var-range], NUMER)).  It is an error if this doesn't
+result in a floating point number.
+@end(enumerate)
+
+@i[var-range] can have the following forms:
+@begin(enumerate)
+@i[low], @i[high] where @i[low] and @i[high] evaluate to
+numbers.  @i[low] may be either greater or less than @i[high].
+@i[variable] will take on PLOTNUM values equally spaced between
+@i[low] and @i[high].  Note that the first argument will be evaluated
+at @i[low] first e.g., PLOT2(1/X, X, -1, -3); calculates 1/(-1.0)
+before 1/(-3.0).  This will only make a difference if the computation
+of the first arg changes a variable which changes the value returned
+by subsequent computation.  Whether or not @i[low] < @i[high],
+min(@i[low], @i[high]) will be on the left of the plot.  (This can be
+overridden using the SPECIAL (Sec V2-2.15.2) option with REFLECT as XFUN.)
+
+@i[low], @i[high], INTEGER as in (i) except @i[variable] will
+take on all integer values between @i[low] and @i[high] inclusive.
+
+[@i[val1], @i[val2], ..., @i[vali], ..., @i[valn]]
+@i[variable] takes the values specified by the list.
+
+@i[arrayname] where @i[arrayname] is the name of a declared
+floating-point one-dimensional array (i.e., by ARRAY(@i[arrayname],
+FLOAT, @i[max-index]);).  @i[variable] takes the values from
+@i[arrayname][0] thru @i[arrayname][@i[max-index]] (@i[max-index] is
+the maximum index of @i[arrayname]
+@end(enumerate)
+@i[optional-args] can be any of the following:
+@begin(itemize)
+X-Label, Y-Label or Title descriptor (Sec V2-2.8.1),
+
+Line type descriptor (Sec V2-2.11.1),
+
+FIRST, SAME and LAST (Sec V2-2.12.2),
+
+POLAR, LOG, LINLOG, LOGLIN (Sec V2-2.15.1),
+
+TOP, BOTTOM, LEFT, or RIGHT (Sec V2-2.12.4).
+
+The optional arguments may appear in any order.  The rule for
+evaluation of the optional args is as follows.  If the argument is
+atomic it gets evaluated.  The resulting arguments are the ones
+that get used.
+@end(itemize)
+If you want to plot more than 3-4 curves on the same plot investigate
+using the NOT3D option to PLOT3D (Sec V2-2.4.3).
+
+@fcn[Name="PLOT2", Args="y-funs, var-range, optionals-args"]
+is the alternative form
+for PLOT2.  @i[y-funs] must be a function of 1 argument or a list of
+functions of 1 argument.  The functions must be either translated
+or compiled function which returns a floating point number when
+it is given floating point arg (or integer arg if the INTEGER arg
+to PLOT2 is given).  This form of PLOT2 acts as though you had
+given a argument to the @i[y-funs], and also specified that
+argument as the @i[variable] in the form above.  e.g., PLOT2(F, -2,
+2); acts like PLOT2(F(X), X, -2, 2); This is supposed to provide
+a quicker evaluation of the first arg and for that reason NO
+checking is done on the result.  If the wrong sort of number is
+returned, you will get garbage plotted.
+@end(function)
+@Begin[Example]
+Examples
+  TRANSLATE:TRUE;
+  F(X) := (MODE_DECLARE(X, FLOAT), EXP(-X*X));
+  PLOT2(F, -2, 2);
+Translation Lossage ******
+@comment<***  5>
+@newpage
+  PLOT2(F, [-2,-1,0,1,2]);
+@comment<***  6>
+@newpage
+  ARRAY(V, FLOAT, 10);
+  FOR I FROM 0 THRU 10 DO V[I]:FLOAT(I-5);
+  PLOT2(F, V);
+@comment<***  7>
+@newpage
+@End[Example]
+
+@SubSection[GRAPH2]
+@Label[gph2]
+
+@Begin[Example]
+Easy examples
+  GRAPH2([1,2,3], [5,10,6]);	draws a line connecting [1,5], [2,10],
+				[3,6]
+Translation Lossage ******
+@comment<+++  8>
+@newpage
+@End[Example]Complete description
+
+@begin(function)
+@fcn[Name="GRAPH2", Args="x-lists, y-lists, optional-args"]
+plots points specified by the first @i[x-lists] and @i[y-lists]
+
+The format for @i[x-lists] can be one of:
+@begin(itemize)
+[@i[x-pt1], @i[x-pt2], ..., @i[x-pti], ..., @i[x-ptn]] where
+@i[x-pti] evaluates to a number.
+
+@i[arrayname] where @i[arrayname] is the name of a declared
+one-dimensional array of floating point numbers.
+
+@i[2d-arrayname] where @i[2d-arrayname] is the name of a
+declared two-dimensional array of floating point numbers
+(i.e., by ARRAY(@i[2d-arrayname], FLOAT, @i[max-row-index],
+@i[max-col-index]);).
+
+[@i[x-list1], @i[x-list2], ..., @i[x-listi], ...,
+@i[x-listk]] where @i[x-listi] can have the form of either 1 or
+2.
+@end(itemize)
+The format of @i[y-lists] is similar.  GRAPH2 performs as follows:
+arguments of form (i) or (ii) are converted to form (iv) (e.g.,
+@i[arrayname] ==> [@i[arrayname]]).  Arguments of form (iii) are
+converted to form (iv) by @i[2d-arrayname] ==> [@i[row0], @i[row1],..., @i[rowi], ..., @i[rowk]] where @i[rowi] is a list of the numbers
+in the i'th row of @i[2d-arrayname] (remember that array indexing
+begins from 0 in MACSYMA).  If the length of the resulting
+@i[x-lists] is shorter than that of the resulting @i[y-lists] then
+@i[x-lists] is filled with @i[x-listk] to make the lengths the same
+(similarly if @i[y-lists] is shorter than @i[x-lists]).  If the length
+of @i[y-lists] is, say, n, then n curves of @i[x-list1] vs.
+@i[y-list1], ..., @i[x-listn] vs. @i[y-listn] are plotted.  In the event
+of @i[x-listi] containing less numbers (or being a shorter array)
+than @i[y-listi] then the last numbers of @i[y-listi] are left
+unused.
+
+The @i[optional-args] are the same as for PLOT2.
+
+Note that GRAPH2 performs the same job as the MACSYMA function
+MULTIGRAPH @Index[MULTIGRAPH] and that GRAPH2 is thus slightly incompatible with
+GRAPH @Index[GRAPH]
+@end(function)
+
+.subsec(PARAMPLOT2,pmp2)
+
+Easy example
+@Begin[Example]
+PARAMPLOT2(COS(T), SIN(T), T, 0, 2*%PI);
+@End[Example]
+Plots cos(T) for the x-axis and sin(T) for the y-axis as T takes on
+PLOTNUM (Sec V2-2.2.5) values between 0 and 2*%PI.  (If EQUALSCALE is
+TRUE (Sec V2-2.10.3) this draws a circle.)
+
+@comment<+++  9>
+
+Complete description
+
+@begin(function)
+@fcn[Name="PARAMPLOT2", Args="x-exprs, y-exprs, variable, var-range, optional-args"]
+plots @i[x-exprs] as the x coordinate against
+@i[y-exprs] as the y coordinate.
+
+The format for the first two arguments is the same as that for the
+first argument to PLOT2.  Thus if @i[x-exprs] is [@i[x-expr1],
+@i[x-expr2], ..., @i[x-expri], ..., @i[x-exprn]] and @i[y-exprs] is
+[@i[y-expr1], @i[y-expr2], ..., @i[y-expri], ..., @i[y-exprk]], then
+max(n,k) curves will be plotted.  they will be (assuming n > k):
+@i[x-expr1] vs. @i[y-expr1], ..., @i[x-exprk] vs. @i[y-exprk],
+@i[x-expr(k+1)] vs. @i[y-exprk], ..., @i[x-exprn] vs. @i[y-exprk].
+
+The format for the remaining arguments is the same as for PLOT2.
+
+@fcn[Name="PARAMPLOT2", Args="x-funs, y-funs, var-range, optional-args"]
+efficiently evaluates its first 2 arguments in the same way that
+the alternative form of PLOT2 works.
+
+@Begin[Example]
+Example
+  TRANSLATE:TRUE;        causes automatic translation
+  F(X) := (MODE_DECLARE(X, FLOAT), COS(X));
+  G(X) := (MODE_DECLARE(X, FLOAT), SIN(X));
+  PARAMPLOT2(F, G, 0, 2*%PI);	plots F(x) vs G(x) as x goes from 0 to
+	2*%PI (this is the same as the easy example at the beginning
+	of this section).
+@End[Example]
+@end(function)
+
+.subsec(WORLDPLOT2,wdpt)
+
+Easy example
+@Begin[Example]
+  LOAD('[WORLD, FASL, DSK, SHARE]);
+  WORLDPLOT(-15, 10, 48, 60);	draws a map of the United Kingdom.
+@End[Example]
+
+@comment<+++  10>
+@newpage
+
+Complete description
+
+@begin(function)
+@fcn[Name="WORLDPLOT", Args="<min-long>, <max-long>, <min-lat>, <max-lat>"]
+plots your
+favorite portion of the world.  The arguments are in degrees with
+latitude ranging from -90 to 90 and longitude from -180 to 180.
+the projection is unorthodox.  (The function is just a hack, and is not
+available on all operating systems.  Don't
+expect any of the features available with the other plotting
+functions to be available.  Note too that WORLDPLOT has no
+auto-load property.  It must be explicitly loaded by LOAD('[WORLD,
+FASL, DSK, SHARE]); )
+@end(function)
+
+.subsec(PLOTNUM,pltn)
+
+@var<PLOTNUM (default: 20)> - This is the number of points PLOT2 and PARAMPLOT2
+plot when given the @i[low], @i[high] type of variable range.  The
+default value is 20.
+
+@SubSection[PLOT2ERROR and PLOTUNDEFINED]
+@Label[plter!pltundf]
+
+@var<PLOT2ERROR (default: TRUE)> governs what happens when PLOT2 hits
+an error in trying to evaluate a point.  If PLOT2ERROR is TRUE (the
+default) an error occurs and PLOT2 exits.  However if DEBUGMODE is
+TRUE you can ask for the value of PLOT2ERROR which is temporally bound
+to the form being evaluated when the error occurs.  If PLOT2ERROR is a
+floating point number then that number will be used as the value of
+the erroneous form.  If PLOT2ERROR is FALSE, then the result is the
+value of PLOTUNDEFINED (i.e., it is the same as PLOT2ERROR :
+PLOTUNDEFINED;).  This causes the point to be skipped in the plotting.
+
+PLOTUNDEFINED @Index[PLOTUNDEFINED] enables you to plot functions
+which are undefined in certain ranges of their arguments.  If the
+function that is being plotted returns the value PLOTUNDEFINED (which
+happens to be some large "random" number), then that point will not be
+plotted at all and the line will be discontinuous.  This is to
+implement inhibition of plotting in areas of discontinuities, or where
+the function is undefined.  This feature is only implemented for
+two-dimensional graphs in PLOT2.  These are plots produced by PLOT2,
+PARAMPLOT2 and GRAPH2.
+
+@begin(example)
+Example
+  PLOT2ERROR:FALSE;	plot no point on an error
+  PLOT2([SQRT(X@+[2]-1.), -SQRT(X@+[2]-1.)], X, -3, 3);	plot a curve of
+	+/- sqrt(X@+[2]-1).
+
+@comment<***  11>
+@newpage
+@end(example)
+Such cases are usually more satisfactorily handled by parameterizing
+the curve and using PARAMPLOT2. E.g.,
+@begin(example)
+PARAMPLOT2([COSH(T), -COSH(T)], SINH(T), T, -ACOSH(3), ACOSH(3));
+@end(example)
+@comment<***  12>
+
+@NewPage
+@Section[What to type at the end of a plot]
+@Label[wtteop]
+
+When a plot is finished the bell on your terminal will be dinged.
+(This only in fact happens if @var<WAIT (default: TRUE)> is TRUE (Sec
+V2-2.12.1) and if you're plotting on the terminal (Sec V2-2.7.2) and
+(Sec V2-2.13).)  The plotting function is now waiting for you to type
+something before it exits and prints the next C-Label on your nice
+plot.  It does nothing with most characters; they are left to be part
+of the next C-Line.  However the following characters are read and
+interpreted specially.
+
+@begin(description)
+space@\This is read and the plotting function exited.  This is the
+"normal" means of exitting.
+
+return@\Clears the screen and then exits.  This is disabled by setting
+@var<CRCLEAR (default: FALSE)>; to TRUE.  This switch is mainly for
+people coming through another computer which works a
+line-at-a-time (so that they have to terminate all their MACSYMA
+commands with e.g., ";@i[cr]").  CRCLEAR is not reset by
+PLOTRESET();.
+
+tab@\The previous plot is replotted.  This is useful if the line is
+noisy, or, in conjunction with ^A (Sec V2-2.3) if various of the
+plotting parameters need to be changed.  Note however that @i[tab]
+only affects the last call to one of the main plotting functions
+(PLOT2, PLOT3D, etc.).  Thus, it cannot be used to replot all the
+plots in a sequence of plots generated by (PLOT2(..., FIRST),...,
+PLOT2(..., LAST)); (Sec V2-2.12.2).
+
+linefeed@\Sends out a hardcopy signal by calling the HARDCOPY()
+function (Sec V2-2.7.4).  (This doesn't happen with @var<HARDCOPY
+(default: FALSE)> set to TRUE; because then you get an automatic
+HARDCOPY() with each plot.)
+
+rubout@\Names the plot.  PLOT2 types out "Enter name of plot" you
+reply @i[plotname]; this is identical to typing a space instead of a
+rubout, followed by NAMEPLOT(@i[plotname]); (Sec V2-2.14).
+
+^A@\This is not really read by the plotting function, but enables you
+to enter a ^A break and change various options, before typing tab to
+have the plot replotted.  Make sure the plot has finished before you
+type this.  The most common things that need changing are the scaling
+options (Sec V2-2.10); but just about anything can be changed as long
+as they don't require that more points be calculated (e.g., don't try
+resetting PLOTNUM in a ^A break).  There are a number of options that
+exist as explicit options only within a ^A break of this type.
+(Normally they are set in the @i[optional-args] of the plotting
+function.)  They are TYPEL @Index[TYPEL] (Sec V2-2.11.1), XLABEL
+@Index[XLABEL], YLABEL @Index[YLABEL], TITLE @Index[TITLE] (Sec
+V2-2.8.1), TXTYPE @Index[TXTYPE] (Sec V2-2.15.1) and \3D (Sec V2-2.5).
+Unlike the other options these are local variables and will become
+unbound (or bound to their old values) when PLOT2 is exitted and in
+order for the changes made to them to be remembered by REPLOT (Sec
+V2-2.7.1) later on you must replot the plot after exiting the break.
+In order to get your plot replotted in the new environment you have
+set up, just type EXIT; followed by a tab.
+@end(description)
+
+@var<PLOTBELL (default: TRUE)> - If you find the dinging of the bell annoying, you can
+shut it off by doing PLOTBELL:FALSE; .
+
+Quitting:
+
+While your plot is coming out your terminal is in a rather strange
+state (e.g., not echoing characters).  Thus it is OK to type ahead
+to Macsyma, but the ONLY way you should interrupt the plot is
+with ^G.  E.g., do not use ^A until the plot has finished.
+
+Note:  The chars to create a plot get put in a buffer and normally
+only get sent when the buffer is full or when the plot is complete.
+The user can force the buffer contents to be sent by typing ^\
+(control-shift-L on the Tektronix, control-\ on the imlac).  (This is
+probably only of use to to users of WORLDPLOT, which because of its
+ridiculously inefficient implementation will sometimes wait until it
+has gone thru the whole world before sending anything out.)  Note
+however that this feature is not reliable.
+
+@section(3D Plotting)
+@label(threedplt)
+@SubSection[PLOT3D]
+@Label[]
+
+Easy example
+@Begin[Example]
+  PLOT3D(EXP(-X^2-Y^2)*X, X, -2, 2, Y, -1.5, 2.5);  Plots
+	exp(-X^2-Y^2)*X as X takes on PLOTNUM values between -2 and 2
+	and y takes on PLOTNUM1 values between -1.5 and 2.5.
+
+@comment<+++  13>
+@newpage
+@End[Example]
+Complete description
+
+@begin(function)
+@fcn[Name="PLOT3D", Args="z-exprs, x-var, var-range, y-var, var1-range, optional-args"]
+makes a 3 dimensional plot of @i[z-exprs] against
+@i[x-var] and @i[y-var].  The plot consists of curves of @i[z-exprs]
+against @i[x-var] (the x coordinate) with @i[y-var] (the y
+coordinate) held fixed.  Perspective is used and curves further
+away from the viewer have those parts of them which are hidden by
+the closer curves removed.
+
+The format of @i[y-exprs] is the same as for PLOT2.  The context of
+evaluation is FLOAT(EV(@i[expri], @i[x-var]=@i[value gotten from
+var-range], @i[y-var]=@i[value gotten from var1-range], NUMER))
+
+The format for @i[var-range] and @i[var1-range] is the same as for PLOT2
+except that if @i[var1-range] is of the form @i[low], @i[high] then
+@i[y-var] will take on PLOTNUM1 (instead of PLOTNUM) values.
+
+The format of @i[optional-args] is the same as for PLOT2 except that
+an additional options NOT3D @Index[NOT3D] (Sec V2-2.4.3), \3D
+@Index[\3D], CONTOUR @Index[CONTOUR] are available (Sec V2-2.4.4).
+
+@fcn[Name="PLOT3D", Args="z-funs, var-range, var1-range, optional-args"]
+This is analogous to the alternative form for PLOT2.  @i[z-funs] must
+be a function or list of functions of 2 arguments, which must return a
+floating point argument when given floating point (integer, if the
+INTEGER argument is used for either @i[var-range] or @i[var1-range])
+arguments.  The functions must be translated or compiled.  If you
+expect to make several 3D plots this form is recommended.
+@end(function)
+@newpage
+@begin(example)
+Easy example
+  TRANSLATE:TRUE;		causes automatic translation
+  G(X, Y) := (MODE_DECLARE([X,Y], FLOAT), EXP(-X*X-Y*Y));
+  PLOT3D(G, -2, 2, -2, 2);	define a function G and plot it
+@comment<+++  14>
+@end(example)
+@NewPage
+@SubSection[GRAPH3D]
+@Label[]
+
+@begin(function)
+@fcn[Name="GRAPH3D", Args="x-lists, y-lists, z-lists, optional-args"]
+Right now
+this is at a fairly rudimentary stage.  It takes 3 arguments where
+GRAPH2 took 2 and interprets them as lists of x, y and z points
+which it uses to draw lines using the 3d transformations.  It can
+be used to add lines (e.g., axes) to your 3D plot (see SAME option
+(Sec V2-2.12.2)).  The hidden line routines are not used.
+@end(function)
+
+@SubSection[NOT3D]
+@Label[]
+
+Easy example
+@Begin[Example]
+  PLOT3D(SIN(X)+A, X, -%PI, %PI, A, [-2,3,4,6], NOT3D); plots
+	sin(X)+A for X from -%PI to %PI (PLOTNUM points) and A taking
+	the values in the list.  This is equivalent to:
+	PLOT2([SIN(X)-2,SIN(X)+3,SIN(X)+4,SIN(X)+6], X, -%PI, %PI);
+	but requires less typing.
+@comment<+++  15>
+@newpage
+@End[Example]
+Complete description
+
+The additional NOT3D @Index[NOT3D] argument to PLOT3D, causes exactly the same
+points as in the bare PLOT3D to be calculated.  Instead of
+plotting a 3-dimensional representation of the data, the data is
+plotted in a 2D one.  Specifically 1 2D curve of z vs. x for each
+y value is plotted and so it is a convenient way to plot several curves on the
+same plot.
+
+@SubSection[|Perspective Views|]
+@Label[prvc]
+
+The variables PERSPECTIVE, REVERSE, VIEWPT and CENTERPLOT govern the type of perspective view given.
+
+@var<PERSPECTIVE (default: TRUE)> - if FALSE causes a non-perspective view to be
+taken.  This is equivalent to extending the viewing position out to
+infinity along a line connecting the origin and VIEWPT.
+
+@var<REVERSE (default: FALSE)> - if TRUE cause a left-handed coordinate system to
+be assumed.
+
+VIEWPT @Index[VIEWPT] and CENTERPLOT @Index[CENTERPLOT] determine the perspective view
+taken.  They are defaulted to be unbound - like XMAX etc.)  VIEWPT may
+be set to a list of 3 numbers and gives the point from which the
+projection should be made.  CENTERPLOT may likewise to set to a list
+of 3 numbers and gives a point on the line of sight.  The projection
+will be made onto a plane perpendicular to a line joining VIEWPT and
+CENTERPLOT.
+
+If VIEWPT and CENTERPLOT are unbound (the default) then they will be
+chosen as follows:  the extreme values of the coordinates are
+determined.  This gives the two points min:  [xmin,ymin,zmin],
+max:[xmax,ymax,zmax].  CENTERPLOT is chosen as (min+max)/2 and
+VIEWPT is chosen as max+3*(max-min).  The view is then one in
+which the z axis is vertical, the x axis is increasing towards
+you to the left and the y axis is increasing towards you to the
+right.
+
+If CENTERPLOT is FALSE then the old type of perspective view will be
+given (like setting the x and z components of CENTERPLOT to the
+corresponding components of VIEWPT).
+
+Before you set either VIEWPT or CENTERPLOT you might want to look at
+the values of VIEWPT1 @Index[VIEWPT1] or CENTERPLOT1 @Index[CENTERPLOT1], the values that PLOT3D
+assumed in doing the previous plot.  Likewise
+XMAX3D, YMIN3D etc.  will be the values of xmax, ymin for the data
+points, that PLOT3D used to determine the default VIEWPT or
+CENTERPLOT.
+
+If rather than changing the view you want to change the scale of the
+plot (to cause clipping or whatever), then you must change XMAX,
+XMIN, YMAX or YMIN (Sec V2-2.10.2).  However note that these numbers
+refer to the size of the plot AFTER the perspective routines have
+been used.  So again you will probably want to look at XMAX1 etc.
+to find what had been assumed.
+
+Read also about REPLOT @Index[REPLOT] (Sec V2-2.7.1).  This allows you to rapidly explore
+a 3D plot by doing for instance PLOT3D(...); VIEWPT :  [...];
+REPLOT(); VIEWPT :  [...]; REPLOT(); etc.
+@newpage
+@begin(example)
+Example
+  PLOT3D(EXP(-X@+[2]-Y@+[2])*X, X, -2, 2, Y, -1.5, 2.5, DONT);
+	recreate easy example of (Sec V2-2.4.1).  Use DONT (Sec V2-2.14) to
+	suppress plotting.
+  VIEWPT : [-2.1,3,.05];	take a "closer" look.
+  REPLOT();
+
+@comment<***  16>
+
+
+  KILL(VIEWPT);
+@end(example)
+@newpage
+@var<CROSSHATCH (default: TRUE)> and @var<UNDERSIDE (default: TRUE)>
+
+As a default PLOT3D will crosshatch, i.e., plot lines of constant x as
+well as constant y.  You can turn this off by doing CROSSHATCH:FALSE;
+(it will then plot only lines of constant y)
+
+If UNDERSIDE is TRUE (the default) PLOT3D will show the underside of
+a figure (when it is visible).
+
+Example (continued from previous section)
+@Begin[Example]
+  CENTERPLOT:CROSSHATCH:FALSE;
+  REPLOT();
+@comment<***  17>
+@end(example)
+@NewPage
+@section(Representations, HIDE, \3D, CONTOUR and NOT3D)
+@label(repp)
+
+Internally the plots generated by PLOT3D (with or without the NOT3D
+@Index[NOT3D] option), GRAPH3D and CONTOURPLOT2 are the same and it is
+possible to switch between any of the 4 representations.
+
+The 4 representations are accessible directly in the following ways
+@Begin[Example]
+	(i) Hidden-Line		PLOT3D, GRAPH3D(..., HIDE)
+	(ii) 3D (Hidden lines not removed) PLOT3D(..., \3D), GRAPH3D
+	(iii) Contourplot	PLOT3D(..., CONTOUR), CONTOURPLOT2
+	(iv) Not3d		PLOT3D(..., NOT3D)
+    (In the above GRAPH3D(..., HIDE) means supply GRAPH3D with an
+    optional argument of HIDE @Index[HIDE])
+@End[Example]
+There are two ways of changing representations once the plot has been
+made.  In a ^A break, or using the REPLOT @Index[REPLOT] function.
+
+In a ^A break there are 2 variables which govern the representation
+\3D @Index[\3D] and TXTYPE @Index[TXTYPE] (Sec V2-2.15.1).  (These variables are local to the ^A
+break.)  They should be reset according to the following table
+@begin(example)
+			value of \3D	value of TXTYPE
+	Hidden-Line	HIDE		FALSE
+	3D		TRUE		FALSE
+	Contourplot	CONTOUR		FALSE
+	Not3d		FALSE		NOT3D
+@End[Example]
+(Note that TXTYPE only need to be touched switching to and from
+the Not3d representation.  It is a misfeature that it should have
+to be touched at all and this may be corrected someday.)
+
+Having exited the plot, you can have it REPLOT'ed in another
+representation by using the following table.
+
+@Begin[Example]
+	Hidden-Line	REPLOT(TRUE, HIDE @Index[HIDE]);
+	3D		REPLOT(TRUE, \3D @Index[\3D]);
+	Contourplot	REPLOT(TRUE, CONTOUR @Index[CONTOUR]);
+	Not3d		REPLOT(TRUE, NOT3D @Index[NOT3D]);
+@End[Example]
+
+Again, as a misfeature when swapping from a Not3d representation
+to a Contourplot it necessary to supply an additional optional
+argument LIN (thus REPLOT(TRUE, CONTOUR, LIN);) The TRUEs in the
+calls to replot indicate the last plot.  The name of a named plot
+(Sec V2-2.14) may be used instead (see (Sec V2.7.1) for details).
+@newpage
+@begin(example)
+Example (continued from previous section)
+  REPLOT(TRUE,CONTOUR);
+
+@comment<***  18>
+@end(example)
+@NewPage;
+@SubSection[PLOTNUM0 and PLOTNUM1]
+@Label[pltnum]
+$$$$$$$$$$- Up to here - NOT in a @begin(function) -$$$$$$$$$
+If the @i[low], @i[high] form is used with @i[var1-range] in PLOT3D, the
+@i[y-var] takes on PLOTNUM1[20] @Index[PLOTNUM1] values.  PLOTNUM1 defaults to 20.  Since
+PLOTNUM*PLOTNUM1 points are normally calculated when PLOT3D is
+called, the alternative form (Sec V2-2.4.1) for calling PLOT3D is
+highly recommended.
+
+Normally when the @i[low], @i[high] form of @i[var-range] is used in PLOT3D
+the @i[x-var] takes on PLOTNUM values.  However if PLOTNUM0 @Index[PLOTNUM0] is bound
+to a numeric value, then PLOTNUM0 points are plotted instead.
+PLOTNUM0 is initially unbound.  For example, if you normally like
+fairly high definition two-dimensional plots, but can't afford to
+wait for comparable resolution three-dimensional plots, you could
+set (PLOTNUM:100, PLOTNUM0:PLOTNUM1:20);
+
+@Section[Contour plotting]
+@Label[contour!plot]
+@SubSection[CONTOURPLOT2]
+@Label[]
+@Begin[Example]
+Easy examples
+  CONTOURS:10;		Do 10 contours
+  LABELCONTOURS:FALSE;	Don't label the contours
+  CONTOURPLOT2(Y^2/2+COS(X)+X/2, X, -6, 6, Y, -3, 3); Do a contour
+	plot of Y^2/2+cos(X) as X takes PLOTNUM values between -6 and
+	6 and as Y takes PLOTNUM1 values between -3 and 3.  (This
+	gives you the phase space orbits of a particle in a periodic
+	potential superimposed on a constant field).
+Translation Lossage ******
+@comment<+++  19>
+ ******
+.next page
+  PLOT3D(Y^2/2+COS(X)+X/2, X, -6, 6, Y, -3, 3, CONTOUR); The same
+  CONTOURS:[0];		Plot only the zero contour.
+  CONTOURPLOT2([REALPART((X+%I*Y)^3-1), IMAGPART((X+%I*Y)^3-1)], X,
+	-1.5, 1.5, Y, -1.5, 1.5, [0,1]); Finds the zeroes of Z^3=-1
+	in the complex plane.
+Translation Lossage ******
+@comment<+++  20>
+ ******
+.next page
+  CONTOURS:PLOTNUM:PLOTNUM1:10;	Work with a 10x10 grid
+  CONTOURPLOT2(RANDOM(100), X, 0, 1, Y, 0, 1);	Plot something random
+Translation Lossage ******
+@comment<+++  21>
+ ******
+.end
+@NewPage
+Complete description.
+
+CONTOURPLOT2 @Index[CONTOURPLOT2](...); is exactly the same as PLOT3D(..., CONTOUR).  That
+is it calculates the same points as PLOT3D(...)  would, but
+displays the points as a contour plot.  What contours are drawn is
+governed by the variable CONTOURS[20] @Index[CONTOURS] (Sec V2-2.6.2).  Changing CONTOURS
+does not require any more points to be calculated, so it makes
+sense to change CONTOURS in the ^A break after a plot
+or before using REPLOT.  The contours are drawn using
+linear interpolation, so they tend to look rough (especially near
+saddle points) unless PLOTNUM (or PLOTNUM0) and PLOTNUM1 are
+large.  The contour tracking algorithm is quite smart so all
+contours should either terminate at the boundaries of the region
+or be closed loops.
+
+@subsection(CONTOURS, ZMAX and ZMIN)
+@label(czz)
+
+If CONTOURS[20] @Index[CONTOURS] is a positive integer (the default value is 20), then
+approximately CONTOURS contours will been drawn and the levels
+will be "nice" values.  ("Nice" means in multiples of a*10^n,
+where "a" is 1, 2, or 5.  The levels are computed by the same
+function that determines where to put the tick marks on the axes
+(Sec V2-2.9.2).)  The contour levels are chosen between the maximum and
+minimum z values to be plotted (the first argument to
+CONTOURPLOT2 and PLOT3D is considered to be a z variable).  If
+either ZMAX or ZMIN has a value then that value will be used
+instead of the actual maximum or minimum.  (The default is for
+ZMAX and ZMIN to be unbound; that's done by KILL(ZMAX, ZMIN);)
+
+If CONTOURS is a negative integer then ABS(CONTOURS) evenly spaced
+contours will be drawn.  In this case the levels will be at
+"nasty" values and you may want to set LABELCONTOURS[TRUE] @Index[LABELCONTOURS] to FALSE, to
+suppress the printing of long numbers on the contours.  Again the
+range for these contours can be restricted by setting ZMAX and
+ZMIN appropriately.
+
+If CONTOURS is a list of numbers (e.g., CONTOURS:[1,.5,%PI];) then
+those numbers will be used to determine the heights of the
+contours.  The number in the list can be in any order.
+
+@SubSection[LABELCONTOURS]
+@Label[]
+
+CONTOURPLOT2 @Index[CONTOURPLOT2] will label the contours will their height unless
+LABELCONTOURS[TRUE] @Index[LABELCONTOURS] is FALSE.  PLOTNUMPREC[7] @Index[PLOTNUMPREC] (Sec V2-2.8.4) digits of precision
+are given.
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.sec(Other plotting functions,OPF)
+
+@SubSection[REPLOT]
+@Label[]
+@Begin[Example]
+Easy examples
+  PLOT2(1, X, 0, 2*%PI);	Plots a straight line
+Translation Lossage ******
+@comment<+++  22>
+ ******
+.next page
+  REPLOT(TRUE, POLAR); Plots it in polar coordinates (Sec V2-2.15.1).  This
+	will appear as an ellipse unless EQUALSCALE is TRUE (Sec V2-2.10.3)
+Translation Lossage ******
+@comment<+++  23>
+ ******
+.next page
+  EQUALSCALE:TRUE;
+  REPLOT(); Replots the ellipse with EQUALSCALE equal to TRUE; this
+	will then appear as a circle.
+Translation Lossage ******
+@comment<+++  24>
+ ******
+.end
+@NewPage
+Complete Description
+
+@fcn[Name="REPLOT", Args="plotname, optional-args"]
+replots the plot named
+@i[plotname] (Sec V2-2.14).  REPLOT(TRUE); and REPLOT(); both replot the
+last plot.  If any of the options for determining the scale, etc.
+have been changed since the plot was saved the new values of
+those options will be used.
+
+If the arrays of @i[plotname] were destroyed either by a
+KILLPLOTS(@i[plotname]); or by SAVE'ing @i[plotname] and
+LOADFILE'ing it into another MACSYMA, REPLOT checks to see if
+@i[plotname] was ever saved using the SAVEPLOTS command
+if it was it finds the @i[filespec] under which it was saved and
+then attempts a LOADPLOTS(@i[filespec]); (but taking
+care not to change the current file defaults) and replots
+@i[plotname] if it was found in the file.
+
+@i[optional-args] may be any of the optional arguments to the main
+plotting functions.  These optional args will be merged in with
+those supplied to the original plot.  (The exceptions are FIRST,
+LAST and SAME (Sec V2-2.12.2), TOP, BOTTOM, LEFT and RIGHT (Sec V2-2.12.4),
+and DONT.  These optional argument don't stick around
+with the plot.)  If you want the last plot replotted with some
+optional args supplied you must use the form REPLOT(TRUE,
+@i[optional-args]); (REPLOT(@i[optional-args]); won't work because it
+will try and use the first optional arg as a @i[plotname]).
+
+There are two additional optional arguments that it makes sense to
+give to REPLOT, but not to the original plotting function.  They
+are NONE @Index[NONE], to suppress a label (Sec V2-2.8.1) and LIN @Index[LIN], to suppress a
+transformation (Sec V2-2.15).
+
+
+@fcn[Name="REPLOT", Args="list-of-plots, optional-args"]
+where @i[list-of-plots] is
+[@i[plotname1], @i[plotname2], ...  ] is identical to
+(REPLOT(@i[plotname1], @i[optional-args]), REPLOT(@i[plotname2],
+@i[optional-args])); If the first arg to REPLOT is atomic then it
+is evaluated and the evaluated form is used if is a list.
+
+@Begin[Example]
+Example
+  REPLOT(PLOTS);	Replots all named plots (Sec V2-2.14).
+@End[Example]
+
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.subsec(PLOTMODE)
+
+Easy example
+@Begin[Example]
+  PLOTMODE(DISPLAY, XGP); Set things up for plotting on the XGP and a
+	datapoint.
+@End[Example]
+Complete description
+
+@fcn[Name="PLOTMODE", Args="dev1, dev2, ... devn"]
+sets PLOT2 up to plot on the devices specified by @i[devi].  at
+present @i[devi] can be one of T @Index[T] (or TEK @Index[TEK] or
+TEKTRONIX @Index[TEKTRONIX]), I @Index[I] (or IMLAC @Index[IMLAC]), GR @Index[GR] (or
+GRINNELL @Index[GRINNELL]), D @Index[D] (or DISPLAY @Index[DISPLAY]), P @Index[P] (or
+PRINTING @Index[PRINTING]), X @Index[X] (or XGP @Index[XGP]), G @Index[G] (or
+GOULD @Index[GOULD]), or V @Index[V] (or VERSY @Index[VERSY] or VERSATEC @Index[VERSATEC]) for
+Tektronix, Imlac, a display console, printing terminal, the XGP, the
+Gould in 38-246, or an MFE-NET Versatec.  Any number of arguments may
+be given with the restriction that no 2 of [I, T, GR, D, P] appear
+together.  The arguments may appear in any order, with the first
+argument being used to determine what the character size will be
+assumed.  The defaults performed when PLOT2
+is loaded is PLOTMODE(T), PLOTMODE(I), PLOTMODE(D) or
+PLOTMODE(P), depending on the terminal type.
+
+Details of the peculiarities of the various devices in given in (Sec
+V2-2.13).
+
+PLOTMODE @Index[PLOTMODE]:@i[dev]; PLOTMODE:[@i[dev1, dev2, ...  ]]; are
+equivalent to PLOTMODE(@i[dev]) and PLOTMODE(@i[dev1], @i[dev2], ...);
+respectively.  This allows you the bind PLOTMODE (e.g., in a BLOCK).
+
+PLOTMODE; returns a list of the devices PLOT2 currently is plotting
+for.  PLOTMODE(); also does this.
+
+@SubSection[CLEAR]
+@Label[]
+
+@fcn[Name="CLEAR", Args=""]
+Clears the screen.
+
+
+@SubSection[HARDCOPY]
+@Label[]
+
+@fcn[Name="HARDCOPY", Args=""]
+queues up the plot for the appropriate device if PLOTMODE
+contains GOULD, XGP, or VERSATEC, else it sends out a hardcopy
+signal to the Tektronix if PLOTMODE contains TEKTRONIX, else it
+prints "HARDCOPY failed".  This is what happens when you type a
+linefeed at the end of a plot.
+
+
+@fcn[Name="HARDCOPY", Args="plot-spec"]
+If @i[plot-spec] is a list, then it is assumed that it is the name of
+a plot file as produced by NAMEFILE @Index[NAMEFILE].  If the current plotmode
+specifies a non-terminal device (i.e., one of XGP, Gould, or
+Versatec), then the file is queued for printing on that device.  If
+@i[plot-spec] is not a list, then it should be TRUE (for the last
+plot) or a named plot produced by NAMEPLOT (Sec V2-2.14) or @i[rubout] at
+the end of the plot (Sec V2-2.3).  In this case REPLOT(@i[plot-spec]);
+HARDCOPY(); is done
+
+
+@fcn[Name="HARDCOPY", Args="plot-spec, plotmode"]
+where @i[plotmode] is one of XGP,
+GOULD, or VERSATEC, or one of the abbreviations of these, is
+equivalent to BLOCK([PLOTMODE:@i[plotmode]],HARDCOPY(@i[plot-spec]));
+
+
+If the variable HARDCOPY[FALSE] @Index[HARDCOPY] (default FALSE) is TRUE, then a
+HARDCOPY(); is done after each plot (as long as WAIT is also TRUE).
+In this case a linefeed does nothing.  HARDCOPY is not reset by
+PLOTRESET();.  This switch allows PLOT2 to run in "batch" mode.  Put
+your program in a BATCH file and preface it with for instance:
+(PLOTMODE:'XGP, TTYOFF:HARDCOPY:TRUE); Then once the
+batch has started up, you can do ^Z, :PROCEED, :DISOWN.  This
+isn't necessarily the best way of operating because your plots
+may well get lost in the mess around the XGP.  If this is a
+problem then use NAMEFILE after each plot and queue them to be
+printed at a more convenient time.
+
+@SubSection[PLOTRESET]
+@Label[]
+
+@fcn[Name="PLOTRESET", Args=""]
+resets most of the options effecting plotting back to
+their default values.  The exceptions are the terminal related
+options.
+
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.sec(Labels,plot!label)
+
+@subsection(XLABEL, YLABEL, TITLE and NONE)
+@label(xytn)
+
+@Begin[Example]
+Easy example
+  PLOT2(EXP(X), X, 0, 3, X, EXP(X), "THIS IS A PLOT OF EXP(X) VS. X");
+	plots a curve of exp(X) with an x-label of "X", a y-label of
+	"EXP(X)" and a title of "THIS IS A PLOT OF EXP(X) VS. X" (the
+	labels don't appear with the "'s)
+Translation Lossage ******
+@comment<+++  25>
+ ******
+.next page
+  A:3;
+  PLOT2(SIN(X)+A, X, -%PI, %PI, FALSE, FALSE, LABEL(A)); plots
+	sin(X)+A and sticks an the title "A=3".
+Translation Lossage ******
+@comment<+++  26>
+ ******
+.next page
+  PLOT2(SIN(X), X, -%PI, %PI, FALSE, SIN(X)); labels the y-axis with
+	"SIN(X)".
+Translation Lossage ******
+@comment<+++  27>
+ ******
+.end
+@NewPage
+Complete description
+
+@i[xlabel], @i[ylabel], @i[title] If the optional arguments to the
+plotting functions aren't any of the recognized keywords (FIRST, LAST
+etc.)  they are taken to be specifications for the x-label, y-label
+and the title of the plot.  If it is (a) an atom, (b) of the form 'FOO
+or '(...), (c) of the form EV(...)  or CONCAT(...)  or LABEL(...)
+(Sec V2-2.8.2), then the label gets evaluated, else it is used literally.
+[Note that the evaluation of 'FOO is FOO for all FOO, so if you want
+to get a label of FOO and FOO has a value use 'FOO.  ("FOO" also works
+in most instances.)]
+
+If one of them is FALSE then nothing gets printed.  Only as many of
+the three to be non-ambiguous need be specified; thus if only a
+y-label is required then FALSE, @i[ylabel] would be sufficient.
+None of these options may be a list (to avoid confusion with the
+line-type list (Sec V2-2.11).
+
+Within a ^A break at the end of a plot (Sec 2.6), the x-label,
+y-label and title of the current plot are the values of the local
+variable XLABEL, YLABEL and TITLE.  These variable will be FALSE
+if there is no corresponding label.  You can change the values of
+these variables in the ^A break and they will be incorporated into
+your plot when you exit the break and type a tab (Sec V2-2.3).
+
+In the optional arguments to REPLOT (Sec V2.7.1) FALSE has the meaning
+"Don't change the corresponding label".  If it is desired to
+remove a label when REPLOTting then NONE @Index[NONE] should be given instead.
+
+@Begin[Example]
+Examples
+  PLOT2(SIN(X), X, -%PI, %PI, FALSE, FALSE, "THE CAT SAT ON THE MAT");
+	title is set to "THE CAT SAT ON THE MAT"
+  REPLOT(TRUE, "X-AXIS");
+	title is "THE CAT SAT ON THE MAT" and x label is "X-AXIS"
+  REPLOT(TRUE, FALSE, "SIN(X)", NONE);
+	x label is "X-AXIS", y label "SIN(X)" and no title
+  REPLOT(TRUE, FALSE, "Y-AXIS"); replots with new ylabel.
+@End[Example]
+
+@SubSection[LABEL]
+@Label[]
+
+This is a special form of CONCAT for use with PLOT2.  It takes any
+number of arguments and returns an atom containing the arguments
+concatenated together.  It differs from CONCAT in the following
+respects:
+*** begin indent  5,10;turn on "" here(i)(11)It sticks spaces between the items.
+
+(ii)(11)The arguments needn't be atoms.
+
+(iii)(12)If an argument is of the form 'FOO, then FOO appears in the
+result.
+
+(iv)(11)Otherwise it evaluates the arguments.  Then if the evaluation
+is different from the argument @i[arg]=@i[evaluation] appears in
+the result, else just @i[evaluation].
+
+(v)(11)In (iv) if @i[evaluation] is a floating point number then only
+PLOTNUMPREC[7] @Index[PLOTNUMPREC] (Sec V2-2.8.4) significant figures  of it appear in the answer.
+The label is evaluated inside an ERRCATCH, so if you have an
+error in the evaluation of your label, you will see an error
+message, but the plot will still come out (with no label where
+you goofed).
+*** begin indent ends here
+
+@Begin[Example]
+Example
+  PHASE:EV(%PI, NUMER);
+  AMPLITUDE:2;
+  PLOTNUMPREC:5;
+  PLOT2(AMPLITUDE*SIN(X-PHASE), X, 0, 2*%PI, LABEL(AMPLITUDE, PHASE));
+	produces a plot with an XLABEL of "AMPLITUDE=2 PHASE=3.1416"
+Translation Lossage ******
+@comment<***  28>
+ ******
+.end
+@NewPage;
+@SubSection[NOPRINT]
+@Label[]
+
+As a default the 2D plotting functions include a line at the bottom
+with the Max and Min of X and Y printed.  Setting NOPRINT[FALSE] @Index[NOPRINT]
+to TRUE causes this line to be suppressed.
+
+@SubSection[PLOTNUMPREC]
+@Label[]
+
+The numbers that PLOT2 prints out in the Min and Max line at the
+bottom of the plot (Sec V2-2.8.4), in the Min and Max labels on the
+axes, in LABEL and on the contours
+are given to a precision of PLOTNUMPREC[7] @Index[PLOTNUMPREC] significant figures.
+(This is done using the MACLisp FFORMAT package@Foot[The LIBLSP;FFORMAT
+package written by JONL.]). A trailing
+".0" is stripped off so that "2" is printed instead of "2.0".  The
+default is to give the numbers to full precision.  If you want to
+have less precision given (particularly useful with the labelling
+of contour levels) set PLOTNUMPREC to a smaller number (say 2 or
+3).
+
+@SubSection[DATEPLOT]
+@Label[]
+
+The date is normally given at the top right corner of the plot, in a
+long form if no title is specified, or in a shorter form if a
+title is specified.  Sometimes the date overlaps with the title.
+You can shut off the printing of the date by setting
+DATEPLOT[TRUE] @Index[DATEPLOT] to FALSE.
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.sec(Axes,axes)
+
+@SubSection[XAXIS and YAXIS]
+@Label[xya]
+
+The default action of PLOT2 for 2D plots is to provide the plots with
+x and y axes (which go through the origin if the origin is within
+the plot) to give the axes approximately 10 tickmarks in
+reasonable places to give the max and min values of x and y by
+the axes and on a line beneath the plot.  The variables XAXIS[ALL] @Index[XAXIS]
+and YAXIS[ALL] @Index[YAXIS] allow you to control the drawing of the axes somewhat:
+
+XAXIS:FALSE; YAXIS:FALSE; cause the x axis and y axis not to be
+drawn.  Their tickmarks will not be drawn either.  The other values
+these options can take are:
+*** begin indent  5,10;turn on ""; here
+TRUE(11)draw the axis and the tick marks;
+
+ALL(11)(the default) draw the axis, the tick marks and give the max
+and min values of this coordinate.
+*** begin indent ends here
+
+@SubSection[TICKSIZE and TICKNUM]
+@Label[tic]
+
+TICKNUM:@i[no-of-ticks]; TICKSIZE:@i[size-of-ticks]; causes TICKNUM ticks
+to be given on each axis.  The size of the ticks will be TICKSIZE
+raster units either side of the axes.  The ticks will always come
+at "nice" values of the x or y variable.  "Nice" values are
+defined to be multiples of @i[k]*10^(@i[n]) where @i[n] is an integer
+and @i[k] is 1, 2 or 5.
+
+TICKSIZE:0;  results in there being no ticks and
+
+TICKSIZE:2000; results in the ticks going all the way across the
+WINDOW (Sec V2-2.10.1), causing the ticks to turn into grids.
+
+Setting TICKNUM to a negative number causes about abs(TICKNUM) ticks
+to be drawn, but PLOT2 won't round the max and min values on your
+axes to the nearest tickmark.
+
+Both TICKSIZE and TICKNUM may be lists of two numbers the first
+referring to the ticks on the xaxis and the second to the ticks
+on the y axis.
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.example
+@Hinge
+Example
+  TICKNUM:10;  (the default)
+  PLOT2(X, X, 5, 25);  gives scales from 4 to 26 on the x and y axes
+
+Translation Lossage ******
+@comment<***  29>
+ ******
+.next page
+  TICKNUM:[-10,5];  the -10 refers to the x axis and 5 to the y axis
+  TICKSIZE:[6,2000];
+  REPLOT();  replots the last plot with grid line every
+	multiple of 5 up the y axis, and tickmarks every multiple of 2
+	along the x axis.  Both scales go from 5 to 25.
+Translation Lossage ******
+@comment<***  30>
+ ******
+.end
+Translation Lossage ******
+.group  skip 25;
+ ******
+As yet no axes are provided for 3D plots.  Suggestions for their implementation
+are welcome.
+@NewPage
+@Section[Scales]
+@Label[scales]
+
+If the user takes no action the scale of his plots will be chosen for
+him.  In general the scale will be as large as possible, while still
+allowing everything to fit on the screen.  the user is provided with
+various ways of overriding the default settings for the scales:
+
+@SubSection[WINDOW]
+@Label[win]
+
+WINDOW:[@i[min-x], @i[max-x], @i[min-y], @i[max-y]]; This sets the area of
+the screen that PLOT2 tries to plot in.  The elements of the list
+are in raster units.  The maximum permissible size of the WINDOW
+is [0,1023,0,1023]; garbage will be produced if the WINDOW is
+larger than this.  If PLOT2 tries to plot outside the window, the
+plot will be clipped correctly.  If WINDOW is unbound then the
+default settings will be used (corresponding to the full
+tektronix screen), thus you can get back the default value be
+doing KILL(WINDOW);
+
+@subsection(XMIN, XMAX, YMIN and YMAX)
+@label(xxyy)
+
+In choosing the scale for a plot PLOT2 looks at the maximum and
+minimum values of x and y of the points it has calculated.
+However if one of XMIN @Index[XMIN], XMAX @Index[XMAX], YMIN @Index[YMIN], YMAX @Index[YMAX] has a numeric value then
+that value will be used instead of the one found from the points
+themselves.  As with WINDOW do KILL(XMIN, etc) to get back to the
+default values.  The maximum and minimum values of x and y that
+PLOT2 obtains are rounded up and down to the nearest tick mark,
+unless TICKNUM is negative.
+
+@SubSection[EQUALSCALE]
+@Label[]
+
+Setting EQUALSCALE[FALSE] @Index[EQUALSCALE] to TRUE; tells PLOT2 to ensure that the
+scales are the same in both directions.  Thus if the WINDOW is
+rectangular, a circle will normally appear as an ellipse, whereas with
+EQUALSCALE:TRUE it will appear as a circle.
+
+@subsection(WINDOW1, XMIN1 etc.)
+@label(wx)
+
+All the plotting options whose default state is unbound (e.g., XMAX,
+WINDOW) have corresponding options obtained by sticking a "1" on
+the end (e.g., XMAX1, WINDOW1).  These options should only be read
+(not set), and their values may be loosely defined to be the
+value that PLOT2 assumed for the option.  The value will only be
+right if PLOT2 needed to calculate it.
+
+@Begin[Example]
+Example
+  PLOT2(X, X, 0, 10.1);  YMAX; ==> YMAX (i.e. unbound)
+  YMAX1; ==> 11.0 (the max value of y on the y axis)
+@End[Example]
+
+Variables in this class are:
+*** begin indent  0,5; hereXMAX1 @Index[XMAX1], XMIN1 @Index[XMIN1], YMAX1 @Index[YMAX1], YMIN1 @Index[YMIN1].  These refer to
+the quantities after the transformation functions have been
+applied, and after rounding to the nearest tickmark.
+
+ZMAX1 @Index[ZMAX1], ZMIN1 @Index[ZMIN1].  Only of use for contour plots.
+Equal to ZMAX and ZMIN if they have values.  Equal to the max and min
+values of the first argument to CONTOURPLOT2, if ZMAX and ZMIN are
+unbound.  There values are meaningless if CONTOURS is a list, since
+then CONTOURPLOT2 doesn't need to compute zmax and zmin.
+
+WINDOW1 @Index[WINDOW1].  The window in which plotting is done.  Does not
+include the room used by titles etc.
+
+XMAX3D @Index[XMAX3D], XMIN3D @Index[XMIN3D], YMAX3D @Index[YMAX3D], YMIN3D @Index[YMIN3D], ZMAX3D @Index[ZMAX3D],
+ZMIN3D @Index[ZMIN3D].  Only of use for 3D plots.  These are the values
+of the 3D data before transforming it to 2d.  This will only be up to
+date information if PLOT3D needed to calculate it to determined either
+the default VIEWPT or the default CENTERPLOT.)
+
+VIEWPT1 @Index[VIEWPT1], CENTERPLOT1 @Index[CENTERPLOT1].  Only of use with 3d plots.
+Useful to look at before you change VIEWPT or CENTERPLOT.
+*** begin indent ends here
+These variables are especially important when changing the scale of
+3D plots, because YMAX etc.  refer to the values after the
+perspective transformations, and so may be quite unrelated to the
+data points.
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.example
+Example
+  PLOTNUM:PLOTNUM1:20;
+  PLOT3D(1/(X@+[2]+Y@+[2]), X, -3, 3, Y, -3, 3);	Has a big peak in the
+	middle which we wish to clip
+Translation Lossage ******
+@comment<***  31>
+ ******
+.next page
+  YMAX1; ==> -0.896...
+  YMIN1; ==> -0.957...
+  YMAX:-0.92;	Try a value of YMAX about 1/2 way between the old YMAX
+	and YMIN
+  REPLOT();	Replot on new scale.
+Translation Lossage ******
+@comment<***  32>
+ ******
+.end
+@NewPage
+@Section[Line types]
+@Label[ltyp]
+
+@SubSection[TYPEL]
+@Label[]
+
+@Begin[Example]
+Easy examples
+  PLOT2([SIN(X), COS(X)], X, -%PI, %PI, [0,1]);	Plots sin(X) with line
+	type 0 (a solid line) and cos(X) with line type 1 (a dashed
+	line)
+Translation Lossage ******
+@comment<+++  33>
+ ******
+.next page
+  PARAMPLOT2(RANDOM(), RANDOM(), X, 0, 1, [19]);	Plots PLOTNUM
+	"random" points with symbol 1 (no connecting lines drawn)
+Translation Lossage ******
+@comment<+++  34>
+ ******
+.next page
+  TT:[0,1,2,3,4,5,6,7,8];
+  PLOTNUM1:9;
+  PLOT3D(SIN(X)+A, X, -%PI, %PI, A, 0, 2, TT, NOT3D);	Gives the full
+	repertory of line types
+Translation Lossage ******
+@comment<+++  35>
+ ******
+.next page
+  TT:9+10*(TT+1);	TT is now [19,29,39 ... ]
+  REPLOT(TRUE, TT);	Gives the full repertory of symbol types.
+Translation Lossage ******
+@comment<+++  36>
+ ******
+.next page
+@End[Example]
+
+Complete description
+
+If a list (or an atom that evaluates to a list) appears as an
+optional argument to a plotting function, then that list is taken
+as a specification of the line type to be used for the plot.  The
+elements of the list are evaluated once and the elements of the
+resultant list must be all integers.  If this list has the form
+@Begin[Example]
+	[@i[type1], @i[type2], ..., @i[typei], ..., @i[typek]]
+@End[Example]then the i'th curve is to be plotted with line of type @i[typei].
+The (k+1)th curve is plotted with line of type @i[type1] etc.
+Omitting this optional argument is the same as specifying [0],
+i.e., all the curves are plotted with line of type 0 (i.e., solid
+line with no symbols).
+
+The curves drawn by the PLOT2 functions may be drawn as 1 of 9 types
+of dashed line, with 1 of 9 types of symbol drawn at the data
+points.  In general the line type @i[typei] is of the form of a
+decimal number abbcd where a b c and d are digits between 0 and 9
+(leading 0's may be omitted of course) and have the following
+meanings:
+*** begin indent  5,15;turn on "" hered =(16)line-type.  (specified by the DEFINEDASH (Sec V2-2.11.2) command).
+Line-type 0 (the default) is defined as being a solid line.
+Line-type of 9 defaults to meaning no line.
+
+c =(16)symbol-type.  The symbol is defined by the DEFINESYMBOL
+command.  Symbol 0 is defined to mean no symbol.  Symbol 9
+is defined to mean a dot.
+
+bb =(16)number of data points with no symbol between the data points
+with a symbol.  If bb = 99 then bb is set to PLOTNUM-1.  If bb
+= 98 then bb is set to PLOTNUM-2.  (PLOTNUM is taken here to
+mean the number of point in the plot.)
+
+a.(16)the first symbol is put at data point number 1 if a = 0 and
+at bb+2-a otherwise.
+*** begin indent ends here
+Translation Lossage ******
+.skip  to column 1;
+ ******
+.example
+Examples
+abbcd =  0 ==> plain line
+        10 ==> symbol 1 at every pt + plain line
+        19 ==> symbol 1 at every pt
+	99 ==> a dot at every point
+       124 ==> symbol 2 at every other pt + line 4
+      9874 ==> line 4 with symbol 7 at endpoints
+      9974 ==>   "     "    "     " at first point
+     19974 ==>   "     "    "     " at last point
+  PLOT3D(2*X@+[2]+A, X, -0.95, 0.95, A, 0, 7, INTEGER, NOT3D,
+	[0,10,19,99,124,9874,9974,19974]);	Try them out
+Translation Lossage ******
+@comment<***  37>
+ ******
+.end
+@NewPage
+@SubSection[DEFINEDASH]
+@Label[]
+
+@fcn[Name="DEFINEDASH", Args="line-no, line-spec"]
+redefines line number @i[line-no]
+according to @i[line-spec].  @i[line-spec] may be one of the
+following:
+*** begin indent  5,10; hereFALSE then the line is defined to be a solid line.
+
+TRUE then no line is drawn (useful in conjunction with a symbol).
+
+A list which defines a sequence of line segments separated by
+gaps.  Example:  DEFINEDASH(3, [1,5,5,5]); defines line 3 to
+start with 1 raster position on, 5 off, 5 on, 5 off, 1 on, 5
+off etc.
+
+A character (e.g., A, "1", \) or its ASCII value.  This defines
+the character to be used for line @i[line-no] when plotting on
+printing or display consoles.  In order to
+specify no line give 0 as the second argument (not space or
+32, as this will cause existing lines, axes etc, to get
+over-written and, maybe erased, by spaces).
+*** begin indent ends here
+
+@i[line-no] must lie between 0 and 9.
+
+
+Note that dashed lines are implemented by drawing a sequence of small
+undashed lines.  Since these lines are about 4 - 10 raster units long,
+there are only a small number of directions in which they can point
+and the chances are that none of these directions coincide with the
+direction of the dashed line as a whole.  Hence dashed lines often
+appear to weave about.
+
+@SubSection[DEFINESYMBOL]
+@Label[]
+
+@fcn[Name="DEFINESYMBOL", Args="symbol-no, symbol-spec"]
+redefines symbol number @i[symbol-no] according to @i[symbol-spec].
+@i[symbol-spec] may one of the following:
+*** begin indent  5,10; hereFALSE meaning no symbol
+
+TRUE meaning a point
+
+A list of lists given a sequence of setpoint and vector commands
+(relative to starting position) to be used in drawing the
+symbol.  For example:
+*** begin indent ends here
+
+@Begin[Example]
+	DEFINESYMBOL(3, [[5,5], [5,-5,-5,-5,-5,5,5,5], [0,0],
+	[0,0]]); This defines symbol 3 to be drawn by a setpoint to
+	5,5 (relative to the starting position) following by vectors
+	to 5,-5; -5,-5; - 5,5; 5,5, followed by setpoint to origin
+	and a vector to origin.  this will draw a box with a dot in
+	it.  The numbers are in raster positions.  DEFINESYMBOL should
+	always end with a setpoint or vector to [0,0].
+@End[Example]
+A character or its ASCII value.  This is interpreted the same way
+as for DEFINEDASH.
+@Begin[Example]
+Example
+  DEFINESYMBOL(1, [[0,9], [4,-6,-7,2,7,2,-4,-6,0,9], [0,0]]);
+	This defines symbol 1 to be a 5 pointed star.
+  PLOT2(1,X,0,2*%PI,POLAR,[19]);
+Translation Lossage ******
+@comment<***  38>
+ ******
+.end
+@NewPage;
+@Section[Plotting several curves]
+@Label[psev]
+
+@SubSection[CLEAR and WAIT]
+@Label[caw]
+
+By governing when PLOT2 clears the screen it is possible to either
+superimpose plots or have plots come out in different parts of
+the screen.
+
+Setting CLEAR[TRUE] @Index[CLEAR] to FALSE causes the screen not to get cleared
+before starting a new plot.
+
+Setting WAIT[TRUE] @Index[WAIT] to FALSE causes PLOT2 not to wait for a
+character to be typed after finishing a plot.
+
+@Begin[Example]
+Example
+  (CLEAR:TRUE, WAIT:FALSE,	turn on clearing, turn off waiting
+   PLOT2(..),		the screen will be cleared
+   CLEAR:FALSE,		turn off screen clearing
+   PLOT2(..),		plot more stuff
+   GRAPH2(..), etc.,
+   WAIT:TRUE,		turn waiting back on
+   PLOT2(..),		last plot
+   CLEAR:TRUE);		reset CLEAR
+@End[Example]
+Much more convenient ways are provided for doing this.  See (Sec V2-2.12).
+
+@subsection(FIRST, LAST and SAME)
+@label(fls)
+
+All these three are possible optional args to the plotting functions
+and to REPLOT.  These optional arguments are non-sticky; the fact
+that they were supplied is not remembered by REPLOT, although you
+can supply them to REPLOT.
+
+FIRST @Index[FIRST] or LAST. @Index[LAST.] This says that this plot is to be the
+first (or last) of a series of plots that are to be superimposed or
+plotted in different parts of the screen.  They work by setting the
+WAIT and CLEAR flags to achieve the right effect.  (FIRST
+sets CLEAR to TRUE and WAIT to FALSE before plotting and CLEAR to
+FALSE after plotting.  LAST sets WAIT to TRUE before plotting and
+CLEAR to TRUE after plotting.
+
+@Begin[Example]
+Example
+  In order to get 4 plots out in different corners of the screen a
+	typical sequence might be:
+  (WINDOW:@i[window1], PLOT2(..., FIRST),
+   WINDOW:@i[window2], PARAMPLOT2(...),
+   WINDOW:@i[window3], REPLOT(...),
+   WINDOW:@i[window4], GRAPH2(..., LAST),
+   KILL(WINDOW));
+@End[Example]
+Obviously it is necessary to use a compound statement to prevent the
+printing of unwanted cruft on the screen.  Since plotting 4 graphs
+together is quite common, the REPLOT4 (Sec V2-2.12.3) command is provided to
+do that automatically.
+
+SAME @Index[SAME]. This tells PLOT2 to plot this plot on the same scale as
+the previous plot and in the same WINDOW.  Plotting of axes
+and printing of the date and the line giving XMAX etc is suppressed.
+The intention is to allow the convenient superposition of plots.
+Specification of a title and labels is allowed, but if the previous
+plot which defines the scale of this plot didn't have them they may
+appear in the wrong place (having wrapped around the screen).  if you
+want to specify a title, then you should probably specify a null title
+"" in the original plot.
+
+@Begin[Example]
+Example
+  In order to superimpose plots the normal sequence is:
+  (PLOT2(..., FIRST), 
+   PLOT2(..., SAME), 
+   PLOT2(..., SAME), 
+   ...
+   PLOT2(..., SAME, LAST));
+
+  PLOTNUM:40;
+  PLOT2(1, T, 0, 2*%PI, FALSE, FALSE, "", POLAR);  Plot a circle.
+	Note the null title.
+  EQUALSCALE:TRUE;
+  NAMEPLOT(TEMPLATE);	Name the circle TEMPLATE
+  FOR PLOTNUM FROM 4 THRU 10		Bind PLOTNUM
+  DO (REPLOT(TEMPLATE, FIRST),		Replot the circle
+      PLOT2(1, T, 0, 2*%PI, FALSE, FALSE, CONCAT("N = ", PLOTNUM-1),
+	     POLAR, SAME, LAST) );
+	Plot a polygon with PLOTNUM-1 faces inscribed in the circle
+	and with a title computed with CONCAT.
+Translation Lossage ******
+@comment<***  39>
+ ******
+.end
+
+@SubSection[REPLOT4]
+@Label[]
+
+@fcn[Name="REPLOT4", Args="plot1, ..., plotk"]
+conveniently replots up to 4 plots in
+different parts of the screen.  @i[plot1] etc must be named plots.  It plots the first plot in the upper left hand corner
+of the default window (or of your own window, if WINDOW
+has a value), the second arg in the upper right hand corner etc.
+It stops when it runs out of things to plot.  This function takes
+care of the business of specifying the FIRST and LAST options to
+REPLOT, so dont give them to REPLOT4.  REPLOT4 only puts the date
+on the top right plot (assuming DATEPLOT:TRUE;).  The exception is
+if you only ask REPLOT4 to plot only 1 plot (by giving it 1
+argument) in which case the date goes on that plot.
+
+
+@Begin[Example]
+Example
+  PLOT2(X, X, 0, 1);	plots X vs X
+  NAMEPLOT(A1);		names it A1
+  PLOT2(SIN(X), X, 0, 2*%PI); etc.
+  NAMEPLOT(B[1]);
+  PLOT2(X^2, X, 0, 1);
+  NAMEPLOT(FOO);
+  REPLOT4(A1, B[1], FOO);	replots A1, B[1] and FOO
+Translation Lossage ******
+@comment<***  40>
+ ******
+.end
+
+@subsection(TOP, BOTTOM, LEFT and RIGHT)
+@label(tblr)
+
+These govern where in your plotting window the plot will actually
+appear.  e.g., TOP @Index[TOP] and LEFT @Index[LEFT] mean put the plot in the top left
+corner, BOTTOM @Index[BOTTOM] means in the bottom half of the window, RIGHT @Index[RIGHT] in
+the right half, etc.  Non-contradictory flags can appear together.
+These flags are non-sticky, meaning that REPLOT doesn't remember
+them, although it recognizes them.  The gap left between the plots
+you get using these flags is PLOTGAP[20] @Index[PLOTGAP] screen coordinates (default
+value 20).
+
+@Begin[Example]
+Example
+  (PLOT2(X, X, 0, 1, TOP, FIRST), PLOT2(1-X, X, 0, 1, BOTTOM, LAST));
+Translation Lossage ******
+@comment<***  41>
+ ******
+  PLOT2(SIN(X), X, -%PI, %PI, DONT);
+  REPLOT(TRUE, TOP, LEFT);	Replots in top left corner.
+Translation Lossage ******
+@comment<***  42>
+ ******
+  REPLOT();			Replots in the whole window.
+
+REPLOT4 with 4 arguments could be defined by:
+  REPLOT4(PL1,PL2,PL3,PL4) := BLOCK([DATEPLOT:FALSE, DP:DATEPLOT, 
+				     PLOTGAP:20], 
+				    REPLOT(PL1, TOP, LEFT, FIRST), 
+				    BLOCK([DATEPLOT:DP], 
+				          REPLOT(PL2, TOP, RIGHT)), 
+				    REPLOT(PL3, BOTTOM, LEFT), 
+				    REPLOT(PL4, BOTTOM, RIGHT, LAST));
+@End[Example]
+
+Note the flag SAME @Index[SAME] means to keep the same window as well as the same
+scale.  Thus SAME overrides TOP, BOTTOM, etc.  If you want to preserve
+the scale, the thing to do is to do all the plots except the first
+inside a BLOCK([YMAX:YMAX1, YMIN:YMIN1, XMAX:XMAX1, XMIN:XMIN1], ...).
+
+@Section[Device characteristics]
+@Label[dev!char]
+
+A number of different devices are supported by PLOT2.  You set things
+up for a particular device using the PLOTMODE command.  Each
+has its peculiarities, which will be described here.
+
+Note that if you plotting on a terminal you should only interrupt a
+plot by doing ^G, because your terminal will be left in a screwy
+state otherwise.
+
+@SubSection[Tektronix]
+@Label[]
+
+The Tektronix has problems keeping up with PLOT2 at 9600 baud (the
+speed at which the one in 38-246 runs) if short vectors are used.
+For that reason PLOT2 will not normally use short vectors if your
+speed is greater than 2400 baud.  This is governed by the variable
+PADDED @Index[PADDED] (default value IS(SPEED>2400)).  If the vectors are coming
+out smeared try setting PADDED:TRUE;.  (PADDED is recomputed on
+each call to PLOTMODE; so you should do PLOTMODE @Index[PLOTMODE](); after
+changing speeds.)
+
+The other function for which padding is important on the Tektronix is
+screen clearing.  (You can't plot for 1 second afterwards.)  The
+padding is sent out by ITS in this case and it determines the
+amount of padding from your speed.  You should therefore ensure
+that ITS knows what your speed is.  (You can check it by doing
+:TCTYP DESC (in DDT), and set it by e.g., :TCTYP SPEED 1200 .)
+
+For Tektronix's with graphic cross-hairs the EDIT function (Sec V2-2.16)
+can be used to edit plots.  (Put the labels in the right place
+etc.)
+
+PLOT2 also supports other than the standard Tektronix terminals
+(4010, 4013, etc.).  Plotting is also possible on the Tektronix
+4025 and 4662.
+
+For the Tektronix 4025 set PLOTMODE:'TEK; TEK4025[FALSE] @Index[TEK4025]:TRUE; and then
+PLOT2( ...  ) or whatever.  The Tektronix 4025 is supported by
+:CRTSTY TK4025.  The terminal has to be told to expect the regular
+Tektronix graphics that is used by the Tektronix 4010 terminal.
+
+[How this is done is described by KAT.  In the 4025 the screen is
+split into two regions, the work space and the monitor.  The monitor
+is the space that communicates with the host unless the host is
+transmitting graphics, in which case the graphics goes to the work
+space.  The user has to specify the size of the work space (which
+specifies the size of the monitor by giving it whats left) and
+defining the a graphics region in the work space.  To have the 4025
+accept 4010 graphics an additional command is needed, the shrink
+command.  So to get the 4025 to do 4010 graphics the following TEK
+commands are needed (` is the command character that CRTSTY uses to
+communicate with the terminal):  "`wor n @i[cr]" set the size of the
+workspace to n.  I use n=20 which leaves 13 lines for the monitor.
+"`graphic 1,35 @i[cr]" makes the graphic region occupy the first 35
+lines of the workspace, the args to graphic can define the graphics
+to be anywhere in the workspace as long as it defines 35 lines
+because that is the size of the 4010 graphics region; i.e., graphic
+35,69 would be fine.  It's OK that the graphic region is defined to be
+larger than the workspace, since the picture can be scrolled into
+view; the wor command just defines the size of the visible portion of
+the workspace.  "`shrink @i[cr]" tells the 4025 to behave like the 4010.
+I think that the above three commands are best done by the users
+because (1) the `wor command also has the effect of erasing the
+workspace and the monitor which might not be desired.  (2) the size of
+the monitor depends on whether the user needs to see a lot of the
+host interaction or is just executing plots.]
+
+Tektronix 4662s are supported by doing PLOTMODE:'TEK; TEK4662[FALSE] @Index[TEK4662]:TRUE;
+
+@SubSection[Imlac]
+@Label[]
+
+Ards graphics conventions are used.  Only Imlacs supporting these
+conventions are recognized by PLOT2.  Imlacs do not have infinite
+room for storing vectors, thus some plots (especially 3D and
+Contour plots) won't fit.  It may be necessary to locally clear
+the screen (with the CLEAR button) during a plot.  If you are also
+plotting for the Gould or the XGP output to those devices will
+not be effected.
+
+@subsection(Grinnell TV's)
+@label(grin) 
+
+The Grinnell TV's at MIT are 512x512 TV terminals in Building 38.
+
+Ards graphics conventions are used, however the coordinates are
+divided by 2 before being plotted, so WINDOW etc.  should be
+chosen as though the screen coordinates ran from 0 to 1023 each
+way.
+
+@SubSection[Printing and Display]
+@Label[pr!dis]
+
+These are really only intended to give a preview of the plot before
+it comes out on a higher resolution device like the XGP or the
+Gould.  Internally PLOT2 keeps a resolution appropriate for the
+standard graphics devices (about 1000 x 1000), so that good
+Hardcopies can be obtained.  Instead of attempting to draw dotted
+lines or symbols for the various line types different
+characters are used, although dotted lines and symbols will be
+drawn on the Hardcopy device.  Line type 0 is drawn with .'s.  The
+other line types (1 - 9) are drawn with other symbols (*, #, 
+etc.).  The symbols (specified by the tens digit of the line type)
+are defined by the letters (A, B, C etc.).  Unfortunately if you
+choose a line type that specifies both a line and a symbol, the
+line will in most cases overprint and so erase the symbol.
+
+When plotting on another device, say the XGP, you might find that
+PLOTMODE:[X,D];, results in your seeing only a corner
+of the plot.  This is because it is assuming the XGP's character
+size.  You can correct this by doing PLOTMODE:[D,X]; since this
+will use the terminal's character size.  The copies you get out of
+the XGP will have the characters slightly widely placed, but will
+otherwise be OK.
+
+The difference between how PLOT2 handles Printing and Display
+terminals, is that with Display terminals PLOT2 knows that it can
+move the cursor around and so it will plot your graph in the same
+order that it would on say a Tektronix.  With a Printing terminal,
+it stores up the entire plot and spits it out at the end in a
+line by line fashion.  Multiple plots (Sec V2-2.12) are handled
+correctly, the entire plot coming out only after the LAST call to
+a plotting function.
+
+The plotting is done on a character grid that is PLOTHEIGHT @Index[PLOTHEIGHT] high and
+LINEL @Index[LINEL] wide.  You may change these if you want, but the changes
+must be followed by a call to the PLOTMODE @Index[PLOTMODE] function (PLOTMODE();
+will do) to re-initialize things.  With PLOTMODE(D) you will
+probably lose badly if PLOTHEIGHT or LINEL is set larger than
+your terminal can handle.  Note that you can restrict the area of
+the screen used, with more flexibility, by changing WINDOW @Index[WINDOW].  Don't forget that you can look at WINDOW1 @Index[WINDOW1] to see what the
+default was.
+
+You might want to change the value of CHARRATIO[2.5] @Index[CHARRATIO].
+This should equal the ratio of line-pitch to the character-pitch
+for your terminal.  (This enables the EQUALSCALE:TRUE
+mode to work and ensures that what you see on your screen/paper
+is the same shape as what will come out on the XGP.)
+
+@SubSection[XGP]
+@Label[]
+
+Plotting on the XGP works by writing a file of ARDS graphics commands
+in a file on the .TEMP.; directory.  The filenames are .PLOT.
+@i[uname].  Since the XGP won't accept ARDS graphics commands, this
+file must be processed into a SCN file by the Gould spooler.  This
+is done whenever HARDCOPY @Index[HARDCOPY](); is called or if you type
+linefeed at the end of a plot.  If AI is up and the
+queuing for the XGP is successful, you will receive a message
+from the XGP spooler when your plot is printed.  If AI is down,
+your plot will be processed into an XGP scan file, .GLPR.; > SCN,
+and the Gould spooler will send you a warning message telling you
+that AI is down.  You must copy the SCN file to AI:.GLPR.;
+yourself when AI comes up and queue it by doing in DDT
+@Begin[Example]
+	:XGP ;SCAN AI:.GLPR.;* SCN
+@End[Example]
+The parameters PLOTSCALE[1.0] @Index[PLOTSCALE] and PLOTTHICK[2] @Index[PLOTTHICK] govern the
+scale of the Gould output (the larger PLOTSCALE the larger the copy)
+and the thickness of the lines.  PLOTTHICK must be an integer.  The
+default PLOTSCALE and WINDOW produce a plot which nicely
+fits into an 8.5 x 11 piece of paper.  (Actually, PLOTSCALE gets
+multiplied by 1.75 to determine the correspondence of screen
+coordinates and Gould pixels.)
+
+There are two additional parameters PLOTLFTMAR[150] @Index[PLOTLFTMAR]
+and PLOTBOTMAR[150] @Index[PLOTBOTMAR] which govern the left margin
+and bottom margin for plots output to the XGP.  Both of these
+parameters must be integers and the default values cause a plot
+to fit on an 8.5 x 11 piece of paper.
+
+Since the XGP has slightly different nominal resolutions across and
+along the page (200/inch vs. 192/inch), EQUALSCALE produces plots
+that are somewhat misshapen on the XGP.  The Gould and Versatec
+devices don't suffer from this defect.
+
+@fcn[Name="NAMEFILE", Args="filespec"]
+takes the scratch file that PLOT2 uses in
+PLOTMODE(GOULD); or PLOTMODE(XGP); and copies it to @i[filespec].
+
+The advantage of this is that the scratch file (which contains ARDS
+graphics commands) is usually much shorter than the corresponding
+SCN file, thus if you want to generate several plots for the XGP,
+but aren't able to actually get them out on the XGP for a while
+then use NAMEPLOT now and queue them to be printed by
+HARDCOPY([@i[filespec]], XGP).  Or else, you can print the
+plot file later by doing in DDT
+@Begin[Example]
+	:GLP @i[filespec]/A/O[X]
+@End[Example]where @i[filespec] is an ITS-style filespec (i.e., dir;fn1 fn2).
+
+Incidently since the file produced by NAMEFILE is ARDS graphics
+commands the plot it contains can be viewed by :IMPRNT'ing the
+file on an Imlac.
+
+@SubSection[Gould]
+@Label[]
+
+The method of producing a plot on the Gould is the same as for the
+XGP except that PLOTMODE:[GOULD, ...]  is specified.  The options
+PLOTSCALE etc.  have the same effect.  If you want to queue a file
+that you have created with the NAMEFILE command to the Gould
+either use HARDCOPY([@i[filespec]], GOULD) or :GLP @i[filespec]/A in
+DDT.
+
+Hardcopy can be produced off the Gould either by typing @i[linefeed]
+after the plot has finished or by executing HARDCOPY();
+
+Note: Often people forget to say e.g., PLOTMODE(G, T); before doing a
+plot.  The thing to do in that case is:  HARDCOPY(TRUE, GOULD);
+(Sec V2-2.7.4).  This will only work if your plot consisted of a single
+call to a plotting function (the normal case).
+
+@SubSection[Versatec]
+@Label[]
+
+This enables you to generate scan files for 100/inch Versatec
+printer/plotters which exist at various sites on the MFE-NET.  As
+far as PLOT2 goes, the Versatec is like the Gould.  When a
+HARDCOPY is requested, the Gould spooler generates a scan file .GLPR.;> VER .  These VER files can then be FTP'ed to your local
+computer and renamed as PLT files (by RENAME *.PLT=*.VER) which
+can then be printed on the Versatec with the PRINT *.PLT command.
+
+[The PLT files consist of a sequence of 8-bit bytes packed in the
+high 32 bits of each word.  The first byte is 016 (octal) (this
+specifies the format for the PPL Versatec).  Thereafter the format is
+as described by R. H. Frobose, Compression of Graphic Data in Raster
+Format, Livermore report UCRL-51858 (June 1975).]
+
+@SubSection[Dover]
+@Label[]
+
+Plotting on the Dover is not fully supported yet.  However there are
+functions for directing the temporary file of ARDS vector
+commands to the Dover.  To get this file created use
+PLOTMODE:'XGP; (or GOULD or VERSATEC or [XGP,GRINNELL] etc).  The
+command DOVARD_FILE(); takes the ARDS file produced by PLOT2 (when in
+the PLOTMODE(G) mode), and
+creates a PRESS file suitable for output to the DOVER.  The
+command DOVER_FILE(); will queue the file.  For example, after you
+have done PLOTMODE:'[G,GR], and PLOT2(X,X,0,1); you can then do
+(DOVARD_FILE(),DOVER_FILE()); to queue the plot.
+
+A variable DOVARD_VIEWPORT[[1,7,1,7]] @Index[DOVARD_VIEWPORT]; has been added to the
+DOVARD_FILE command.  [XMIN,XMAX,YMIN,YMAX] in inches on the page.  In
+the near future the HARDCOPY and PLOTMODE commands may be extended to
+include this option, calling the functions in question for you.
+
+The Dover produces higher quality output than most other hard copy
+devices and using it in this way is less of a drain on the system
+than getting hardcopys on the XGP or Gould.  However, the Dover
+has a higher chance of jamming, and complicated 3d-plots may bomb
+out.  Also DOVARD_FILE() and DOVER_FILE() both go into DDT to do
+their jobs.  This means that your MACSYMA will need to TTY to
+execute these functions.
+
+@Section[Naming and saving of plots]
+@Label[name!plot]
+
+Plots can be given names, saved in files, killed just like other
+MACSYMA data types.  However since plots aren't really something
+MACSYMA knows about there are a number of commands specifically for
+manipulating plots.
+
+@fcn[Name="NAMEPLOT", Args="plotname"]
+names the last call to one of the plotting
+functions @i[plotname].  @i[plotname] must be either an atom (e.g.,
+FOOP) or an array element (e.g., SNOO[4]).  @i[plotname] is stuck
+onto the list PLOTS (Sec V2-2.14) so it becomes for instance
+[@i[plotname]].  If @i[plotname] is an atom, then the plot is made
+into the PLOT property of @i[plotname] (so it appears also in the
+PROPS list).  If @i[plotname] is an array element then the plot is
+the value of that array element, so @i[plotname] gets put on the
+ARRAYS list.  (Don't try manipulating this value, because most of
+Macsyma doesn't understand what a plot is.  Thus
+NAMEPLOT(SNOO[4]); BAR:SNOO[4]; REPLOT(BAR); won't work.)  Typing
+rubout at the end of a plot causes a @i[plotname] to get read in
+and NAMEPLOT applied to it.
+
+The argument to plotname is not evaluated.  Thus you can say
+NAMEPLOT(FOOP) without having to worry whether FOOP has a value
+or not.  However if the argument is an array element the
+subscripts are evaluated.  Thus if you have a program which plots
+several plots (for instance with different values of some
+parameter) you may want to use the array element form.  Thus FOR
+I THRU 3 DO (PLOT2(F(X,I), X, 0, 1), NAMEPLOT(PLT[I])); produces
+plots PLT[1], PLT[2], PLT[3].
+
+What actually gets saved by NAMEPLOT are the unscaled data points
+plus most of the optional arguments to thee plotting function
+(the exceptions are FIRST, LAST, SAME, TOP, BOTTOM,
+LEFT and RIGHT and DONT).  This is why it
+works to change the scale before replotting the plot using REPLOT.
+
+
+@fcn[Name="SAVEPLOTS", Args="[filespec], plotname1, plotname2, ... "]
+saves the
+plots @i[plotname1], @i[plotname2] etc in the file @i[filespec].
+Defaulting of @i[filespec] is traditional (e.g., FOO is the same as
+FOO,>).  [@i[filespec]] may be omitted altogether in which case the
+filespec used is [PLOTS,>,''DEVICE,''UNAME].  (This will normally
+be [PLOTS,>,DSK,uname].  DEVICE and UNAME are also used by SAVE in
+a similar manner.)  SAVEPLOTS always sets the file defaults.
+
+
+SAVEPLOTS([@i[filespec]], ALL); saves all the plots in PLOTS.  (or else
+you can say SAVEPLOT([@i[filespec]], PLOTS); ) Another action of
+SAVEPLOTS is the put the @i[filespec] into the value of the saved
+plots.  Thus a subsequent SAVE([@i[filespec1]], FUNCTIONS,
+@i[plotname]); although it won't correctly save the data in
+@i[plotname] will remember what file it was saved in using the
+SAVEPLOTS command.  SAVEPLOTS returns a list of plots it succeeded
+in saving.
+
+@fcn[Name="LOADPLOTS", Args="filespec"]
+loads a file of plots created by SAVEPLOTS.
+@i[filespec] defaults exactly as with LOADFILE.  It also sets the
+file defaults.  LOADPLOTS may be done within a batch.
+
+
+
+@fcn[Name="KILLPLOTS", Args="plotname1, plotname2, ...  "]
+frees up the array storage
+used by @i[plotname1] etc.  KILLPLOTS(PLOTS), KILLPLOTS(ALL) and
+will apply KILLPLOTS to all the members of PLOTS.  Note the
+KILLPLOTS does not KILL @i[plotname1] etc.  and in particular it
+leaves the @i[filespec] information stuck in by SAVEPLOTS.  (If you
+never want to reference a plot again it is probably better to do
+a KILLPLOTS followed by a KILL, since KILLPLOTS takes care to
+totally exorcise the arrays of the plot from the system,
+something that KILL might not manage to do).  If you doing a lot
+of plotting then you may get a message like NO CORE ARRAY when
+trying the name a plot (either by invoking NAMEPLOT explicitly or
+by typing rubout after a plot.)  If that happens all you have to
+do is check that all the plots that are important are saved using
+the SAVEPLOTS command, then do KILLPLOTS(...); NAMEPLOT(@i[plotname]);
+
+
+If DONT @Index[DONT] appears as an optional argument to the plotting functions
+then the points will be calculated, but not plotted.  This is
+primarily of use for creating plots that are to be named and used
+later.  DONT is a non-sticky option (like FIRST and LAST), and so
+doesn't get saved when the plot is named (so PLOT2(EXP(X), X, -1,
+1, DONT); REPLOT(); will plot something).
+
+In order to assist the manipulating of plots, a list of plots is
+kept.  The list is called PLOTS @Index[PLOTS] and it contains all the plots
+present in the Macsyma.  After KILLPLOTS is executed on a plot it
+is removed from PLOTS.  However if it had been previously saved
+with the SAVEPLOTS command an attempt to REPLOT
+that plot will cause it to be reloaded from the file it was saved in
+and it will be put back on the PLOTS list.
+Translation Lossage ******
+.skip  example
+ ******
+Examples
+  PLOT2(SIN(X), X, -%PI, %PI);
+  @i[rubout]
+  SNOO;
+  REPLOT(SNOO); replots snoo
+  PLOTS; ==> [SNOO]
+  KILLPLOTS(ALL); kills the plots in PLOTS i.e., SNOO
+  REPLOT(SNOO); ==> SNOO not a plot (and it wasn't saved)
+  REPLOT(); replots the last plot (which so happens to be the same as
+	SNOO)
+  @i[rubout]
+  ARF;
+  SAVEPLOTS([CFFK,PLOT,USERS], ALL); saves the plots in PLOTS
+  KILLPLOTS(ALL);
+  PLOTS; ==> [] there are now no active plots around
+  PROPS; ==> [SNOO,ARF]  both SNOO and ARF got put on the values list
+	but only ARF is any good because:
+  SAVE([CFFK], PROPS); ==> [[CFFK, 1, DSK, USERS], SNOO, ARF]
+  ^Z
+  MACSYM^K
+  LOADFILE(CFFK, >, USERS);
+  PROPS; ==> [SNOO,ARF]  as before
+  PLOTS; ==> []
+  REPLOT(SNOO); ==> SNOO not a plot (It was never SAVEPLOTS'ed)
+  REPLOT(ARF); ==> DSK:USERS;CFFK PLOT being loaded
+  loading done (ARF is automatically loaded in and replotted)
+  PLOTS; ==> [ARF]  ARF is stuck back into PLOTS
+  KILLPLOTS(ALL); kills the arrays in ARF but saves the fact that it
+	came from CFFK PLOT
+  REPLOT(ARF); DSK:USERS;CFFK PLOT being loaded loading done etc.
+@End[Example]
+@Section[Transformations on points]
+@Label[trans!pt]
+
+@subsection(POLAR, LOG, LINLOG, LOGLIN, LIN and TXTYPE)
+@label(pllllt)
+
+@Begin[Example]
+Easy examples
+  PLOT2(1, T, 0, 2*%PI, POLAR);	Plots a circle
+Translation Lossage ******
+@comment<+++  43>
+ ******
+  REPLOT(TRUE, LIN);		Replots the previous plot on a linear
+	scale (i.e., gives a horizontal line)
+Translation Lossage ******
+@comment<+++  44>
+ ******
+  PLOT2(EXP(X), X, 0, 10, LINLOG);	Plots exp(X) on a Lin-Log scale
+	(appears as a straight line)
+Translation Lossage ******
+@comment<+++  45>
+ ******
+  GRAPH2([1,2,5,10,50,100], [1,1.5,2.5,3,7,10], LOG);	Plots some
+	random points on Log-Log scale.  Slope shows that y=sqrt(x).
+Translation Lossage ******
+@comment<+++  46>
+ ******
+.end
+Translation Lossage ******
+.skip 
+ ******
+Complete description
+
+If one of POLAR, LOG, LINLOG, LOGLIN appear as an optional argument
+to one of the 2D plotting functions, then the plots appear on the
+appropriate scale.
+With POLAR the first arg to PLOT2 or the second arg to GRAPH2
+etc.  (i.e., what is normally considered to be the y
+coordinate) becomes r, the radius; and what is normally
+considered to be the x coordinate becomes theta, the angle.
+*** begin indent  5,15;turn on "";preface 0; hereLOG @Index[LOG](15)causes both axes to appear on a log (base 10) scale.
+
+LINLOG @Index[LINLOG](15) causes the y axis to appear on a log scale.
+
+LOGLIN @Index[LOGLIN](15)causes the x axis to appear on a log scale.
+
+LOGLOG @Index[LOGLOG](15)is the same and LOG.
+*** begin indent ends here
+
+The optional arguments LOG and LOGLIN also cause PLOT2 to choose
+logarithmic intervals for the x variable, if the @i[low], @i[high]
+form of range specification is used.  (Something less
+than optimal probably happens for PARAMPLOT2 in this case).
+
+CONTOURPLOT2 @Index[CONTOURPLOT2] is regarded as being a 2D plotting function
+(since it does not transform its x and y coordinates).  Thus the
+above optional args work on it and CONTOURPLOT2(Y, X, 0, 2*%PI,
+Y, 0, 1, POLAR); does the right thing.
+
+Note that when a plot is saved the points before their transformation
+are saved, together with the type of transformation.  Thus is
+possible to change the transformation either using REPLOT @Index[REPLOT]
+or a ^A break.
+
+With REPLOT all that is necessary is to supply an optional arg
+overriding the one originally given.  LIN @Index[LIN] is an optional argument
+that specifies no transformation (i.e., a LINear scale in both
+directions).  This can be given to REPLOT to turn off any
+transformations.
+
+In a ^A break the variable TXTYPE @Index[TXTYPE] is (locally bound) to the type of
+transformation.  Thus within a polar plot TXTYPE is POLAR.  A value
+of FALSE implies no transformation (like LIN in REPLOT).  The
+possible values of TXTYPE are FALSE, POLAR, LOG, LINLOG, LOGLIN,
+SPECIAL (for user defined transformations), and NOT3D
+(for Not3d plots and).  Remember that after
+exiting the break the plot must be replotted (with a tab
+for the change in TXTYPE to be saved.
+
+@subsection(SPECIAL, XFUN and YFUN)
+@label(sxy)
+
+If the optional argument SPECIAL @Index[SPECIAL] appears in the call to PLOT2 then
+immediately before sticking your data up on the screen PLOT2
+looks at the values of XFUN[FALSE] @Index[XFUN] and YFUN[FALSE] @Index[YFUN].
+If they are FALSE the data gets scaled in the normal way and is
+plotted without further ado.  If either is non-FALSE then it
+should be the name of a function of 1 to 3 arguments which
+defines a transformation between the data and the x and y screen
+coordinates.  (The standard linear scaling is still applied the
+result of this transformation, to make your plot fit on the
+screen.)  The functions must be translated or compiled and must
+return a floating point result.  The way they work is best
+illustrated by an example.
+Translation Lossage ******
+.skip  example
+ ******
+Suppose
+  XFUN:POLARX;
+  YFUN:POLARY;
+	where POLARX and POLARY are defined by
+  TRANSLATE:TRUE;
+  POLARX(X, Y) := (MODE_DECLARE([X,Y], FLOAT), Y*COS(X));
+  POLARY(X, Y) := (MODE_DECLARE([X,Y], FLOAT), Y*SIN(X));
+        (note that X and Y are the THETA and R coordinates of a polar
+	system) then
+  PLOT2(1, X, 0, 2*%PI, SPECIAL);
+	produces PLOTNUM x data points (ranging from 0 to 2*%PI)
+	and PLOTNUM corresponding y data points (all 1 in this case).
+	These x and y are given to the POLARX and POLARY functions as
+	the first and second arguments and the value of these two
+	functions is what is supplied to the normal scaling routines.
+	Thus this PLOT2 command will produce a circle (if
+	EQUALSCALE:TRUE, an ellipse otherwise).  What I've
+	just described could of course all be done with the POLAR
+	optional arg.  But then I've just described pretty
+	much what happens when you give the POLAR optional arg.
+@End[Example]
+The arguments that XFUN and YFUN take are
+@Begin[Example]
+		1 arg	2 args	3 args
+	XFUN	x	x,y	x,y,z
+	YFUN	y	x,y	x,y,z
+@End[Example]
+The first argument to PLOT2 is considered a y variable and it's
+second argument an x variable.  For PARAMPLOT2 and GRAPH2 the
+first arguments are x variables and the second arguments are y
+variables.  For all the 2D plotting functions the z variable is
+0.0.  (See (Sec V2-2.15.3) for the coordinate conventions for the 3d
+plotting functions).
+
+In fact POLARX @Index[POLARX] and POLARY @Index[POLARY] come predefined in the PLOT2
+files.  Other XFUN's and YFUN's that may be of use are (omitting the
+MODE_DECLARE's):
+@Begin[Example]
+	CLOG(X) := (IF X=0.0 THEN -90.0 ELSE LOG(ABS(X)))/LOG(10.0);
+	REFLECT(X) := -X;
+	YTOX(X,Y) := Y;
+	XTOY(X,Y) := X;
+	ZTOY(X,Y,Z) := Z;
+	ZTOX(X,Y,Z) := Z;  (just the same function really)
+	ROTATEX(X,Y) := X*COSANG-Y*SINANG;
+	ROTATEY(X,Y) := X*SINANG+Y*COSANG;
+	(SINANG and COSANG are set up by
+	 INITROTATE(ANG) := (COSANG:COS(ANG), SINANG:SIN(ANG));)
+
+Example
+  XFUN:YTOX;
+  YFUN:XTOY;	These cause X and Y to be swapped
+  PLOT2(SIN(X), X, -%PI/2, %PI/2, SPECIAL);	Plots arcsin(x) vs. x !
+Translation Lossage ******
+@comment<***  47>
+ ******
+
+The XFUN's and YFUN's implied by the optional args in are:
+
+	optional arg	XFUN		YFUN
+	POLAR		POLARX		POLARY
+	LOG		CLOG		CLOG
+	LINLOG		FALSE		CLOG
+	LOGLIN		CLOG		FALSE
+	LIN		FALSE		FALSE
+@End[Example]
+
+@SubSection[3D transformations and HOWCLOSE]
+@Label[threedtran]
+
+The perspective transformations work by the same XFUN and
+YFUN mechanism documented above.  In case to want to try changing
+the transformation here are the names of the functions used
+(although it is probably quite easy to confuse the function that
+figures out the hidden lines).
+
+The hidden line routine also makes use of the variable HOWCLOSE @Index[HOWCLOSE].
+HOWCLOSE should evaluate as the name of a function of 3 arguments (x,
+y and z) and should give a measure of how close the point [x,y,z] is
+to the viewer.  It is not necessary that this function return the
+exact distance [x,y,z] is away, just that the further away [x,y,z]
+is, the larger the number the function should return.
+Translation Lossage ******
+.skip  example
+ ******
+CENTERPLOT  PERSPECTIVE  REVERSE  XFUN	     YFUN	HOWCLOSE
+-----------------------------------------------------------------------
+non-FALSE   TRUE	 FALSE	  P3DX	     P3DY	HOWCLOSE3D
+non-FALSE   TRUE	 TRUE	  P3DXR	     P3DYR	HOWCLOSE3D
+non-FALSE   FALSE	 FALSE	  NP3DX	     NP3DY	HOWCLOSENP3D
+non-FALSE   FALSE	 TRUE	  NP3DXR     NP3DYR	HOWCLOSENP3D
+FALSE	    TRUE	 FALSE	  OLD3DX     OLD3DY	HOWCLOSEOLD3D
+FALSE	    TRUE	 TRUE	  OLD3DXR    OLD3DYR	HOWCLOSEOLD3D
+FALSE	    FALSE	 FALSE	  OLDNP3DX   OLDNP3DY	HOWCLOSEOLDNP3D
+FALSE	    FALSE	 TRUE	  OLDNP3DXR  OLDNP3DYR	HOWCLOSEOLDNP3D
+@End[Example]
+The type of view is setup by doing
+Translation Lossage ******
+.skip  example
+ ******
+	INITPERSPEC(CX,CY,CZ,VX,VY,VZ);
+    where [VX,VY,VZ] the VIEWPT and [CX,CY,CZ] is the CENTERPLOT
+@End[Example]
+The optional argument NOT3D now causes YFUN to be bound to ZTOY.
+
+@Section[Editing Plots]
+@Label[plot!edit]
+
+Tektronix users only:  there exists a facility for editing pictures
+using the crosshairs on a Tektronix terminal.  This enables you to
+position labels accurately and add in additional lines, arrows etc.
+To load the editting package do
+@Begin[Example]
+	LOAD('[EDIT, FASL, DSK, CFFK]);
+@End[Example]
+The behavior of a particular Tektronix terminal to characters typed
+while the crosshairs are displayed is governed by strap settings
+inside the terminal.  Of importance to this package is whether the
+terminal sends out a following @i[return] after the position
+information.  The variable EDITCR[FALSE] @Index[EDITCR] should reflect this
+strap setting.  (A TRUE value means that EDIT expects a following
+@i[return].)  This parameter is set to its default value when the
+package is loaded; so set it to the correct value after loading in
+EDIT.
+
+@fcn[Name="EDIT", Args="function"]
+The main function in the package is called EDIT and its intention is
+to allow you to enter labels and various odd lines onto an
+existing plot.  To use it you must have a function of no
+arguments, whose body is a BLOCK and the last statement in the
+BLOCK must be EXITGRAPH().  If the function is P(), say then P();
+should plot as much of your picture as can be conveniently
+specified by PLOT2, GRAPH2 etc.
+
+EDIT(P); will execute P(), but will stop before the final EXITGRAPH()
+and display the cross-hairs.  By typing various letters EDIT will
+enter commands into the function P directly before the
+EXITGRAPH(),
+
+Allowed letters are:
+@Begin[Example]
+    Rubout or Q or q, exit from EDIT
+    Space, save the location of the crosshairs (for use with L and A)
+    S or s, enters a SETPOINT command into your function
+    V or v, enters a VECTOR command (should be preceded by a SETPOINT
+	or another VECTOR command)
+    L or l, draws a line between the saved location and the
+	crosshairs and enters it in the function.
+    A or a, draws an arrow head pointing in the direction from the
+	saved location to the crosshairs.  The tip of the arrow is at
+	the crosshairs.  The size of the arrow is ARROWSIZE (a
+	floating point number in raster units, default value 20.0)
+	and its half angle is ARROWANG (a floating point number in
+	radians, default value 0.2).  (The arrow is drawn using the
+	?ARROW function, defined in EDIT FASL.  It takes 4 integer
+	arguments, similarly to ?LINE.  Thus
+	?LINE(20,20,100,100), ?ARROW(20,20,100,100) draws a line with
+	an arrow head on it.)
+    P or p, reads text from the keyboard and prints it left justified
+	at the cursor.  Echoing is suppressed while it is reading the
+	text.  Reading continues until a Carriage-Return is
+	encountered.  The case of the text is remembered, but if you
+	want it preserved after, say, STRINGOUT'ing and BATCH'ing you
+	should set BOTHCASES:TRUE;
+    C or c, same as P, except the text is centered.
+    R or r, same as P, except the text is right justified
+@End[Example]
+Remember that after exiting EDIT your function will have been
+changed, so that P(); should give you the updated PLOT.  Items may
+be be removed using the MACSYMA editor, or TECO.  To draw a
+picture from scratch you could do:
+@Begin[Example]
+  HOUSE() := BLOCK([], ENTERGRAPH(), SCREENSIZE(0,0,1023,790),
+		   EXITGRAPH()); the call to SCREENSIZE is advisable
+	in case the previous call to PLOT2 set the plotting window
+	to less than the whole screen.
+  EDIT(HOUSE);  now with a sequence of S's and V's you can draw a
+	house terminating it with a Rubout.
+  HOUSE();  re-draws your house.
+@End[Example]
+Translation Lossage ******
+@comment<***  48>
+ ******
+
+Setting WINDOW is not going to have any effect, since only the top
+level plotting functions pay any attention to it (and they then
+call SCREENSIZE).
+
+Here's how you might define a function to enable you to use EDIT to
+insert anotations.
+@Begin[Example]
+  ANOTATE():=BLOCK([],
+		   PLOT2([SIN(X),COS(X)],X,-%PI,%PI,[0,1],FIRST),
+		   ENTERGRAPH(),
+		   CLEAR:WAIT:TRUE,	undo the effect of the FIRST
+		   CHANGEDASH(0),	undo the dashed line mode
+		   EXITGRAPH());
+  EDIT(ANOTATE);
+  ANOTATE();
+@End[Example]
+Translation Lossage ******
+@comment<***  49>
+ ******
+.endfunction
+
+@Section[Default settings]
+@Label[plot!defaults]
+
+The defaults for the options are:
+@Begin[Example]
+    PLOTNUM:20;
+    PLOTNUM0 unbound
+    PLOTNUM1:20;
+    EQUALSCALE:FALSE;
+    NOPRINT:FALSE;
+    DATEPLOT:TRUE;
+    XAXIS:ALL;
+    YAXIS:ALL;
+    TICKNUM:10;
+    TICKSIZE:6;
+    UNDERSIDE:TRUE;
+    REVERSE:FALSE;
+    PERSPECTIVE:TRUE
+    PLOTNUMPREC:7;
+    CONTOURS:20;
+    LABELCONTOURS:TRUE;
+    VIEWPT unbound
+    CENTERPLOT unbound
+    CROSSHATCH:TRUE;
+    WINDOW unbound
+    XMAX,XMIN,YMAX,YMIN,ZMAX,ZMIN unbound
+    XFUN:FALSE;
+    YFUN:FALSE;
+    CLEAR:TRUE;
+    WAIT:TRUE;
+    PLOTBELL:TRUE;
+    PLOT2ERROR:TRUE;
+    PLOTGAP:20;
+**  PLOTSCALE:1.0;
+**  PLOTTHICK:2;
+**  PLOTLFTMAR:150
+**  PLOTBOTMAR:150
+**  CHARRATIO:2.5;
+**  CRCLEAR:TRUE;
+**  HARDCOPY:TRUE;
+**  PADDED:IS(SPEED>2400);
+**  LINEL	(terminal dependent)
+**  PLOTHEIGHT	(terminal dependent)
+**  PLOTMODE	(terminal dependent)
+**  TEK4662:FALSE;
+**  TEK4025:FALSE;
+(** not reset by PLOTRESET();)
+@End[Example]
+The switches whose default state is unbound are put on the VALUES
+list when they are given a value.  The other switches get put on
+the MYOPTIONS list when they get changed.  So all options can be
+saved by doing SAVE([@i[fn1], @i[fn2], @i[dir]],MYOPTIONS,VALUES);)
+
+The following are "read-only" options
+@Begin[Example]
+    XMAX1,XMIN1,YMAX1,YMIN1,ZMAX1,ZMIN1
+    VIEWPT1,CENTERPLOT1
+    WINDOW1
+    XMAX3D,XMIN3D,YMAX3D,YMIN3D,ZMAX3D,ZMIN3D
+@End[Example]
+Lines and Symbols
+
+The defaults for the dashed lines are (not reset by
+PLOTRESET();):
+@Begin[Example]
+	DEFINEDASH(0,FALSE);		(solid line)
+	DEFINEDASH(1,[40,8]);
+	DEFINEDASH(2,[15,8]);
+	DEFINEDASH(3,[1,7]);
+	DEFINEDASH(4,[30,8,1,8]);
+	DEFINEDASH(5,[30,8,1,8,1,8]);
+	DEFINEDASH(6,[40,8,1,8,5,8,1,8]);
+	DEFINEDASH(7,[8,30]);
+	DEFINEDASH(8,[1,20]);
+	DEFINEDASH(9,TRUE]);		(no line)
+@End[Example]
+The defaults for the symbols are (not reset by PLOTRESET();):
+@Begin[Example]
+	DEFINESYMBOL(0,FALSE);		(no symbol)
+	DEFINESYMBOL(1,[[0,6],[0,-6],[-6,0],[6,0],[0,0]]);
+	DEFINESYMBOL(2,[[4,4],[-4,-4],[4,-4],[-4,4],[0,0]]);
+	DEFINESYMBOL(3,[[6,6],[6,-6,-6,-6,-6,6,6,6],[0,0],[0,0]]);
+	DEFINESYMBOL(4,[[8,0],[0,-8,-8,0,0,8,8,0],[0,0],[0,0]]);
+	DEFINESYMBOL(5,[[0,8],[6,-4,-6,-4,0,8],[0,0],[0,0]]);
+	DEFINESYMBOL(6,[[0,-8],[6,4,-6,4,0,-8],[0,0],[0,0]]);
+	DEFINESYMBOL(7,[[8,0],[-4,6,-4,-6,8,0],[0,0],[0,0]]);
+	DEFINESYMBOL(8,[[-8,0],[4,6,4,-6,-8,0],[0,0],[0,0]]);
+	DEFINESYMBOL(9,TRUE);		(point)
+@End[Example]
+
+For PLOTMODE(PRINTING); or PLOTMODE(DISPLAY) the default line and
+symbol characters (defined by e.g., DEFINESYMBOL(1,"A");) are
+@Begin[Example]
+			   0  1  2  3  4  5  6  7  8  9
+		lines      .  *  #    %  &  +  @  - none
+		symbols  none A  B  C  D  E  F  G  H  I
+@End[Example]
+
+PLOTMODE @Index[PLOTMODE]
+
+Unless you set the PLOTMODE before PLOT2 is loaded,
+PLOTMODE gets initialized according to LISP's TTY variable as
+follows:
+@Begin[Example]
+	TTY	PLOTMODE
+	0	PRINTING
+	1	DISPLAY		(datapoint)
+	2	DISPLAY		(datapoint)
+	3	IMLAC
+	4	TEKTRONIX
+	5	DISPLAY		(TV these may soon be supported)
+	6	PRINTING	(memowreck)
+	7	(software tty) depends on the terminal characteristics
+		as follows (this is the order the questioning are
+		asked)
+		Can't do cursor positioning	PRINTING
+		Can't selectively erase		TEKTRONIX
+		Can't overprint			DISPLAY
+		An IMLAC (%TOIML)		IMLAC
+		Not an AI-TV			GRINNELL
+		Else				DISPLAY
+	8	PRINTING		(terminet)
+	9	DISPLAY			(other display)
+@End[Example]
+If WINDOW @Index[WINDOW] is unbound then it is chosen according to PLOTMODE as
+follows:
+@Begin[Example]
+	if GOULD then [0, 1023, 5, 790]
+	else if TEKTRONIX then [0, 1023, 5, 790]
+	else if IMLAC then [0, 1023, 200, 1006.))
+	else if PRINTING or DISPLAY then
+	      [0, @i[char-width]*LINEL-1, 0, @i[char-height]*PLOTHEIGHT-1]
+	else [0, 1023, 0, 1023]
+@End[Example]
+E.g if PLOTMODE:[I,G], WINDOW is chosen to be [0, 1023, 5, 790]
+(because the GOULD condition is satisfied first).
+
+For PRINTING or DISPLAY terminals @i[char-width] and @i[char-height] are
+chosen to make WINDOW be close to that for the other devices.  The
+formulas used are:
+@Begin[Example]
+	@i[char-width]  = 1 + ENTIER(1023/LINEL)
+	@i[char-height] = ENTIER(0.5 + CHARRATIO*@i[char-width])
+@End[Example]
+
+@Section[Primitives called by PLOT2]
+@Label[prm!plot2]
+
+With the following functions practically no argument checking is
+done.  So make sure a function gets floating-point numbers or
+integers as it needs them.  In particular @i[xf], @i[xf1], @i[yf], @i[yf1]
+should all be floating point (unscaled) screen coordinates and
+@i[x], @i[x1], @i[y], @i[y1] should be integer screen coordinates after
+all scaling.  Some of the basic functions below come in 3
+versions.
+The one with the ?  in front is the most basic.  Its arguments are
+in screen raster coordinates.
+The middle one accepts floating point arguments as screen
+coordinates before the last stage of (linear) scaling is
+done.
+The last one with a 3 at the end takes x, y and z arguments and
+applies the transformation functions (set up with ?CALL\-INIT
+to them).
+@Begin[Example]
+?SETPOINT(@i[x],@i[y]);	absolute setpoint
+SETPOINT(@i[xf],@i[yf]);
+SETPOINT3(@i[xf],@i[yf],@i[zf]);
+
+?POINT(@i[x],@i[y]);	absolute point
+POINT(@i[xf],@i[yf]);
+POINT3(@i[xf],@i[yf],@i[zf]);
+
+?VECTOR(@i[x],@i[y]);	absolute vector
+VECTOR(@i[xf],@i[yf]);
+VECTOR3(@i[xf],@i[yf],@i[zf]);
+
+?LINE(@i[x1],@i[y1],@i[x],@i[y]);	line
+LINE(@i[xf1],@i[yf1],@i[xf],@i[yf]);
+LINE3(@i[xf1],@i[yf1],@i[zf1],@i[xf],@i[yf],@i[zf]);
+
+CHANGEDASH(@i[n]);	change to dashed line @i[n]
+PUSHDASH();		change to dashed line 0 temporally
+POPDASH();		undo PUSHDASH()
+
+?DRAWSYMBOL(@i[x],@i[y],@i[n]);	draw symbol n
+DRAWSYMBOL(@i[xf],@i[yf],@i[n]);
+DRAWSYMBOL3(@i[xf],@i[yf],@i[zf],@i[n]);
+
+?TEK\-X(@i[xf]);	converts unscaled screen coordinates to raster coords.
+?TEK\-Y(@i[yf]);
+
+?TEK\-XF(@i[x]);  converts raster coordinates to unscaled screen coords.
+?TEK\-YF(@i[y]);
+
+SCREENSIZE(@i[min-x],@i[min-y],@i[max-x],@i[max-y]);	sets the window in
+	which plotting is done.  If a vector goes outside this window
+	it will be clipped
+
+SCREENSIZE1(@i[min-x],@i[min-y],@i[max-x],@i[max-y]);	same as SCREENSIZE
+	except that the scale is left unchanged.  SCREENSIZE leaves
+	@i[min-xf] etc. unchanged
+SIZE(@i[min-xf],@i[min-yf],@i[max-xf],@i[max-yf]);	sets the scale so that
+	@i[min-xf],@i[min-xf] gets plotted at @i[min-x],@i[min-y] etc.
+
+?CALL\-X(@i[xf],@i[yf],@i[zf]);	applies transformation routines to give
+?CALL\-Y(@i[xf],@i[yf],@i[zf]);		unscaled screen coords.
+
+?CALL\-INIT(@i[xfun],@i[yfun]);	initialized transformation routines to
+	use @i[xfun] and @i[yfun]
+
+CLEAR();		clears the screen.
+ENTERGRAPH();		should be done before a sequence of plotting.
+	It will clear the screen if CLEAR is TRUE.
+EXITGRAPH();		should be done after a sequence of plotting.
+	If WAIT is TRUE it will wait for you to type in a char and
+	will return its ASCII value.  If HARDCOPY is also TRUE will
+	do a HARDCOPY().
+HARDCOPY();		sends out a hardcopy signal.
+
+GHPRINT(@i[l],@i[x],@i[y],@i[a]);	prints @i[l] at (raster) coordinates
+	@i[x],@i[y].  @i[a]=0 ==>left justify, @i[a]=1 ==> center, @i[a]=2 ==>
+	right justify.  Add 10 to @i[a] to get @i[l] underlined.  @i[l] may
+	be a list, in which case its element are concatenated together
+GVPRINT(@i[l],@i[x],@i[y],@i[a]);	prints @i[l].  @i[a]=1, 2, or 3 meaning
+	top justify, center, or bottom justify.
+@End[Example]
+
+@Section[What PLOT2 doesn't do]
+@Label[plot!no!do]
+
+Currently PLOT2 doesn't do all that you might ask of a plotting
+package.  Here is a list of these shortcomings.  Some of them may get
+fixed one of these days.
+
+Decent numbering of axes.  (Labelling of each tickmark, provision for
+major and minor tick intervals, labelling of the axes in such a
+way that the labels don't overlap, provision for a remote
+exponent, etc.)  This is provided by most other plotting
+packages.  The numbering in PLOT2 is something of an afterthought.
+The problem is that getting the numbers done right will need a
+fair amount of code which will take up precious room in your
+MACSYMA.  My suggestion to those who need beautiful numbering is
+to get PLOT2 to only plot the lines and curves and then to get a
+draftsman to put in the labels exactly where you want them.  Those
+who dislike the intrusion of a third party into the preparation
+of their plots should try using the EDIT function on a Tektronix.
+(I have successfully used this to prepare the figures for my
+thesis.  This required additional hacking to get the whole process
+interfaced with TXJ.)
+
+Tickmarks at log-spaced intervals on LOG plots.  (Currently the axes
+are treated exactly the same as for linear plots.)  This would be
+easier to put in.  In the meantime, it is fairly easy to write a
+routine to put them in "manually" using GRAPH2 (Sec V2-2.20).
+
+Axes on 3D plots.  These can be put in with some effort using GRAPH3D.
+(No hidden line removal will happen though.)
+
+Spline or polynomial interpolation of curves.
+
+Provision for having the symbols on curves being characters.  PLOT2
+used to do this.  But it was de-installed when the graphic
+symbols were introduced.  At present they can be put in with
+GHPRINT (Sec V2-2.20).
+
+Shading of arbitrary areas.
+
+3D plots on something other than a rectangular grid.  In theory this
+is possible using the transformation routines.  However these will
+only work for rather simple transformations.  (I suppose the
+restriction is that the space has to be topologically Euclidean
+in the region being plotted.)  Thus there is no convenient way to
+plot, for instance, the surface of a torus.
+
+Something goes wrong with the 3D transformation used by PLOT3D when
+the scales of the various directions are vastly different.  (E.g.,
+if the x range is 1.E-6 and the z range is 1.E6.)  If this happens
+you must prescale your points.  If enough people complain, I could
+put the scaling as an option in the defaults 3D transformation
+routines.
+
+@Section[Other examples]
+@Label[other!ex]
+
+Here is a collection of more complicated examples and some other
+information that people might need to get the most out of PLOT2.
+
+The following program plots the FFT (fast Fourier transform) of 2
+randomly placed delta functions (idea from some Tektronix
+literature).  This generates a quite pleasing sequence of
+pictures.
+@Begin[Example]
+  ARRAY([AR,AI],FLOAT,255);
+  LOAD('[FFT,FASL,DSK,SHARE]);
+  PL():=BLOCK([EQUALSCALE:TRUE, XAXIS:FALSE, YAXIS:FALSE],
+	      FILLARRAY(AR,'[0.]), FILLARRAY(AI,'[0.]),
+	      THRU 2 DO AR[RANDOM(256)]:1.,
+	      FFT(AR,AI),
+	      GRAPH2(ENDCONS(AR[0],LISTARRAY(AR)),
+		     ENDCONS(AI[0],LISTARRAY(AI))));
+  PL();	each call gives a different picture.
+@End[Example]
+Translation Lossage ******
+@comment<***  50>
+ ******
+
+Here's how to put characters on a plot.  We draw sine and cosine
+curves and label the points with S and C.
+@Begin[Example]
+  PRT(L,X,Y):=GHPRINT(L,?TEK\-X(X),?TEK\-Y(Y),1);
+  BLOCK([A:0.,B:EV(%PI/2,NUMER),RANGE:[]],
+	PLOT2([SIN(X), COS(X)], X, 0, %PI/2, FIRST),
+	ENTERGRAPH(),
+	CLEAR:WAIT:TRUE,
+	FOR I FROM 0 THRU PLOTNUM-1 DO 
+		RANGE:CONS(FLOAT(A+I*(B-A)/(PLOTNUM-1)),RANGE),
+	FOR X IN RANGE DO PRT("S", X, SIN(X)),
+	FOR X IN RANGE DO PRT("C", X, COS(X)),
+	EXITGRAPH());
+@End[Example]
+Translation Lossage ******
+@comment<***  51>
+ ******
+
+Compiling PLOT2 functions.  Because most of the main plotting
+functions evaluate their arguments specially, the compiler is
+inhibited from generating very efficient code for any function
+containing one of PLOT2's main functions.  Here is what to do if
+you want to get the extra speed of compiled code:  Don't write one
+big long function that does everything, initialization of
+parameters, the main calculation, and the plotting.  Rather try
+and split things up so that the time consuming stuff is off in
+its own functions.  The results of the calculation can either be
+communicated to the rest of the world via the value of the
+function or (when it is more convenient to have a lot of results
+calculated at once) via arrays.  An example might be to plot
+INTEGRATE(INTEGRATE(F(X,Y,A), X, 0, 1), Y, 0, 1) as a function of
+A.  Here you would want to just define a function P(A) which
+numerically evaluates this integral for a particular value of A
+(you could call the SHARE; routine ROMBERG for instance), and
+then do PLOT2(P(A),A,0,1);.  Here you could write P(A) is such a
+way that it compiles well because it doesn't involve any calls to
+plotting functions.  This approach is also preferable because it
+enhances the maintainability and readability of the program.
+Furthermore it is easy to switch it into "batch" mode where
+MACSYMA can be calculating and storing values overnight and you
+can then peruse the results graphically in the morning.
+
+Note on contour plotting:  CONTOURPLOT2 @Index[CONTOURPLOT2] sometimes gives what look like
+wrong results.  Here's a brief description of how the contouring
+works which will help you to understand these results.
+
+CONTOURPLOT2 calculates the value of your function on a
+rectangular grid of points.  These values alone are not enough to
+determine the topology of the contours.  So CONTOURPLOT2 inserts a
+new point in the center of each rectangular cell whose height is
+the mean of the 4 corners.  The surface to be contoured is then
+assumed to made up of triangles each of whose bases is one of the
+sides of the cell and whose vertices is the center of the cell.
+CONTOURPLOT2 then plots the exact contours for this surface.  This
+method guarantees that the contours have all the properties
+contours should have (no 2 contours of different heights cross, a
+contour of a given height cannot form a "Y", etc.); however, they
+are sometimes jagged near saddle points.  There is a variable DIAG
+(which is not maintained as a proper user-settable variable)
+which governs one detail of the contouring.  If it is TRUE (the
+default), then contours are drawn as described above.  In general
+the contours of the triangular surface change direction on both
+the edges and diagonals of the rectangular cells.  However if you
+do DIAG:FALSE; then only the intercepts of the contours with the
+edges of the cells are used in drawing the contours.  This
+sometimes gives "better" results.
+
+Stochastic plot:  There are times when you want masses of data plotted
+and the computation of the data is cheap.  Then it is better to
+use the screen as a storage medium, rather than sticking the data
+into arrays.  Here's how to get a plot generated by a stochastic
+map:
+@Begin[Example]
+  (TPI:EV(2*%PI,NUMER),K:0.);
+  INIT(K1):=BLOCK([XMIN:0., YMIN:0., XMAX:TPI, YMAX:TPI,
+		   EQUALSCALE:TRUE],
+		  K:K1,
+		  GRAPH2([], [], FALSE, FALSE, LABEL(K), FIRST),
+		  ENTERGRAPH(),
+		  CLEAR:WAIT:TRUE);
+  PLT(X0,Y0,N):=(DECLARE([TPI,K], SPECIAL),
+		 MODE_DECLARE([X0,Y0], FLOAT, N, FIXNUM),
+		 DRAWSYMBOL(X0,Y0,2),
+		 BLOCK([X:X0,Y:Y0],
+		       MODE_DECLARE([TPI,K,X,Y], FLOAT, I, FIXNUM),
+		       FOR I THRU N DO (Y:Y-K*SIN(X),
+				        Y:Y-TPI*FLOAT(ENTIER(Y/TPI)),
+				        X:X+Y,
+				        X:X-TPI*FLOAT(ENTIER(X/TPI)),
+				        POINT(X,Y))));
+  COMPILE(PLT);
+  (INIT(1.), PLT(TPI/2.,1.E-3,5000), EXITGRAPH());
+@End[Example]
+Translation Lossage ******
+@comment<***  52>
+ ******
+
+People sometimes complain that the numbers labelling the axes often
+appear inside plotting window and 2 numbers appear on top of each
+other because of this.  If this is a serious problem the following
+will solve it (although admittedly not very easily).  Suppose you
+want do PLOT2(X, X, 1, 2); then you could do:
+@Begin[Example]
+  BLOCK([YMAX, YMIN, XMAX, XMIN, DATEPLOT, NOPRINT, XAXIS, YAXIS,
+	 WINDOW, OWINDOW],
+	WINDOW:OWINDOW:[100,1023,100,790], allow 100 raster units for
+		writing in later
+	DATEPLOT:XAXIS:YAXIS:FALSE, turn off things that print
+	NOPRINT:TRUE,
+	PLOT2(X, X, 1, 2, FIRST), plot
+	YMAX:YMAX1, YMIN:YMIN1, XMAX:XMAX1, XMIN:XMIN1, save XMAX etc
+	BLOCK([XMIN, XMAX, YAXIS],  push XMIN etc
+	      XMIN:-1, XMAX:1,
+	      WINDOW:COPYLIST(OWINDOW), WINDOW[1]:0, WINDOW[2]:200,
+	      YAXIS:ALL,
+	      GRAPH2([], [])), plot Y axis
+	BLOCK([YMAX, YMIN, XAXIS],   do same for X axis
+	      YMAX:1, YMIN:-1,
+	      WINDOW:COPYLIST(OWINDOW), WINDOW[3]:0, WINDOW[4]:200,
+	      XAXIS:ALL,
+	      GRAPH2([], [], LAST)));
+@End[Example]
+Translation Lossage ******
+@comment<***  53>
+ ******

@@ -1,0 +1,495 @@
+.<<(c) copyright 1983 massachusetts institute of technology>>
+.chap (Pattern Matching and Related Functions,patternfun)
+
+.sec (Type Testing Functions,typtestfun,1)
+
+.function (ATOM,exp)
+is true if 2exp1 is atomic (i.e. a number or name) else FALSE.  Thus ATOM(5) is
+TRUE while ATOM(A[1]) and ATOM(SIN(X)) are FALSE.  (Assuming A[1] and X are unbound.)
+
+.endfunction
+
+.function(SUBVARP,exp) 
+is TRUE if 2exp1 is a subscripted variable, for example A[I].
+.endfunction
+
+
+.function (CONSTANTP,exp)
+is TRUE if 2exp1 is a constant (i.e. composed of numbers and %PI, %E,
+%I or any variables declared constant $see<macsyma!properties>  else
+FALSE.  Arithmetic functions whose arguments are constant as well as functions
+and arrays which are DECLAREd constant are also considered to be
+constants.
+
+.endfunction
+
+.function(SCALARP,exp)
+is TRUE if 2exp1 is a number, constant, or variable DECLAREd SCALAR
+$see<property!specification>, or composed entirely of numbers,
+constants, and such variables, but not containing matrices or lists.
+.endfunction
+
+.function (NONSCALARP,exp)
+is TRUE if 2exp1 is a non-scalar, i.e. it contains atoms declared as
+non-scalars $see<property!specification>, lists, or matrices.
+
+.endfunction
+
+.function (INTEGERP,exp)
+is TRUE if 2exp1 is an integer else FALSE.
+.endfunction
+
+.function(EVENP,exp)
+is TRUE if 2exp1 is an even integer.  FALSE is returned in all other cases.
+.endfunction
+
+.function(ODDP,exp)
+is TRUE if 2exp1 is an odd integer.  FALSE is returned in all other cases.
+.endfunction
+
+.function (FLOATNUMP,exp)
+is TRUE if 2exp1 is a floating point number else FALSE.
+
+.endfunction
+
+.function(BFLOATP,exp)
+is TRUE if 2exp1 is a bigfloat number else FALSE.
+
+.endfunction
+
+.function (NUMBERP,exp)
+is TRUE if 2exp1 is an integer, a rational number, a floating point number or a bigfloat
+else FALSE.
+
+.endfunction
+
+.function (RATNUMP,exp)
+is TRUE if 2exp1 is a rational number (includes integers) else FALSE.
+.endfunction
+
+.function(PRIMEP,exp)
+is TRUE if 2exp1 is a prime, FALSE if not.
+.endfunction
+
+.function (SYMBOLP,exp)
+returns TRUE if 2exp1 is a symbol or name, else
+FALSE.  i.e., in effect, SYMBOLP(X):=ATOM(X) AND NOT NUMBERP(X)$ .
+
+.endfunction
+
+.function (LISTP,exp)
+is TRUE if 2exp1 is a list else FALSE.
+
+.endfunction
+
+.function (MATRIXP,exp)
+is TRUE if 2exp1 is a matrix else FALSE.
+.endfunction
+
+.function (RATP,exp)
+is TRUE if 2exp1 is in CRE or extended CRE form else FALSE.
+
+.endfunction
+
+.function(TAYLORP,exp)
+is TRUE if and only if
+the 2exp1 is in Taylor series representation.
+.endfunction
+
+.function (FREEOF,|x1, x2, ..., exp|)
+yields TRUE if the 2xi1 do not occur in 2exp1 and FALSE otherwise.
+The x2i1 are atoms or they may be subscripted names, functions (e.g.
+SIN(X) ), or operators enclosed in "s.  If 2var1 is a "dummy
+variable" of 2exp1, then FREEOF(2var,exp1); will return TRUE.
+"dummy variables" are things like the index of a sum or product, the
+limit variable, and the definite integration variable.
+example: FREEOF(I,'SUM(F(I),I,0,N)); returns true.
+
+.example
+(C1) FREEOF(Y,SIN(X+2*Y));
+
+(D1)                    FALSE
+
+(C2) FREEOF(COS(Y),"*",SIN(Y)+COS(X));
+
+(D2)                          TRUE
+.end
+.endfunction
+.function(EQUAL,|expr1,expr2|)
+returns TRUE (or FALSE) if and only if expr1 and
+expr2 are equal (or not equal) for all possible values of their
+variables (as determined by RATSIMP).  Thus
+IS(EQUAL((X+1)**2,X**2+2*X+1)) returns TRUE whereas if X is unbound
+IS((X+1)**2=X**2+2*X+1) returns FALSE.
+If a determination
+can't be made with EQUAL then a simplified but equivalent form is
+returned whereas = always causes either TRUE or FALSE to be returned.
+All variables occurring in exp are presumed to be real valued.
+EV(exp,PRED) is equivalent to IS(exp).
+.example
+(C1) IS(X**2 >= 2*X-1);
+(D1)                               TRUE
+
+(C2) ASSUME(A>1);
+(D2)                               DONE
+
+(C3) IS(LOG(LOG(A+1)+1)>0 AND A^2+1>2*A);
+
+(D3)                               TRUE
+.end
+.endfunction
+
+.sec (General Pattern Matching Functions,patmatfun,1)
+
+The pattern matching functions permit the user to test expressions for
+combinations of syntactic and semantic patterns and to automatically have variables
+set to parts of expressions which fit the patterns.  This enables one to transform an
+expression as well as to see if it fits a pattern.
+
+It is also possible to add simplification rules which apply to user or system
+defined functions or operators.  In order to choose the particular rule which applies,
+a pattern match must usually be performed on the operands of the expression which is
+to be simplified.
+
+.function (MATCHDECLARE,|patternvar, predicate, ...|)
+associates a 2predicate1 with a 2pattern1 2variable1 so that the
+2variable1 will only match expressions for which the 2predicate1 is not
+FALSE.  (The matching is accomplished by one of the functions described below). 
+For example after MATCHDECLARE(Q,FREEOF(X,%E)) is executed, Q will match any
+expression not containing X or %E.  If the match succeeds then the variable is
+set to the matched expression.  The predicate (in this case FREEOF) is written
+without the last argument which should be the one against which the pattern
+variable is to be tested.  Note that the 2patternvar1 and the arguments to the
+2predicate1 are evaluated at the time the match is performed.
+
+
+The odd numbered argument may also be a list of pattern variables all of which are
+to have the associated predicate.  Any even number of arguments may be given.
+
+For pattern matching, predicates refer to functions which are either FALSE or not
+FALSE (any non FALSE value acts like TRUE).
+
+MATCHDECLARE(var,TRUE) will permit var to match any expression.
+
+.endfunction
+
+PRINTPROPS([2v1,v2,*...],MATCHDECLARE)
+$see<MACSYMA!properties> will display the matchdeclare properties of the variables 2v1,v2,*...
+
+
+.function (TELLSIMPAFTER,|pattern, replacement|)
+defines a 2replacement1 for 2pattern1 which the MACSYMA
+simplifier uses after it applies the built-in simplification rules.  The 2pattern1 may
+be anything but a single variable or a number.
+
+.endfunction
+
+.function (TELLSIMP,|pattern, replacement|)
+is similar to TELLSIMPAFTER but places new information
+before old so that it is applied before the built-in simplification rules.  
+TELLSIMP is used when it is important to modify
+the expression before the simplifier works on it, for instance if the
+simplifier "knows" something about the expression, but what it returns
+is not to your liking.  If the simplifier "knows" something about the
+main operator of the expression, but is simply not doing enough for
+you, you probably want to use TELLSIMPAFTER.
+The 2pattern1 may not be a sum, product, single variable, or number.
+
+$var<RULES/> is a list of names having simplification rules added to them by DEFRULE,
+DEFMATCH, TELLSIMP, or TELLSIMPAFTER.
+
+.example
+.begin group
+(C1) MATCHDECLARE([XX,A,B],TRUE);
+
+(D1)                                 DONE
+
+(C2) TELLSIMP(D[XX](A,B),B(XX)*DIFF(A(XX),X)-A(XX)*DIFF(B(XX),XX));
+(D2)                      [SUBVARRULE1, SIMPMQAPPLY]
+
+.end
+.begin fill indent 0,0
+1SUBVARRULE1 is the name assigned to the TELLSIMP rule from (C2).
+.end
+.begin group
+(C3) D[Z](X,Y);
+                           d                  d
+(D3)                 Y(Z) (-- (X(Z))) - X(Z) (-- (Y(Z)))
+                           dX                 dZ
+
+.end
+.end scon
+Another example of the use of TELLSIMP is shown in the following:
+.example
+(C4) 0^0;
+ 0
+0  has been generated
+.end
+.scon
+To override such default simplification, the user can use the following paradigm:
+.example
+(C5) BLOCK([SIMP],SIMP:FALSE,TELLSIMP(0^0,1));
+
+(D5)                       [^RULE1, SIMPEXPT]
+
+(C6) 0^0;
+(D6)                                1
+
+(C7) REMRULE("^","^RULE1");
+(D7)                                ^
+
+.end
+
+.endfunction
+
+.function (DEFMATCH,|progname, pattern, parm1, ..., parmn|)
+creates a function of n+1 arguments
+with the name 2progname1 which tests an expression to see if it can match a particular
+2pattern1.  The 2pattern1 is some expression containing pattern variables and
+2parameters1.  The 2parms1
+are given explicitly as arguments to DEFMATCH while the pattern variables (if
+supplied) were given implicitly in a previous MATCHDECLARE function.  The first
+argument to the created function 2progname1, is an expression to be matched against
+the "2pattern1" and the other n arguments are the actual variables occurring in the
+expression which are to take the place of dummy variables occurring in the
+"2pattern1".  Thus the parms in the DEFMATCH are like the dummy arguments to the
+SUBROUTINE statement in FORTRAN.  When the function is "called" the actual arguments are
+substituted.  For example:
+
+.example group
+(C1)  NONZEROANDFREEOF(X,E):=  IF E#0 AND FREEOF(X,E)
+            THEN TRUE ELSE FALSE$
+
+.begin fill indent 0,0
+(IS(E#0 AND FREEOF(X,E))1 is an equivalent function definition - see sec. $ref<MACSYMA!properties>.
+.end
+3
+(C2)  MATCHDECLARE(A,NONZEROANDFREEOF(X),B,FREEOF(X))$
+(C3)  DEFMATCH(LINEAR,A*X+B,X)$
+
+.end
+
+This has caused the function LINEAR(2exp,var11) to be defined.  It
+tests 2exp1 to see if it is of the form A*2var11+B where A and B
+do not contain 2var11 and A is not zero.  DEFMATCHed functions
+return (if the match is successful) a list of equations whose left
+sides are the pattern variables and parms and whose right sides are
+the expressions which the pattern variables and parameters matched.
+The pattern variables, but not the parameters, are set to the matched
+expressions.  If the match fails, the function returns FALSE.  Thus
+LINEAR(3*Z+(Y+1)*Z+Y**2,Z) would return [B=Y**2, A=Y+4, X=Z].  Any
+variables not declared as pattern variables in MATCHDECLARE or as
+parameters in DEFMATCH which occur in 2pattern1 will match only
+themselves so that if the third argument to the DEFMATCH in (C3) had
+been omitted, then LINEAR would only match expressions linear in X,
+not in any other variable.
+
+A pattern which contains no parameters or pattern variables returns
+TRUE if the match succeeds.
+
+.example
+(C1) MATCHDECLARE([A,F],TRUE)$
+
+(C2) CONSTINTERVAL(L,H):=CONSTANTP(H-L)$
+
+(C3) MATCHDECLARE(B,CONSTINTERVAL(A))$
+
+(C4) MATCHDECLARE(X,ATOM)$
+
+(C5) BLOCK(REMOVE(INTEGRATE,OUTATIVE),
+           DEFMATCH(CHECKLIMITS,'INTEGRATE(F,X,A,B)),
+           DECLARE(INTEGRATE,OUTATIVE))$
+
+(C6) 'INTEGRATE(SIN(T),T,X+%PI,X+2*%PI)$
+
+(C7) CHECKLIMITS(%);
+
+(D7)  [B = X + 2 %PI, A = X + %PI, X = T, F = SIN(T)]
+
+(C8) 'INTEGRATE(SIN(T),T,0,X)$
+
+(C9) CHECKLIMITS(%);
+
+(D9)                    FALSE
+
+.end
+
+.endfunction
+
+.function (DEFRULE,|rulename, pattern, replacement|)
+defines and names a 2replacement1 rule for the given p2attern1.
+If the rule named 2rulename1 is applied to an expression (by one of
+the APPLY functions below), every subexpression matching the
+2pattern1 will be replaced by the 2replacement1.  All variables in
+the 2replacement1 which have been assigned values by the pattern
+match are assigned those values in the 2replacement1 which is then
+simplified. The rules themselves can be treated as functions which
+will transform an expression by one operation of the pattern match and
+replacement.  If the pattern fails, the original expression is
+returned.
+
+.endfunction
+
+.function (APPLY1,|exp, rule1, ..., rulen|)
+repeatedly applies the first rule to 2exp1 until it fails, then
+repeatedly applies the same rule to all subexpressions of 2exp1,
+left-to-right, until the first rule has failed on all subexpressions.
+Call the result of transforming 2exp1 in this manner 2exp1'.  Then
+the second rule is applied in the same fashion starting at the top of
+2exp1'.  When the final rule fails on the final subexpression, the
+application is finished.
+
+.endfunction
+
+.function (APPLY2,|exp, rule1, ..., rulen|)
+differs from APPLY1 in that if the first rule fails on a given
+subexpression, then the second rule is repeatedly applied, etc.  Only
+if they all fail on a given subexpression is the whole set of rules
+repeatedly applied to the next subexpression.  If one of the rules
+succeeds, then the same subexpression is reprocessed, starting with
+the first rule.
+
+$var<MAXAPPLYDEPTH/10000> is the maximum depth to which APPLY1 and APPLY2 will delve.
+
+.endfunction
+
+.function (APPLYB1,|exp, rule1, ..., rulen|)
+is similar to APPLY1 but works from the "bottom up" instead of from
+the "top down".  That is, it processes the smallest subexpression of
+2exp1, then the next smallest, etc.
+
+$var<MAXAPPLYHEIGHT/10000> - is the maximum height to which APPLYB1
+will reach before giving up.
+
+.endfunction
+
+.sec (Pattern Matching for Rational Expressions,patmatrat,1)
+
+.function (LETSIMP,exp)
+will continually apply the substitution rules previously defined by
+the function LET (See below) until no further change is made to
+2exp1.  LETSIMP(2expr,rule_pkg_name1); is made, the rule package
+2rule_pkg_name1 is used for that LETSIMP command only, i.e.  the value
+of CURRENT_LET_RULE_PACKAGE is not changed.
+
+.endfunction
+
+.function (LET,|prod, repl, predname, arg1, arg2, ..., argn|)
+defines a substitution rule for LETSIMP such that 2prod1 gets
+replaced by 2repl1.  2prod1 is a product of positive or negative
+powers of the following types of terms:
+
+(1) 2Atoms1 which LETSIMP will search for literally unless previous
+to calling LETSIMP the MATCHDECLARE function is used to associate a
+predicate with the atom.  In this case LETSIMP will match the atom to
+any term of a product satisfying the predicate.
+
+(2) 2Kernels1 such as SIN(X), N!, F(X,Y), etc.  As with atoms above
+LETSIMP will look for a literal match unless MATCHDECLARE is used to
+associate a predicate with the argument of the kernel.
+
+A term to a positive power will only match a term having at least that
+power in the expression being LETSIMPed.  A term to a negative power
+on the other hand will only match a term with a power at least as
+negative.  In the case of negative powers in "product" the switch
+LETRAT must be set to TRUE (see below).
+
+If a predicate is included in the LET function followed by a list of
+arguments, a tentative match (i.e. one that would be accepted if the
+predicate were omitted) will be accepted only if
+2predname1(2arg11',...,2argn1') evaluates to TRUE where
+2argi1' is the value matched to 2argi1.  The 2argi1 may be the
+name of any atom or the argument of any kernel appearing in 2prod1.
+2repl1 may be any rational expression.  If any of the atoms or
+arguments from 2prod1 appear in 2repl1 the appropriate
+substitutions will be made.
+
+$var<LETRAT/FALSE> when FALSE, LETSIMP will simplify the numerator and
+denominator of 2expr1 independently and return the result.
+Substitutions such as N!/N goes to (N-1)! will fail.  To handle such
+situations LETRAT should be set to TRUE, then the numerator,
+denominator, and their quotient will be simplified in that order.
+
+These substitution functions allow you to work with several rule
+packages at once. Each rule package can contain any number of LETed
+rules and is referred to by a user supplied name.  To insert a rule
+into the rule package 2name1, do
+LET([2prod,repl,pred,arg11,...],2name1).  To apply the rules in
+rule package 2name1, do LETSIMP(2expr1, 2name1).  The function
+LETSIMP(2expr,name1,name21,...) is equivalent to doing
+LETSIMP(2expr,name11) followed by LETSIMP(%,2name21) etc.
+
+The rule package presently in use is called the
+$var<CURRENT_LET_RULE_PACKAGE/DEFAULT_LET_RULE_PACKAGE>.  The user may
+reset this variable to the name of any rule package previously defined
+via the LET command.  Whenever any of the functions comprising the let
+package are called with no package name the value of
+CURRENT_LET_RULE_PACKAGE is used.  If a call such as
+LETSIMP(expr,rule_pkg_name); is made, the rule package rule_pkg_name
+is used for that LETSIMP command only, i.e.  the value of
+CURRENT_LET_RULE_PACKAGE is not changed.
+
+There is a default rule package, $flag<DEFAULT_LET_RULE_PACKAGE> which is
+assumed when no other name is supplied to any of the functions.
+Whenever a LET includes a rulepackage name that rulepackage is used as the
+CURRENT_LET_RULE_PACKAGE.
+
+.endfunction
+
+.function (REMLET,|prod, name|)
+deletes the substitution rule, 2prod1 --> 2repl1, most recently
+defined by the LET function.  If 2name1 is supplied
+the rule is deleted from the rule package 2name1. REMLET() and
+REMLET(ALL) delete all substitution rules from the current rule
+package. If 2name1 is supplied, e.g. REMLET(ALL,2name1), the rule
+package, 2name1, is also deleted.
+
+If a substitution is to be changed using the same product, REMLET need
+not be called, just redefine the substitution using the same product
+(literally) with the LET function and the new replacement and/or
+predicate name.  Should REMLET(product) now be called the original
+substitution rule will be revived.
+
+.endfunction
+
+.function(LETRULES,name)
+displays the rule package 2name*.  LETRULES(); displays the rules in the
+current rule package (which is initially DEFAULT_LET_RULE_PACKAGE).
+
+.endfunction
+
+$var<LET_RULE_PACKAGES/[DEFAULT_LET_RULE_PACKAGE]> - The value of LET_RULE_PACKAGES is a list of all
+the user-defined let rule packages plus the special package
+DEFAULT_LET_RULE_PACKAGE.  DEFAULT_LET_RULE_PACKAGE is the name of the
+rule package used when one is not explicitly set by the user.
+
+.example
+(C1) MATCHDECLARE([A1,A2],TRUE)$
+
+(C2) ONELESS(X,Y):=IS(X,Y-1)$
+
+(C3) LET(A1*A2!,A1!,ONELESS,A2,A1);
+
+(D3)         A1 A2! --> A1! WHERE ONELESS(A2, A1)
+
+(C4) LETRAT:TRUE$
+
+(C5) LET(A1!/A1,(A1-1)!);
+
+.begin group
+                        A1!
+(D5)                    --- --> (A1 - 1)!
+                        A1
+.end
+
+(C6) LETSIMP(N*M!*(N-1)!/M);
+
+.begin group
+(D6) 			  (M - 1)! N!
+
+.end 
+.end
+
+.scon
+The user should be aware that simplification rules for differential operators can be specified using MACSYMA's pattern-matching commands.
+

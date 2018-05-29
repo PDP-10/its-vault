@@ -1,0 +1,742 @@
+1
+.chap (Introduction,intro)
+
+MACSYMA (Project 2MAC*'s 2SY*mbolic 2MA*nipulation System) is a large
+computer programming system written in LISP [Mn1] used for performing symbolic
+as well as numerical mathematical manipulations. It is being developed by the Mathlab
+Group of the MIT Laboratory for Computer Science (formerly Project MAC).
+
+
+     With MACSYMA the user can differentiate, integrate,
+take limits, solve systems of linear or polynomial equations, factor
+polynomials, expand functions in Laurent or Taylor series, solve differential equations (using direct or transform methods), compute Poisson series, plot curves, and manipulate matrices and tensors. MACSYMA has a language similar to ALGOL-60 to permit the user to write his own programs for transforming symbolic expressions.
+
+This manual is intended to be a complete reference for the principal features of
+MACSYMA as of the date shown on the cover.  It is not meant to be a tutorial nor
+does it discuss all of the issues involved in the efficient manipulation of
+algebraic expressions. New features under development are, for the most part,
+not mentioned.
+
+The user who is unacquainted with certain concepts of computer programming may
+find this document difficult on first reading.  The novice will benefit by first 
+reading the 2MACSYMA Primer1 [Mo5] and 2An Introduction to ITS for the MACSYMA User1 [Lew1]. This document serves as both a reference
+manual and as a user's manual.  When it is used as a user's manual, any sections not of interest
+should be skipped.  Sections which may be passed over on first reading are
+indicated by the symbol [] around the section number.
+
+It is recommended that this manual be re-read from time to time after the user
+has worked with MACSYMA so that certain parts which were unclear on prior
+readings will be better understood in the context of increased familiarity with
+the system.
+
+In a programming system such as MACSYMA there are often many ways to go
+about solving a given problem as well as many constraints and frustrations which
+must be dealt with.  Some ways will not succeed due to space or time constraints
+and others may work but may be unnecessarily slow.  Frequently a better
+understanding of the computer facilities will lead to a reformulation of the
+problem lending itself to a much improved solution. For some insight into the
+subject see [A1, Mo1, Mo2].
+.sec(Logging in and out,logging!in)
+
+MACSYMA is implemented on the DEC PDP-10 computer
+and on the Honeywell Multics System. The following section
+concerns the protocol for usage on the PDP-10 at MIT
+known as the MC (MACSYMA Consortium) machine.  Appendix I of
+this manual concerns the use of  MACSYMA on 
+Multics.
+
+A user may gain access to the MATHLAB PDP-10 computer
+at MIT by (1) finding a terminal connected to it or (2) finding one on which he
+can dial to it over public telephone lines or (3) logging into it over the ARPA
+network.  Once this is done the user should be communicating with the ITS time
+sharing system.  To login he should type a control-Z (depressing the control key
+while typing the letter Z) which loads in DDT [Lew1] (the top level system
+program).  Then he should type :LOGIN followed by a space and his user name. 
+(All system commands, i.e. those which begin with a colon, are terminated by a
+carriage return).  At this point the user can start up any of several system
+programs available (PEEK, TECO, etc.) by typing a : followed by the name of the
+program.  In particular :MACSYM loads in and begins execution of MACSYMA. After
+printing some descriptive information, including the version number, MACSYMA
+prints (C1) which means that it is ready to accept input from the user.  The
+entire sequence is shown below with the computer's output indented.  ^2char1 $$
+The user should note that there is a separate character, ^, which is often used for exponentiation (as in  line (C1) below).  Although the two characters print in the same way the user should have no difficulty distinguishing between them. In the example, the "^5" could not be "control-5" since the context strongly indicates exponentiation.* means the control key is to be held down while the next character 2char1 is typed. 
+.example 
+     MC ITS nnnn CONSOLE ii FREE $$nnnn represents a version number which changes from time to time;  ii identifies the console.*
+^Z $$Not printed on console*
+     MC ITS nnnn DDT mmm
+:LOGIN SMITH
+:MACSYM
+     THIS IS MACSYMA vvv
+
+     (C1) NROOTS(2*X^5-X+5,-4,8);
+
+     (D1)                1
+
+^Z
+     .IOT 1,1
+:LOGOUT
+     MC ITS nnnn CONSOLE ii FREE
+
+.end
+
+In line (C1) the user has typed a command which asks for the number of realroots
+between -4 and 8 of a quintic polynomial.  In line (D1) MACSYMA has printed the
+answer. The ^Z causes an exit from MACSYMA to DDT after which the system typed
+".IOT 1,1" (meaning that MACSYMA was waiting for input when interrupted).  Typing :LOGOUT causes
+the system to delete all the user's jobs (in this case MACSYMA was the only job)
+and to log him out of ITS.  When the user finishes he should always log the
+console out before he leaves.
+
+.sec(General Information, geninf)
+
+Command lines to MACSYMA are strings of characters representing mathematical expressions involving equations, arrays, functions, and programs.  Extra spaces, tabs, and all carriage returns are ignored (except when these occur in quoted strings).
+
+Command lines are terminated by ";" or "$" (dollar sign).  A  ";"  causes the command line to be evaluated and the result displayed.  The terminator  "$"  causes the command line to be evaluated but the result is not displayed.
+
+When typing command lines, depressing the "rubout" or "delete" key deletes the previous character (on hardcopy devices and displays which cannot  backspace, the deleted character is echoed).  By typing  "control-K" ,  the user obtains a copy of the current command line free of any echoed erasures.  The two characters  ??  delete the whole command line, and cause the line number to be redisplayed.
+
+The command (input) lines are indexed by labels of the form  "(Ci)" where i is incremented with each new command line typed by the user.  Similarly, the results of computations are also indexed.  There are two types of output lines.  The ordinary output line is indexed by a label of the form "(Di)" ; thus, usually the   ith  input-output pair will be  (Ci)-(Di).  Sometimes,however, a computation produces several intermediate results (for example, several solutions to an equation);  it is convenient to be able to reference these intermediate lines of output.  They are indexed by labels of the form  "(Ej)"  where j is incremented by one for each intermediate line.  For example, 
+
+.example
+.begin group
+
+(C1)  SOLVE(X^2 + B*X + C, X);
+.end
+.begin group
+				     2
+			       SQRT(B  - 4 C) + B
+(E1) 			 X = - ------------------
+				       2
+.end
+.begin group
+					 2
+			       B - SQRT(B  - 4 C)
+(E2) 			 X = - ------------------
+				       2
+.end
+(D2) 				 [E1, E2]
+.end
+
+Note that there is no line D1 since intermediate results were produced and thus the line index was incremented.  The general pattern of indexing is of the form
+.skip 1
+.once center
+Ci, Ei,Ei+1,...,Ej, Dj .
+
+A command line may refer to the results of any previously indexed line (even if it was not displayed) through the use of the line labels.  For example, the user might say SUBSTITUTE(7,B,E2); which would substitute 7 for B in the expression E2 above.   The immediately preceding D-line  is conveniently referenced by the symbol "%".  
+
+If the input line contains a syntax error, it will be reprinted and the location of the error will be indicated as closely as possible by a special string, ***$*** .
+
+From a C-line, the user in need of assistance can type:
+
+.function(SEND,|message|)
+which will send your 2message* to some MACSYMA system programmer who is logged in at that time.  If the 2message* consists of more than one word, then 2message* must begin and end with double quotes.
+
+.endfunction
+
+.function(DESCRIBE,command)
+takes as argument any MACSYMA 2command* and prints out the relevant portion of the MACSYMA manual.
+.endfunction
+
+.function(EXAMPLE,command)
+gives examples (in DEMO mode) of the use of selected functions in MACSYMA. 
+.endfunction
+
+
+.chap (Predefined Constants and Functions,predefined)
+
+.sec(Constants,predefined!constants)
+
+
+A number of common mathematical constants have special names in MACSYMA;
+
+.begin indent 4,0
+
+5$var<%E/>1 - the base of the natural logarithms.
+
+5$var<%PI/>1 - the transcendental number  .
+
+5$var<%I/>1 -  the square root of -1.
+
+5$var<INF/>1 -  real positive infinity.
+
+5$var<MINF/>1 -  real minus infinity.
+
+5$var<INFINITY/>1 -  complex infinity, i.e. an infinite magnitude of arbitrary phase angle.$$The infinity symbols have meaning only for certain functions, for example, LIMIT, INTEGRATE, SUM.*
+
+5$var<TRUE/>1 -  the Boolean constant, true. (T in LISP)
+
+5$var<FALSE/>1 -  the Boolean constant, false. (NIL in LISP)
+
+.end
+
+.sec(Functions,predefined!functions)
+
+All of the functions mentioned below take one argument (shown as X) unless
+stated otherwise.  The default values of MACSYMA variables which affect certain
+functions are given in brackets with the function.
+
+
+.subsec(Simple Functions,simple!functions)
+
+.function(ABS,X)
+ - absolute value of X
+
+
+$var<ABSBOXCHAR/!> is the character used to draw absolute value
+signs around expressions  which are more than a single line high.
+
+.endfunction
+
+.function(FLOAT,exp)
+ - converts integers, rational numbers and bigfloats in 2exp1 to floating point numbers.  
+.endfunction
+
+.function(BFLOAT,X)
+ - converts all numbers and functions of numbers to bigfloat numbers.
+Setting $var<FPPREC/16> to N, sets the bigfloat precision to N digits.
+.endfunction
+
+
+.function(ENTIER,X)
+ - largest integer 7<* X.
+.endfunction
+
+.function(SIGNUM,X)
+ - if X<0 then -1 else if X>0 then 1 else 0.  If X is not numeric then a
+simplified but equivalent form is returned. For example, SIGNUM(-X) gives -SIGNUM(X). 
+.endfunction
+
+.function(POLYSIGN,X)
+ - same as SIGNUM but always returns a numerical result by looking at
+the numerical factor of the highest degree term in X.
+.endfunction
+
+.function(MIN,|X1, X2, ...|)
+yields the minimum of its arguments  (or returns a simplified form if some of
+its arguments are non-numeric).
+.endfunction
+
+.function(MAX,|X1, X2, ...|)
+yields the maximum of its arguments  (or returns a simplified form if some of
+its arguments are non-numeric).
+
+.endfunction
+
+.subsec(Miscellaneous Functions,miscellaneous!functions)
+
+.function(SQRT,X)
+- the square root of X. It is represented internally by X^(1/2).
+Also see $fun<ROOTSCONTRACT> in  section $ref<evsimpfun>.
+.endfunction
+
+.begin narrow 4
+$var<RADPRODEXPAND/TRUE> - if TRUE will cause nth roots of factors of a
+product which are powers of n to be pulled outside of the radical, e.g.
+SQRT(16*X^2) will become 4*X only if RADPRODEXPAND is TRUE.
+.end
+
+.function(ISQRT,X)
+- takes one integer arg and returns the "integer sqrt" of its absolute value.
+.endfunction
+
+.function(EXP,X)
+- the exponential function.  It is represented internally as %E^X.
+
+.endfunction
+
+.begin narrow 4
+$var<DEMOIVRE/FALSE> - if TRUE will cause %E^[A+B*%I] to become
+%E^A*(COS(B)+%I*SIN(B)) if B is freeof %I.  A and B are not expanded.
+
+$var<%EMODE/TRUE> - when TRUE %E^[%PI*%I*X] will be simplified as follows:
+it will become COS(%PI*X)+%I*SIN(%PI*X) if X is an integer or a multiple of
+1/2, 1/3, 1/4, or 1/6 and thus will simplify further.  For other X it will
+become %E^[%PI*%I*Y] where Y is X-2*k for some integer k such that ABS(Y)<1.
+If %EMODE is FALSE no simplification of %E^[%PI*%I*X] will take place.
+
+$var<%ENUMER/FALSE> - when TRUE will cause %E to be converted into 2.718...
+whenever NUMER is TRUE.   The default is that this conversion will take place only if the exponent in %E^X evaluates to a number.
+.end
+
+.function(LOG,X)
+- the natural logarithm.
+.endfunction
+.begin narrow 4
+$var<LOGEXPAND/FALSE> - if TRUE will cause LOG(A/B) to become LOG(A)-LOG(B) and
+LOG(A*B) to become LOG(A)+LOG(B).  This does not effect LOG(A^B) which always
+becomes B*LOG(A).
+
+$var<LOGSIMP/TRUE> - if FALSE then no simplification of %E to a power containing LOG's
+is done.
+
+$var<LOGNUMER/FALSE> - if TRUE then negative floating point arguments to LOG will always be converted to their absolute  value before the log is taken.  If NUMER is also  TRUE, then  negative integer arguments to LOG will also be converted to their absolute value.
+.end
+.scon
+The $fun<LOGCONTRACT> command  $see<evsimpfun> "contracts" expressions containing LOG.
+
+.function(PLOG,X)
+- the principal branch of the complex-valued natural logarithm with
+-%PI < X 7<* +%PI .
+.endfunction
+
+.function(GLOG,X)
+- the generalized logarithm, i.e. all branches.  This is sometimes used by the definite integration package.
+.endfunction
+
+.function(BINOMIAL,|X, Y|)
+- the binomial coefficient X*(X-1)*...*(X-Y+1)/Y!. If X and Y are integers, the binomial coefficient is
+actually computed. If Y or X-Y is an integer, the binomial coefficient is
+simplified to a polynomial.
+
+.endfunction
+
+.function(RANDOM,X)
+ - returns a random integer between 0 and X-1.  If no argument is
+given then a random integer between -2^[35] and 2^[35]-1 is returned.  If X is FALSE
+then the random sequence is restarted from the beginning.
+.endfunction
+
+.function(FIB,X)
+ - the Xth Fibonacci number with FIB(0)=0, FIB(1)=1, and FIB(-N)=(-1)^[(N+1)]*FIB(N).  PREVFIB is FIB(X-1), the Fibonacci number preceding the last one computed.
+.endfunction
+
+.function(GENFACT,|X, Y, Z|)
+is the generalized factorial of X which is: X*(X-Z)*(X-2*Z)*...*(X-(Y-1)*Z). 
+Thus, for integral X, GENFACT(X,X,1)=X! and GENFACT(X,X/2,2)=X!!
+
+.endfunction
+
+.function(GAMMA,X)
+- the gamma function. GAMMA(I)=(I-1)!  for I a positive integer.
+
+.endfunction
+
+.begin narrow 4
+$var<GAMMALIM/1000000> controls simplification of the gamma function for
+integral and rational number arguments.  If the absolute value of the argument
+is not greater than GAMMALIM, then simplification will occur.  Note that the
+FACTLIM switch $see<mathematical!operators> controls simplification of the
+result of GAMMA of an integer argument as well.
+.end
+
+.function(BETA,|X, Y|)
+- same as GAMMA(X)*GAMMA(Y)/GAMMA(X+Y)
+
+.endfunction
+
+.function(ERF,X)
+ - the error function, whose derivative is:  2*EXP(-X^2)/SQRT(%PI).
+.endfunction
+
+.function(EULER,X)
+ - gives the Xth Euler number for integer X.
+.endfunction
+
+.function(BERN,X)
+- gives the Xth Bernoulli number for integer X.
+
+.endfunction
+
+.begin narrow 4
+$var<ZEROBERN/TRUE> if set to FALSE excludes the zero BERNOULLI numbers.
+.end
+
+.function(ZETA,X)
+ - gives the Riemann zeta function for certain integer values of X.
+.endfunction
+
+.function(PSI,X)
+ - derivative of LOG(GAMMA(X)).
+.endfunction
+
+.subsec(Trigonometric Functions,trigonometric!functions)
+
+
+This section outlines the way in which trigonometric functions are called in MACSYMA;  for more information on the simplification of trigonometric functions and expressions, the user should read Section 2 of the MACSYMA Primer [Mo5].
+
+.begin turn on "_"
+_2Circular Functions*
+
+.skip 1
+$fun<SIN>, $fun<COS>, $fun<TAN>, $fun<COT>, $fun<SEC>, $fun<CSC>
+
+_2Inverse Circular Functions*
+.skip 1
+$fun<ASIN>, $fun<ACOS> , $fun<ATAN> , $fun<ACOT> , $fun<ASEC> , $fun<ACSC>
+
+
+.function(ATAN2,|Y,X|)
+- yields the value of ATAN(Y/X) in the interval -%PI/2 to %PI/2.
+
+.endfunction
+
+_2Hyperbolic Functions*
+.skip 1
+$fun<SINH> , $fun<COSH>  , $fun<TANH>  , $fun<COTH>, $fun<SECH>   , $fun<CSCH>
+
+
+_2Inverse Hyperbolic Functions*
+.skip 1
+$fun<ASINH> , $fun<ACOSH> ,$fun<ATANH> , $fun<ACOTH> , $fun<ASECH>, $fun<ACSCH>
+.end
+
+
+$var<TRIGSIGN/TRUE> - if TRUE permits simplification of negative arguments to
+trigonometric functions. E.g., SIN(-X) will become -SIN(X) only if TRIGSIGN is
+TRUE.
+
+$var<EXPONENTIALIZE/FALSE> - if TRUE will cause all circular and hyperbolic
+functions to be converted to exponential form.
+
+
+$var<LOGARC/FALSE> - if TRUE will cause the inverse circular and hyperbolic functions to be converted into logarithmic form
+
+.if lines < 7 then next page
+
+.example once center
+2Examples *
+.begin group
+
+(C1) SIN(%PI/12)+TAN(%PI/6);
+
+
+                                  %PI       1
+(D1)                          SIN(---) + -------
+                                   12    SQRT(3)
+.end
+(C2) EV(%,NUMER);
+(D2)          0.8361693
+
+(C3) BETA(1/2,2/5);
+
+.begin group
+                             2
+             SQRT(%PI) GAMMA(-)
+                             5
+(D3)         ------------------
+                       9
+                 GAMMA(--)
+                       10
+.end
+
+(C4) EV(%,NUMER);
+(D4)             3.6790924
+
+(C5) DIFF(ATANH(SQRT(X)),X);
+
+.begin group
+                      1
+(D5)          -----------------
+              2 SQRT(X) (1 - X)
+.end
+
+(C6) SOLVE(X^2+10^5*X+1);
+SOLUTION
+
+(E6)                 X =  - SQRT(2499999999) - 50000
+
+(E7)                  X = SQRT(2499999999) - 50000
+
+(D7)                            [E6, E7]
+
+(C8) E7,NUMER;
+(D8)                        X = 2.9296875E-3
+
+(C9) BFLOAT(E7);
+(D9)                   X = - .9999999747378752B-5
+
+(C10) FPPREC:25$
+
+(C11) SIN(.5B0);
+(D11)                .4794255386042030002732879B0
+
+.end
+
+The trigonometric simplification routines  use declared information in some simple cases.  Declarations about variables are used as follows, e.g.
+
+.example
+
+(C5) DECLARE(J, INTEGER, E, EVEN, O, ODD)$
+
+(C6) SIN(X + (J*E + 1/2)*%PI)$
+
+(D6) 			  COS(X)
+
+(C7) SIN(X + (O + 1/2)*%PI);
+
+
+(D7) 			 - COS(X)
+
+.end
+
+
+
+.if lines < 10 then next page
+
+.sec(Complex Expressions,complex!expressions)
+
+A complex expression is specified in MACSYMA by adding the real part of the
+expression to %I times the imaginary part.  Thus the roots of the equation
+.bcon
+X^2-4*X+13=0 are 2+3*%I and 2-3*%I.
+
+.example once center
+2Examples*
+
+(C1) (SQRT(-4)+SQRT(2.25))^2;
+
+.begin group
+                        2
+(D1)        (2 %I + 1.5)
+.end
+
+(C2) EXPAND(%);
+
+           6.0 %I - 1.75
+
+(C3) EXPAND(SQRT(2*%I));
+
+(D3)           %I + 1
+
+.end
+
+Note that simplification of products of complex expressions can be effected by
+expanding the product.  Simplification of quotients, roots, and other functions of
+complex expressions can usually be accomplished by using the $fun<REALPART>, $fun<IMAGPART>, $fun<RECTFORM>, $fun<POLARFORM>, and $fun<ABS> functions $see<extracting!expressions>.
+
+.if partial then start
+.count chapter from 6 printing "1"
+.count section in chapter printing "!.1"
+.count subsection in section printing "!.1"
+.end
+
+.chap (MACSYMA Functions and Variables,Mfunctions)
+
+Following is a list of all MACSYMA functions divided into functional classes.
+MACSYMA variables which affect the operation of some functions are described under the
+appropriate function with their default value in brackets.  These are sometimes
+referred to as MACSYMA options.
+
+.sec (General Purpose Functions,general!functions)
+
+.subsec (Evaluation and Simplification Functions,evsimpfun)
+
+.function(EV,|exp, arg1, ..., argn|)
+is one of MACSYMA's most powerful and versatile commands. It evaluates the expression 2exp1 in the environment
+specified by the 2argi1.  This is done in steps, as follows:
+
+.skip 1
+(1) First the environment is set up by scanning the 2argi1 which may be as follows:
+
+$var<SIMP/> causes 2exp1 to be simplified regardless of the setting of the switch SIMP
+which inhibits simplification if FALSE.
+
+$var<NOEVAL/> supresses the evaluation phase of EV (see step (4) below).  This is
+useful in conjunction with the other switches and in causing 2exp1 to be
+resimplified without being reevaluated.
+
+$var<EVAL/> causes an extra post-evaluation of 2exp1 to occur. (See step (5) below.)
+
+$var<INFEVAL/> leads to an "infinite evaluation" mode.  EV repeatedly evaluates an expression until it stops changing.    To prevent a variable, say X, from being evaluated away in this mode, simply include X='X as an argument to EV.   Of course expressions such as EV(X,X=X+1,INFEVAL); will generate an infinite loop.  2CAVEAT EVALUATOR*.
+
+$var<EXPAND/> causes expansion.
+
+EXPAND(2m,n1) causes expansion, setting the values of MAXPOSEX and MAXNEGEX to
+2m1 and 2n1 respectively. (see the EXPAND function below)
+
+$var<DETOUT/> causes any matrix inverses computed in 2exp1 to have their
+determinant kept outside of the inverse rather than dividing through each
+element.
+
+$var<DIFF/> causes all differentiations indicated in 2exp1 to be performed.
+(see the DIFF function below.)
+
+$var<DERIVLIST/>(2var11,...,2vark1) causes only differentiations with respect to
+the indicated variables.
+
+$var<FLOAT/> causes non-integral rational numbers to be converted to floating point.
+
+$var<NUMER/> causes some mathematical functions (including exponentiation) with numerical
+arguments to be evaluated in floating point $see<Simple!Functions>. It causes variables in 2exp1 which have been given numervals $see<uspropfun> to be replaced by their values.  It also sets the FLOAT switch on.
+
+$var<PRED/> causes predicates (expressions which evaluate to TRUE or FALSE)
+to be evaluated.
+
+
+E where E is an atom declared to be an $var<EVFLAG/> $see<MACSYMA!properties> causes E to be
+bound to TRUE during the evaluation of 2exp1.
+
+2V:expression* (or alternatively 2V=expression*) causes 2V* to be bound to
+the value of 2expression* during the evaluation of 2exp*.  Note that if 2V*
+is a MACSYMA option, then 2expression* is used for its value during the evaluation
+of 2exp*.  If more than one argument to EV is of this type then the binding is done
+in parallel.  If 2V* is a non-atomic expression then a substitution rather than a
+binding is performed.
+
+E where E is a function name declared to be an EVFUN $see<property!specification>  causes E to be applied to 2exp*.
+
+Any other function names (e.g. SUM) cause evaluation of occurrences of those
+names in 2exp* as though they were verbs $see<evaluation>.
+
+In addition a function occurring in 2exp1 (say F(args)) may be defined locally for
+the purpose of this evaluation of 2exp1 by giving F(args):=body as an argument to EV.
+
+If an atom not mentioned above or a subscripted variable or subscripted expression
+was given as an argument, it is evaluated and if the result is an equation or
+assignment then the indicated binding or substitution is performed.  If the result is
+a list then the members of the list are treated as if they were additional arguments
+given to EV. This permits a list of equations to be given (e.g. [X=1, Y=A**2] ) or a
+list of names of equations (e.g. [E1,E2] where E1 and E2 are equations) such as that
+returned by $fun<SOLVE>. $see<SOLVE>
+
+The 2argi1 of EV may be given in any order with the exception of substitution
+equations which are handled in sequence, left to right, and EVFUNS which are composed,
+e.g. EV(2exp1,RATSIMP,REALPART) is handled as REALPART(RATSIMP(2exp1)).
+
+The SIMP, NUMER, FLOAT, and PRED switches may also be set locally in a block, or
+globally at the "top level" in MACSYMA so that they will remain in effect until being
+reset.
+
+If 2exp1 is in CRE form $see<rep> then EV will return a result in CRE form provided
+the NUMER and FLOAT switches are both FALSE.
+
+(2) During step (1), a list is made of the non-subscripted variables appearing on the
+left side of equations in the 2argi1 or in the value of some 2argi1 if the value
+is an equation.
+The variables (including subscripted variables) in the expression 2exp1 are
+replaced by their
+global values, except for those appearing in this list.  Usually, 2exp1 is just a
+label or % (as in (C2) below), so this step simply retrieves the expression named by the
+label, so that EV may work on it.
+
+(3) If any substitutions are indicated by the 2argi1, they are carried out now.
+.begin turn on ""
+(4) The resulting expression is then re-evaluated (unless one of the 2argi1 was NOEVAL) and simplified according the the
+2argi1.  Note that any function calls in 2exp1 will be
+carried out after the variables in it are evaluated and that
+EV(F(X)) thus may behave like F(EV(X)).
+.end
+(5) If one of the 2argi1 was EVAL, steps (3) and (4) are repeated.
+.example
+.begin group
+.once center
+2Examples1
+
+(C1) SIN(X)+COS(Y)+(W+1)**2+'DIFF(SIN(W),W);
+.end
+.begin group
+                        D                 2
+(D1)  COS(Y) + SIN(X) + --SIN(W) + (W + 1)
+                        DW
+.end
+(C2) EV(%,SIN,EXPAND,DIFF,X=2,Y=1);
+.begin group
+                    2
+(D2)      COS(W) + W  + 2 W + COS(1) + 1.90929742
+.end
+.end
+
+An alternate "top level" syntax has been provided for EV, whereby one may just
+type in its arguments, without the EV().  That is, one may write simply
+2exp,arg11,...,2argn1. (This is not permitted as part of another expression, i.e. in functions, blocks, etc.).  2exp,RESCAN1 is equivalent to EV(2exp1). 
+
+
+.example
+(C4) X+Y,X:A+Y,Y:2;
+(D4)                Y + A + 2
+
+1(Notice the parallel binding process)*
+
+(C5) 2*X-3*Y=3$
+
+(C6) -3*X+2*Y=-4$
+
+(C7) SOLVE([D5,D6]);
+SOLUTION
+.begin group
+                             1
+(E7)                  Y =  - -
+                             5
+.end
+.begin group
+                          6
+(E8)                  X = -
+                          5
+.end
+
+(D8)               [E7, E8]
+
+(C9) D6,D8;
+(D9)               - 4 =  - 4
+
+(C10) X+1/X > GAMMA(1/2);
+
+.begin group
+                    1
+(D10)           X + - > SQRT(%PI)
+                    X
+.end
+
+(C11) %,NUMER,X=1/2;
+
+(D11)            2.5 > 1.7724539
+
+(C12) %,PRED;
+(D12)                  TRUE
+
+.end
+.endfunction
+
+
+.function(UNKNOWN,exp)
+returns  TRUE   iff  2exp*  contains an operator or function not known to the built-in simplifier.
+.endfunction
+
+.function(EXPAND,exp)
+causes products of sums and exponentiated sums to be multiplied out,
+numerators of rational expressions which are sums to be split into their respective
+terms, and multiplication (commutative and non-commutative) to be distributed over
+addition at all levels of 2exp1.
+For polynomials one may wish use RATEXPAND which uses a more efficient algorithm (see below).
+
+
+Terms in 2exp1 whose exponent is less than $var<MAXNEGEX/1000> or greater than $var<MAXPOSEX/1000> will not be EXPANDed.  However,
+
+EXPAND(2exp,p,n1) expands 2exp1, using 2p1 for MAXPOSEX and 2n1 for MAXNEGEX.  This helps the user control how much and what kinds of expansion are to take place.
+
+$var<EXPON/0> - the exponent of the largest negative power which is automatically
+expanded (independent of calls to EXPAND).  For example if EXPON is 4 then (X+1)**(-5)
+will not be automatically expanded.
+
+$var<EXPOP/0> - the highest positive exponent which is automatically expanded.  Thus
+(X+1)**3, when typed, will be automatically expanded only if EXPOP is greater than or
+equal to 3.  If it is desired to have (X+1)**N expanded where N is greater than EXPOP
+then executing EXPAND((X+1)**N) will work only if MAXPOSEX is not less than N.
+
+
+
+.example
+(C1) (1/(X+Y)**4-3/(Y+Z)**3)**2;
+
+.begin group
+                              1          3     2
+(D1)                      (-------- - --------)
+                                  4          3
+                           (Y + X)    (Z + Y)
+.end
+
+(C2) EXPAND(%,2,0);
+
+.begin group
+                           6              9          1
+(D2)             - ----------------- + -------- + --------
+                          4        3          6          8
+                   (Y + X)  (Z + Y)    (Z + Y)    (Y + X)
+.end
+
+(C3) EXPAND(A.(B+C.(D+E)+F));
+
+(D3)            A . F + A . (C . E) + A . (C . D) + A . B
+
+.end
+.endfunction

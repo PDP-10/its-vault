@@ -1,0 +1,386 @@
+1
+.chap (Introduction,intro)
+
+MACSYMA (Project 2MAC*'s 2SY*mbolic 2MA*nipulation System) is a
+large computer programming system written in LISP [Mn1] used for
+performing symbolic as well as numerical mathematical manipulations.
+It is being developed by the Mathlab Group of the MIT Laboratory for
+Computer Science (formerly Project MAC).
+
+
+     With MACSYMA the user can differentiate, integrate, take limits,
+solve systems of linear or polynomial equations, factor polynomials,
+expand functions in Laurent or Taylor series, solve differential
+equations (using direct or transform methods), compute Poisson series,
+plot curves, and manipulate matrices and tensors. MACSYMA has a
+language similar to ALGOL-60 to permit the user to write his own
+programs for transforming symbolic expressions.
+
+This manual is intended to be a complete reference for the principal
+features of MACSYMA as of the date shown on the cover.  It is not
+meant to be a tutorial nor does it discuss all of the issues involved
+in the efficient manipulation of algebraic expressions. New features
+under development are, for the most part, not mentioned.
+
+The user who is unacquainted with certain concepts of computer
+programming may find this document difficult on first reading.  The
+novice will benefit by first reading the 2MACSYMA Primer1 [Mo5] and
+2An Introduction to ITS for the MACSYMA User1 [Lew1]. This document
+serves as both a reference manual and as a user's manual.  When it is
+used as a user's manual, any sections not of interest should be
+skipped.  Sections which may be passed over on first reading are
+indicated by the symbol [] around the section number.
+
+It is recommended that this manual be re-read from time to time after
+the user has worked with MACSYMA so that certain parts which were
+unclear on prior readings will be better understood in the context of
+increased familiarity with the system.
+
+In a programming system such as MACSYMA there are often many ways to
+go about solving a given problem as well as many constraints and
+frustrations which must be dealt with.  Some ways will not succeed due
+to space or time constraints and others may work but may be
+unnecessarily slow.  Frequently a better understanding of the computer
+facilities will lead to a reformulation of the problem lending itself
+to a much improved solution. For some insight into the subject see
+[A1, Mo1, Mo2].
+.skip to column 1;
+.sec(Logging in and out,logging!in)
+
+.tty_"Good grief, is this for real?... You gotta be crazy!"
+
+MACSYMA is implemented on the MIT-MC machine, a DEC PDP-10 computer
+which uses the ITS operating system, on Honeywell 6180 computers using
+the Multics operating system, on DEC-20 systems, and on DEC-Vaxes. The
+following section concerns the protocol for usage on the MIT-MC
+(MACSYMA Consortium) machine.  Appendix I of this manual concerns the
+use of MACSYMA on Multics.  Appendix II of this manual concerns the
+use of VAXIMA, the Berkeley-Unix VAX version.
+
+A user may gain access to the MIT-MC machine by (1) finding a terminal
+connected to it or (2) finding one on which he can dial to it over
+public telephone lines or (3) logging into it over the ARPA network.
+Once this is done the user should be communicating with the ITS time
+sharing system.  To login he should type a control-Z (depressing the
+control key while typing the letter Z) which loads in DDT [Lew1] (the
+top level system program).  Then he should type :LOGIN followed by a
+space and his user name.  (All system commands, i.e. those which begin
+with a colon, are terminated by a carriage return).  At this point the
+user can start up any of several system programs available (PEEK,
+TECO, etc.) by typing a : followed by the name of the program and a
+carriage return.  In
+particular :MACSYM loads in and begins execution of MACSYMA. After
+printing some descriptive information, including the version number,
+MACSYMA prints (C1) which means that it is ready to accept input from
+the user.  The entire sequence is shown below with the computer's
+output indented.  ^2char1 $$ The user should note that there is a
+separate character, ^, which is often used for exponentiation (as in
+line (C1) below).  Although the two characters print in the same way
+the user should have no difficulty distinguishing between them. In the
+example, the "^5" could not be "control-5" since the context strongly
+indicates exponentiation.* means the control key is to be held down
+while the next character 2char1 is typed.
+.example 
+     MC ITS nnnn CONSOLE ii FREE $$nnnn represents a version number which changes from time to time;  ii identifies the console.*
+^Z $$Not printed on console*
+     MC ITS nnnn DDT mmm
+:LOGIN SMITH
+     Password:
+     [OK]
+:MACSYM
+     This is MACSYMA vvv
+
+     FIXVVV N DSK MACSYM being loaded
+     Loading done$$The "fix file" is the place for temporary fixes for MACSYMA between versions.  We pride ourselves on rapid turnaround on bug-fixes, so it is actually rare to see a MACSYMA which does not have a fix file.*
+
+     (C1) NROOTS(2*X^5-X+5,-4,8);
+
+     (D1)                1
+
+^Z
+     [DDT]
+:LOGOUT
+     MC ITS nnnn CONSOLE ii FREE
+
+.end
+
+In line (C1) the user has typed a command which asks for the number of
+realroots between -4 and 8 of a quintic polynomial.  In line (D1)
+MACSYMA has printed the answer. The ^Z causes an exit from MACSYMA to
+DDT after which the system typed "[DDT]" to indicate that the user is
+being returned to monitor level.  Typing :LOGOUT causes the system to
+delete all the user's jobs (in this case MACSYMA was the only job) and
+to log him out of ITS.  When the user finishes he should always log
+the console out before he leaves.
+
+.sec(General Information, geninf)
+
+Command lines to MACSYMA are strings of characters representing
+mathematical expressions involving equations, arrays, functions, and
+programs.  Extra spaces, tabs, and carriage returns are ignored
+(except when these occur in quoted strings, i.e. within "double quotes",
+also known as "quotation marks".  Such "quoted strings" are more or
+less like Basic Print statements and are taken literally).
+
+Command lines are terminated by ";" (semi-colon) or "$" (dollar sign).  A ";"
+causes the command line to be evaluated and the result displayed.  The
+terminator "$" causes the command line to be evaluated but the result
+is not displayed.  Usually $ is used for inputting assignment statements,
+where you know what the "output" will be, or for very complicated results which
+you do not want to see but just want to compute with later.  Semi-colon (";")
+is the usual command line terminator.
+
+When typing command lines, depressing the "rubout" or "delete" key
+deletes the previous character (on hardcopy devices and displays which
+cannot backspace, the deleted character is echoed).  By typing
+"control-K" , a redisplay of the line, with the "erasures" done, will
+be printed.  This helps you keep track of where you are and what you've
+really typed.  The two characters ??  delete the whole
+command line, and cause the line number to be redisplayed.
+
+The command (input) lines are indexed by labels of the form "(Ci)"
+where i is incremented with each new command line typed by the user.
+Similarly, the results of computations are also indexed.  There are
+two types of output lines.  The ordinary output line is indexed by a
+label of the form "(Di)" ; thus, usually the ith input-output pair
+will be (Ci)-(Di).  Sometimes, however, a computation produces several
+intermediate results (for example, several solutions to an equation);
+it is convenient to be able to reference these intermediate lines of
+output.  They are indexed by labels of the form "(Ej)" where j is
+incremented by one for each intermediate line.  For example,
+
+.example
+(C1) SOLVE(X^2 + B*X + C, X);
+.begin group
+
+                          2                             2
+                    SQRT(B  - 4 C) + B        B - SQRT(B  - 4 C)
+(D2)         [X = - ------------------, X = - ------------------]
+                            2                         2
+
+.end
+.end continue
+is the "normal" way this would come out, but:
+.example
+(C3) PROGRAMMODE:FALSE$
+
+(C4) SOLVE(X^2 + B*X + C, X);
+Solution:
+
+				       2
+				 SQRT(B  - 4 C) + B
+(E4)                       X = - ------------------
+					 2
+
+					   2
+				 B - SQRT(B  - 4 C)
+(E5)                       X = - ------------------
+					 2
+(D5)                                 [E4, E5]
+
+Note that there is no line D4 since intermediate results were produced
+and thus the line index was incremented.  The general pattern of
+indexing is of the form
+.skip 1
+.once center
+Ci, Ei,Ei+1,...,Ej, Dj .
+.end
+
+A command line may refer to the results of any previously indexed line
+(even if it was not displayed) through the use of the line labels.
+For example, the user might say SUBSTITUTE(7,B,E2); which would
+substitute 7 for B in the expression E2 above.  The immediately
+preceding D-line is conveniently referenced by the symbol "%".
+
+If the input line contains a syntax error, it will be reprinted and
+the location of the error will be indicated as closely as possible by
+a special string, ***$*** .
+
+From a C-line, the user in need of assistance can type:
+
+.function(SEND,|"message"|)
+which will send your 2message* to all MACSYMA system programmers who
+are logged in at that time.  If no appropriate recipient is available,
+the message will be sent to MACSYMA's mail file where it will be seen
+and will be answered.  E.g.  SEND("Help!"); .  2message1 may be more
+than one line long and must be enclosed in double quotes.  SEND();
+prints out an explanation of how to use it.
+.endfunction
+
+.function(SEND,|name,"message"|)
+will send your message to the person whose user 2name* you include.
+.endfunction
+
+.function(BUG,|"message"|)
+sends a bug note to MACSYMA.  The syntax is the same as for SEND.  BUG();
+gives information about its usage.
+.endfunction
+
+.function(MAIL,|"message"|)
+sends mail to MACSYMA using the syntax of SEND.  Like SEND it may take an
+optional first argument of a person's user name.   MAIL(); gives information
+about its usage.
+.endfunction
+
+The SEND, MAIL, and BUG commands will also accept expressions as arguments
+in messages, so that
+.example
+BUG(C1,"Returns",D1,"Is this right?");
+.end skip continue
+will display the value of line C1 in the message, print  "Returns" as
+text on a line by itself, then display D1's value, and finally print
+"Is this right?" on a line by itself.  This saves retyping of long expressions
+to send to MACSYMA mail or as bug messages.
+
+For information, there are several useful commands:
+
+.function(APROPOS,string)
+takes a character string as argument and looks at all
+the MACSYMA names for ones with that string appearing anywhere within
+them.  Thus, APROPOS(EXP); will return a long list of all the flags
+and functions which have EXP as part of their names, such as EXPAND,
+EXP, EXPONENTIALIZE.  Thus if you can only remember part of the name
+of something you can use this command to find the rest of the name.
+Similarily, you locate a command or commands dealing with a particular
+type of expression by using a string which would be mnemonic for that
+operation.
+.endfunction
+
+.function(DESCRIBE,entity)
+takes as argument any MACSYMA 2command, option*, or 2concept* and
+prints out a description of that entity.
+.endfunction
+
+.function(EXAMPLE,command)
+gives examples (in DEMO mode) of the use of selected functions in MACSYMA. 
+.endfunction
+
+.function(PRIMER)
+provides an on-line primer for the novice including an introduction to
+MACSYMA syntax, assignment and function definition, and the
+simplification commands.  The primer is also available from DDT level
+with the command :TEACHMACSYMA.
+.endfunction
+
+.sec(Levels of Control,control!levels)
+
+When :MACSYM is typed,  a LISP system extended with MACSYMA programs is loaded
+into main memory from auxiliary storage. Special top level programs read in, evaluate, simplify, and display the user's expressions.  All of
+the functions to be presented in subsequent sections are actually LISP programs
+which, when they are called, may invoke many other LISP programs in a process
+that is invisible to the user. 
+
+Switching between DDT, MACSYMA, and the LISP system in which it is embedded is
+accomplished by typing the following characters:
+
+Control-^ typed while in MACSYMA causes LISP to be entered.  The user can now type any LISP S-expression and have it evaluated.  Typing ($fun<CONTINUE>) or ^G (control-G) causes MACSYMA to be re-entered.
+
+^Z causes an immediate exit to DDT.  If one is already in DDT then ?? is
+printed.  At this point the user can run some other program like PEEK or TECO
+[Lew1].  When in DDT, typing :CONTINUE causes the current job to be resumed.
+(:JOB MACSYM should be typed first if the user wishes to re-enter a MACSYMA
+which is not the current job).
+
+.sec (Terminals and Terminal Handling, terms)
+
+A large number of different kinds of terminals can be used with MACSYMA on
+the MIT-MC computer.  Many remote users on slow lines find that a wide-carriage
+printing terminal such as a DECwriter (LA36 or DECwriter II or IV) is very
+good because it provides neater output of large expressions (due to the longer
+line length, 132 characters usually) and the hard copy eliminates the need
+for tedious redisplay of expressions just to look at them again.  Other users
+prefer a display (CRT) console, which eliminates the paper and provides
+quieter operation.  Tektronix Terminals seem to be prefered by many for use
+with the plotting packages.
+
+The system assumes that a user has a 79 character wide line printing terminal
+(such as a TISilent 700).  There are commands to tell the system what kind
+of terminal you have.  The :TCTYP command at system monitor level, followed
+by the terminal type, is the most usual way this is done, e.g. for a
+DECwriter the command is:
+.example
+:TCTYP LA36
+.end
+and for a Tektronix it is:
+.example
+:TCTYP TEK
+.end
+When a user has a display (CRT) terminal, which has been declared to
+the system as a display, the system will make use of the console's
+ability to "home up" in the display of expressions instead of
+scrolling, as is done for printing terminals.  When the display
+reaches the bottom on the screen --More Display-- will be printed and
+the display will pause until you indicate you are ready to continue
+with it or to stop.  The possible "responses" to --More Display-- or
+--Pause-- are: a space typed at --More Display-- will continue the
+display, a rubout (or delete) will flush the display of the expression
+(to both the terminal and any $fun<WRITEFILE> which is open) and anything
+else will flush only output to the terminal.  Type-ahead is allowed
+(i.e. you can begin typing the next command-line and the display to
+the console will be flushed and your typing will be saved and put on
+the C-line).  "carriage return" is frequently used for this last
+function of just flushing the output to the terminal.  The variable
+$var<MOREWAIT/FALSE> can be used to control this behavior, see
+$ref<ioptions>.
+
+Occasionally a user may have changed the type of terminal he is using
+after detaching or disowning a MACSYMA (or done a different :TCTYP
+command after starting up his MACSYMA.  There is a function
+$fun<TTY_INIT>(); which will tell MACSYMA to check with DDT and get
+your new terminal's characteristics, e.g.  linelength, pagesize, etc.
+This function only works on the MIT-MC machine.
+.begin group
+.sec (Miscellaneous Information, miscellaneous!information)
+
+Files in the ITS system have two names each of at most 6 characters.
+They are referenced by giving the two names as well as the device
+(default is DSK) and the directory name where the file resides
+(default is the same as the user's login name, or is an assigned
+directory, see below).  A > sign may be used for the second file name
+and stands for the name which is the largest numerically if there
+exists a file with the given first name and a numeric second name;
+otherwise, the > sign represents the "greatest" name in an
+alphanumeric sense. A < sign may be similarly used for the "least"
+name.
+.end
+Any of the four descriptors (1st name, 2nd name, device, user) may be omitted
+and either the default or the value given in a previous command (if there was
+one given) will be used.
+
+For those without a disk directory of their own, there are a number of
+USERS2i1 directories available, currently USERS0 thru USERS9.  Each
+user will be automatically assigned to one of these alphabetically by
+his user name. The DDT command :HSNAME may be used (:HSNAME
+2Username1) to find out which directory one has been assigned to.
+When placing a file on this directory the user should indicate in some
+manner (such as by the first file name) the name of the user who
+created it.
+
+There is a special mail file on the ITS system for holding comments
+from users which are of general interest and for listing changes to
+MACSYMA which occur from time to time. The DDT command :MAIL MACSYM
+followed by a carriage return and text terminated by a control-C is
+used to place comments in this mail file.  The user's login name and
+time of message are added automatically.  (Control-D may be used to
+cancel this or any other DDT command prematurely).  If the user
+encounters any bugs in MACSYMA then he should report these in MACSYMA
+mail.  Mail may also be sent to other users by using the :MAIL command
+followed by the user's login name, or by the MAIL command in MACSYMA.
+If the user has received mail the message --MAIL-- will appear on his
+console after he logs in.  Typing a space will cause the mail to be
+printed.  The DDT command :PRMAIL MACSYM is used to print out the
+MACSYMA mail file.  The user should do this occasionally to be
+informed of changes to the system and of other users' comments.
+:PRMAIL may also be used to print out any user's mail by following it
+with the user's login name.  Control-S may be used to silence the
+printout.  In addition, the command :PRINT MACSYM;UPDATE > may be used
+to print a file describing updates to MACSYMA since the last version
+of the manual.  The update file should be checked regularly so the
+user can be informed of changes to MACSYMA.
+
+For further information on DDT commands see [Lew1].  Typing :? will list the commands
+with a brief description.  In particular, one command worth noting is :KILL which kills
+the current job.
+
+2An Introduction to ITS  for the MACSYMA User1 [Lew1] and the 2MACSYMA Primer1 [Mo5] are very useful to the novice.
+

@@ -1,0 +1,3820 @@
+;;; -*- Mode: Midas -*-
+
+;;; Master source is on MC:DOVUTL;DPRESS >
+
+;;; compile time parameters ;;
+
+stats==0			;give stats
+selfkl==-1			;non-zero if program should kill itself on exit
+filmsg==0			;0 to suppress file info
+
+TITLE DPRESS -- PROGRAM TO DISPLAY PRESS FILES ON TV'S
+
+;;; Written by Plummer, who knows when 'cause he didn't put a comment!
+;;; Hacked 7 April 1982 RMSoley for (S H V)NEWVEC.
+;;; 20x JCL processing and COMND fixes added 18 January 1984 by Zzz@OZ
+;;; Hacked 18 March 1984 by M. Sullivan (SULLIV@MC) for Box10.
+
+ifndef its, its==0
+ifndef 20x, 20x==0
+
+ifg 20x+its-1, .fatal Two operating system specified
+
+ife its\20x,[
+ife .osmidas-sixbit/ITS/,   its==1
+ife .osmidas-sixbit/TWENEX/,20x==1
+]
+
+ife its\20x, .fatal No operating system specified
+
+ifn its,[
+ pagsiz==2000
+ ]
+ifn 20x,[
+ pagsiz==1000
+RTMOD=JSYS 636
+STMOD=JSYS 637
+RTGRV=jsys 642
+TM%DPY==1_35.			; Process ^P codes
+ .decsav
+]
+
+
+
+;; This is now designed to use only Alto fonts, and not try and hack
+;; the full complexity of the DOVER fonts.
+
+
+ZR==0				;SUPER TEMP
+
+A=1				;GENERAL PURPOSE ACCUMULATORS
+B=2
+C=3
+D=4
+E=5
+F=6
+
+ifn 20x,[
+ac1==1
+ac2==2
+ac3==3
+ac4==4
+ac5==5
+ ]
+
+W=7
+X=10				;SUBROUTINE ARGS
+Y=11
+Z=12
+
+T=13				;TEMPS
+TT=14				;THIS WILL HOLD THE FONT NUMBER DURING CHAR LOOKUP
+
+EL=15				;BYTE POINTER FOR ENTITY LIST
+DL=16				;BYTE POINTER FOR DATA LIST
+
+P=17				;THE PDL, WHAT ELSE?
+
+MEMTOP==<1,,>-12*2000		;TWELVE PAGES AT THE TOP (FOR AI??)
+PDLLEN==40			;LENGTH OF PDL
+MAXFNT==100.			;MAXIMUM NUMBER OF FONTS WE HANDLE IN THIS VERSION
+
+TTYOCH==1			;normal tty output
+DSKICH==2			;FOR THE FILE WE ARE READING
+FNTICH==3			;TEMPORARY CHANNEL WHEN READING FONTS
+TTYICH==4			;INPUT FROM THE TTY, FULL CHARACTER SET
+ERRICH==5			;ASCII INPUT FROM ERR DEVICE
+IMAGE==6			;IMAGE OUTPUT FOR THE PLASMA TV'S
+DMPOCH==7			;channel for dumping page images
+fwidch==10			;channel for font width file
+
+%TXTOP==4000			;"TOP" KEY
+%TXSFL==2000			;"SHIFT-LOCK" KEY
+%TXSFT==1000			;"SHIFT" KEY
+%TXMTA==0400			;"META" KEY
+%TXCTL==0200			;"CONTROL" KEY
+%TXASC==0177			;MASK FOR THE ASCII PART OF THE CHARACTER
+
+%TIFUL==400			;1 => Use the full TV character set if possible
+%TJDIS==4000			;1 => recognize CTRL/P codes for displaying
+
+%TDNOP==210			; TD code for no-op
+%TDCLR==220			; TD CODE for clear screen
+%TDRST==230			; TD CODE for reseting all options
+%TDGRF==231			; TD code for entering SUPDUP Graphics
+ %TQHGT==076000			;  ttysmt mask for character width  in dots
+ %TQWID==001700			;  ttysmt mask for character height in dots
+ %TQGRF==000001			;  ttysmt bit: I understand graphics
+ %TRSCN==040000			;  ttysmt bit: I do SCAN lines
+ %GOMVA==021			;  SG move absolute
+ %GODLA==121			;  SG draw line absolute
+ %GODSC==105			;  SG perform scan lines
+
+;there are 32x32 micas per alto dot, by "definition"
+
+BITS.W==<2540.*17./2.+31.>/32.	;NUMBER OF BITS FOR A SCAN LINE (8.5 INCHES WIDE)
+BITS.H==<2540.*11.+31.>/32.	;NUMBER OF BITS VERTICALLY (11.0 INCHES)
+
+WORD.W==<BITS.W+31.>/32.; NUMBER OF WORDS NEEDED TO HOLD A SCAN LINE
+WORD.H==BITS.H		; NUMBER OF SCAN LINES
+VPSIZE==WORD.W*WORD.H	; NUMBER OF WORDS NEEDED FOR A PAGE
+
+MOVINC==64.		; LEFT/RIGHT/UP/DOWN INCREMENT FACTOR, IN ALTO DOTS
+
+
+
+ifn its,[
+define syscal name,args
+	.call [setz ? sixbit/name/ ? args ((setz)) ]
+termin
+]
+
+define .siot chan,pointr,count,loss
+ifn its,[
+	syscal siot,[movei chan ? pointr ? count]
+	 loss]
+ifn 20x,[
+	push p,ac1
+	push p,ac2
+	push p,ac3
+	push p,count		;safety with registers
+	push p,pointr		;...
+	move ac1,jfntbl+chan
+	pop p,ac2		;get back pointer
+	pop p,ac3		;and count
+	movn ac3,ac3
+	sout
+	pop p,ac3
+	pop p,ac2
+	pop p,ac1]
+termin
+
+ifn its,[
+.ioto==.iot
+.iotob==.iot
+.ioti==.iot
+]
+
+ifn 20x,[
+define .ioto chan,word
+  call [
+	push p,ac1
+	push p,ac2
+	move ac2,word		;safety with registers
+	move ac1,jfntbl+chan
+	bout
+	pop p,ac2
+	pop p,ac1
+     return]			;should look like one instruction
+termin
+define .iotob chan,word		;kludge for brackets
+	.ioto chan,[[word]]	;kludge
+termin
+define .ioti chan,word
+  call [
+	push p,[0]		;slot for arg
+	push p,ac1
+	push p,ac2
+	move ac1,jfntbl+chan
+	bin
+	movem ac2,-2(p)
+	pop p,ac2
+	pop p,ac1
+	pop p,word
+    return]			;should look like one instruction
+termin
+define .close chan
+	push p,ac1
+	hrrz ac1,jfntbl+chan
+	closf
+	 jfcl			;ifnore errors
+	pop p,ac1
+termin	
+define .lose
+	ercal ..lose
+termin
+
+irp a,,[.suset]
+ define a b,c,d,e
+  jfcl barf
+ termin
+termin
+
+ ];ifn 20x
+
+
+
+ifn 20x, loc 400
+
+ifn its,[
+
+TSINT:	LOC 42
+	-TSINTL,,TSINT
+LOC TSINT
+	P			;PDL ADDRESS POINTER
+	0 ? 1_TTYICH ? 0 ? 1_TTYICH ? TTYIN
+TSINTL==.-TSINT
+
+TTYIN:	syscal whyint,[movei ttyich]
+	 jrst TTYIN2
+	AOS INTRUP		;ANOTHER CHARACTER CAME IN
+	jrst ttyin		;and loop untdil finished
+	
+TTYIN2:	syscal dismis,[P]	;get out when no more to get
+	 .LOSE 1000
+
+] ;end its
+ifn 20x,[
+levtab:	intpc
+chntab:	0			;nothing on channel zero
+	1,,tsint		;tty characters on channel one
+	repeat 34., 0		;all others are nothing
+
+tsint:	aos intrup
+	debrk
+];ifn 20x
+
+
+;;  USEFUL MACROS and definitions
+
+call=pushj p,
+return=popj p,
+
+DEFINE .BCPL *string*
+	.BYTE 8 ? .LENGTH Ôstringä	    IRPC CH,,[string] ? "CH ? TERMIN
+	.BYTE
+TERMIN
+
+
+SUBTTL HERE WE GO
+
+;; This is the main loop. We init the pdl, then init the system,
+;; Query for a file, get it, process the fonts, and then enter the
+;; main process loop
+
+GO:	MOVE P,[-PDLLEN,,PDB-1]
+ifn 20x, call 20xrst
+	call iniini		;init the init (i.e., the WORLD)
+	CALL INTINT		;init the interrupts
+	CALL NOINTS		;make sure interrupts are off
+	CALL GETTTY		; OPEN THE TTY IN VARIOUS WAYS
+	CALL INIVAR		; INIT VARIABLES
+	CALL FRESTO		; SET UP FREE STORAGE
+
+GO1:				; COME HERE FOR NEW FILE
+	call noints		;make sure interrupts are off
+	CALL GETFIL		; GET THE FILE TO PROCESS, FROM JCL OR TTY
+	CALL MAPDOC		; OPEN THE FILE AND MAP IN THE DOC DIR 
+	SKIPE ERRFLG		;ERROR?
+	 JRST GO1		; IF SO, GO BACK FOR FILE
+	CALL GETDOC		;GET THE DOCUMENTATION DIR INFO
+	CALL GETPRT		;MAKE SURE THE PART DIR IS IN MEMORY
+	CALL GTFNTS		; GET THE FONTS
+	CALL MAPMST		;MAP MOST OF THE FILE (ALL IF POSSIBLE)
+	CALL UWAIT		;wait so the user can look at the fonts he got
+	CALL GOINTS		;TURN ON THE INTERRUPT MECHANISM
+	CALL GETRDY		;GET READY FOR THE MAIN LOOP
+
+GO2:				;COME HERE FOR LOOPING
+	CALL NWPAGE		;COMPUTE NEW PAGE IF NEEDED
+	CALL REDISP		;REDISPLAY IT
+	CALL INCHAR		;GO GET AN INPUT CHARACTER AND PROCESS IT
+	JRST	GO2		;LOOP
+
+
+iniini:	
+	SETZM ZERO1
+	MOVE A,[ZERO1,,ZERO1+1]
+	BLT A,ZERO2-1
+
+	MOVEI A,FS
+	MOVEM A,FREEM	;NEXT USABLE WORD OF FREE STORAGE
+	MOVEI A,FS/pagsiz
+	MOVEM A,FREEPG	;NEXT PAGE TO GRAB WHEN REQUESTING MORE MEMORY
+
+ifn its,[
+	.SUSET [.RSNAME,,SNAME]	; SET UP DEFAULT DIRECTORY
+	.SUSET [.RUNAME,,UNAME]
+]
+	return
+
+
+
+SUBTTL OPEN THE TTY
+
+GETTTY:				; OPEN THE TTY FOR:
+				;	FULL CHARACTER SET IMPUT
+				;	^P OUTPUT
+				;	IMAGE OUTPUT
+	
+ifn its,[
+				;full char tty input
+	syscal open,[[%TIINT+%TIFUL+.UAI,,TTYICH] ? ['tty,,]]
+	 .LOSE 1000
+
+				;^P tty output
+	syscal open,[[%TJDIS+.UAO,,TTYOCH] ? ['TTY,,]]
+	 .LOSE 1000
+
+				;image output
+	syscal open,[[.uao+%tjsio,,image] ? ['tty,,]]
+	 .lose 1000
+
+];ifn its
+
+ifn 20x,[
+	push p,[440700,,[asciz /tty: /]]
+	move ac1,[gj%sht]
+	move ac2,0(p)
+	gtjfn			;get  tty for input
+	 .lose
+	movem ac1,jfntbl+ttyich
+	move ac2,[070000,,+of%rd]
+	openf			;open tty for input
+	 .lose
+
+	move ac1,[gj%sht]
+	move ac2,0(p)
+	gtjfn			;get  tty for ^P output
+	 .lose
+	movem ac1,jfntbl+ttyoch
+	move ac2,[070000,,+of%wr]
+	openf			;open tty for ^P output
+	 .lose
+
+
+	MOVEI 1,.CTTRM
+	rfmod
+	tro 2,1_7		;VTS output translation
+	sfmod
+	RTMOD			;REALLY INTERPRET ^P CODES
+	 .lose
+	TLO 2,(TM%DPY)
+	STMOD
+
+	move ac1,[gj%sht]
+	move ac2,0(p)
+	gtjfn			;get  tty for image output
+	 .lose
+	movem ac1,jfntbl+image
+	move  ac2,[080000,,+of%wr]
+	openf			;open tty for image output
+	 .lose
+
+	pop p,
+];ifn 20x
+
+ifn its,[
+	syscal cnsget,[movei ttyoch
+		movem b		;vertical
+		movem c]	;horizontal
+	 .lose 1000
+	syscal ttyvar,[movei ttyoch ? ['ttysmt] ? movem a]
+	 .lose 1000
+];ifn 20x
+ifn 20x,[
+	movei 1,.priout
+	rtgrv			;get the SUPDUP Graphics variable
+	push p,2
+	rfmod			;read height and width
+	ldb  c,[.bp tt%wid,2]	;get width
+	ldb  b,[.bp tt%len,2]	;and length (height)
+	pop  p,a		;get supdup graphics variable
+	skipn a
+	 call [	irps nam,,[   KTV         LISPM        AITV
+	            ]wid,,[        97.         96.	   96.
+		    ]len,,[        47.	       60.	   37.
+		    ]grv,,[31011040000 35055040000 30655040000]
+		cain c,wid
+		 caie b,len
+		  skipa
+		   move a,[grv]
+		termin
+		return]
+];ifn 20x
+	tlnn a,%TQGRF
+	 jrst [	movei x,[asciz/Your terminal does not support SUPDUP Graphics. Sorry./]
+		call typstr
+		jrst done]
+	trnn a,%TRSCN
+	 jrst [	movei x,[asciz/Your terminal does not support the SUPDUP Graphics SCAN option. Sorry./]
+		call typstr
+		jrst done]
+	ldb d,[.bp <%TQWID,,>,a]
+	imul c,d			;number of scan lines wide
+	move e,c		;compute SUPDUP Graphics X offset
+	lsh e,-1		;divide by two
+	movnm e,SGxoff'
+	andcmi c,31.		;round down to nearest multiple of 32
+	movem  c,scre.b		;bits across
+	sos scre.b		;clipping limit
+	idivi  c,32.		;convert to words
+	movem  c,scre.w		;number of words wide
+	ldb d,[.bp <%TQHGT,,>,a]
+	imul b,d			;number of scan lines high
+	movei e,-1(b)		;compute SUPDUP Graphics Y offset
+	lsh e,-1		;divide by two
+	movem e,SGyoff'	
+	sub b,d			;remove a line for the prompt
+	movem b,scre.h		;bits down
+	sos scre.h		;clipping limit
+
+	RETURN
+
+SUBTTL INIT VARIOUS VARIABLES
+
+;; This code is entered when the program is started or <alt>G It is
+;; done only once. Things that get done for each file should be done
+;; in the get file section.
+
+INIVAR:
+ifn its,[
+	syscal open,[[.bii,,fwidch] ? jffo errcod
+		['dsk,,] ? [sixbit/fonts/] ?
+		[sixbit/widths/] ? [sixbit/fonts/]]
+	 JRST [MOVEI X,[ASCIZ /Can't open FONTS;FONTS WIDTHS -- Unrecoverable error/]
+		CALL TYPSTR
+		JRST DONE]
+	syscal fillen,[movei fwidch ? movem fillen]
+	 .LOSE 1000
+];ifn its
+ifn 20x,[
+	move  ac1,[gj%old+gj%sht]
+	move  ac2,[440700,,[asciz "ps:<fonts>fonts.widths "]]
+	gtjfn
+iniva5:	 jrst [
+	   movei x,[asciz /Can't open <fonts>fonts.widths -- unrecoverable error/]
+	   call typstr
+	   jrst done]
+	movem ac1,jfntbl+fwidch
+	move ac2,[of%rd]	;read and thawed access
+	openf
+	 jrst iniva5
+	move  ac1,jfntbl+fwidch
+	sizef			;get the size
+	 .lose
+	move x,ac3		;get number of 512. block words
+	imuli x,512.		;number of words
+	movem x,fillen		;save it
+				;carefully preserve ac3 across
+				;the next piece of code 
+];ifn 20x
+	
+	MOVE X,FREEM
+	 ADDI X,pagsiz-1
+	 ANDI X,-pagsiz
+	MOVE Y,X
+	ADD Y,FILLEN
+	 ADDI Y,pagsiz-1
+	 ANDI Y,-pagsiz
+	MOVEM Y,FREEM
+	 MOVE T,Y
+	 IDIVI T,pagsiz
+	 MOVEM T,FREEPG
+	MOVE T,X
+	 IDIVI T,pagsiz
+	SUB Y,X
+	 IDIVI Y,pagsiz
+	 MOVN Y,Y
+	 HRL T,Y
+
+ifn its,[
+	setzi z,
+	syscal corblk,[movei %cbred ?	;get read access
+		movei %jself ? t	;to myself starting at (t)
+		movei fwidch ? z]	;from the disk starting at (z)
+	 .LOSE 1000
+	
+	.CLOSE fwidch,
+]
+ifn 20x,[
+	hrlz ac1,jfntbl+fwidch
+	hrli ac2,.fhslf
+	hrr  ac2,t
+	movn ac3,y		;get number of pages
+	ior  ac3,[pm%cnt+pm%rd]
+	pmap
+]
+
+	RETURN
+
+
+SUBTTL SET UP FREE STORAGE
+
+;;; description of the memory layout
+;;; 	+--------------------+ 000.
+;;; 	|    main program    |
+;;; 	|    [4K loaded]     |
+;;; 	+--------------------+ 004.
+;;; 	|virtual printed page|
+;;; 	|   ALTO resolution  |
+;;; 	|   [~20.K CORBLK]   |
+;;; 	+--------------------+ 024.
+;;; 	| FONTS;FONTS WIDTHS |
+;;; 	|   [~10.K mapped]   |
+;;; 	+--------------------+ 034.
+;;; 	|   internal font    | 
+;;; 	| rasters and width  |
+;;; 	|    information     |
+;;; 	|     [CORBLK]       |
+;;; 	|   as  ||  needed   |
+;;; 	|       \/	     |
+;;; 	|		     |
+;;; 	+--------------------+ 034.+n
+;;; 	       gap
+;;; 	+--------------------+ 246.-m-p
+;;; 	|    PRESS FILE	     |
+;;; 	|     [mapped]	     |
+;;; 	|  pieces as needed  |
+;;; 	+--------------------+ 246.-m
+;;; 	|    PRESS FILE	     |
+;;; 	|   part dir and     |
+;;; 	|     doc dir	     |
+;;;	|     [mapped]	     |
+;;; 	+--------------------+ 246.
+;;; 	|    AI TV buffer    |
+;;; 	|   [10.K CORBLK]    |
+;;; 	+--------------------+ 256.
+
+FRESTO:
+
+;; An alto dot by convention is 32x32 micas. Since there are 2540
+;; micas to the inch, there are 2540*8.5=21590 micas per horizontal
+;; line, or 675 alto dots. This requires 22 PDP-10 words, at 32 bits
+;; per word usage. Vertically there are 2540*11.0=27940 micas or 874
+;; alto dots. This gives a total of 22*874=19228 PDP-10 words
+;; required for the page (about 20K).
+
+
+ifn its,[
+	MOVE A,[-<<VPSIZE+pagsiz-1>/pagsiz>,,VPAGE/pagsiz]
+			;THE NUMBER OF PAGES NEEDED AND THE PAGE TO START AT
+	syscal corblk,[movei %cbwrt+%cbred	;read write
+		movei %jself ? a	;to myself
+		movei %jsnew]	;new pages
+	 .LOSE 1000
+]
+ifn 20x,[			;I think TWENEX just gives them
+				;to you
+]
+	RETURN
+
+
+SUBTTL GET A NEW FILE FOR DISPLAYING
+
+GETFIL:	SKIPE ERRFLG		;WAS THERE AN ERROR
+	 JRST GTFL.A		;IF WE GOT AN ERROR, ASSUME IT WAS FILE NAME
+				;AND TRY TO USE LAST GIVEN AS DEFAULTS
+
+	SETZM PFILE+FN1OFF	;NO DEFAULT FIRST FILE NAME
+	MOVE X,[SIXBIT /PRESS/]
+	 MOVEM X,PFILE+FN2OFF	;SECOND IS PRESS
+	MOVE X,SNAME
+	 MOVEM X,PFILE+DIROFF	;AND DIR IS THE USERS DIR ON ENTRY TO THE PROGRAM
+
+GTFL.A:	CALL GETNAM		;QUERY FOR THE NAME
+
+	MOVEI X,PFILE		;WHERE TO PUT THINGS
+	CALL FPARSE		;PARSE IT INTO SIXBIT
+
+	SETZM ERRFLG		;NO ERRORS YET
+	RETURN			; FINISH IF OK
+
+GETNAM:
+ifn its,[
+	.SUSET [.ROPTION,,A]	; IS THERE JCL
+	TLZN A,%OPCMD
+	 JRST FRMTTY		;GET IT FROM THE TTY
+	.SUSET [.SOPTION,,A]	;CLEAR THE JCL FLAG
+	.BREAK 12,[..RJCL,,FILSPC]	;YES, READ IT IN
+	MOVE X,[440700,,FILSPC]
+	 MOVEM X,FP.BYT		;FPARSE BYTE POINTER
+	RETURN
+];ifn its
+ifn 20x,[
+	skipe gotjcl		;if we've done JCL already,
+	  jrst frmtty		;  get it from the TTY
+	setom gotjcl		;we're doing the rscan stuff now
+	movei ac1,.rsini	;initialization function code
+	rscan			;release rescan buffer
+	  jrst frmtty		;error, get it all from the tty
+	hrroi ac1,[asciz "foo"]
+	movem ac1,stablk+.cmrty	;hack prompt to pacify comnd
+
+	movei ac1,stablk
+	movei ac2,[.cmfld_9,, ? 0]
+	comnd			;get program name from buffer
+	tlne ac1,(cm%nop)
+	  jrst rscerr
+	move ac1,[gj%old]
+	movem ac1,gtjb+.gjgen
+	hrroi ac1,[asciz "PRESS"]
+	movem ac1,gtjb+.gjext	;save default file type
+	movei ac1,stablk
+	movei ac2,[.cmfil_9,, ? 0]
+	comnd			;get input filename
+	tlne ac1,(cm%nop)
+	  jrst [cain 2,gjfx33	;filename not specified?
+		  jrst rscer1	;roit, ignore, and prompt for it
+		jrst rscerr]
+	movem ac2,jfntbl+dskich	;save file jfn
+	movei ac1,stablk
+	movei ac2,[.cmcfm_9,, ? 0]
+	comnd			;get confirmation
+	tlne ac1,(cm%nop)
+	  jrst [hrroi ac1,[asciz "A?Not Confirmed"]
+		psout
+		jrst rscer1]
+	return			;got a jfn
+
+rscerr:	hrroi ac1,[Asciz "A?"]
+	psout
+	movei ac1,.fhslf	;output the comnd error
+	geter
+	movei ac1,.priou
+	erstr
+	  jfcl
+	 jfcl
+rscer1:	movei ac1,.priin
+	cfibf			;clear input buffer of rescan garbage
+	jrst frmtty		;get file from tty
+];ifn 20x
+
+FRMTTY:
+ifn its,[
+	MOVEI X,[ASCIZ /INPUT PRESS FILE: /]	;PROMPT HIM
+	 CALL TYPSTR
+	CALL READLN
+	MOVE X,[441000,,FILSPC]	;READLN RETURNS STRING IN 8-BIT
+	 MOVEM X,FP.BYT		;SO THE FILE PARSER CAN GROCK IT
+	RETURN
+];ifn its
+ifn 20x,[
+	move  [440700,,[asciz /Input PRESS file: /]]
+	movem stablk+.cmrty	;prompt string
+	movei frmtt4
+	movem stablk		;reparse address
+frmtt3:	movei ac1,stablk
+	movei ac2,[.cmini_9,, ? 0]
+	comnd
+frmtt4:	skipe ac1,jfntbl+dskich	;get press file jfn
+	 rljfn
+	  erjmp .+1		;punt errors
+	setzm jfntbl+dskich
+	move ac1,[gj%old]
+	movem ac1,gtjb+.gjgen
+	hrroi ac1,[asciz "PRESS"]
+	movem ac1,gtjb+.gjext	;save default file type
+	movei ac1,stablk
+	movei ac2,cfmfdb
+	comnd
+	move  ac1,stablk
+	tlne  ac1,(cm%nop)	;any errors
+	 jrst frmtt6
+	tlz ac3,-1
+	cain ac3,cfmfdb		;confirmed for kill
+	  jrst done
+	movem ac2,jfntbl+dskich	;save file jfn
+	movei ac1,stablk	;get confirmation
+	movei ac2,[.cmcfm_9,, ? 0]
+	comnd
+	tlne ac1,(cm%nop)	;any errors?
+frmtt6:	 jrst [	hrroi ac2,[asciz "
+?Not Confirmed"]
+		psout		;complain
+		jrst frmtt3]	;and try again
+	return
+
+];ifn 20x
+
+MAPDOC:
+ifn its,[
+	syscal open,[[.uii,,dskich] ? jffo errcod
+		pfile+devoff ? pfile+fn1off
+		pfile+fn2off ? pfile+diroff]
+	 JRST FILERR		;IF UNSUCCESSFUL, TELL THE USER
+	syscal fillen,[movei dskich ? movem fillen]
+	 .LOSE 1000
+];ifn its
+ifn 20x,[
+commen ~ The command parser gets the JFN
+	move  ac1,[gj%old+gj%sht]
+	move  ac2,[441000,,filspc]	;happens to be 8 bit
+	gtjfn
+	 jrst filerr
+	movem ac1,jfntbl+dskich
+~;commen
+	move  ac1,jfntbl+dskich
+	move  ac2,[of%rd+of%thw]	;read and thawed access
+	openf
+	 jrst filerr
+	move  ac2,[1,,.fbbyv]	;byte size info
+	movei ac3,x
+	gtfdb			;get fdb info
+	ldb y,[300600,,x]	;get the byte size (!!)
+	movei x,36.		;word size
+	idiv x,y		;bytes/word
+	move  ac2,[1,,.fbsiz]	;number of bytes
+	movei ac3,y
+	gtfdb			;get number of bytes
+	idiv y,x		;number of words
+	movem y,fillen
+
+];ifn 20x
+	
+	MOVE A,FILLEN		;GET THE LENGTH
+	  TRNE A,127.		;MUST BE A MULTIPLE OF 128. PDP10 WORDS
+	   CALL WARNLN	;IF NOT, WARN ABOUT THE LENGTH
+
+	IDIVI A,128.		;CONVERT TO NUMBER OF RECORDS
+	 MOVEM A,FILREC		;AND SAVE IT
+	MOVE X,A
+	 SOS X			;STARTING FROM THIS RECORD (THE LAST)
+	MOVE Y,A		;UP TO THIS ONE (NOT INCLUSIVE)
+	MOVEI Z,MEMTOP		;USING THIS AS TOP OF MEMORY
+	 CALL MAPREC		;GET SOME RECORDS (JUST ONE, THE DOC DIR)
+	MOVEM Z,MEMLIM		;THE MAPPING LIMITING ADDRESS
+	HRLI X,442000		;16. BIT BYTE POINTER
+	MOVEM X,DOCDIR		;AND IT IS THE DOCUMENT DIR
+
+	RETURN			;AND RETURN
+
+FILERR:	SETOM ERRFLG		;COME HERE WHEN OPENING THE FILE LOSES
+	MOVEI X,[ASCIZ /ERROR -- /]
+	CALL TYPST1
+;;; Print out error message.  Expects to find error code in ERRCOD.
+ERRPRN:
+ifn its,[
+	syscal open,[[.uai,,errich] ? ['err,,] ? movei 4 ? errcod]
+	 .LOSE 1400
+ERRPR1:	.IOTi ERRICH,A
+	CAIGE A,40
+	 JRST [.close errich,	;CLOSE THE ERR DEVICE
+		SETOM ERRFLG	;WE HAVE COMMITTED A NO NO
+		RETURN]		;AND GET OUT
+	.IOTo TTYOCH,A
+	JRST ERRPR1
+];ifn its
+ifn 20x,[
+	setom errflg		;error has happened
+	move  ac1,[440700,,filspc]
+	move  ac2,[.fhslf,,-1]
+	move  ac3,[-300.,,]
+	erstr
+	 jfcl
+	 jrst errprn
+	move  ac1,[440700,,filspc]
+	esout
+	return
+
+..lose:	push p,ac1
+	push p,ac2
+	push p,ac3
+	call errprn
+	call done
+	 ;never returns
+];ifn 20x
+
+WARNLN:				;LENGTH IS BAD, COMPLAIN
+	MOVEI X,[ASCIZ #
+
+===>> WARNING <<===
+
+	The PRESS is not a multiple of 128 words (256
+	sixteen bit words).  I have doubts it is a
+	PRESS file, but I will try to process it
+	anyway. Good Luck.
+
+===>> WARNING <<===
+
+#]
+	CALL TYPST1
+	RETURN
+
+
+SUBTTL INTERRUPT SET UP
+
+INTINT:				;INIT THE INTERRUPTS
+ifn its,[
+	.suset [.roption,,t]	;get the option bits
+	tlo t,optint		;new style interrupts
+	.suset [.soption,,t]	;and reset it
+	.suset [.sdf2,,[-1]]	;defer class two until we get going
+	.suset [.smsk2,,[0]]	;and mask them out, too
+];ifn its
+ifn 20x,[
+	movei ac1,.fhslf
+	dir ? cis		;disable and clear
+];ifn 20x
+	
+	RETURN	
+
+noints:
+ifn its,[
+	.suset [.sdf2,,[-1]]	;defer class two interrupts
+	.suset [.smsk2,,[0]]	;no interrupts allowed
+];ifn its
+ifn 20x,[
+	movei ac1,.fhslf
+	dir ? cis		;disable and clear interrupt system
+];ifn 20x
+	return
+
+UWAIT:	MOVEI X,[ASCIZ /
+==> Type any character to continue ==> /]
+	 CALL TYPSTR
+	.IOTi TTYICH,
+	TRNE ,%TXCTL		;CONTROL CHARACTER
+	 ANDI ,37		;ONLY THE LOW 5 BITS
+	ANDI ,%TXASC		;ASCII COMPONENT
+	CAIN ,^G
+	 JRST DONE		;^G AND ^Z QUIT
+	CAIN ,^Z
+	 JRST DONE
+	RETURN
+
+GOINTS:	SETZM INTRUP
+ifn its,[
+	.suset [.smsk2,,[1_ttyich]]	;want to look at tty input interrupts
+	.SUSET [.SDF2,,[0]]	;allow class two interrupts
+];ifn its
+ifn 20x,[
+	cis			;clear any pending
+	movei ac1,.fhslf
+	move  ac2,[levtab,,chntab];level and channel tables
+	sir			;set interrupt table addresses
+	eir
+	move ac2,[200000,,000000]
+	aic			;activate channel one
+	move ac1,[.ticti,,1]	;terminal input on channel one
+	ati	
+];ifn 20x
+	RETURN
+
+ SUBTTL INIT THE FILE, POINTERS AND ALL
+
+GETDOC:	MOVE A,FILLEN		;LENGTH OF FILE IN 36-BIT WORDS
+	ADD A,FILBEG		;INDEX INTO THE FILE
+	SUBI A,128.		;GO BACK ONE RECORD
+	HRLI A,442000		;16 BIT WORDS
+	MOVEM A,DOCDIR		;THIS IS THE DOCUMENT DIR
+
+	ILDB B,A		;GET THE PASSWORD
+	 MOVEM B,PSSWRD		; STORE IT
+	 CAME B,[27183.]	;CHECK IT
+	 CALL PSSWRN		;WARN THAT THE PASSWORD IS WRONG
+	ILDB B,A		;THE NUMBER OF RECORDS
+	 MOVEM B,NUMREC
+	ILDB B,A		;NUMBER OF PARTS
+	 MOVEM B,NPARTS
+	ILDB B,A		;FIRST RECORD OF THE PART DIR
+	 MOVEM B,PDWREC		;PART DIR WHERE RECORD
+	ILDB B,A		;LENGTH OF PART DIR IN RECORDS
+	 MOVEM B,PDNREC
+
+	MOVEI X,[ASCIZ /File		/]
+	 CALL TYPSTR
+	 MOVE X,DOCDIR
+	 ADDI X,200/2		;GET TO THE FILE NAME
+	 CALL TYPBCP		;TYPE THE BCPL STRING
+	MOVEI X,[ASCIZ /Created by	/]
+	 CALL TYPSTR
+	 MOVE X,DOCDIR
+	 ADDI X,232/2		;GET TO THE CREATOR
+	 CALL TYPBCP		;AND TYPE IT
+	MOVEI X,[ASCIZ /Created on	/]
+	 CALL TYPSTR
+	 MOVE X,DOCDIR
+	 ADDI X,252/2		;GET TO THE DATE
+	 CALL TYPBCP		;AND TYPE IT
+	 CALL TYPNEW		;TYPE A NEWLINE
+
+	RETURN			;FINISHED
+
+PSSWRN:				;THE PASSWORD IS WRONG -- COMPLAIN
+	MOVEI X,[ASCIZ #
+
+===>> WARNING <<===
+
+	The PRESS file does not have the correct password.
+	One of the following is probably true:
+		It is not a PRESS file
+		TEX produced it without a \END in the source
+	I will try to process it anyway -- I may lose
+
+===>> WARNING <<===
+
+#]
+	CALL TYPST1
+	RETURN
+
+
+GETPRT:				;GET THE PART DIR, IE, MAKE SURE IT IS
+				;MAPPED JUST BELOW THE DOC DIR AND
+				;CREATE A POINTER TO IT
+
+	MOVE A,PDWREC		;GET THE STARTING RECORD OF THE PART DIR
+	CAML A,LOWREC
+	 JRST GTPR.R		;IT CAME IN WITH THE DOC DIR, USE
+				;FILBEG TO COMPUTE THE POINTER
+	MOVE B,A		;GET IT AGAIN
+	ADD B,PDNREC		;LAST RECORD WE NEED (NON INCLUSIVE)
+	CAMLE B,LOWREC		;COMPARE WITH THE CURENT LOW RECORD MAPPED
+	 MOVE B,LOWREC		;TAKE THE MIN
+	MOVE X,A		;START HERE
+	MOVE Y,B		;END HERE
+	MOVE Z,MEMLIM		;MAPPING LIMITING ADDRESS
+	 CALL MAPREC		;MAP THE PART DIR IN
+	MOVEM Z,MEMLIM		;NEW LIMIT
+	HRLI X,442000		;MAKE A SIXTEEN BIT BYTE POINTER TO IT
+	MOVEM X,PRTDIR		;AND TUCK IT AWAY
+	RETURN
+
+GTPR.R:				;RESET PART DIR FROM FILBEG
+	MOVE X,PDWREC		;GET THE STARTING RECORD
+	IMULI X,128.		;CONVERT TO PDP-10 WORDS
+	ADD X,FILBEG		;INDEX INTO FILE
+	HRLI X,442000		;MAKE IT A 16. BIT BYTE POINTER
+	MOVEM X,PRTDIR		;AND STORE IT
+	RETURN
+
+
+MAPMST:				;TRY AND MAP GET ALL THE FILE IN AT ONCE
+	SETZM MAPALL		;ASSUME WE WILL LOSE
+	MOVEI A,MEMTOP		;THIS IS WHERE THE PRESS FILE COULD END
+	MOVE B,FREEPG		;NEXT LOW FREE PAGE
+	 IMULI B,pagsiz		;CREATE ADDRESS OUT OF IT
+	SUB A,B			;THIS IS HOW MUCH MEMORY WE HAVE
+	PUSH P,A
+	 MOVE A,MEMLIM		;FOR AVAILABLE RECORDS, WE CAN ONLY GO
+				;UP TO MEMLIM
+	 SUB A,B		;HOW MUCH MEMORYY WE HAVE
+	 IDIVI A,128.		;THIS MANY RECORDS ARE AVAILABLE
+	 MOVEM A,FREERC		;AND SAVE IT
+	 POP P,A
+	CAMGE A,FILLEN		;CAN WE DO IT?
+	 JRST [			;IF WE DON'T HAVE ENOUGH, WE LOSE
+		MOVEI X,[ASCIZ /
+The entire file does not fit -- mapping pieces as needed/]
+		CALL TYPSTR
+		RETURN]
+	SETOM MAPALL		;BUT IF ROOM EXISTS, WE WIN
+	SETZI X,		;STARTING FROM RECORD ZERO
+	MOVE Y,FILLEN		;USE FILLEN TO GET IT ALL
+	IDIVI Y,128.		;CONVERT TO RECORDS
+	MOVEI Z,MEMTOP		;FROM MEMTOP WE CAN PUT
+	 CALL MAPREC		;MAP IT ALL IN
+	MOVEM Z,MEMLIM		;WE MADE NEED IT (SOMEDAY [1984??])
+	MOVEM X,FILBEG		;JUST TO BE SAFE (IT SHOULD BE THERE ALREADY)
+	CALL GTPR.R		;RESET THE PART DIR (IN CASE IT MOVED)
+	MOVEI X,[ASCIZ /
+The entire file fits -- no mapping needed/]
+	CALL TYPSTR
+ifn its,[
+	.CLOSE DSKICH,		;AND CLOSE IT, SINCE IT FITS WE DON'T
+				;NEED TO CORBLK AROUND
+];only ITS will let you close a file with mapped in pages
+	RETURN			;AND GET OUT
+
+;;; MAPPAG maps a page into memory so that it can be computed
+;;; X <== first record
+;;; Y <== last record, not inclusive
+
+MAPPAG:	SKIPE MAPALL
+	 RETURN		;IF IT IS ALL HERE THERE IS NO NEED TO
+				;  GET IT
+	CAML X,LOWREC		;COMPARE IT WITH EXISTING LOW RECORD
+	 CAMLE Y,HIGREC
+	  SKIPA
+	   RETURN		;IF LOWREC <= X and Y<= HIGREC
+
+				;SO WE HAVE TO REMAP THINGS
+	trz x,7		;round down
+	addi y,7
+	 trz y,7	;round up
+	MOVE Z,FREERC		;NUMBER OF FREE RECORDS TO PLAY WITH
+	 SUB Z,Y
+	 ADD Z,X		;A <== FREERC-(Y-X)
+	LSH Z,-1		;DIVIDE BY TWO (BUG IF NEGATIVE)
+	SUB X,Z			;SUBTRACT IT HALF FROM THE LOW
+	 JUMPLE X,MPPG.B	; IF <=0 GET THE BOTTOM OF THE FILE
+	ADD Y,Z			;AND ADD HALF TO THE TOP
+	CAML Y,FILREC		;COMPARE WITH NUMBER OF RECORDS IN FILE
+	 JRST MPPG.T		;IF >= WE CAN GET ALL THE WAY TO THE TOP
+MPPG.G:	MOVE Z,MEMLIM		;GET THE MAPPING LIMIT
+	CALL MAPREC		;AND MAP THE RECORDS IN
+	RETURN
+
+MPPG.B:	SETZI X,		;START AT THE BOTTOM
+	MOVE Y,FREERC		;AND GET THIS MANY RECORDS
+	JRST MPPG.G		;GO!!
+
+MPPG.T:	MOVE Y,FILREC		;THIS IS OUR UPPER RECORD LIMIT
+	 ADDI Y,7
+	 TRZ Y,7		;the virtual high page (within the pdp-10 page)
+	MOVE X,Y		;AND GET IT AGAIN
+	SUB X,FREERC		;BUT THIS IS NOW THE LOWER LIMIT
+	JRST MPPG.G		;AND GO!
+
+SUBTTL GET THE FONTS (WOW IS THIS NOT GOING TO BE FUN)
+
+;; First we have to find the font dir. Then find which file to use.
+;; Then open it. Then read it in and convert it to internal format.
+
+
+GTFNTS:				;SIGH
+ife filmsg,[
+	movei x,[asciz /Getting fonts.../]
+	 call typstr
+]
+	SETOM FNTTTB		;START WITH THE FIRST ENTRY IN THE 
+				; INTERNAL FONT TABLE NEGATIVE (END MARK)
+	SETZM NFONTS		;AND NO FONTS THAT WE KNOW OF (YET)
+
+	MOVE A,PRTDIR		;GET THE PART DIR
+	MOVE B,NPARTS
+GTFN.A:	JUMPLE B,[		;COMPLAIN IF LESS OR EQUAL
+		MOVEI X,[ASCIZ /Can't find FONT PART -- FATAL/]
+		 CALL TYPSTR
+		JRST DONE]
+	PUSH P,A		;SAVE THE BYTE POINTER
+	ILDB C,A		;GET THE TYPE
+	 SOS B			;DECREMENT THE COUNT
+	POP P,A			;GET THE POINTER BACK
+	ADDI A,2		;ADD FOUR PRESS WORDS = TWO PDP-10 WORDS
+	CAIE C,1		;CHECK FOR FONT PART
+	 JRST GTFN.A		; LOOP
+
+	SUBI A,2		;GO BACK
+	ILDB B,A		;GET TYPE
+	 MOVEM B,PDEtyp		;PUT IT IN THE PART DIR ENTRY
+	ILDB C,A		;GET THE STARTING RECORD NUMBER
+	 MOVEM C,PDEwrc		;WHERE RECORD
+	ILDB D,A		;NUMBER OF RECORDS
+	 MOVEM D,PDEnrc
+
+	MOVE X,PDEwrc		;GET WHERE
+	MOVE Y,X		;GET IT AGAIN
+	ADD Y,PDEnrc		;THE LAST RECORD NEEDED (NON INCLUSIVE)
+	MOVE Z,MEMLIM		;CAN GO UP TO HERE
+	CALL MAPREC		;AND GET THE PAGES INTO MEMORY
+	MOVEM Z,MEMLIM
+
+	MOVE A,PDEwrc		;get where the thing starts
+	IMULI A,128.		;CONVERT RECORDS TO PDP-10 WORDS
+	ADD A,FILBEG		;INDEX INTO THE FILE
+	HRLI A,442000		;CREATE 16. BIT BYTE POINTER
+	MOVEM A,FNTPRT		;SAVE IT
+	MOVEM A,FNTENT		;ALSO AS A FONT ENTRY
+
+GTFN.C:	MOVE A,FNTENT		;GET THE FONT ENTRY POINTER OF THE NEXT
+	ILDB B,A		;ENTRY LENGTH
+	JUMPE B,GTFN.Z		;IF ZERO, WE ARE FINISHED
+	 MOVEM B,FDElen
+	 IDIVI B,2		;two press WORDS PER PDP-10 WORDS
+	 ADDM B,FNTENT		;GET NEW FNTENT
+	SUB A,[001000,,0]	;CONVERT TO 8-BIT
+	ILDB B,A		;GET FONT SET
+	 MOVEM B,FDEset
+	ILDB B,A		;FONT NUMBER
+	 MOVEM B,FDEfnt
+	ILDB B,A		;M
+	 MOVEM B,FDEm
+	ILDB B,A		;N
+	 MOVEM B,FDEn
+	MOVEM A,FDEfam		;SAVE FAMILY AS BYTE POINTER
+	 ADDI A,5		;NUMBER OF PDP-10 WORDS IN FAMILY STRING
+	ILDB B,A		;FACE
+	 MOVEM B,FDEfac
+	ILDB B,A		;SOURCE
+	 MOVEM B,FDEsrc
+	ADD A,[001000,,0]	;GO BACK TO 16 BIT BYTES
+	ILDB B,A		;SIZE
+	 trne b,100000
+	  call [ior b,[-1,,700000]	;make it pdp-10 negative
+		movn b,b	;now positive micas
+		imuli b,72.
+		idivi b,2450.
+		return]
+	 MOVEM B,FDEsiz
+	ILDB B,A		;ROTATION
+	 MOVEM B,FDErot
+	CALL FFFILE		;FIND THE FONT FILE
+	JRST GTFN.C		;AND LOOP
+
+GTFN.Z:	SKIPN FNTLOS
+	 RETURN		;IF NO FONT LOSSAGE, RETURN
+	MOVEI X,[ASCIZ /Number of font lossages: /]
+	 CALL TYPSTR
+	MOVE X,FNTLOS
+	 CALL TYPDEC
+	RETURN
+
+
+commen ~
+
+Font faces, and how to map them to files
+[see Press File Format, pg 13.]
+
+fonts come in various flavors, which can be expressed:
+
+	MEDIUM  \     /  REGULAR  \     /   COMPRESSED
+	 BOLD    >---<             >---<     REGULAR
+	LIGHT   /     \  ITALIC   /     \    EXPANDED
+
+Not all possible combinations exist, but for simplicity, assume
+they do.  There are 18 possible combinations, and there are also
+18 bits in a half word, so each combination represents a bit.
+Thus, since a single ALTO font might have to serve as many DOVER
+fonts, we just test to see if the appropriate bit is on in the
+font to file translation table. On the ALTO, however, only the
+following types of fonts are defined:
+
+	MEDIUM  \__/  REGULAR
+	 BOLD   /  \  ITALIC 
+
+so it is suggested that these form blocks of bits in the
+halfword. The following describes how this will be done:
+
+	         MEDIUM            MEDIUM
+	 BOLD    & LIGHT   BOLD    & LIGHT
+	/    \ /         \/    \ /         \
+	=====================================
+	| | | | | | | | | # | | | | | | | | |
+	=====================================
+	\                / \                /
+	 \----REGULAR---/   \----ITALIC----/
+
+Therefore, we will use the following symbols:
+F%BOLD=700000 for bold regular
+F%REG =077000 for medium regular
+F%BITL=000700 for bold italic
+F%ITAL=000077 for medium italic
+F%ALL =777777 for all the font faces
+
+There are two steps to add a font to the list of fonts. The first
+is to register the family, and the second is to register the
+face, using the symbol used during registering. This should be
+done in alphabetical order, in both instances. Hopefully the
+macros and the existing translations are enough to understand
+this. It is important that when defining font, that all possible
+faces are represented. This requires judgement at times. For
+example, what to duplicate if regular, bold, and italic alto
+fonts exist, but bold italic does not.
+
+To all allow for non-existant alto fonts to not lose, there is a
+concept of an alias, so that one family gets translated to
+another before we start looking for size and face. This could
+easily cause problems, but the tranlation must be done at some
+level, and I chose to do it at the family level.
+
+To get to the file, we binary search the registered families,
+looking for a match. then we find the size of that font in the
+translation table that is closest (by some algoritm), then within
+that select the entry with the correct face. Much of this can be
+done by binary searching.
+
+To create a new font face in alto .al format, (see page 13 of "Font
+Representations and Formats", Xerox, 1980, online at MC:DCP2;FONTFO PRESS)
+write a font in kst format using Lisp Machine FED, then do:
+(setq fd (fed:read-kst-into-font-descriptor "<font-filename>" '<font-name>))
+(fed:write-font-descriptor-into-al fd "<new-font-filename>")
+to a lisp listener.  Eventually, the FED menu driver should support writing
+AL format directly.  This works fine for fixed width fonts.  Proportional
+fonts may lose and need some fixing up.
+ 
+~  ; end commen
+
+F%BOLD=700000 ; for bold regular
+F%REG= 077000 ; for medium regular
+F%BITL=000700 ; for bold italic
+F%ITAL=000077 ; for medium italic
+F%ALL= 777777 ; for all the font faces
+
+nfam=0
+define regstr family,index
+	nfam=nfam+1
+	index==nfam
+	[asciz /family/],,index
+termin
+
+define alias family,index
+	nfam=nfam+1
+	[asciz /family/],,index
+termin
+
+define fnttrn findex,size,face,fn
+	[findex ? size!. ? face ? sixbit /fn/ ]
+termin
+
+;; UPPER CASE !!!
+
+FMLIES:	REGSTR	APL,F$APL
+	REGSTR	ARROWS,F$ARRW
+	REGSTR	ARROWSTWO,F$ARR2
+	REGSTR	BLOCKFONT,F$BLCK
+	REGSTR	BOX,F$BOX
+	REGSTR	CLARITY,F$CLAR
+
+	REGSTR	CMATHX,F$CMAX
+	REGSTR	CMI,F$CMI
+	 ALIAS	CMTI,F$CMI
+	REGSTR	CMR,F$CMR
+	 ALIAS	CMI,F$CMR
+	 ALIAS	CMS,F$CMR
+	 ALIAS	CMB,F$CMR
+	 ALIAS	CMTT,F$CMR
+	REGSTR	CMSY,F$CMSY
+
+	REGSTR	CREAM,F$CREM
+	REGSTR	CYRILLIC,F$CYRL
+	REGSTR	DANATEN,F$DANA
+	REGSTR	DANATWELVE,F$DA12
+	REGSTR	ELITE,F$ELIT
+	REGSTR	GACHA,F$GACH
+	 ALIAS	LPT,F$GACH
+	REGSTR	GATES,F$GATE
+	REGSTR	HELVETICA,F$HELV
+	REGSTR	HELVETICAD,F$HLD
+	REGSTR	HELVETICAMIT,F$HMIT
+	REGSTR	HIPPO,F$HIPP
+	REGSTR	LETTERGOTHIC,F$LGTH
+	REGSTR	LOGO,F$LOGO
+	REGSTR	MATH,F$MATH
+	REGSTR	MUSIC,F$MUSC
+	REGSTR	MUSICFONT,F$MUSF
+	REGSTR	NEWVEC,F$NEWV
+	 ALIAS	SNEWVEC,F$NEWV
+	 ALIAS	HNEWVEC,F$NEWV
+	 ALIAS	VNEWVEC,F$NEWV
+	REGSTR	OLDENGLISH,F$OE
+	REGSTR	PHONETICTR,F$PHON
+	REGSTR	ROMANPS,F$RMNP
+	REGSTR	SAIL,F$SAIL
+	REGSTR	SIGMA,F$SIGM
+	REGSTR	SMALLTALK,F$SMTK
+	REGSTR	SYMBOL,F$SYMB
+	REGSTR	TEMPLATE,F$TMPL
+	REGSTR	TESTFONT,F$TSTF
+	REGSTR	TIMESROMAN,F$TR
+	REGSTR	TIMESROMAND,F$TRD
+	REGSTR	TITAN,F$TITN
+	REGSTR	TITANLEGAL,F$TITL
+	REGSTR	TONTO,F$TONT
+	REGSTR	XEROXBOOK,F$XERX
+
+	0,,0
+
+FFILES:	FNTTRN	F$APL, 14,F%ALL ,APL14
+	FNTTRN	F$ARRW,10,F%ALL ,ARRW10
+	FNTTRN	F$ARR2,10,F%ALL ,ARR210
+	FNTTRN	F$BLCK,10,F%ALL ,BLCK10
+	FNTTRN	F$BOX, 10,F%ALL	,BOX10
+	FNTTRN	F$CLAR,12,F%ALL ,CLAR12
+	FNTTRN	F$CLAR,14,F%ALL ,CLAR14
+	FNTTRN	F$CREM,10,F%ALL ,CREM10
+	FNTTRN	F$CREM,12,F%ALL ,CREM12
+
+	FNTTRN	F$CMAX,10,F%ALL ,CMATHX
+	FNTTRN	F$CMR, 10,F%ALL ,CMR10
+	FNTTRN	F$CMSY,10,F%ALL ,CMSY10
+	FNTTRN	F$CMI ,10,F%ALL ,CMI10
+
+	FNTTRN	F$CYRL,10,F%ALL ,CYRL10
+	FNTTRN	F$CYRL,12,F%ALL ,CYRL12
+	FNTTRN	F$DANA,10,F%ALL ,DANA10
+	FNTTRN  F$DANA,12,F%ALL ,DANA12
+	FNTTRN	F$DA12,14,F%ALL ,DA1214
+	FNTTRN	F$ELIT,10,F%ALL ,ELIT10
+	FNTTRN	F$GACH, 8,F%ALL ,GACHA8
+	FNTTRN	F$GACH,10,F%ALL ,GACH10
+	FNTTRN	F$GACH,12,F%ALL ,GACH12
+	FNTTRN	F$GATE,10,F%ALL ,GATE10
+	FNTTRN	F$GATE,32,F%ALL ,GATE32
+	FNTTRN	F$HELV, 6,F%ALL ,HL6
+	FNTTRN	F$HELV, 7,F%REG ,HL7
+	FNTTRN	F$HELV, 7,F%BOLD,HL7B
+	FNTTRN	F$HELV, 7,F%BITL,HL7BI
+	FNTTRN	F$HELV, 7,F%ITAL,HL7I
+	FNTTRN	F$HELV, 8,F%REG+F%ITAL,HL8
+	FNTTRN	F$HELV, 8,F%BOLD+F%BITL,HL8B
+	FNTTRN  F$HELV,10,F%REG+F%ITAL,HL10
+	FNTTRN	F$HELV,10,F%BOLD+F%BITL,HL10B
+	FNTTRN	F$HELV,12,F%REG ,HL12
+	FNTTRN	F$HELV,12,F%BOLD+F%BITL,HL12B
+	FNTTRN	F$HELV,12,F%ITAL,HL12I
+	FNTTRN	F$HELV,14,F%ALL ,HL14
+	FNTTRN	F$HELV,18,F%ALL ,HL18
+	FNTTRN	F$HLD, 24,F%ALL ,HLD24
+	FNTTRN  F$HMIT,10,F%ALL ,HMIT10
+	FNTTRN	F$HIPP, 8,F%ALL ,HIPPO8
+	FNTTRN	F$HIPP,10,F%ALL ,HIPP10
+	FNTTRN	F$HIPP,12,F%ALL ,HIPP12
+	FNTTRN	F$HIPP,18,F%ALL ,HIPP18
+	FNTTRN	F$LGTH,10,F%ALL ,LGTH10
+	FNTTRN	F$LGTH,12,F%ALL ,LGTH12
+	FNTTRN	F$LOGO,12,F%ALL ,LOGO12
+	FNTTRN	F$LOGO,14,F%ALL ,LOGO14
+	FNTTRN	F$LOGO,18,F%ALL ,LOGO18
+	FNTTRN	F$LOGO,20,F%ALL ,LOGO20
+	FNTTRN	F$LOGO,24,F%ALL ,LOGO24
+	FNTTRN	F$LOGO,26,F%ALL ,LOGO26
+	FNTTRN	F$MATH, 8,F%ALL ,MATH8
+	FNTTRN	F$MATH,10,F%ALL ,MATH10
+	FNTTRN	F$MATH,12,F%ALL ,MATH12
+	FNTTRN	F$MATH,16,F%ALL ,MATH16
+	FNTTRN	F$MUSC, 8,F%ALL ,MUSIC8
+	FNTTRN	F$MUSC, 9,F%ALL ,MUSIC9
+	FNTTRN	F$MUSC,10,F%ALL ,MUSC10
+	FNTTRN	F$MUSC,12,F%ALL ,MUSC12
+	FNTTRN	F$MUSC,14,F%ALL ,MUSC14
+	FNTTRN	F$MUSF,10,F%ALL ,MUSF10
+	FNTTRN	F$NEWV, 2,F%ALL ,NEWVC2
+	FNTTRN	F$NEWV, 6,F%ALL ,NEWVC6
+	FNTTRN	F$OE,  12,F%ALL ,OE12
+	FNTTRN	F$OE,  18,F%ALL ,OE18
+	FNTTRN  F$OE,  36,F%ALL ,OE36
+	FNTTRN	F$PHON,12,F%ALL ,PHON12
+	FNTTRN	F$RMNP,10,F%ALL ,RMNP10
+	FNTTRN	F$RMNP,12,F%ALL ,RMNP12
+	FNTTRN	F$SAIL,10,F%ALL ,SAIL10
+	FNTTRN	F$SAIL,12,F%ALL ,SAIL12
+	FNTTRN	F$SIGM,20,F%ALL ,SIGM20
+	FNTTRN	F$SMTK,10,F%ALL ,SMTK10
+	FNTTRN	F$SYMB,10,F%ALL ,SYMB10
+	FNTTRN	F$TMPL,10,F%ALL ,TMPL10
+	FNTTRN	F$TMPL,64,F%ALL ,TMPL64
+	FNTTRN	F$TSTF,12,F%ALL ,TSTF12
+ff$def:	FNTTRN	F$TR,   8,F%REG ,TR8
+	FNTTRN	F$TR,   8,F%BITL+F%BOLD,TR8B
+	FNTTRN	F$TR,   8,F%ITAL,TR8I
+	FNTTRN	F$TR,  10,F%REG ,TR10
+	FNTTRN	F$TR,  10,F%BITL+F%BOLD,TR10B
+	FNTTRN	F$TR,  10,F%ITAL,TR10I
+	FNTTRN	F$TR,  12,F%REG ,TR12
+	FNTTRN	F$TR,  12,F%BOLD+F%BITL,TR12B
+	FNTTRN	F$TR,  12,F%ITAL,TR12I
+	FNTTRN	F$TR,  14,F%ALL ,TR14
+	FNTTRN	F$TR,  18,F%ALL ,TR18
+	FNTTRN	F$trD, 24,F%ALL ,trD24
+	FNTTRN	F$trD, 30,F%ALL ,trD30
+	FNTTRN	F$trD, 36,F%ALL ,trD36
+	FNTTRN	F$TITN,10,F%ALL ,TITN10
+	FNTTRN	F$TITN,12,F%ALL ,TITN12
+	FNTTRN	F$TITN,14,F%ALL ,TITN14
+	FNTTRN	F$TITL,12,F%ALL ,TITL12
+	FNTTRN	F$TITL,14,F%ALL ,TITL14
+	FNTTRN	F$TONT,14,F%ALL ,TONT14
+	FNTTRN	F$XERX,12,F%ALL ,XERX12
+
+	0,,0
+
+
+FFFILE:				;FIND FONT FILE
+
+;; PARAMETERS ARE SET UP IN THE FONT DIRECTORY ENTRY.
+
+;; FIND ENTRY NUMBER BY LINEAR SEARCH (WHO CARES ABOUT SPEED AT THIS
+;; POINT??
+
+ifn filmsg,[
+	MOVEI X,[ASCIZ /{ /]
+	 CALL TYPSTR		;TYPE OUT CURLY BRACKET
+	MOVE X,FDEfam
+	 CALL TYPBCP		;TYPE OUT THE FONT WE ARE LOOKING FOR
+	MOVE X,FDEsiz
+	 CALL TYPDEC		;AND THE SIZE
+	MOVE X,FDEfac
+	 andi x,3
+	 MOVE X,[[ASCIZ //] ? [ASCIZ /I/] ? [ASCIZ /B/] ? [ASCIZ /BI/]](X)
+	 CALL TYPST1		;THE FACE
+	MOVEI X,[ASCIZ / --> /]
+	 CALL TYPST1		;WHERE WE ARE GOING WITH IT
+]
+	MOVEI A,FMLIES		;GET POINTER TO THE FAMILIES
+FFFI.A:	HLRZ B,(A)		;GET ADDRESS OF ASCIZ STRING
+	AOS A			;BUMP IT NOW INSTEAD OF LATER
+	 JUMPE B,FFFI.Z		;ERROR IF ZERO
+	HRLI B,440700		;ASCII BYTE POINTER
+	MOVE C,FDEfam		;GET BYTE POINTER OF BCPL FAMILY STRING
+	ILDB D,C		;GET THE LENGTH OF THE BCPL STRING
+
+FFFI.C:	ILDB T,B		;GET A CHARACTER FROM ASCIZ
+	JUMPE T,FFFI.H		;IF THE END, WE TRY AND FINISH
+	JUMPLE D,FFFI.A		;IF NO MORE IN BCPL, WE SHOULD TRY AGAIN
+	ILDB TT,C		;GET ACHARACTER FROM BCPL
+	 SOS D			;COUNT DOWN ONE
+	CAIL T,"a
+	 CAILE T,"z
+	  SKIPA
+	   SUBI T,<"a-"A>	;capitalize ASCII character
+	CAIL TT,"a
+	 CAILE TT,"z
+	  SKIPA
+	   SUBI TT,<"a-"A>	;capitalize BCPL character
+	CAME T,TT
+	 JRST FFFI.A		;IF NOT EQUAL, GO TO NEXT FAMILY ENTRY
+	JRST FFFI.C		;IF EQUAL, GO TO NEXT CHARACTER LOOP
+
+FFFI.H:	JUMPN D,FFFI.A		;IF ASCIZ FINISHED BUT NOT BCPL, GO DO NEXT FAMILY
+	HRRZ A,-1(A)		;GET THE NUMBER WHICH IDENTIFIES THE FONT
+	 MOVEM A,FONTID		;STORE IT
+	JRST FFSIZE		;FIND FONT SIZE ENTRY
+
+FFFI.Z:	AOS FNTLOS		;INCREMENT THE FONT LOSS COUNT
+	MOVE A,FF$DEF		;GET ADDRESS OF DEFAULT BLOCK
+	 MOVE A,0(A)		;GET THE IDENTIFYING NUMBER
+	 MOVEM A,FONTID		;SET IT
+	MOVEI X,[ASCIZ / ## /]	;TYPE THIS SO PEOPLE KNOW WHERE
+ifn filmsg, CALL TYPST1		;LOSSAGE HAPPENDED
+	JRST FFSIZE		;AND CONTINUE
+
+FFSIZE:				;FIND FONT SIZE
+	MOVEI A,FFILES		;GET ADDRESS OF THE FILE ENTRY
+	MOVE B,FONTID		;GET THE NUMBER WE ARE LOOKING FOR
+	SKIPA			;SKIP THE INCREMENTER
+FFSI.A:	AOS A			;GO UP ONE
+	MOVE C,(A)		;GET THE ADDRESS OF THE BLOCK
+	JUMPE C,FFSI.Z		;IF ZERO, GO COMPLAIN
+	CAME B,(C)		;COMPARE
+	 JRST FFSI.A		; IF NOT GO UP
+
+	MOVE C,FDEsiz		;GET THE DESIRED SIZE
+	MOVE D,A		;D HOLDS BASE OF LAST GOOD FONT SIZE
+	MOVE E,(D)		;GET ADDRESS OF BLOCK
+	MOVE E,1(E)		;GET THE LAST GOOD FONT SIZE
+	MOVE F,A		;NEXT HIGHER FONT ENTRY
+FFSI.C:	AOS A			;GET NEXT ENTRY
+	MOVE T,(A)		;GET ADDRESS OF BLOCK
+	JUMPE T,FFSI.G		;IF AT THE END, WE FINISH
+	CAME B,(T)		;IS IT THE SAME FONT
+	 JRST FFSI.G		; NO, SO EXIT THIS CODE
+	CAMN E,1(T)		;HAS THE SIZE CHANGED
+	 JRST FFSI.C		;IF NOT, LOOP
+	MOVE F,A		;F IS THE NEXT HIGHER
+	CAMG C,1(T)		;COMPARE WITH DESIRED
+	 JRST FFSI.G		; WE NOW HAVE D<=DESIRED<=F
+	MOVE D,A		;D BECOMES NEW BASE
+	MOVE E,1(T)		;GET THE SIZE
+	JRST FFSI.C		;AND GO LOOP
+
+FFSI.G:				;D<=DESIRED<=F
+	MOVE A,D		;SHUFFLE
+	MOVE B,F
+	MOVE D,(A)		;GET ADDRESS OF LOWER BLOCK
+	MOVE D,1(D)		;GET LOWER SIZE
+	MOVE E,(B)		;GET ADDRESS OF HIGHER BLOCK
+	MOVE E,1(E)		;GET HIGHER SIZE
+				;D<=C<=E
+	SUB D,C			;COMPUTE DISTANCES
+	MOVN D,D		;CORRECT SIGN
+	SUB E,C
+	IMULI E,2		;WEIGHTING FACTOR
+	CAMLE D,E		;COMPARE
+	 MOVE A,B		;IF TWICE DIST FROM TOP IS CLOSER THAN DIST FROM
+				; BOTTOM WE USE THE TOP
+	JRST FFFACE		;FIND THE RIGHT FACE
+
+FFSI.Z:	MOVEI X,[ASCIZ /Can't find font in file ENTRIES ((BUG)) -- /]
+	 CALL TYPSTR
+	MOVE X,FDEfam
+	 CALL TYPBCP
+	AOS FNTLOS		;INCREMENT FONT LOSSAGE COUNT
+	RETURN
+
+FFFACE:				;FIND THE FONT WITH THE RIGHT FACE. BASE IN A
+	MOVE B,FDEfac		;GET THE FACE
+	andi b,3
+	MOVE B,[F%REG ? F%ITAL ? F%BOLD ? F%BITL](B)	;GET MASK
+	SKIPA			;DONT INCREMENT INITIALLY
+FFFA.A:	AOS A
+	MOVE C,(A)		;GET ADDRESS OF BLOCK
+	TDNN B,2(C)		;TEST WITH THE MASK
+	 JRST FFFA.A		; LOOP IF NO BITS SET
+	MOVE A,C		;GET THE ADDRESS OF THE BLOCK INTO A
+
+	SETZI B,		;THE FONT NUMBER WE ARE CHECKING
+FFFA.C:	CAML B,NFONTS		;COMPARE WITH HOW MANY FONTS WE KNOW ABOUT
+	 JRST FFFA.E
+	MOVE D,FNTFIL(B)	;GET THE FILENAME FOR THIS FONT
+	CAMN D,3(A)		;COMPARE IT WITH THE FILENAME WE MIGHT
+				;OPEN SOON
+	 JRST NRFONT		;NO READ FONT (DON'T, THAT IS)
+	AOJA B,FFFA.C
+
+FFFA.E:
+ifn its,[
+	MOVE TT,[SIXBIT /DOVUTL/]	;ASSUME THE FONTS ARE ON THIS DIRECTORY.
+	SYSCAL SSTATU,[%CLOUT,,T ? %CLOUT,,T ?  %CLOUT,,T ? %CLOUT,,T ? %CLOUT,,T
+		       %CLOUT,,T]	;GET THE NAME OF THIS ITS
+	 .LOSE %LSSYS
+	CAMN T,[SIXBIT /AI/]		;BUT IF WE ARE ON THE AI MACHINE
+	 MOVE TT,[SIXBIT /FONTS2/]	; THEY LIVE IN THIS RANDOM PLACE.
+
+	syscal open,[[.bii,,fntich] ? jffo errcod
+		['dsk,,] ? [sixbit/^afont/] ? 3(a) ? TT]
+	 JRST [
+		MOVEI A,F$TR	;USE TIMESROMAN
+		MOVEM A,FONTID	;AS THE ID TO LOOK FOR
+		AOS FNTLOS	;INCREMENT FONT LOSSAGE COUNT
+		JRST FFSIZE]
+];ifn its
+ifn 20x,[
+	move b,[440700,,filspc]
+	skipa c,[440700,,[asciz /ps:<fonts.alto>/]]
+	 idpb x,b
+	ildb x,c
+	jumpn x,.-2
+	movei d,6
+	move c,[440600,,3(a)]
+fffa.g:	jumpe d,fffa.i
+	ildb x,c
+	jumpe x,fffa.i
+	addi x,<" >
+	idpb x,b
+	sojg d,fffa.g
+fffa.i:	skipa c,[440700,,[asciz /.alto /]]
+	 idpb x,b
+	ildb x,c
+	jumpn x,.-2
+
+	push p,a
+	move  ac1,[gj%old+gj%sht]
+	move  ac2,[440700,,filspc]
+	gtjfn
+fffa.q:	  jrst [ movei a,f$tr	;use timesroman
+		  movem a,fontid
+		 aos fntlos
+		 pop p,a
+		 jrst ffsize]
+	movem ac1,jfntbl+fntich
+	move  ac2,[of%rd+of%thw]
+	openf
+	 jrst fffa.q
+	pop p,a
+];ifn 20x
+
+	MOVE B,NFONTS		;GET THE CURRENT FONT NUMBER
+	MOVE X,3(A)
+	   MOVEM X,FNTFIL(B)	;SAVE IT FOR SHARING COMPARISON
+ifn filmsg,	 CALL TYPSIX
+	CALL RFONT
+	.CLOSE FNTICH,
+
+	RETURN
+
+
+COMMEN ~ HOW THE FONTS LOOK IN AN AFONT FILE
+
+Consider the file as an array FILE of sixteen bit words.
+(See page 13 of the "Font Representations and Formats" manual)
+
+FILE(0)	= Height word, which is the height of this font
+		in scan lines on the ALTO.
+FILE(1)
+	high bit: proportion bit, 1 if proportional spacing
+	seven bits (completes first byte): baseline= height of the
+		font bounding box above the origin (= FBBoy+FBBdy).
+		This may be zero in some older fonts. ((what do we
+		do then, DOC?))
+	eight bits (second byte): max Width, Width of the widest character
+FILE(2+<Character code>) is a self relative pointer to the character
+	description. So, (2+<char code>+FILE(2+<char code>)) is the
+	location of the desciption of the character. Call this pointer
+	CHRPNT for future reference.
+
+--------------------
+
+Each character has the following structure:
+
+bitData		There are XH (see below) words of this, and this is
+		  the data for this (portion of this) character.
+XW (word)	This has one of two meanings. If it is odd, it is
+		  2*<width>+1, where width is the number of horizontal
+		  rasters taken up by this (portion of this character).
+		  If it is even, it is 2*<ext char code>, where
+		  <ext char code> is the character code for the (next)
+		  extension character (which is indexed as every other
+		  character).
+
+ ===>>	CHRPNT points to XW <<===
+
+HD (byte)	Number of (Alto) scan lines at the top of this character
+		  that are ommitted. (Technically, HD = FBBdy + FBBoy -
+		  (BBdy + BBoy))
+XW (byte)	Number of (Alto) scan lines of bit data
+
+~ ;END COMMEN
+
+COMMEN ~ HOW THE FONTS LOOK IN HERE AND OTHER GOODIES
+
+Presently, only font set zero exists, so a font in any font set
+will use the font in font set zero. And there are a maximum of
+sixteen fonts per set. Therefore there are two tables, each
+sixteen entries long. One entry (starting at FNTTBL) is to get to
+the bitmaps, and the other (starting at FNTWID) is to get the
+width information.
+
+To get the X-increment of a character in a font, do
+	HRRE <ac>,@FNTWID(FONT)
+and to get the Y-increment do
+	HLRE <ac>,@FNTWID(FONT)
+This means FNTWID contains pointers. Fonts come in two flavors:
+fixed width and variable width. If the font is fixed width, the
+pointer in FNTWID points to a word that contains the X in the
+right half and the Y in the left. If the font is variable width,
+the the pointer is an indexed pointer, indexed by the character
+number. For example, if FONT 0 is fixed and FONT 1 is variable
+widthed, the following entry would exist:
+
+	FNTWID:	foo
+		bar(char)
+
+where foo and bar are pointers into the free storage area.
+
+To get to the bitmap, a similar idea is used.
+	MOVEI <ac>,@FNTTBL(FONT)
+puts a pointer into <ac> which points to the bitmap of the
+current character. This is accomplished by making FNTTBL be a
+table of indexed pointers, indexed off the character into another
+table which is for the font. For example, let FNTn by the address
+of the pointer table for font n, and let FCnxxx by the address of
+the bitmap information for character xxx of font n. FNTTBL would
+look like
+
+	FNTTBL:	@FNT0(CHAR)
+		@FNT1(CHAR)
+		...
+
+	FNT0:	FC0000
+		FC0001
+		...
+	FNT1:	FC1000
+		FC1001
+		...
+	...
+
+Here, the FNTn tables live in free storage, and so do the
+bitmaps, which are referenced by FCnxxx.
+
+Both of these schemes (width and bitmap information getting) allow
+for sharing, which may by implemented someday.
+
+--------------------------------------------------
+
+Structure of the bitmap (i.e., each individual FCnxxx)
+WORD1:	left third:	number of alto scan lines to skip at the top
+			of the bounding box
+	middle third:	hieght in scan lines of the character
+	right third:	width (in pdp-10 words) of the character data
+Following are HEIGHT*WIDTH words, such that it proceeds down first
+	then over to the right (the opposite of how we read English).
+
+~ ;end commen
+
+SUBTTL READ THE FONT AND MUNGE INTO INTERNAL FORMAT
+
+RFONT:				;READ THE FONT FILE
+				;CHANNEL OPEN ON FNTICH
+ifn its,[
+	syscal fillen,[movei fntich ? movem a]
+	 .LOSE 1000
+];ifn its
+ifn 20x,[
+	move ac1,jfntbl+fntich
+	sizef
+	 .lose
+	move a,ac3
+	imuli a,512.		;convert to words
+];ifn 20x
+
+	MOVE B,MEMLIM		;GET THE UPPER LIMIT FOR PUTTING THINGS
+	SUB B,A			;GO DOWN
+	 ANDI B,-pagsiz		;TO A PAGE BOUNDARY
+	MOVEM B,FNTBEG		;THIS IS THE BEGINING OF THE FONT FILE
+
+	IDIVI B,pagsiz		;CONVERT TO PAGE NUMBER
+	MOVE C,MEMLIM		;GET THE ABSOLUTE TOP
+	 SUB C,FNTBEG		;NUMBER OF WORDS IN BETWEEN
+	 IDIVI C,pagsiz		;NUMBER OF PAGES
+	 MOVN C,C		;NEGATIVE FOR THE AOBJN POINTER
+	 HRL B,C		;B HAS CORBLK AOBJN POINTER
+	 MOVEM B,FNTDEL		;FONT PAGE DELETE REMEMBERER
+	SETZI A,		;STARTING FROM PAGE ZERO OF THE DISK
+
+ifn its,[
+	syscal corblk,[movei %cbred
+		movei %jself ? b
+		movei fntich ? a]
+	 .LOSE 1000
+]
+ifn 20x,[			;be careful with registers
+	hrlz ac1,jfntbl+fntich
+	hrr  ac2,b
+	hrli ac2,.fhslf
+	movn ac3,c
+	ior  ac3,[pm%cnt+pm%rd]
+	pmap
+]
+	
+;; SET UP NEW ENTRY IN FNTTTB (FONT TRANSLATION TABLE)
+	MOVE A,FDEset		;GET THE FONT SET
+	 IMULI A,16.		;SIXTEEN FONTS PER SET
+	 ADD A,FDEfnt		;ADD IN THE FONT
+	MOVE B,NFONTS		;GET THE CURRENT INDEX
+	 MOVEM A,FNTTTB(B)	;AND REGISTER THE BEAST
+	 SETOM FNTTTB+1(B)	;AND SET THE NEXT ONE EGATIVE FOR END TEST
+	 AOS NFONTS		;AND SAY WE HAVE ANOTHER
+
+;; CREATE AN ENTRY FOR IT IN
+	MOVE A,FREEM		;GET THE NEXT GOOD PLACE IN MEMORY
+	 MOVE T,A
+	 ADD T,[move @(X)]	;X WILL HOLD THE CHARACTER CODE
+	 MOVEM T,FNTTBL(B)	;AND PUT IT IN ITS SLOT
+	 HRRZ T,FNTTBL(B)	;GET THE ADDRESS
+	  MOVEM T,FNxnnn	;THIS IS THE BASE OF THE FONT INDEX TABLE
+	MOVE X,A		;GET THE ADDRESS OF THE BASE
+	 ADDI X,256.		;all 256 characters should be looked after
+	 MOVEM X,FREEM		;THIS IS THE NEXT FREE LOCATION
+	 CALL GETUPT		;AND REQUEST CORE UP TO THAT POINT
+
+;; figure out the first two (press) words of the file
+	MOVE A,FNTBEG		;POINT AT THE FONT FILE
+	MOVE C,(A)		;GET THE PDP-10 WORD
+	 MOVEM C,FNTHED(B)	;SAVE THE HEADER WORD
+	LDB D,[242000,,C]	;GET THE HEIGHT WORD
+	 MOVEM D,AL.HI
+	LDB D,[230100,,C]	;THE PROPORTION BIT
+	 MOVEM D,AL.PRO
+	LDB D,[140700,,C]	;THE BASELINE
+	 MOVEM D,AL.BAS
+	LDB D,[041000,,C]	;MAX WIDTH
+	 MOVEM D,AL.MWD
+
+;; FOR EACH CHARACTER
+	SETZI B,		;THE CHARACTER
+RFNT.A:	CAIL B,256.		;all 256 characters
+	 JRST FIGWID		;NOW WE HAVE TO GO AND FIGURE OUT THE WIDTH TABLE
+
+;; PRESCAN FOR HEIGHT AND WIDTH
+	MOVEI T,777777		;BIG NUMBER
+	 MOVEM T,FCH.HI		;FONT CHARACTER -- HIGHEST SCAN LINE USED
+	SETZM FCH.LO		;LOWEST SCAN LINE USED
+	SETZM FCH.WD		;WIDTH OF CHARACTER IN (ALTO) BITS
+	MOVE F,B		;GET THE CHARACTER
+
+RFNT.C:	ADDI F,2		;CREATE INDEX TO SELF RELATIVE POINTERS
+	MOVE T,F
+	 IDIVI T,2
+	 ADD T,FNTBEG		;INDEX INTO THE FONT FILE
+	 HRLI T,442000		;16. BIT BYTE POINTER
+	 SKIPE TT
+	  IBP T			;IF ODD, GO UP ANOTHER PRESS WORD
+	ILDB TT,T		;GET THE RELATIVE PORTION
+	ADD F,TT		;IT IS SELF RELATIVE, SO POINT TO THE CHARACTER
+	MOVE T,F
+	 IDIVI T,2
+	 ADD T,FNTBEG		;INDEX INTO THE FONT FILE
+	 HRLI T,442000		;16. BIT BYTE POINTER
+	 SKIPE TT
+	  IBP T			;IF ODD, GO UP ANOTHER PRESS WORD
+	ILDB X,T		;GET THE FIRST WORD
+	ILDB Y,T		;THE SECOND
+
+	CAIN X,1
+	 JUMPE Y,RFNT.E		;EXIT IF XW=1 AND HD=0 AND XH=0
+
+	MOVE T,FCH.HI
+	LDB TT,[101000,,Y]	;GET HD BYTE (NUMBER OF MISSING SCAN LINES AT TOP)
+	CAML T,TT
+	 MOVE T,TT
+	MOVEM T,FCH.HI		;GETS MIN(PREVIOUS,THIS)
+	LDB T,[001000,,Y]	;GET THE XH BYTE
+	ADD T,TT		;ADD IN THE TOP SCAN LINE OF THIS CHARACTER
+	MOVE TT,FCH.LO		;GET THE LOW
+	CAMG TT,T
+	 MOVE TT,T
+	MOVEM TT,FCH.LO		;GETS MAX(PREVIOUS,THIS)
+
+	TRNN X,1		;TEST THE LOW BIT
+	 JRST [			; IF ZERO
+		MOVEI T,16.
+		ADDM T,FCH.WD	;THE CHARACTER IS ANOTHER 16. BITS WIDER
+		LSH X,-1	;BECOMES THE CODE OF THE EXTENSION CHARACTER
+		MOVE F,X	;PUT IT IN
+		JRST RFNT.C]	;AND GO
+
+	LSH X,-1		;ELSE THIS IS THE WIDTH OF THIS PORTION
+	ADDM X,FCH.WD		;AND ADD IT IN
+
+;; DETERMINE MEMORY REQUIREMENTS AND ASK FOR CORE
+RFNT.E:	MOVE C,FCH.LO		;GET THE LOWEST SCAN LINE USED
+	SUB C,FCH.HI		;GETS THE NUMBER OF SCAN LINES USED
+	MOVEM C,FCH.SC		;SCAN LINES NEEDED
+	MOVE D,FCH.WD		;GET THE WIDTH
+	 ADDI D,31.
+	 IDIVI D,32.		;NUMBER OF PDP-10 WORDS NEEDED WIDE
+	 MOVEM D,FCH.WD		;NUMBER OF WORDS PER SCAN LINE NEEDED
+	IMUL C,D		;NUMBER OF WORDS NEEDED TO HOLD THE CHARACTER
+	SKIPE C
+	 AOS C			;C GETS ONE MORE FOR THEHEADER WORD, UNLESS
+				;OF COURCE, WE HAVE NO CHARACTER
+	MOVEM C,FCH.HE		;NUMBER OF WORDS NEEDED FOR THE HEADER AND DATA
+	MOVE X,FREEM		;GET THE ADDRESS OF THE NEXT FREE WORD
+	EXCH X,C		;EXCHANGE THEM (C HAS BASE)
+	ADD X,C			;X HAS NEXT FREE WORD WHEN WE ARE FINISHED
+	MOVEM X,FREEM		;PUT IT BACK
+	CALL GETUPT		;AND ASK FOR MEMORY UP TO THERE
+
+;; MAKE ENTRY IN FNxnnn FOR THE CHARACTER
+	SKIPN FCH.HE
+	 MOVEI C,NOCHAR		;THE NO CHARACTER CHARACTER
+	MOVE T,FNxnnn		;GET THE BASE
+	ADD T,B			;GO TO THE SLOT
+	MOVEM C,(T)		;AND PUT IT THE ADDRESS OF THE FREE MEMORY
+	SKIPN FCH.HE
+	 JRST RFNT.Z		;IF NO CHARACTER, GO ON TO NEXT
+
+;; PUT HEADER WORDS IN MEMORY FOR THE CHARACTER
+	MOVE T,FCH.HI		;NUMBER OF SCAN LINES LEFT OUT ON TOP
+	 DPB T,[301400,,TT]	;PUT THEM IN THE TOP THIRD WORD
+	MOVE T,FCH.SC		;NUMBER OF SCAN LINES NEEDED
+	 DPB T,[141400,,TT]	;TO THE MIDDLE THIRD WORD
+	MOVE T,FCH.WD		;THE WIDTH IN PDP-10 WORDS
+	 DPB T,[001400,,TT]	;THE BOTTOM THIRD WORD
+	MOVEM TT,(C)		;THIS IS THE HEADER WORD
+	AOS C			;AND PUT IT UP ONE
+
+;; NOW PUT THE BIT DATA IN CORE
+	MOVE E,B		;GET THE CHARACTER CODE TO START WITH
+	SETZI D,		;FLAG FOR COMPUTING WHICH PART OF THE WORDS
+				; TO PUT THE NEXT ALTO [EXTENSION] CHARACTER
+RFNT.P:				;PUT LOOP
+	PUSH P,C		;SAVE THE ADDRESS
+	HRLI C,242000		;SIXTEEN BIT BYTE POINTER
+	SKIPE D
+	 IBP C			;IF D NOT ZERO, WE GO TO THE SECOND BYTE
+
+	ADDI E,2		;CREATE INDEX TO SELF RELATIVE POINTERS
+	MOVE T,E
+	 IDIVI T,2
+	 ADD T,FNTBEG
+	 HRLI T,442000
+	 SKIPE TT
+	  IBP T
+	ILDB TT,T		;GET THE SELF RELATIVE POINTER
+	ADD E,TT		;POINT
+	MOVE T,E
+	 IDIVI T,2
+	 ADD T,FNTBEG
+	 HRLI T,442000
+	 SKIPE TT
+	  IBP T
+	ILDB E,T		;GET THE XW WORD
+	ILDB TT,T		;GET HD BYTE AND XH BYTE
+
+	SUB C,FCH.HI		;GO DOWN (WILL GO BACK UP AT LEAST THIS MUCH)
+	LDB X,[101000,,TT]	;GET HD
+	ADD C,X			;GO UP, WE CAN NOW PUT THINGS STARTING AT C
+
+	LDB TT,[001000,,TT]	;GET THE NUMBER OF SCAN LINES USED
+	MOVE X,TT
+	IDIVI X,2		;SO WE CAN COMPUTE THE PDP-10 BYTE POINTER
+	SOS T			;THIS PUTS US AT THE END OF THE BIT DATA
+	SUB T,X			;GO BACK TO NEAR THE BEGINNING
+	SOS T			;GO BACK TWO MORE PRESS WORDS
+	IBP T			;GO FORWARD ONE
+	SKIPN X+1		;CHECK THE REMAINDER
+	 IBP T			;IF IT WAS EVEN WE GO FORWARD YET ANOTHER
+RFNT.R:	JUMPLE TT,RFNT.T	;JUMP IF FINISHED WITH THESE SCAN LINES
+	ILDB X,T		;GET THE NEXT SCAN LINE
+	DPB X,C			;PUT IT IN OUR MEMORY
+	AOS C			;GO UP A PDP-10 SCAN LINE
+	SOJA TT,RFNT.R		;LOOP ON NEXT SCAN LINE
+
+RFNT.T:	POP P,C			;GET THE INITIAL ADDRESS BACK
+	TRNE E,1		;TEST THE LOW BIT
+	 JRST RFNT.Z		;IF A ONE, THEN THIS IS THE END OF THE CHARACTER
+	SETCMM D		;SET D TO INDICATE THE LOWER BYTE
+	SKIPN D			;IF D INDICATED WE JUST FROBBED THE HIGH
+	 ADD C,FCH.SC		;GO UP BY THE NUMBER OF SCAN LINES NEEDED
+	
+RFNT.V:	LSH E,-1		;GET THE EXTENSION CHARACTER CODE
+	JRST RFNT.P		;AND GO AFTER THE EXTENSION CHARACTER
+
+;; AND LOOP
+RFNT.Z:	AOJA B,RFNT.A
+
+SUBTTL DON'T READ THE FONT FILE, WE ALREADY HAVE IT SOMEPLACE ELSE
+
+;;; A <== POINTER TO THE BLOCK FOR THE TRANSLATION. 3(A) IS THE FILENAME
+;;; 	THAT WE ALREADY FOUND.
+;;; B <== FONT INDEX INTO THINGS LIKE FNTTTB (SET/FONT TRANSLATIONS) AND
+;;; 	FNTTBL [MOVE @addr(X)] GRABING THE CHARACTER
+;;; LOOK AT RFONT FOR WHAT THIS HAS TO DO (NOT MUCH)
+
+NRFONT:	MOVE C,NFONTS		;GET THE NUMBER OF FONTS
+	AOS NFONTS		;BUMP IT UP
+
+	MOVE D,FDEset		;GET THE SET
+	 IMULI D,16.		;SIXTEENFONTS PER SET
+	 ADD D,FDEfnt		;WHICH FONT WITHIN SET
+	MOVEM D,FNTTTB(C)	;PUT IT IN THE TABLE
+	SETOM FNTTTB+1(C)	;AND MAKE THE NEXT ONE UNKNOWN
+
+	MOVE D,FNTTBL(B)	;GET THE ENTRY IN THE ALREADY READ IN FILE
+	MOVEM D,FNTTBL(C)	;AND MAKE IT THE ONE FOR THIS FONT TOO
+
+	MOVE D,FNTHED(B)	;GET THE FONT HEADER WORD
+	MOVEM D,FNTHED(C)	;AND IT IS THE ONE FOR THIS TOO
+
+	LDB E,[242000,,D]	;GET THE HEIGHT WORD
+	 MOVEM E,AL.HI
+	LDB E,[230100,,D]	;THE PROPORTION BIT
+	 MOVEM E,AL.PRO
+	LDB E,[140700,,D]	;THE BASELINE
+	 MOVEM E,AL.BAS
+	LDB E,[041000,,D]	;MAX WIDTH
+	 MOVEM E,AL.MWD
+
+ifn filmsg,[
+	MOVEI X,[ASCIZ /{{/]	;THE WAY WE NOTIFY SHARING
+	 CALL TYPST1
+	MOVE X,3(A)		;GET THE FILENAME
+	 CALL TYPSIX		;AND TYPE IT IN SIXBIT
+	MOVEI X,[ASCIZ /}}/]
+	 CALL TYPST1
+]
+	JRST FIGWID		;GO GET THE WIDTHS
+
+
+SUBTTL CREATE WIDTH TABLE FOR THE FONT WE ARE READING
+
+FIGWID:				;figure out the width information
+
+	MOVE A,[242000,,FS]	;POINT INTO FONTS.WIDTHS
+FWID.A:	LDB B,A			;GET A WORD
+	MOVE C,B		;TO PLAY WITH
+	LSH C,-12.		;GET ITS TYPE
+	CAIN C,1		;IS IT TYPE 1
+	 JRST FWID.E		;IF IT IS, JUMP
+FWID.C:	ANDI B,7777		;ONLY THE LOW 12. BITS
+	JUMPE B,[		;IF BAD
+		MOVE X,[441000,,[.BCPL /LPT/]]
+		SKIPE AL.PRO	;IF NON-PROPORTIONAL FONT, USE LPT AS DEFAULT
+		MOVE X,[441000,,[.BCPL /TIMESROMAN/]]
+		 MOVEM X,FDEfam	;DEFAULT TO LPT
+		JRST FIGWID]	;AND TRY AGAIN
+	IDIVI B,2
+	 ADD A,B
+	 SKIPE B+1
+	  IBP A
+	JRST FWID.A
+
+FWID.E:	PUSH P,A
+	ILDB C,A		;GET THE CODE WORD
+	SUB A,[001000,,0]	;CONVERT TO 8 BIT FOR A WHILE
+	MOVE D,FDEfam		;GET THE BYTE POINTER TO THE FAMILY
+	ILDB E,D		;GET THE NUMBER OF CHARACTERS IN THE DESIRED
+	ILDB T,A		;AND THE NUMBER IN THE TEST
+	CAME E,T		;COMPARE
+	 JRST [POP P,A ? JRST FWID.C]	;IF NOT EQUAL
+FWID.G:	JUMPE E,FWID.K
+	ILDB T,D		;FROM THE DESIRED FAMILY
+	CAIL T,"a
+	 CAILE T,"z
+	  SKIPA
+	   SUBI T,<"a-"A>
+	ILDB TT,A		;FROM THE TESTING FONT
+	CAIL TT,"a
+	 CAILE T,"z
+	  SKIPA
+	   SUBI T,<"a-"A>
+	CAMN T,TT
+	 SOJA E,FWID.G		;GOOD, SO DECREMENT COUNT AND LOOP
+	POP P,A			;BAD, SO GET BACK THE POINTER
+	JRST FWID.C		;AND GO LOOP
+
+FWID.K:	POP P,A			;GET BACK THE ORIGINAL BYTE POINTER
+	MOVE B,C		;MOVE THE CODE WORD INTO B
+	MOVE A,[242000,,FS]	;GO BACK TO THE BEGINNING FOR SAFETY
+	SETZM FWD.OK		;HAVE NOT FOUND AN OK FONT
+	SETZM FWD.SC		;NOR A SCALABLE FONT
+	SETZM FWD.BD		;IN CASE WE HAVE NOTHING AT ALL
+FWID.M:	LDB C,A			;GET THE TYPE INFORMATION
+	MOVE T,C
+	LSH T,-12.		;THE TYPE
+	CAIN T,4		;LOOKING FOR TYPE 4
+	 JRST FWID.Q		; IF FOUND
+FWID.O:	ANDI C,7777
+	JUMPE C,FWID.U		;AT THE END, SEE WHAT WE CAN DO WITH OUR FINDINGS
+	IDIVI C,2
+	ADD A,C
+	SKIPE C+1
+	 IBP A
+	JRST FWID.M		;AND LOOP
+
+FWID.Q:	PUSH P,A		;SAVE THE POINTER
+	SUB A,[001000,,0]	;CONVERT TO EIGHT BIT FOR A WHILE
+	ILDB D,A		;GET THE FAMILY CODE
+	CAME D,B		;COMPARE IT WITH WHAT WE ARE LOOKING FOR
+FWID.R:	 JRST [POP P,A ? JRST FWID.O]	;IF NOT GOOD
+	MOVE T,(P)
+	 MOVEM T,FWD.BD		;SO WE DON'T LOSE COMPLETELY	 
+	ILDB D,A		;GET THE FACE ENCODING
+	CAME D,FDEfac		;COMPARE FOR GOODNESS
+	 JRST FWID.R		;WE ARE LOOKING FOR THE SAME FACE
+	MOVEM T,FWD.BD		;AND THIS IS EVEN BETTER
+	ILDB D,A		;SKIP BC
+	ILDB D,A		;AND EC
+	ADD A,[001000,,0]	;GO BACK TO 16. BITS
+	ILDB D,A		;GET THE SIZE
+	POP P,A			;DO IT NOW
+	JUMPE D,[		;IF IT IS ZERO, IT IS A SCALABLE FONT
+		MOVEM A,FWD.SC	;AND SAY IT IS SCALABLE
+		JRST FWID.O]	;AND GO LOOP
+	MOVEM A,FWD.BD		;MIGHT AS WELL IMPROVE (?)
+	IMULI D,72.		;CONVERT TO POINTS
+	 ADDI D,2540./2
+	 IDIVI D,2540.
+	CAMN D,FDEsiz		;IS IT THE ONE WE WANT
+	 MOVEM A,FWD.OK		;THIS IS THE BEST ONE WE HAVE TO DATE
+	JRST FWID.O		;AND KEEP TRYING FOR THE HELL OF IT
+
+FWID.U:	MOVE A,FWD.BD		;GET THE BAD
+	SKIPE FWD.SC		;IF WE HAVE A SCALING FONT,
+	 MOVE A,FWD.SC		; USE IT
+	SKIPE FWD.OK		;IF WE HAVE WHAT WE ARE REALLY LOOKING FOR
+	 MOVE A,FWD.OK		;USE IT AS TOP PRIORITY
+	JUMPE A,[		;WE REALLY LOST IF THIS TAKES EFFECT
+		MOVEI X,[ASCIZ /LOSSAGE BEYOND COMPARE -- PLEASE SEND MAIL/]
+		 CALL TYPSTR
+		MOVE X,[441000,,[.BCPL /LPT/]]
+		 MOVEM X,FDEfam
+		JRST FIGWID]	;TRY ALL OVER AGAIN
+ifn filmsg,[
+	MOVEI X,[ASCIZ /,, /]
+	 CALL TYPST1
+	MOVE X,FDEfam
+	 CALL TYPBCP		;TYPE OUT THE WIDTH INFO BEING USED[{]
+	MOVEI X,[ASCIZ / }/]
+	 CALL TYPST1		;AND THE CLOSER
+]
+	ILDB B,A		;DON'T NEED FAMILY BYTE OR FACE BYTE ANYMORE
+	SUB A,[001000,,0]	;EIGHT BITS FOR A WHILE
+	ILDB B,A		;GET BEGINNING CHARACTER
+	 MOVEM B,FWD.BC		;SAVE IT
+	ILDB C,A		;GET THE ENDING CHARACTER
+	 MOVEM C,FWD.EC		;AND SAVE IT
+	ADD A,[001000,,0]	;AND GO BACK TO 16. BITS
+	ILDB D,A		;GET THE SIZE
+	 MOVEM D,FWD.SZ		;SAVE IT
+	ILDB E,A		;PUNT THE ROTATION
+	ILDB E,A		;GET HIGH PART OF POINTER
+	LSH E,16.		;AND MAKE IT HIGH
+	ILDB F,A		;AND GET THE LOW PART
+	ADD E,F			;CREATE POINTER TO DESCRIPTER
+
+	MOVE A,[442000,,FS]	;POINT TO BEGINNING OF FILE
+	IDIVI E,2
+	ADD A,E			;GO UP
+	SKIPE E+1
+	 IBP A			;IF ODD, GO UP ANOTHER BYTE
+
+	MOVE W,NFONTS		;GET THE NUMBER OF FONTS+1
+	ILDB T,A		;GET FBBox
+	TRNE T,100000		;IS IT A NEGATIVE (16. BIT MAG) NUMBER
+	 IOR T,[-1,,700000]	;EXTEND IT
+	SKIPN D			;IF SIZE IS NOT ZERO, SKIP THE SCALING
+	 CALL [
+		 IMULI T,2540.	;IF SIZE IS ZERO WE HAVE TO SCALE
+		 IMUL T,FDEsiz
+		 MOVEI TT,36000.
+		 SKIPGE T
+		  MOVN TT,TT
+		 ADD T,TT
+		 IDIVI T,72000.
+		RETURN]
+	HRRM T,FNTBOX-1(W)	;THIS IS HOW TO GET TO THE LEFT OF THE BOX
+	ILDB T,A		;GET FBBoy
+	TRNE T,100000
+	 IOR T,[-1,,700000]
+	IBP A			;PUNT FBBdx
+	ILDB TT,A		;GET FBBdy
+	ADD T,TT		;HOW TO GET TO THE TOP OF THE BOX
+	SKIPN D
+	 CALL [
+		 IMULI T,2540.
+		 IMUL T,FDEsiz
+		 MOVEI TT,36000.
+		 SKIPGE T
+		  MOVN TT,TT
+		 ADD T,TT
+		 IDIVI T,72000.
+		RETURN]
+	skipe al.bas		;do we have a baseline
+	 call [		;if so, we have done some work in vain
+		move t,al.bas	;get it
+		imul t,[32.]	;how to get to the top
+		return]	;and go back
+	HRLM T,FNTBOX-1(W)	;AND SET IT
+
+	ILDB T,A		;GET THE FIXED/VARIABLE BITS
+	MOVEI X,256.		;ASSUME WE NEED EVERYTHING
+	TRNE T,100000		;CHECK X'S
+	 TRNN T,40000		;AND Y'S
+	  SKIPA
+	   MOVEI X,1		;IF BOTH WERE ONE, IT IS FIXED,FIXED
+
+	MOVE Y,FREEM		;THIS IS WHERE IT ALL STARTS
+	ADD Y,[MOVE]		;TO MAKE IT LOOK PRETTY
+	CAIE X,1
+	 ADD Y,[(X)]		;X WILL HAVE THE CHARACTER
+	MOVEM Y,FNTWID-1(W)	;PUT IT ITS SLOT
+	HRRZ Y,Y		;ONLY WANT THE ADDRESS PART
+	PUSH P,Y		;SAVE THE FREE MEMORY LOCATION
+	PUSH P,X		;THE NUMBER OF WORDS WE WANT
+	ADD X,Y			;WE NEED SOME, AND THIS TELLS US THE TOP
+	MOVEM X,FREEM		;SET IT BACK FOR OTHER PEOPLES BENIFIT
+	CALL GETUPT		;ASK FOR THE CORE
+
+	POP P,X			;GET THE COUNT
+	MOVE Y,(P)		;GET THE ADDRESS OF WHERE TO PUT THINGS
+	MOVE Z,[100000,,100000]	;BAD VALUE, DON'T DRAW CHARACTER IF THIS SEEN
+	JUMPLE X,FWID.W
+	 MOVEM Z,(Y)
+	 AOS Y
+	 SOJA X,.-3
+
+;; SET UP THE X'S
+FWID.W:	MOVE X,(P)		;GET THE FREE MEMORY ADDRESS
+	ADD X,FWD.BC		;GO TO WHERE WE START DEFINING
+	MOVE Y,FWD.EC
+	 SUB Y,FWD.BC
+	TRNE T,100000
+	 TRNN T,040000
+	  SKIPA			;IF EITHER ARE ZERO, NOT FIXED WIDTH/HEIGHT
+	   CALL [
+		MOVE X,-1(P)	;WHERE TO PUT THING
+		SETZI Y,	;UPPER=LOWER
+		RETURN]
+	 AOS Y			;NUMBER OF CHARACTERS BEING DEFINED
+	PUSH P,A		;TEMPORARY PUSH
+	 ILDB Z,A		;GET THE NEXT X
+	POP P,A			;GET PACK OLD BYTE POINTER
+FWID.X:	JUMPLE Y,FWID.2
+	TRNN T,100000
+	 ILDB Z,A		;GET THE BYTE IF VARIABLE SPACING
+	TRNE Z,100000		;TEST FOR SIXTEEN BIT NEGATIVENESS
+	 IOR Z,[-1,,700000]		;MAKE IT PDP-10 NEGATIVE
+	SKIPE FWD.SZ
+	 JRST FWID.1
+	IMULI Z,2540.
+	IMUL Z,FDEsiz
+	PUSH P,Z+1		;SAVE WHATEVER IS UP THERE
+	MOVEI TT,36000.
+	SKIPGE Z
+	 MOVN TT,TT
+	ADD Z,TT
+	IDIVI Z,72000.		;CONVERT FROM SCALE TO AN ACTUAL NUMBER
+	POP P,Z+1		;GET IT BACK
+
+FWID.1:	SKIPN FDErot		;THIS IS GROSS
+	 CALL [	HRRM Z,(X)
+		AOS (P)
+		RETURN]
+	CALL [	HRLM Z,(X)
+		RETURN]	
+	AOS X
+	SOJA Y,FWID.X
+
+FWID.2:	TRNE T,100000		;IF FIXED WIDTH SPACING
+	IBP A			; WE HAVE TO MOVE OVER THE DATUM
+
+;; SAME THING FOR THE Y'S
+	MOVE X,(P)		;GET THE ADDRESS OF THE FREE AREA
+	ADD X,FWD.BC		;GO TO WHERE WE START DEFINING
+	MOVE Y,FWD.EC
+	 SUB Y,FWD.BC
+	TRNE T,100000
+	 TRNN T,040000
+	  SKIPA			;IF EITHER ARE ZERO, NOT FIXED WIDTH/HEIGHT
+	   CALL [
+		MOVE X,-1(P)	;WHERE TO PUT THING
+		SETZI Y,	;UPPER=LOWER
+		RETURN]
+	 AOS Y			;NUMBER OF CHARACTERS BEING DEFINED
+	POP P,			;GET RID OF THE TOP OF THE STACK
+	PUSH P,A		;TEMPORARY PUSH
+	 ILDB Z,A		;GET THE NEXT X
+	POP P,A			;GET PACK OLD BYTE POINTER
+FWID.Y:	JUMPLE Y,FWID.6
+	TRNN T,040000
+	 ILDB Z,A		;GET THE BYTE IF VARIABLE SPACING
+	TRNE Z,100000		;TEST FOR SIXTEEN BIT NEGATIVENESS
+	 IOR Z,[-1,,700000]		;MAKE IT PDP-10 NEGATIVE
+	SKIPE FWD.SZ
+	 JRST FWID.4
+	IMULI Z,2540.
+	IMUL Z,FDEsiz
+	PUSH P,Z+1		;DON'T BASH ANYTHING THAT SHOULDN'T BE
+	MOVEI TT,36000.
+	SKIPGE Z
+	 MOVN TT,TT
+	ADD Z,TT
+	IDIVI Z,72000.		;CONVERT FROM SCALE TO AN ACTUAL NUMBER
+	POP P,Z+1		;SO GET THE UNBASED BACK
+
+FWID.4:	SKIPN FDErot		;THIS IS GROSS
+	 CALL [	HRLM Z,(X)
+		AOS (P)
+		RETURN]
+	CALL [	MOVN Z,Z
+		HRRM Z,(X)
+		RETURN]	
+	AOS X
+	SOJA Y,FWID.Y
+
+
+FWID.6:				;I THINK THAT'S IT
+	RETURN
+
+SUBTTL REDISPLAY THE SCREEN IF IT NEEDS DOING SO
+
+REDISP:	SKIPN DORDSP		;SHOULD WE REDISPLAY
+	 RETURN		;RETURN IF NOT
+	.IOTob IMAGE,[%TDCLR]
+
+;; CONSIDERING I CHANGED THE WAY MEMORY IS ORGANIZED, PERHAPS
+;; THIS SHOULD BE REWRITTEN
+;; Well here goes the attempt.
+
+;; COMPUTE THE ACTUAL WIDTH (IN BITS) OF EACH SCAN LINE WE WILL OUTPUT
+;; 	H GETS THE NUMBER OF BLANK BITS ON THE LEFT OF THE SCREEN
+;; 	G GETS THE STARTING BIT(WORD) IN MEMORY TO START
+;; 	F GETS THE NUMBER OF BITS ACTUALLY OUTPUT
+
+	CALL PROMPT		;DISPLAY THE PROMPT
+	call border		;do the boarder
+	CALL BLTOUT		;PUT OUT THE RASTER
+	RETURN			;FINISHED
+
+PROMPT:	
+ifn its,[MOVEI X,[ASCIZ /ZLPAGE #/]]	;HOME DOWN CURSOR, AND PRINT PAGE
+ifn 20x,[movei x,[asciz /TLPAGE #/]]
+	 CALL TYPST1
+	MOVE X,THISPG
+	 CALL TYPDEC			;TYPE OUT THE PAGE NUMBER
+	MOVEI X,[ASCIZ / -->/]
+	CALL TYPST1
+	RETURN
+
+border:
+	MOVE X,[441000,,FILSPC]
+	movei a,%TDRST
+	idpb  a,x
+	movei a,%TDGRF
+	idpb  a,x
+	movei y,2		;two chars to output so far
+
+
+;; (A,B) IS UPPER LEFT (C,D) IS LOWER RIGHT, RELATIVE TO THE SCREEN
+;; 	AND (0,0) IS UPPER LEFT, X POS ACROSS, Y POS DOWN
+
+	MOVN A,XOFF
+	 IMULI A,32.
+	MOVN B,YOFF
+	MOVEI C,WORD.W
+	 SUB C,XOFF
+	 IMULI C,32.
+	 SOS C
+	MOVEI D,WORD.H
+	 SUB D,YOFF
+	 SOS D
+
+	PUSH P,D
+	PUSH P,C
+	PUSH P,B
+	PUSH P,A
+
+	MOVE A,-0(P)		;TOP (LEFT TO RIGHT)
+	 MOVE B,-1(P)
+	 MOVE C,-2(P)
+	 MOVE D,-1(P)
+	 CALL BRDTRY
+	MOVE A,-2(P)		;RIGHT (TOP TO BOTTOM)
+	 MOVE B,-1(P)
+	 MOVE C,-2(P)
+	 MOVE D,-3(P)
+	 CALL BRDTRY
+	MOVE A,-0(P)		;BOTTOM (LEFT TO RIGHT)
+	 MOVE B,-3(P)
+	 MOVE C,-2(P)
+	 MOVE D,-3(P)
+	 CALL BRDTRY
+	MOVE A,-0(P)		;LEFT (TOP TO BOTTOM)
+	 MOVE B,-1(P)
+	 MOVE C,-0(P)
+	 MOVE D,-3(P)
+	 CALL BRDTRY
+	SUB P,[4,,4]		;POP THEM
+
+	movei a,%TDNOP
+	idpb a,x
+	aos y
+	move x,[441000,,filspc]
+	.siot image,x,y,[jfcl]
+	return
+
+BRDTRY:		;from (a,b) to (c,d), a<=c, b<=d
+	SKIPL C			;total clip
+	 CAMLE A,SCRE.B
+	  RETURN
+	SKIPL D
+	 CAMLE B,SCRE.H
+	  RETURN
+
+	SKIPGE A		;max(foo,0)
+	 SETZI A,
+	SKIPGE B
+	 SETZI B,
+	SKIPGE C
+	 SETZI C,
+	SKIPGE D
+	 SETZI D,
+
+	CAMLE A,SCRE.B		;min(foo,limit)
+	 MOVE A,SCRE.B
+	CAMLE C,SCRE.B
+	 MOVE C,SCRE.B
+	CAMLE B,SCRE.H
+	 MOVE B,SCRE.H
+	CAMLE D,SCRE.H
+	 MOVE D,SCRE.H
+
+	movei e,%GOMVA
+	idpb e,x
+	add a,SGxoff
+	ldb e,[.bp 177,a]
+	idpb e,x
+	ldb e,[.bp 37600,a]
+	idpb e,x
+	movni b,(b)
+	add b,SGyoff
+	ldb e,[.bp 177,b]
+	idpb e,x
+	ldb e,[.bp 37600,b]
+	idpb e,x
+
+	movei e,%GODLA
+	idpb e,x
+	add c,SGxoff
+	ldb e,[.bp 177,c]
+	idpb e,x
+	ldb e,[.bp 37600,c]
+	idpb e,x
+	movni d,(d)
+	add d,SGyoff
+	ldb e,[.bp 177,d]
+	idpb e,x
+	ldb e,[.bp 37600,d]
+	idpb e,x
+
+	addi y,10.
+	return
+
+
+bltout:	MOVEI B,		;START AT THE TOP LINE OF THE SCREEN
+BLT.1:	SKIPE INTRUP
+	RETURN
+	MOVE C,B
+	ADD C,YOFF
+	JUMPL C,BLT.9
+	CAIL C,WORD.H
+	 JRST BLT.9
+	IMULI C,WORD.W
+	ADDI C,VPAGE
+	MOVEI T,-1		;LOWEST NON ZERO ADDRESS
+	MOVEI TT,0		;HIGHEST NON ZERO ADDRESS
+	MOVEI Z,-1		;WHERE ON THE SCREEN
+
+	SETZI A,		;HORIZONTALLY ALONG THE SCREEN
+BLT.3:	CAML A,SCRE.W
+	 JRST BLT.5
+	MOVE D,A
+	ADD D,XOFF
+	JUMPL D,BLT.4
+	CAIL D,WORD.W
+	 JRST BLT.4
+	ADD D,C
+	SKIPN (D)
+	 JRST BLT.4
+	CAMLE T,D
+	 MOVE T,D		;T GETS MIN
+	CAMGE TT,D
+	 MOVE TT,D		;TT GETS MAX
+	CAMLE Z,A
+	 MOVE Z,A		;Z GETS MIN
+BLT.4:	AOJA A,BLT.3
+
+BLT.5:	JUMPE TT,BLT.9		;NO WORDS
+	move x,[441000,,filspc]
+	movei d,%TDGRF
+	idpb d,x
+	movei d,%GOMVA
+	idpb d,x
+	movei y,2
+
+	imuli z,32.		;32. bits per word
+	add z,SGxoff
+	ldb d,[.bp 177,z]
+	idpb d,x
+	ldb d,[.bp 177_7,z]
+	idpb d,x
+	movn z,b
+	add z,SGyoff
+	ldb d,[.bp 177,z]
+	idpb d,x
+	ldb d,[.bp 177_7,z]
+	idpb d,x
+	addi y,4	
+
+	movei d,%GODSC
+	idpb d,x
+	addi y,1
+
+	sub tt,t
+	aos tt
+	hrli t,440600
+blt.7:	ildb d,t
+	idpb d,x
+	ildb d,t
+	idpb d,x
+	tlc  t,000600#000400
+	ildb d,t
+	idpb d,x
+	tlc  t,000400#000600
+
+	ildb d,t
+	idpb d,x
+	ildb d,t
+	idpb d,x
+	tlc  t,000600#000400
+	ildb d,t
+	idpb d,x
+	tlc  t,000400#000600
+
+	addi y,6
+	sojg tt,blt.7
+
+	movei d,100
+	idpb d,x
+	addi y,1
+
+	move x,[441000,,filspc]
+	.siot image,x,y,[.lose]
+
+BLT.9:	AOS B
+	CAMG B,SCRE.H
+	 JRST BLT.1
+
+	SETZM DORDSP		;THIS REQUEST FOR REDISPLAY FINISHED
+	RETURN
+
+
+
+SUBTTL GET READY (SET UP FOR) THE MAIN LOOP
+
+GETRDY:	SETZM LASTPG		;NO LAST PAGE 
+	MOVEI A,1
+	 MOVEM A,THISPG		;PAGE WE WANT IS NUMBER ONE
+	SETOM DORDSP		;SAT WE SHOULD DO A REDISPLAY
+
+	RETURN
+
+
+SUBTTL CALCULATE A NEW PAGE IF WE THINK IT IS DIFFERENT FROM THE CURRENT ONE
+
+NWPAGE:				;NEW PAGE IF NEEDED
+	MOVE A,THISPG
+	CAMN A,LASTPG		;COMPARE THE LAST PAGE DONE WITH THE DESIRED PAGE
+	 JRST [	SKIPE PAGEOK	;IS THE CURRENT PAGE OK
+		 RETURN		; IF OK, EXIT
+		JRST NWPG.G]	;GO AND DON'T INIT BUT CONTINUE
+
+	SETZM PAGEOK		;PAGE IS NOT OK
+	MOVEM A,LASTPG		;THE DATA SPACE IS NOW UNSAFE
+	SETZM VPAGE		;ZERO A WORD
+	MOVE A,[VPAGE,,VPAGE+1]	;BLT POINTER
+	BLT A,VPAGEZ-1		;ZERO THE VIRTUAL ALTO PAGE
+
+	MOVE A,PRTDIR		;GET THE PART DIR
+	SETZI C,		;PAGE NUMBER FOUND FROM THE PART DIR SCANNING
+	MOVE D,NPARTS		;GET THE NUMBER OF PARTS IN THE PART IDR
+	SETZI E,		;POINTER TO LAST GOOD PAGE NUMBER IN PART DIR
+
+NWPG.1:	JUMPLE D,NWPG.7		;IF WE FOUND THE END, WE LOSE A LITTLE
+	PUSH P,A		;SAVE IT
+	ILDB T,A		;GET THE TYPE
+	SOS D			;WE READ A PART
+	POP P,A			;RESTORE POINTER
+	ADDI A,2		;GO UP TO THE NEXT ONE
+	JUMPN T,NWPG.1		;IF NOT A PAGE PART, LOOP
+
+	AOS C			;UP THE PAGE NUMBER COUNT
+	MOVE E,A		;GET THE POINTER
+	SUBI E,2		;PUT IT BACK DOWN TO THE RIGHT PLACE
+	CAME C,THISPG		;COMPARE IT WITH THE PAGE WE WANT TO BE AT
+	 JRST NWPG.1		;IF NOT EQUAL, WE LOOP
+
+NWPG.7:	MOVEM C,LASTPG		;BOUND THE WORLD
+	MOVEM C,THISPG		;IN BOTH PLACES
+	MOVEM E,PAGPRT		;PUT THE POINTER IN THE PAGE PART
+
+ifn its,[MOVEI X,[ASCIZ /ZHLCOMPUTING PAGE /]]	;TELL USER WHAT WE ARE DOING
+ifn 20x,[movei x,[asciz /THLCOMPUTING PAGE /]]
+	 CALL TYPST1
+	MOVE X,THISPG
+	 CALL TYPDEC
+	SETZM DORDSP		;CANNOT DO A REDISPLAY ON A NONCOMPUTED PAGE
+
+	ILDB A,E		;GET THE PAGE PART TYPE
+	ILDB A,E		;GET THE STARTING RECORD
+	ILDB C,E		;GET THE NUMBER OF RECORDS
+	  MOVE X,A		;  THE STARTING RECORD
+	  MOVE Y,A		;  THE STARTING RECORD
+	  ADD Y,C		;  THE ENDING RECORD (NON INCLUSIVE)
+	  CALL MAPPAG		;  MAP THE PAGE IN IF NEEDED
+	MOVE B,A		;GET IT TO FROB WITH
+	 IMULI A,128.		;NUMBER OF PDP-10 WORDS PER RECORD
+	 ADD A,FILBEG		;INDEX INTO THE PRESS FILE
+	 HRLI A,441000		;EIGHT BIT BYTE POINTER
+	 MOVEM A,PAGBAS		;IT IS THE BASE OF THE PAGE
+
+	 ADD B,C			;ADD IT TO THE BASE
+	 IMULI B,128.		;TO PDP-10 WORDS
+	 ADD B,FILBEG		;INTO THE FILE WE GO
+	 HRLI B,442000		;IN A SIXTEEN BIT FASHION
+	ILDB C,E		;GET NUMBER OF TRAILING PRESS WORDS
+	MOVE T,C		;GET IT AGAIN
+	IDIVI T,2		;NUMBER OF PDP-10 WORDS TO MOVE
+	SUB B,T			;MOVE DOWN
+	SOS B			;ALWAYS MOVE DOWN ANOTHER TWO WORDS
+	TRNN C,1		;IS IT ODD
+	 IBP B			;IF EVEN GO UP
+	MOVEM B,ENTTOP		;THIS IS THE ENTITY TOP
+;; COMPUTE NUMBER OF ENTITIES
+	SETZM NUMENT		;ZERO IT
+	MOVE A,ENTTOP		;GET THE TOP
+NWPG.8:	ILDB B,A		;GET THE LENGTH
+	JUMPE B,NWPG.9		;IF ZERO WE HAVE FOUND THE END
+	IDIVI B,2		;CONVERT TO PDP-10 WORD DELTA
+	SUB A,B			;MOVE THE POINTER DOWN
+	SOS A			;AND TWO MORE
+	SKIPN B+1		;TEST THE REMAINDER
+	 IBP A			;IF COUNT WAS EVEN, WE MOVE UP A PRESS WORD
+	AOS NUMENT		;UP THE COUNT
+	JRST NWPG.8		;AND LOOP
+
+NWPG.9:	SETZM ENTNUM		;LAST ENTITY COMPLETED
+
+;; here to go after the next entity
+
+NWPG.A:	AOS A,ENTNUM		;WANT THE NEXT ENTITY
+	CAMG A,NUMENT		;COMPARE WITH THE NUMBER OF ENTITIES
+	 JRST NWPG.C		;IF WE ARE STILL OK, CONTINUE
+	SETOM DORDSP		;WE ARE FINISHED, READY TO REDISPLAY
+	SETOM PAGEOK		;THE PAGE IS OK
+	RETURN			;THIS IS ALL WE HAVE TO DO
+
+NWPG.C:	MOVE EL,ENTTOP		;GET THE TOP OF THE ENTITIES (IN ILDB FORMAT)
+	MOVE B,NUMENT		;THE NUMBER OF ENTITIES
+NWPG.D:	CAMN B,ENTNUM		;ARE WE AT THE RIGHT ONE?
+	 JRST NWPG.E		; IF WE FOUND IT WE ARE FINISHED
+	ILDB C,EL		;GET THE LENGTH OF THE ENTITY
+	IDIVI C,2		;C HAS PDP-10 WORDS, D HAS THE EXTRA
+	SUB EL,C		;GO DOWN C
+	SOS EL			;AND DOWN TWO MORE PRESS WORDS
+	SKIPN C+1		;TEST THE REMAINDER
+	 IBP EL			; IF EVEN NUMBER OF WORDS, WE GO UP ONE
+	SOJA B,NWPG.D		;TELL WE'VE GONE DOWN, AND LOOP
+
+NWPG.E:	SUBI EL,6		;GO DOWN TWELVE PRESS WORDS
+	IBP EL			;AND UP ONE TAKES US TO THE BASE OF THE ENTITY
+				; TRAILER
+	ILDB A,EL		;GET THE <ENTITY TYPE>|<FONT SET>
+	 LDB B,[101000,,A]	; GET THE ENTITY TYPE
+	  MOVEM B,ENTTYP	;  PUT IT
+	 LDB B,[001000,,A]	; GET THE FONT SET
+	  MOVEM B,FNTSET	;  PUT IT
+	   MOVEI A,160+0	;   SET UP FONT ZERO
+	   CALL STFONT	;   AND GO SET IT
+	ILDB A,EL		;GET HIGH ORDER PART OF BEGIN BYTE
+	 LSH A,16.		; SCALE IT
+	ILDB B,EL		;GET THE LOW ORDER
+	 ADD A,B		; ADDING GIVES THE FULL NUMBER
+	 MOVEM A,BEGBYT		;BEGIN BYTE
+	ILDB A,EL		;LOW ORDER OF BYTE LENGTH
+	 LSH A,16.		; SCALE IT UP
+	ILDB B,EL		;LOW ORDER
+	 ADD A,B		; REAL NUMBER
+	 MOVEM A,BYTLEN		;BYTE LENGTH
+	ILDB A,EL		;XE
+	 MOVEM A,XE		; PUT IT
+	ILDB A,EL		;YE
+	 MOVEM A,YE		; PUT IT
+	ILDB A,EL		;LEFT
+	 MOVEM A,PGLEFT		; PUT IT
+	ILDB A,EL		;BOTTOM
+	 MOVEM A,BOTTOM		; PUT IT
+	ILDB A,EL		;WIDTH
+	 MOVEM A,WIDTH		; PUT IT
+	ILDB A,EL		;HEIGHT
+	 MOVEM A,HEIGHT		; PUT IT
+	ILDB A,EL		;LENGTH OF ENTITY
+	 MOVEM A,ENTLEN		; AND SAVE IT
+	PUSH P,A		;SAVE IT
+	 SUBI A,12.		; MINUS TRAILER WORDS
+	 IMULI A,2		; TIMES TWO GIVES NUMBER OF COMMAND BYTES
+	 MOVEM A,NUMCOM		; SAVE NUMBER OF COMMANDS
+	POP P,A			;GET BACK THE NUMBER OF PRESS WORDS IN THE ENTITY
+	IDIVI A,2		;CONVERT TO PDP-10 WORDS
+	SUB EL,A		;GO DOWN
+	SOS EL			;AND TWO MORE
+	IBP EL			;GO UP ONE PRESS WORD
+	SKIPN A+1		;WAS THERE AN ODD NUMBER OF PRESS WORDS
+	 IBP EL			;GO UP
+;EL NOW POINTS TO BASE OF THE COMMANDS
+	SUB EL,[001000,,0]	;CONVERT TO EIGHT BIT
+
+	MOVE DL,PAGBAS		;GET THE BASE OF THE PAGE (EIGHT BIT POINTER)
+	MOVE A,BEGBYT		;GET THE BEGINNING BYTE
+	IDIVI A,4		;A GETS PDP-10 WORDS, A+1 GETS EXTRAS
+	ADD DL,A		;ADD IT IN
+	SKIPA			;SKIP THE INCREMENTER THE FIRST TIME
+	 IBP DL			;UP ANOTHER BYTE
+	SOJGE A+1,.-1		;COUNT DOWN AND LOOP IF ANYTHING LEFT
+
+NWPG.G:	SKIPE INTRUP		;COME HERE FOR CONTINUING PROCESSING OF PAGE
+	 JRST NWPG.Z
+	SKIPG NUMCOM		;ARE THERE ANY MORE COMMANDS
+	 JRST NWPG.A		; IF NOT, GO ON TO NEXT ENTITY
+	ILDB A,EL		;GET A COMMAND
+	 SOS NUMCOM		; AND LOWER THE COUNT
+	MOVEI B,PCMTBL		;GET THE PRESS COMMAND TABLE
+NWPG.I:	HLRZ C,(B)		;GET THE BASE OF THIS SET
+	CAML A,C		;SKIP IF WE GET TOO HIGH
+	 AOJA B,NWPG.I		; UP THE COMMAND TABLE POINTER AND LOOP
+	HRRZ C,-1(B)		;GET THE ROUTINE TO CALL (THE PREVIOUS ONE)
+	CALL (C)		;AND GO TO IT, LEAVING THE COMMAND IN A
+	JRST NWPG.G		;GO LOOP FOR NEXT COMMAND
+
+NWPG.Z:				;CAN'T THINK OF ANYTHING TO DO
+	RETURN
+
+PCMTBL:	000,,SHOWSH		;SHOW CHARACTERS SHORT
+	040,,SKIPSH		;SKIP CHARACTERS SHORT
+	100,,SHOWSK		;SHOW CHARACTERS AND SKIP
+	140,,SSPXSH		;SET SPACE X SHORT
+	150,,SSPYSH		;SET SPACE Y SHORT
+	160,,STFONT		;SET FONT
+	200,,AVAIL		;AVAILABLE
+	240,,SPARE		;SPARE
+	353,,SKCBI		;SKIP CONTROL BYTES IMMEDIATE
+	354,,ALTERN		;ALTERNATE
+	355,,ONLYON		;ONLY ON COPY
+	356,,SETX		;SET X
+	357,,SETY		;SET Y
+	360,,SHOWCH		;SHOW CHARACTERS
+	361,,SKIPCH		;SKIP CHARACTERS
+	362,,SKCBYT		;SKIP CONTROL BYTES
+	363,,SHOWI		;SHOW CHARACTER IMMEDIATE
+	364,,SETSPX		;SET SPACE X
+	365,,SETSPY		;SET SPACE Y
+	366,,RSETSP		;RESET SPACE
+	367,,SPACE		;SPACE
+	370,,STBRIT		;SET BRIGHTNESS
+	371,,SETHUE		;SET HUE
+	372,,SETSAT		;SET SATURATION
+	373,,SHOWOB		;SHOW OBJECT
+	374,,SHOWDT		;SHOW DOTS
+	375,,SHOWDO		;SHOW DOTS OPAQUE
+	376,,SHWREC		;SHOW RECTANGLE
+	377,,NOOP		;NOOP
+
+	400,,			;THIS IS THE END OF THE TABLE
+
+
+SUBTTL THE COMMANDS (AT LEAST ENOUGH TO GET STARTED)
+
+;; SOME UTILITIES (macros) FIRST
+
+;;; get an argument from the entity list
+
+define elarg num
+	setzi x,
+	repeat num,[
+	 ifn .rpcnt, lsh x,8
+	 ildb y,el
+	 add x,y]
+	ifn <num-1>,[ movni y,num ? addm y,numcom ]
+	ife <num-1>,  sos numcom
+termin
+
+;;; get an argument from the data list
+
+define dlarg num
+	setzi x,
+	repeat num,[
+	 ifn .rpcnt, lsh x,8
+	 ildb y,dl
+	 add x,y]
+termin
+
+;; THE VARIOUS PIECES OF CODE
+
+SHOWSH:	ADDI A,1		;COM=000+N-1 ==> N=COM+1
+	MOVE X,A		;AND PUT IT IN X
+	JRST SHCH.1		;AND CONNECT WITH SHOW CHARACTER
+
+SKIPSH:	SUBI A,40-1		;COM=040+N-1 ==> N=COM-(040-1)
+	MOVE X,A		;AND PUT IT IN X
+	JRST SKCH.1		;AND CONNECT WITH SKIP CHARACTERS
+
+SHOWSK:	SUBI A,100-1		;COM=100+N-1 ==> N=COM-(100-1)
+	MOVE X,A		;AND PUT IT IN X
+	CALL SHCH.1		;SHOW THE CHARACTERS
+	MOVEI X,1		;ONE BYTE
+	JRST SKCH.1		;SKIP IT
+
+SSPXSH:	SUBI A,140-1
+	MOVE X,A		;AND PUT IT IN X
+	JRST SSPX.1		;AND CONNECT WITH SET SPACE X
+SSPYSH:	SUBI A,150-1
+	MOVE X,A		;AND PUT IT IN X
+	JRST SSPY.1		;AND CONNECT WITH SET SPACE Y
+
+STFONT:	SUBI A,160
+	MOVE B,FNTSET		;GET THE FONT SET
+	IMULI B,16.		;SIXTEEN FONTS IN A SET
+	ADD A,B			;GETS <FONT SET><FONT>
+; HAVE TO LOOK THIS UP IN OUR TABLE
+	MOVEI B,FNTTTB
+STFNT1:	SKIPGE (B)
+	 JRST [SETZM FONT ? RETURN]	;NEGATIVE MEANS AT THE END
+	CAME A,(B)		;WHAT WE ARE LOOKING FOR
+ 	 AOJA B,STFNT1		;NOPE
+	SUBI B,FNTTTB		;GET THE INTERNAL FONT INDEX
+	 MOVEM B,FONT		;AND SET IT
+	RETURN
+
+AVAIL:	
+ifn stats,aos req.av
+	RETURN
+SPARE:
+ifn stats,aos req.sp
+	RETURN
+
+
+SKCBI:	ELARG 1
+	JRST SKCB.1		;AND CONNECT WITH SKIP CONTROL BYTES
+
+ALTERN:	ELARG 2
+	ELARG 4
+	DLARG 4
+ifn stats,aos req.al
+	RETURN
+
+ONLYON:	ELARG 1
+ifn stats,aos req.oo
+	RETURN
+	
+SETX:	ELARG 2
+	ADD X,XE
+	 ANDI X,077777		;ONLY KEEP 15. BITS
+	MOVEM X,GXPOS
+	RETURN
+SETY:	ELARG 2
+	ADD X,YE
+	 ANDI X,077777		;ONLY KEEP 15. BITS
+	MOVEM X,GYPOS
+	RETURN
+
+SHOWCH:	ELARG 1
+SHCH.1:	SOJL X,CPOPJ		;DECREMENT AND EXIT WHEN FINISHED
+	PUSH P,X		;SAVE IT
+	 ILDB X,DL		;GET A CHARACTER
+	 CALL SHOW		;GO SHOW THE CHARACTER
+	POP P,X			;GET THE COUNT BACK
+	JRST SHCH.1		;AND LOOP
+
+SKIPCH:	ELARG 1
+SKCH.1:	IDIVI X,4
+	ADD DL,X
+	SKIPA
+	 IBP DL
+	 SOJGE X+1,.-1
+	RETURN
+
+SKCBYT:	ELARG 1
+SKCB.1:	SUBM X,NUMCOM
+	MOVNS NUMCOM
+	IDIVI X,4
+	ADD EL,X
+	SKIPA
+	 IBP EL
+	 SOJGE X+1,.-1
+	RETURN
+	
+SHOWI:	ELARG 1
+	JRST SHOW
+
+SETSPX:	ELARG 2
+SSPX.1:	MOVEM X,SPACEX
+ifn stats,aos req.sx
+	RETURN
+SETSPY:	ELARG 2
+SSPY.1:	MOVEM X,SPACEY
+ifn stats,aos req.sy
+	RETURN
+
+RSETSP:	SETZM SPACEX
+	SETZM SPACEY
+ifn stats,aos req.rs
+	return
+
+SPACE:	MOVEI X,40
+ifn stats,aos req.
+	JRST SHOW
+
+STBRIT:	ELARG 1
+ifn stats,aos req.br
+	RETURN
+SETHUE:	ELARG 1
+ifn stats,aos req.hu
+	RETURN
+SETSAT:	ELARG 1
+ifn stats,aos req.sa
+	RETURN
+
+SHOWOB:	ELARG 2
+ifn stats,aos req.so
+	JRST SKCH.1		;UNTIL I IMPLEMENT OBJECTS
+
+SHOWDT:	ELARG 4
+ifn stats,aos req.dt
+	JRST SKCH.1		;UNTIL I IMPLEMENT DOTS
+SHOWDO:	ELARG 4
+ifn stats,aos req.do
+	JRST SKCH.1		;UNTIL I IMPLEMENT DOTS
+
+SHWREC:	ELARG 2			;GET WIDTH
+	PUSH P,X
+	ELARG 2			;GET HEIGHT
+	MOVE Y,X		;PUT IT IN Y
+	POP P,X			;GET THE WIDTH
+ifn stats,aos req.sr
+	JRST RECT		;AND GO SHOW IT
+
+NOOP:	RETURN
+
+SUBTTL SOME MAJOR HAIR IN THIS PROGRAM (DRAWING THE CHARACTER IN X)
+
+SHOW:
+
+
+
+	PUSH P,A
+	PUSH P,B
+	PUSH P,C
+	PUSH P,D
+
+	MOVE TT,FONT		;NEED THE FONT
+	
+	PUSH P,GYPOS		;SAVE THESE FOR LATER
+	PUSH P,GXPOS
+
+	HRRE A,@FNTWID(TT)	;GET THE X INCREMENT
+	 CAIE A,100000		;THE MAGIC BAD NUMBER
+	  ADDM A,GXPOS
+	HLRE A,@FNTWID(TT)	;AND THE Y INCREMENT
+	 CAIE A,100000
+	  ADDM A,GYPOS
+
+	POP P,A			;GET THE X
+	 HRRE C,FNTBOX(TT)	; HOW TO GET TO THE LEFT OF THE BOX
+	 ADD A,C		; AND GO THERE
+	POP P,B			;AND THE Y
+	 HLRE C,FNTBOX(TT)	; HOW TO GET TO THE TOP OF THE BOX
+	 ADD B,C		; AND GO THERE
+
+	LSH A,-5		;CONVERT TO ALTO RESOLUTION
+	LSH B,-5
+	 MOVEI C,WORD.H
+	 SUB C,B
+	 MOVE B,C		;TURN Y UPSIDE DOWN BECAUSE (0,0) IS AT THE BOTTOM
+
+	jumpl b,[movei x,[asciz /Character off page/]
+		 call typstr
+		 jrst show.z]
+	MOVEI C,@FNTTBL(TT)	;GET ADDRESS OF THE CHARACTER DATA
+	MOVE T,(C)		;GET THE HEADER WORD
+	 AOS C			;GO ON TO THE DATA
+	JUMPE T,SHOW.Z		;IF NOTHING, THERE IS REALLY NO CHARACTER TO PUT
+	LDB E,[301400,,T]	;FIRST THIRD WORD IS NUMBER OF UNUSED
+				; SCAN LINES AT TOP
+	ADD B,E			;AND PUT THEM IN
+
+	LDB D,[141400,,T]	;GET THE NUMBER OF SCAN LINES OF DATA
+f...:	LDB E,[001400,,T]	;AND THE NUMBER OF WORDS PER SCAN LINE
+
+;; FROB WITH A AND B SO A CONTAINS ADDRESS INTO VPAGE AND B CONTAINS LSHC AMOUNT
+	MOVE X,B		;GET THE Y
+	 IMULI X,WORD.W		;CREATE VERTICAL INDEX
+	MOVE Y,A		;GET THE X
+	 IDIVI Y,32.		;32. BITS PER WORD IN USE
+	 ADD X,Y		;FULL WORDS IN USE
+	 ADDI X,VPAGE		;INDEX BECOMES ADDRESS
+	 MOVE  A,X		;AND PUT  IT IN A
+
+	MOVEI B,32.		;WE LSHC 32.
+	SUB B,Z			;MINUS THE LEFT OVER HORIZONTAL BITS
+
+;; TIME TO LOOP
+SHOW.L:	JUMPE E,SHOW.Z		;WHEN NO WIDTH REMAINS WE ARE FINISHED
+	PUSH P,A		;SAVE ADDRESS INTO VPAGE
+	PUSH P,D		;AND THE HEIGHT
+SHOW.M:	JUMPE D,SHOW.P		;WHEN WE RUN OUT OF HEIGHT, WE TRY FOR THE NEXT
+				; WE GO AFTER THE NEXT WIDTH SECTION
+	MOVE TT,(C)		;GET A CHARACTER OF DATA
+	 AOS C			;AND LET THE REGISTER KNOW ABOUT IT
+	setzi t,		;CLEAR EXTRANEOUS BITS
+	LSHC T,(B)		;SHIFT IT AROUND
+	LSH T,4			;GET THE SHIFTED DATA OUT OF THE LOW FOUR BITS
+	SKIPE T			;  SAFETY
+	 IORM T,(A)		;OR IT INTO MEMORY
+	SKIPE TT		;  SAFETY
+	 IORM TT,1(A)		;AND THIS ONE TOO
+	ADDI A,WORD.W		;AND GO DOWN TO THE NEXT SCAN LINE
+	SOJA D,SHOW.M		;GO FOR THE NEXT PIECE OF DATA
+
+SHOW.P:	POP P,D			;GET THE HEIGHT BACK
+	POP P,A			;GET THE ADDRESS OF WHERE THINGS ARE TO GO
+	AOS A			;GO HORIZONTALLY ONE FOR THE NEXT WIDTH SERIES
+	SOJA E,SHOW.L		;AND DO THE WIDTH LOOP
+
+SHOW.Z:	POP P,D
+	POP P,C
+	POP P,B
+	POP P,A
+	RETURN
+
+
+SUBTTL ANOTHER PIECE OF HAIR (SHOWING A RECTANGLE)
+
+;; Draw a rectangle from (GXPOS,GYPOS) to (GXPOS+WIDTH,GYPOS+HEIGHT)
+;; Where WIDTH is in X, and HEIGHT is in Y
+
+RECT:	JUMPE Y,CPOPJ		;DON'T DO DEGENERATE CASES
+	JUMPE X,CPOPJ
+
+	ADDI Y,16.
+	LSH Y,-5.		;ROUND TO THE ALTO DOT
+	SKIPN Y
+	 AOS Y			;MUST BE AT LEAST ONE
+	ADDI X,16.
+	LSH X,-5.
+	SKIPN X
+	 AOS X
+	
+	PUSH P,A		;THESE MUST NOT CHANGE THROUGH THIS CALL
+	PUSH P,B
+	PUSH P,C
+
+;; A WANTS THE ADDRESS OF THE PDP-10 WORD THAT HAS THE BOTTOM LEFT CORNER
+	MOVEI A,WORD.H		;HEIGHT OF THE VIRTUAL SCREEN
+	MOVE B,GYPOS		;GET THE GRAPHIC CURSOR
+	 LSH B,-5		;CONVERT TO ALTO RESOLUTION
+	SUB A,B			;VERTICAL DISTANCE FROM TOP
+	jumpl a,[movei x,[asciz /Rectangle off page/]
+		 call typstr
+		 jrst rect.z]
+	IMULI A,WORD.W		;CONVERT TO INDEX
+	ADDI A,VPAGE		;CONVERT TO ADDRESS
+	MOVE B,GXPOS		;GET THE X
+	 LSH B,-5		;CONVERT TO ALTO RESOLUTION
+	IDIVI B,32.		;32. BITS USED PER WORD
+	ADD A,B			;A NOW HAS THE ADDRESS
+
+	MOVN B,C		;B HAS (- <NUMBER OF UNUSED BITS ON LEFT OF WORD>)
+
+RECT.A:	PUSH P,A		;SAVE THE ADDRESS FOR LATER RESTORATION
+	PUSH P,Y		;THE HEIGHT ALSO
+
+	MOVE C,[-1]
+	MOVEI D,32.
+	 ADD D,B
+	 SUB D,X		;NUMBER OF UNUSED BITS ON THE RIGHT
+	 SKIPG D
+	  SETZI D,		;NO LESS THAN ZERO
+	 SUB D,B		;32.- <NUMBER OF USED BITS>
+	LSH C,4(D)		;THE FOUR BITS ON THE BOTTOM DON'T COUNT
+	LSH C,(B)		;SHIFT THE USED BITS DOWN
+
+RECT.C:	JUMPLE Y,RECT.E
+	IORM C,(A)		;OR THESE BITS INTO MEMORY
+	SUBI A,WORD.W		;GO UP A SCAN LINE
+	SOJA Y,RECT.C
+
+RECT.E:	POP P,Y			;get the number of alto scan lines high
+	POP P,A			;and the address of where we were (bottom left)
+	AOS A			;GO ON TO THE NEXT COLUMN
+	MOVN D,D		;(- <NUMBER OF UNUSED BITS>)
+	ADDI D,32.		;NUMBER OF USED BITS
+	SUB X,D			;UPDATE X
+	SETZI B,		;ALL BITS ARE LEFT JUSTIFIED
+	JUMPG X,RECT.A		;IF ANY LEFT, WE SHOULD PUT THEM IN TOO
+
+rect.z:	POP P,C
+	POP P,B
+	POP P,A
+	RETURN
+
+
+SUBTTL GET A CHARACTER FROM THE TERMINAL AND PROCESS IT
+
+INCHAR:	SKIPN ARGCHR		;ARE THERE ANY ARGUMENT CHARACTERS
+	 CALL PROMPT		;IF NONE, WE SHOLD DISPLAY THE PROMPT
+ifn its,[
+	.IOTi TTYICH,A
+];its
+ifn 20x,[
+	movei 1,.priin
+	movei 2,<.mofci==60>
+	mtopr
+	move a,3
+];20x
+	SOSGE INTRUP
+	 setzm intrup		;in case the interrupt system is playing games
+	SETZM TOPSET
+	MOVEI B,1		;THE MULTIPLIER
+	TRZ A,%TXSFL+%TXSFT	;CLEAR SHIFT KEYS
+	TRZE A,%TXTOP
+	 SETOM TOPSET
+	TRZE A,%TXMTA		;META BIT
+	 IMULI B,4		; MULTIPLY BY 4
+	TRZE A,%TXCTL		;CONTROL BIT
+	 IMULI B,2		; FACTOR OF 2
+
+	ANDI A,177		;MASK FOR ASCII
+	CAIL A,"a
+	 CAILE A,"z
+	  SKIPA
+	   SUBI A,<"a-"A>	;CAPITALIZE
+	CAIN A,177		;RUBOUT
+	 JRST INCH.R		; RUBOUT PROCESSOR
+	skipe topset		;if the top was set
+	 iori a,%txtop		; set it back in
+	CAIN A,"-		;MINUS SIGN
+	 JRST INCH.A		; ARGUMENT PROCESSOR
+	CAIL A,"0
+	 CAILE A,"9
+	  SKIPA
+	   JRST INCH.A		; ARGUMENT PROCESSOR
+	CAIN A,40		;SPACE
+	 RETURN
+
+	MOVEI C,KEYTBL		;GET THE TABLE
+INCH.D:	HRRZ D,(C)		;GET THE NEXT CHARACTER FOR COMPARISON
+	JUMPE D,PROMPT		;IF NONE, REPRINT PROMPT (AND EXIT IN THE MEANTIME)
+	CAME A,D		;COMPARE
+	 AOJA C,INCH.D		; IF NOT THE SAME, INCREMENT TABLE INDEX AND LOOP
+	HLRZ D,(C)		;GET THE ADDRESS OF THE ROUTINE TO JUMP TO
+	CALL (D)		;GO DO IT
+	SETZM ARGCHR		;CLEAR THE ARGUMENT BUFFER
+	RETURN
+
+INCH.A:	MOVE B,ARGCHR		;NUMBER OF CHARACTERS IN THE ARGUMENT
+	MOVEM A,ARGBUF(B)	;PUT IT IN THE TABLE
+	AOS ARGCHR		;BUMP UP THE COUNT
+	RETURN			;AND EXIT
+
+INCH.R:				;RUBOUT PROCESSOR
+	SKIPN ARGCHR		;ARE THERE ANY CHARACTERS?
+	 RETURN		; NOT IF WE EXECUTE THIS
+	MOVEI X,[ASCIZ /X/]	;TO ERASE A CHARACTER
+	 CALL TYPST1		;OUTPUT IT
+	SOS ARGCHR
+	RETURN
+
+KEYTBL:	LEFT,,"[
+	LEFT,,"{
+	RIGHT,,"]
+	RIGHT,,"}
+	UP,,"\
+	UP,,"|
+	DOWN,,"/
+	DOWN,,^N		;INFINITY SIGN
+
+	right,,"L+%TXTOP	;sigh
+	left,,"R+%TXTOP
+	UP,,"U+%TXTOP
+	DOWN,,"D+%TXTOP
+
+	HOME,,"H
+	CENTER,,"C
+	TOPCEN,,^F+%TXTOP	;TOP C
+	TOPCEN,,^Z+%TXTOP	;top c on new keyboards
+	GOLEFT,,^M	;return
+
+	QUAD1,,"C+%TXTOP	;CLEAR key
+	QUAD2,,^I		;TAB
+	QUAD3,,^L		;FORM
+	QUAD4,,^K		;VT
+
+	QUAD1,,"1+%TXTOP
+	QUAD2,,"2+%TXTOP
+	QUAD3,,"3+%TXTOP
+	QUAD4,,"4+%TXTOP
+
+	NEXT,,"N
+	NEXT,,"A
+	PREV,,"P
+	QUIT,,"Q
+	RDSP,,"R
+	GOPAGE,,"G
+	HELP,,"?
+	help,,"?+%txtop	;sipb keyboard lossage
+	DUMP,,"D		;DUMP THIS PAGE
+
+	0,,0
+
+
+RIGHT:	MOVN B,B	;MAKE ARG NEGATIVE
+LEFT:	IMULI B,MOVINC/32.	;MULTIPLY IT BY THE INCREMENT
+	ADDM B,XOFF	;SAVE IT
+	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+UP:	MOVN B,B
+DOWN:	IMULI B,MOVINC
+	ADDM B,YOFF
+	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+QUAD1:
+HOME:	SETZM YOFF
+GOLEFT:	SETZM XOFF
+RDSP:	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+CENTER:	MOVEI A,WORD.W	;CENTER THE PAGE ON THE SCREEN
+	SUB A,SCRE.W
+	IDIVI A,2
+	MOVEM A,XOFF
+	MOVEI A,WORD.H
+	SUB A,SCRE.H
+	IDIVI A,2
+	MOVEM A,YOFF
+	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+TOPCEN:	CALL CENTER
+	SETZM YOFF
+	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+QUAD2:	MOVEI T,WORD.W
+	SUB T,SCRE.W
+	MOVEM T,XOFF
+	SETZM YOFF
+	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+QUAD4:  CALL QUAD2
+	SKIPA
+QUAD3:	SETZM XOFF
+	MOVEI T,WORD.H
+	SUB T,SCRE.H
+	MOVEM T,YOFF
+	SETOM DORDSP		;DO A REDISPLAY WHEN WE GET TO THAT CODE
+	RETURN
+
+
+HELP:	MOVEI X,[ASCIZ#T
+  DPRESS COMMANDS:
+nG--GO TO nTH PAGE
+nA--ADVANCE n PAGES
+nN--NEXT PAGE(S)
+nP--PREVIOUS PAGE(S)
+H---HOME WINDOW TO TOP LEFT
+C---CENTER WINDOW ON PAGE
+TOP-C MOVE WINDOW TO TOP CENTER OF PAGE
+RETURN--GO TO THE LEFT OF THE PAPER
+Q---QUIT
+R---REDISPLAY PAGE
+?---TYPE THIS CRUFT
+[---MOVE PAGE LEFT  \  /  CTRL MULTIPLIES BY 2
+]---MOVE PAGE RIGHT |--|  META MULTIPLIES BY 4
+\---MOVE PAGE UP    |  |  
+/---MOVE PAGE DOWN  /  \  SHIFT IS IGNORED
+
+<CLEAR>	<TAB>	\__\	QUAD I	  QUAD II
+<FORM> 	<VT>	/  /	QUAD III  QUAD IV
+
+ON NEW KEYBOARDS:
+   ROMAN NUMBERS go to that quadrant
+   HANDS move the eye in the pointed to direction
+
+D---Dump this page into .TEMP.;<uname> .PRSPG  (for PResS PaGe)
+#]
+	CALL TYPSTR	;OUTPUT THE HELP MESSAGE
+	CALL PROMPT	;REDISPLAY THE PROMPT
+	SETZM DORDSP
+	RETURN
+
+dump:	return
+
+
+PREV:	CALL GETARG		;GET THE ARGUMENT
+	MOVN Z,Z		;NEGATE IT
+	SKIPA
+NEXT:	CALL GETARG
+	ADDM Z,THISPG
+NEXT.1:	SKIPLE THISPG
+	 RETURN
+	MOVEI Z,1
+	MOVEM Z,THISPG
+	RETURN
+GOPAGE:	CALL GETARG
+	MOVEM Z,THISPG
+	JRST NEXT.1
+
+GETARG:	SETZI T,		;NUMBER OF ACTUAL DIGIT CHARACTERS
+	MOVEI TT,1		;POSITIVE ARGUMENT (FACTOR, ACTUALLY)
+	SETZI Z,		;THE ACTUAL ARGUMENT
+	MOVEI X,ARGBUF
+GTAR.A:	SOSGE ARGCHR		;DECREMENT NUMBERR OF CHARACTERS IN BUFFER
+	 JRST [	SKIPN T		;WERE ANY DIGITS ENCOUNTERED
+		 MOVEI Z,1	;IF NOT WE RETURN A ONE
+		IMUL Z,TT	;TIMES THE FACTOR
+		RETURN]
+	MOVE Y,(X)		;GET A CHARACTER
+	AOS X
+	CAIN Y,"-		;MINUS SIGN?
+	 MOVN TT,TT		; NEGATE
+	CAIL Y,"0
+	 CAILE Y,"9
+	  JRST GTAR.C
+	   IMULI Z,10.
+	   ADDI Z,-"0(Y)
+	   AOS T
+GTAR.C:	JRST GTAR.A		;LOOP
+
+
+SUBTTL SUPPORT ROUTINES
+
+;;; Map in some pages from the press file
+;;; X <== BEGREC, of disk file, inclusive
+;;; Y <== ENDREC, of disk file, not inclusive
+;;; Z <== MEMTOP, the top of our memory where this mapping can go (not inclusive)
+;;; BEGADR ==> X, where BEGREC is now as an address
+;;; NEWTOP ==> Z, assuming this space will not get reused, this is the new MEMTOP
+;;; LOWREC ==> LOWREC, lowest record number actually mapped in
+;;; HIGREC ==> HIGREC, highest record number acutally mapped in
+;;; FILBEG ==> FILBEG, where the file beginning should be if our
+;;;			address space were infinite
+
+recpag==pagsiz/128.		;number of records per page
+
+MAPREC:
+	CAML X,Y		;ONLY IF WE REALLY WANT SOME RECORDS
+	 RETURN
+	PUSH P,A		;SAVE SOME REGISTERS
+	 PUSH P,B
+	 PUSH P,C
+	 PUSH P,D
+	MOVE A,X		;GET BEGREC
+	 TRZ A,RECPAG-1		;MASK OUT TO GET THE BASE RECORD FOR THE PAGE
+	 MOVEM A,LOWREC		;THE LOWEST ONE THAT REALLY GETS MAPPED IN
+	 IDIVI A,RECPAG		;CONVET TO DISK PAGE NUMBER
+	MOVE B,Y		;GET ENDREC
+	 SOS B			;NON INCLUSIVE ==> INCLUSIVE
+	 TRO B,RECPAG-1		;SET ALL BITS
+	 MOVEM B,HIGREC		;AND THIS IS THE HIGHEST RECORD BEING MAPPED
+	 IDIVI B,RECPAG		;THE HIGHEST NUMBERED RECORD REALLY BEING MAPPED
+	SUB B,A			;NUMBER OF PAGES MINUS ONE
+	 AOS B			;REAL NUMBER OF PAGES
+	MOVE C,Z		;GET THE MEMORY TOP
+	 IDIVI C,pagsiz		;CONVERT TO PAGE
+	 SUB C,B		;NEW LOW MEMORY PAGE
+	 PUSH P,C		;SAVE IT FOR A MINUTE
+	  SUB C,A		;WHERE DISK PAGE ZERO IS IN MEMORY
+				;(INCLUDING NEGATIVE) 
+	   IMULI C,pagsiz	;CONVERT TO ADDRESS
+	   MOVEM C,FILBEG	;THIS IS WHERE THE FILE THINKS IT REALLY STARTS
+	  MOVE C,(P)		;GET THE PAGE NUMBER BACK
+	  IMULI C,pagsiz	;CONVERT TO ADDRESS
+	  MOVEM C,Z		;AND ZAP IT BACK AS A RETURN VALUE
+	  ANDI X,RECPAG-1	;RECORD WITHIN PAGE
+	  IMULI X,128.		;CONVERT RECORD OFFSET TO MEMORY OFFSET
+	  ADD X,C		;AND ADD IN THE BASE, CREATING THE
+				;MEMORY ADDRESS OF THE START OF RECORD
+				;X, THE RETURN VALUE
+	 POP P,C		;GET BACK THE BASE PAGE NUMBER
+	MOVN B,B		;-NPAGES
+	HRL C,B			;-NPAGES,,BASEPAGE
+ifn its,[
+	syscal corblk,[movei %cbred
+		movei %jself ? c
+		movei dskich ? a]
+	   .LOSE 1000	;shouldn't happen
+];ifn its
+ifn 20x,[
+	push p,a		;register safety
+	push p,b
+	push p,c
+	hrl  ac1,jfntbl+dskich
+	hrr  ac1,-2(p)
+	hrli ac2,.fhslf
+	hrr  ac2,0(p)
+	movn ac3,-1(p)
+	ior  ac3,[pm%cnt+pm%rd]
+	pmap
+	pop p,c
+	pop p,b
+	pop p,a
+]
+	
+	POP P,D			;GET BACK THE REGS
+	 POP P,C
+	 POP P,B
+	 POP P,A
+	RETURN
+
+;; Get pages so that we can put data in words up to, BUT NOT
+;; INCLUDING the adress of X
+
+GETUPT:	SOS X		;HERE IS OUR NOT INCLUDING PART
+	IDIVI X,pagsiz	;CHANGE THE ADRESS TO A PAGE NUMBER
+GETUP2:	CAMGE X,FREEPG	;SKIP IF WE NEED TO GET A PAGE
+	 JRST CPOPJ		;IF NOT WE RETURN
+ifn its,[
+	syscal corblk,[movei %cbndw
+		movei %jself ? freepg
+		movei %jsnew]
+	 .LOSE 1000
+]
+ifn 20x,[]			;just gives them to you
+	AOS FREEPG
+	JRST GETUP2
+
+
+SUBTTL UTILITIES
+
+;;TYPE OUT AN ASCII STRING POINTER TO BY X
+
+TYPNEW:	MOVE X,[440700,,[asciz //]]
+
+TYPSTR:	.IOTob TTYOCH,[15]
+	.IOTob TTYOCH,[12]
+TYPST1:
+ifn its,[
+	HRLI X,440700
+	SKIPA
+TYPS.A:	.IOTo TTYOCH,Y
+	ILDB Y,X
+	CAIN Y,14	    ;IT SHOULD STOP ON SEEING FORMFEED, FOR THE ERR DEVICE
+	 RETURN
+	JUMPN Y,TYPS.A
+];ifn its
+ifn 20x,[
+	hrli x,440700
+	push p,ac1
+	move ac1,x
+	psout
+	pop p,ac1
+];ifn 20x
+
+CPOPJ:	 RETURN
+
+TYPSIX:	SKIPN X
+	 RETURN
+	SETZI X-1,		;NO STRANGE CHARACTERS IN THE THING WE PRINT
+	LSHC X-1,6		;GET SIX BITS
+	ADDI X-1,40		;CONVERT TO 7-BIT
+	.IOTo TTYOCH,X-1	;OUTPUT THE CHARACTER
+	JRST TYPSIX		;LOOP
+
+TYPBCP:	TLZ X,007700		;CLEAR THE BYTE LENGTH FIELD
+	TLO X,001000		;SET IT TO EIGHT BITS
+	ILDB Y,X		;GET LENGTH
+	JUMPE Y,CPOPJ		;EXIT WHEN FINISHED
+	ILDB Z,X
+	.IOTo TTYOCH,Z
+	SOJA Y,.-3
+
+MAKASC:	TRNE A,%TXCTL
+	 ANDI A,37		;IF CONTROL BIT SET, CLEAR ALL BUT CONTROL REGION
+	CAIL A,"a
+	 CAILE A,"z
+	  RETURN
+	SUBI A,<"a-"A>
+	RETURN
+
+;; TYPE OUT THE NUMBER IN X IN DECIMAL
+
+TYPDEC:	SETZI Z,			;NO CHARACTERS PRINTED YET
+TYPD.1:	IDIVI X,10.
+	ADDI Y,60		;MAKE IT ASCII
+	PUSH P,Y
+	AOS Z
+	JUMPN X,TYPD.1
+TYPD.2:	POP P,X
+	.IOTo TTYOCH,X
+	SOJG Z,TYPD.2
+	RETURN
+
+
+;; Routine to read a line from TTYICH with rubout processing and put
+;; it in FILSPC as an eight-bit bytes. Also returns the
+;; number of characters read in Z.
+
+READLN:	SETZI Z,	;CLEAR THE COUNT
+	MOVEI Y,FILSPC	;WHERE TO PUT THINGS
+RDLN.1:	.IOTi TTYICH,X	;GET A CHARACTER
+	TRNE X,%TXCTL		;CONTROL
+	 ANDI X,37		;CONTOL CHARACTER
+	ANDI X,177		;SEVEN BIT ASCII
+	CAIN X,177	;IS IT A RUBOUT
+	 JRST [JUMPLE Z,RDLN.1	;GO BACK IF NO CHARACTERS
+		SOS Y	;BACK UP IN THE BUFFER
+		SOS Z	;ONE LESS CHARACTER READ
+		.IOTob TTYOCH,[^P]	;CONTROL P TTY COMMAND
+		.IOTob TTYOCH,["X]	;TO RUBOUT LAST CHARACTER POSITION
+		JRST RDLN.1]
+	CAIN X,^G
+	 JRST DONE		;QUIT ON CONTROL-G OR CONTOL-Z
+	CAIN X,^Z
+	 JRST DONE
+	MOVEM X,(Y)	;ALWAYS PUT THE CHARACTER IN
+	AOS Y		;AND INCREMENT
+	CAIE X,^M	;IS IT A RETURN
+	 AOJA Z,RDLN.1	;IF NOT, BUMP COUNT AND LOOP
+ifn 20x,.ioti ttyich,x		;twenex send CR as CR/LF
+	MOVE X,[444400,,FILSPC]	;36 BIT POINTER
+	MOVE Y,[441000,,FILSPC]	;8  BIT POINTER
+	PUSH P,Z	;SAVE IT
+	JUMPE Z,RDLN.3
+	ILDB W,X	;GET A BYTE
+	IDPB W,Y	;PUT A BYTE
+	SOJA Z,.-3	;LOOP
+
+RDLN.3:	POP P,Z			;GET THE NUMBER OF CHARACTERS READ BACK
+	RETURN			;RETURN
+
+
+;; FILE NAME READER
+
+;; parses the eight bit filename in FILSPC into a DEV< FN1, FN2, DIR
+;; block which is indexable off of X. Also returns the character
+;; that caused completion in Z.
+
+FPARSE:	MOVE W,[SIXBIT /DSK/]
+	MOVEM W,DEVOFF(X)
+	SETZI ZR,	;CLEAR FN1/FN2 FLAG
+	PUSH P,A	;NEED ANOTHER REGISTER FOR HACKING
+	PUSH P,B	;AND ANOTHER
+FPAR.A:	SETZI B,	;NO TOKEN YET
+	SETZI Y,	;NO CHARACTERS YET
+	MOVE A,[440600,,B]
+FPAR.C:	ILDB Z,FP.BYT	;GET A CHARACTER
+	CAIN Z,":
+	 JRST [MOVEM B,DEVOFF(X) ? TRZ ZR,2 ? JRST FPAR.A]
+	CAIN Z,";
+	 JRST [MOVEM B,DIROFF(X) ? TRZ ZR,2 ? JRST FPAR.A]
+	CAIG Z,40	;SPACE OR BELOW IS A DELIMITER
+	 JRST FP.FNX
+	CAIN Z,",	;SO IS A COMMA
+	 JRST FP.FNX
+	CAIL Y,6	;CAN'T READ MORE THAN SIX CHARACTERS
+	 JRST FPAR.C
+	MOVE T,Z
+	CAIL T,"a
+	 CAILE T,"z
+	  SKIPA
+	   SUBI T,<"a-"A>	;capitalize
+	SUBI T,40	; CONVERT TO SIXBIT
+	IDPB T,A
+	AOJA Y,FPAR.C
+
+FP.FNX:	JUMPE Y,FPFN.3	;IF NOTHING READ, DON'T CLOBBER ANYTHING
+	TRNE ZR,2	;TEST THE MAGIC BIT FOR FN1/FN2
+	 MOVEM B,FN2OFF(X)	;IF SET, PUT IT IN FN2
+	TRNN ZR,2	;TEST AGAIN
+	 MOVEM B,FN1OFF(X)	;IF CLEAR IT GOES IN FN1
+	XORI ZR,2	;COMPLEMENT IT
+FPFN.3:	CAIN Z,40
+	 JRST FPAR.A	;IF A SPACE, KEEP READING
+			;ELSE IT ALSO FINISHES
+	POP P,B
+	POP P,A		;RESTORE A
+	RETURN		;AND RETURN, LEAVING THE DELIMITER IN Z
+
+define stat messag,number
+	movei x,[asciz /  messag requests: /]
+	 call typstr
+	move x,number
+	 call typdec
+termin
+
+QUIT:
+ifn stats,[
+	MOVEI X,[ASCIZ /TSTATISTICS:/]
+	 CALL TYPSTR
+	stat [<show rectangle>] req.sr
+	stat [<set space x>   ] req.sx
+	stat [<set space y>   ] req.sy
+	stat [<reset space>   ] req.rs
+	stat [<show object>   ] req.so
+	stat [<show dots>     ] req.dt
+	stat [<show dots opaq>] req.do
+	stat [<alternate>     ] req.al
+	stat [<only on>       ] req.oo
+	stat [<available>     ] req.av
+	stat [<spare>         ] req.sp
+	stat [<space>         ] req.
+	stat [<set brightness>] req.br
+	stat [<set hue>       ] req.hu
+	stat [<set saturation>] req.sa
+]
+
+DONE:
+	skipe dump.p
+	 call [	move x,[-1,,[0]]	;output a zero
+			.ioto dmpoch,x
+			.close dmpoch,
+			return]
+
+ife selfkl,[
+	.VALUE [ASCIZ /: TEST ENDING 
+/]
+	JRST GO
+]
+ifn its,	.BREAK 16,160000
+ifn 20x,[
+	call 20xrst
+	haltf
+	jrst go
+
+20xrst:	reset
+	movei z,16.
+20xrs2:	move ac1,jfntbl-1(z)
+	closf
+	 jfcl
+	move ac1,jfntbl-1(z)
+	rljfn
+	 jfcl
+	sojge z,20xrs2
+	return
+];ifn 20x
+
+
+	constants
+	variables
+	0			;to make sure all variables get a page
+
+ifn 20x,[
+jfntbl:	block 16.		;a jfn for each ITS channel
+
+;;; some comnd FDBs for command parsing
+
+fttfdb:	.cmfil_9,, ? 0 ? 0 ? 0
+cfmfdb:	.cmcfm_27.\cm%hpp\cm%sdh + fttfdb ? 0
+	440700,,cfmhlp ? 0
+cfmhlp:	Asciz "carriage return to exit program"
+
+STABLK:	0
+	.PRIIN,,.PRIOU
+	0
+	440700,,buff
+	440700,,buff
+	100
+	0
+	440700,,abuff
+	100
+	gtjb
+
+gtjb:	gj%old			;gtjfn block -- flags
+	0			;input,,output
+	0 ? 0 ? 0		;default dev,dir,name
+	440700,,[Asciz "PRESS"]	;default extension
+	block 20
+buff:	block 20
+abuff:	block 20
+]
+
+ZERO1:
+ifn stats,[
+req.sr:	0
+req.sx:	0
+req.sy:	0
+req.rs:	0
+req.so:	0
+req.dt:	0
+req.do:	0
+req.al:	0
+req.oo:	0
+req.av:	0
+req.sp:	0
+req.:	0
+req.br:	0
+req.sa:	0
+req.hu:	0
+]
+
+scre.w:	0		; this screen width -- in PDP-10 words
+scre.h:	0		; this screen hieght - in PDP-10 words
+scre.b:	0		; this screen width -- in bits
+
+
+NUMCOM:	0
+GXPOS:	0		;X POSTITION OF GRAPHIC CURSOR
+GYPOS:	0		;Y POSTITION OF GRAPHIC CURSOR
+DORDSP:	0			;NON ZERO IF WE SHOULD DO A REDISPLAY
+INTRUP:	0			;NUMBER OF UNREAD CHARACTERS
+intpc:	0			;interrupt pc (for 20x)
+ARGCHR:	0			;NUMBER OF CHARACTERS IN THE ARGUMENT
+
+topset:	0		;TELLS IF THE TOP BIT WAS SET FOR THIS KEY
+
+ERRFLG:	0		;STATE OF THE WORLD (INDICATION OF)
+
+DUMP.P:	0			;-1 <==> WE HAVE BEEN DUMPING PAGE IMAGES
+
+UNAME:	0
+SNAME:	0			;SNAME OF USER
+
+DEVOFF==0
+FN1OFF==1
+FN2OFF==2
+DIROFF==3
+
+LOWREC:	0			;LOWEST RECORD LAST MAPPED IN
+HIGREC:	0			;HIGHEST RECORD LAST MAPPED IN
+FILBEG:	0			;STARTING ADDRESS OF THE PRESS FILE IN MEMORY
+MAPALL:	0			;-1 <==> THE WHOLE FILE IS MAPPED
+FREERC:	0			;HOW MANY RECORDS WE CAN FIT IN MEMORY
+				;  AFTER THE FONTS 
+MEMLIM:	0			;MEMORY LIMIT FOR MAPPING IN RECORDS
+FILLEN:	0			;LENGTH OF THE FILE, IN PDP10 WORDS
+FILREC:	0			;NUMBER OF RECORDS IN THE FILE
+				; (COMPUTED FROM FILLEN) 
+PFILE:	BLOCK 4			;FOR THE PRESS FILE
+FP.BYT:	0			;BYTE POINTER FOR PARSING
+
+ERRCOD:	0			; CODE OF ERROR COMMITED, FOR THE ERRDEV SUBROUTINE
+
+;; PIECES OF THE PRESS FILE
+
+;; THE DOCUMENT DIR
+
+DOCDIR:	0			;ADDRESS OF THE DOCUMENTATION DIRECTORY
+PSSWRD:	0			;PASSWORD
+NUMREC:	0			;NUMBER OF RECORDS
+NPARTS:	0			;NUMBER OF PARTS
+PDWREC:	0			;WHERE THE PART DIR STARTS
+PDNREC:	0			;NUMBER OF RECORDS IN THE PART DIR
+
+PRTDIR:	0			;BYTE POINTER INTO PART DIR
+
+PDEtyp:	0			;type of part
+PDEwrc:	0			;number of first record
+PDEnrc:	0			;number of records occupied
+PDEoth:	0			;OTHER information about the part
+
+;; this is a FONT DIRECTORY ENTRY (excluding fam BCPL string)
+
+FNTLOS:	0			;FONT LOSSAGE COUNT
+
+FNTPRT:	0			;POINTER TO THE FONT PART
+FNTENT:	0			;POINTER TO THE NEXT FONT ENTRY
+				; WE WANT TO LOOK AT
+
+FDE:
+FDElen:	0
+FDEset:	0
+FDEfnt:	0
+FDEm:	0
+FDEn:	0
+FDEfam:	0		;this is a byte pointer
+FDEfac:	0
+FDEsrc:	0
+FDEsiz:	0
+FDErot:	0
+
+FONTID:	0			;place the internal numeric equivalent of the
+				;BCPL sting
+
+;; PAGE PART FROBS
+PAGBAS:	0			;THE BASE OF THE PAGE (8-BIT POINTER)
+ENTTOP:	0			;TOP OF THE ENTITIES (ILDB GETS LENGTH OF ENTITY)
+NUMENT:	0			;NUMBER OF ENTITIES IN THIS PAGE
+ENTNUM:	0			;LAST ENTITY WE WORKED ON (OR ARE WOKING ON)
+
+;; THIS IS THE ENTITY TRAILER:
+ENTTRL:
+ENTTYP:	0		;THE ENTITY TYPE
+FNTSET:	0		;THE FONT SET
+BEGBYT:	0		;OFFSET OF START INTO THE DATA LIST
+BYTLEN:	0		;NUMBER OF BYTES IN THE DATA LIST
+YE:	0		;Y OFFSET OF THIS ENTITY
+XE:	0		;X OFFSET OF THIS ENTITY
+PGLEFT:	0		;LEFT BOUNDS (NOT CONFUSED WITH THE LEFT COMMAND)
+BOTTOM:	0		;BOTTOM BOUNDS
+WIDTH:	0		;WIDTH OF DISPLAY REGION
+HEIGHT:	0		;HEIGHT OF DISPLAY REGION
+ENTLEN:	0		;LENGTH OF THIS ENTITY IN 16. BIT WORDS
+
+
+FNTBEG:	0			;THE ADDRESS OF THE BEGINING OF THE FONT FILE
+FNTDEL:	0			;AOBJN POINTER TO REMOVE PAGES
+
+AL.HI:	0			;HEIGHT OF THE ALTO FONT IN SCAN LINES
+AL.PRO:	0			;PROPORTION BIT
+AL.BAS:	0			;BASELINE
+AL.MWD:	0			;MAXIMUM WIDTH
+
+FCH.HI:	0			;NUMBER OF SCAN LINES UNUSED AT TOP
+FCH.LO:	0			;LOWEST SCAN LINE USED
+FCH.WD:	0			;WIDTH IN (ALTO) BITS OF THE CHARACTER
+FCH.SC:	0			;NUMBER OF SCAN LINES FOR FONT
+FCH.HE:	0			;NUMBER OF WORDS REQUIRED FOR HEADER AND DATA
+
+FNxnnn:	0			;THE BASE OF THE CHARACTER INDEXES
+
+NOCHAR:	0			;THE CHARACTER INDICATING LACK OF CHARACTER
+
+FWD.OK:	0			;BYTE POINTER TO HEADER FOR BEST CHANCE FOR WIDTHS
+FWD.SC:	0			;IF THAT DOESN'T WORK, USE THIS ONE
+FWD.BD:	0			;AT LAST RESORT
+
+FWD.BC:	0			;BEGINNING CHARACTER
+FWD.EC:	0			;ENDING CHARACTER
+FWD.SZ:	0			;SIZE OF THE FONT
+
+FONT:	0			;CURRENT FONT (INTERNAL FORMAT)
+
+NFONTS:	0			;THE NUMBER OF FONTS WE KNOW ABOUT
+FNTTTB:	BLOCK MAXFNT+1		;MAKE SPACE FOR THE INTERNAL FONT TRANSLATION 
+				; TABLE (AND THE END FLAG OF -1)
+
+FNTBOX:	BLOCK MAXFNT		;HOW TO GET TO UPPER LEFT (Y,,X)
+FNTFIL:	BLOCK MAXFNT		;THE FILENAME (FN2) THESE RASTERS CAME FROM
+FNTHED:	BLOCK MAXFNT		;FIRST WORD OF THE ALTO FILE (FOR SHARING)
+FNTTBL:	BLOCK MAXFNT		;POINTERS FOR GETTING BITMAPS
+FNTWID:	BLOCK MAXFNT		;POINTERS FOR GETTING WIDTHS
+
+
+SPACEX:	0			;THE X SPACING
+SPACEY:	0			;THE Y SPACING
+
+
+;; THINGS TO DO WITH THE RECALCULATION OF A PAGE
+THISPG:	0			;THE PAGE WE ARE TRYING TO GET TO
+LASTPG:	0			;THE PAGE THAT WAS LAST COMPUTED
+PAGEOK:	0			;FLAG TELLING IF THE PAGE IS ALREADY OK
+PAGPRT:	0			;POINTER TO PAGE ENTRY IN PART DIR
+
+;; PAGE OREIANTATION VALUES
+XOFF:	0		;WHERE THE LEFT HAND SIDE OF SCREEN IS, IN MICAS
+YOFF:	0		;WHERE THE TOP OF THE SCREEN IS, IN MICAS
+
+
+FREEM:	FS		;THE ADDRESS OF THE LAST FREE WORD
+FREEPG:	FS/pagsiz	;THE LAST PAGE WE KNOW ABOUT
+ARGBUF:	BLOCK 20		;FOR ARGUMENT ACCUMULATION
+FILSPC:	BLOCK 120	; FILE SPEC, FROM JCL OR TTY, ALSO USED BY BLTOUT
+ZERO2:
+
+GOTJCL:	0			;whether or not we have RSCANned yet
+PDB:	BLOCK PDLLEN
+	0			;make sure there is a piece of memory
+
+
+	LOC <.+pagsiz-1>/pagsiz*pagsiz	;ALIGN THE PAGE BOUNDARY
+VPAGE=.
+	LOC <<.+VPSIZE>+pagsiz-1>/pagsiz*pagsiz	;THE ALTO IMAGE OF THE DOVER PAGE
+VPAGEZ=.
+
+FS=.	;BEGINING OF FREE STORAGE
+
+	END GO
+
+
+;Local Modes:
+;Mode:MIDAS
+;COMMENT COLUMN:32
+;Compile Command: :midas dovutl;_1/e
+
+;END:

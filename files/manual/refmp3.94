@@ -1,0 +1,3570 @@
+.if partial then start
+.count chapter from 6 printing "1"
+.count section from 6 in chapter printing "!.1"
+.count subsection in section printing "!.1"
+.next chapter
+.end
+
+.sec(Taylor Series,taylor)
+
+.function (TAYLOR,|exp, var, pt, pow|)
+expands the expression 2exp1 in a truncated Taylor series (or Laurent series,
+if required) in the variable 2var1 around the point 2pt1.  The terms through
+(2var1-2pt1)**2pow1 are generated. If 2exp1 is of the form
+f(2var1)/g(2var1) and g(2var1) has no terms up to degree 2pow1 then
+TAYLOR will try to expand g(2var1) up to degree 2*2pow1.  If there are still
+no non-zero terms TAYLOR will keep doubling the degree of the expansion of
+g(2var1) until reaching 2pow1*2**n where n is the value of the variable
+$var<TAYLORDEPTH/3>.
+
+If $var<MAXTAYORDER/TRUE> is TRUE, then during algebraic manipulation of (truncated) Taylor series,  TAYLOR will try to retain as many terms as are certain to be correct.  
+
+.example
+.begin group
+(C1) TAYLOR(SQRT(1+A*X+SIN(X)),X,0,3);
+
+
+                           2             2
+             (A + 1) X   (A  + 2 A + 1) X
+(D1)/R/  1 + --------- - -----------------
+                 2               8
+
+                      3      2             3
+                  (3 A  + 9 A  + 9 A - 1) X
+                + -------------------------- +  . . .
+                              48
+.end
+
+(C2) %**2;
+.begin group
+                              3
+                             X
+(D2)/R/      1 + (A + 1) X - -- +  . . .
+                             6
+.end
+
+(C3) PRODUCT((X**I+1)**2.5,I,1,INF)/(X**2+1);
+
+.begin group
+                          INF
+                         /===\
+                          ! !    I     2.5
+                          ! !  (X  + 1)
+                          ! !
+                          ! !
+                         I = 1
+(D3)                     -----------------
+                               2
+                              X  + 1
+.end
+
+(C4) TAYLOR(%,X,0,3),KEEPFLOAT:TRUE;
+
+.begin group
+                                  2           3
+(D4)/R/      1.0 + 2.5 X + 3.375 X  + 6.5625 X  +  . . .
+.end
+
+(C5) TAYLOR(1/LOG(1+X),X,0,3);
+
+.begin group
+                                  2       3
+                    1   1   X    X    19 X
+(D5)/R/             - + - - -- + -- - ----- +  . . .
+                    X   2   12   24    720
+.end
+
+.end
+.endfunction
+.skip 2
+
+2Multivariate Taylor Series Expansions1
+.skip 1
+For multivariate functions, there are several ways of obtaining Taylor series expansions.  If the variables are truly independent and all singularities involve only one variable
+at a time then the expansion may be done as follows:
+.scon
+5TAYLOR2(exp, var1, pt1, ord1, var2, pt2, ord2,...)
+1
+.scon
+or
+.function(TAYLOR,|exp,[var1,pt1,ord1],[var2,pt2,ord2],...|)
+.endfunction
+.scon
+Naturally the two techniques may be intermixed.
+
+However, if  the variables are interdependent or singularities involving
+ some of the variables together can occur then the following
+scheme is to be used:
+
+.function(TAYLOR, |exp, [var1, var2, . . .], pt, ord|)
+where each of 2pt1 and 2ord1 may be replaced by a list which will correspond to the list of variables.  that is, the nth items on each of the lists will be associated together.  
+
+.endfunction
+
+2The user should be warned that this scheme uses the RATWTLEVEL scheme implicitly whenever the variables are expanded to different orders.  In this case the user must not be trying to use RATWTLEVEL simultaneously.1
+
+.begin turn on "[^]"
+Internally this is done in the following manner; for each Xi substitute
+.skip 1
+.once center
+Xi -----> T^[^[ni]] Wi.
+
+Then a term like  X^2 Y^3 Z would become
+.skip 1
+.once center
+T^[^[2 n[a1]* + 3 n[a2]* + n[a3]*]] W[a1]*^2 W[a2]*^3 W[a3]*
+.end
+.skip 1
+.continue
+and truncation is done on T.  The W variables as well as T are not seen by the user.  The following are examples of the various modes of Taylor expansions.
+
+.example
+(C5) TAYLOR(SIN(X+Y),X,0,3,Y,0,3);
+.begin group
+
+		 3	  2	   2    3  2    3
+		Y	 Y  X   Y X    Y  X    X 
+(D5)/R/     Y - -- + X - ---- - ---- + ----- - --
+		6	  2	 2      12     6 
+
+		    2  3
+		   Y  X
+		 + ----- + . . .
+		    12
+.end
+
+(C6) TAYLOR(SIN(X+Y),[X,Y],0,3);
+.begin group
+			   3	    2	   2	  3
+			  X  + 3 Y X  + 3 Y  X + Y
+(D6)/R/ 	  Y + X - ------------------------- + . . .
+				      6
+.end
+
+(C7) TAYLOR(1/SIN(X+Y),X,0,3,Y,0,3);
+.begin group
+					2    3
+		      1	  Y   X	   X   X    X
+(D7)/R/ 	      - + - - -- + - + -- - -- + . . .
+		      Y	  6    2   6    3    4
+			      Y	       Y    Y
+.end
+(C8) TAYLOR(1/SIN(X+Y),[X,Y],0,3);
+.begin group
+			 
+	      1	    X + Y
+(D8)/R/     ----- + -----
+	    X + Y     6	
+
+         3         2       2         3
+      7 X  + 21 Y X  + 21 Y X  +  7 Y
+    + -------------------------------- + . . .
+		    360
+.end
+.end
+
+If one wants to handle asymptotic expansions a facility exists
+to some extent. It may be invoked as follows.
+
+.function(TAYLOR,|exp, [x,pt,ord,ASYMP]|)
+will give an expansion of 2exp1 in negative powers of (2x-pt1).  The highest order term will be 
+.endfunction
+.begin turn on "[^]"
+.skip 1
+2
+.once center
+(x - pt)^[-ord]
+.end
+1
+.scon
+The 2ASYMP1 is a syntactic device and not to be assigned to; for example, one types TAYLOR(F(X),[X,0,4,ASYMP]).
+.scon
+If the user is expanding polynomials he may specify a truncation level of INF in which case the expansion will never truncate.
+
+.function (DEFTAYLOR,|function, exp|)
+allows the user to define the Taylor series (about 0) of an arbitrary
+2function1 of one variable as 2exp1 which may be a polynomial in that variable or
+which may be given implicitly as a power series using the SUM function.
+
+.skip 1
+In order to display the information given to DEFTAYLOR one can use
+POWERSERIES(F(X),X,0). (see below).
+
+.example
+(C1) DEFTAYLOR(F(X),X**2+SUM(X**I/(2**I*I!**2),
+	I,4,INF));
+(D1)                          [F]
+
+(C2) TAYLOR(%E**SQRT(F(X)),X,0,4);
+
+.begin group
+                     2         3          4
+                    X    3073 X    12817 X
+(D2)/R/     1 + X + -- + ------- + -------- +  . . .
+                    2     18432     307200
+.end
+
+.end
+.endfunction
+
+
+.function(TAYLORINFO,exp)
+returns FALSE if 2exp* is not a Taylor series.  Otherwise, a list of lists is returned describing the particulars of the Taylor expansion. If any switches
+are given in the expansion (e.g. ASYMP), the value of the switch is given in
+the result.  For example,
+
+.example
+.begin group
+
+(C3) TAYLOR((1-Y^2)/(1-X),X,0,3,[Y,A,INF]);
+	     2			      2	      
+(D3)/R/ 1 - A  - 2 A (Y - A) - (Y - A) 
+
+                    2                        2
+            + (1 - A  - 2 A (Y - A) - (Y - A) ) X
+
+	 2			  2   2
+ + (1 - A  - 2 A (Y - A) - (Y - A) ) X 
+
+                    2                        2   3
+            + (1 - A  - 2 A (Y - A) - (Y - A) ) X
+
+ + . . .
+.end
+(C4) TAYLORINFO(D3);
+(D4) 			   [[Y, A, INF], [X, 0, 3]]
+.end
+.endfunction
+
+
+.function (POWERSERIES,|exp, var, pt|)
+generates the general form of the power series expansion for 2exp1 in the
+variable 2var1 about the point 2pt1 (which may be INF for infinity).  In
+cases in which POWERSERIES is unable to expand 2exp1 the TAYLOR function may
+give the first several terms of the series.
+
+
+$var<VERBOSE/FALSE> - if TRUE will cause comments about the progress of POWERSERIES
+to be printed as the execution of it proceeds.
+
+.example
+
+(C2) VERBOSE:TRUE$
+
+(C3) POWERSERIES(LOG(SIN(X)/(1-X^2)),X,0);
+
+CAN'T EXPAND 
+
+				  LOG(X - 1)
+
+.begin group
+SO WE WILL TRY AGAIN AFTER APPLYING THE RULE:
+
+                                         d
+				       / -- (X - 1)
+				       [ dX
+			  LOG(X - 1) = I -------- dX
+				       ]  X - 1
+				       /
+
+.end
+CAN'T EXPAND 
+
+				 LOG(SIN(X))
+
+.begin group
+SO WE WILL TRY AGAIN AFTER APPLYING THE RULE:
+               
+                                          d
+					/ -- SIN(X)
+					[ dX
+			  LOG(SIN(X)) = I ------- dX
+					] SIN(X)
+					/
+
+
+.end
+.begin group
+IN FIRST SIMPLIFICATION WE HAVE RETURNED:
+
+	       /	     /
+	       [	     [	 1
+	       I COT(X) dX - I ----- dX - LOG(X + 1) + LOG(- 1)
+	       ]	     ] X - 1
+	       /	     /
+
+
+.end
+
+IS  I2  ZERO OR NONZERO?
+ZERO;
+
+.begin group
+TRYING TO DO A RATIONAL FUNCTION EXPANSION OF
+
+				      1
+				    -----
+				    X - 1
+
+USING A SPECIAL RULE FOR EXPRESSIONS OF FORM 
+
+					 M  - N
+			       (A + C VAR  )
+
+.end
+HERE WE HAVE
+
+			[N = 1, A = - 1, C = 1, M = 1]
+.begin group
+
+      INF						
+      ====	  I3  2 I3		        I3 + 1	
+      \	     (- 1)   2	   BERN(2 I3) LOG(X)   X	
+(D4) ( >     ------------------------------- + -------) 
+      /			 (2 I3)!	       I3 + 1	
+      ====						
+      I3 = 0						
+
+
+                       INF
+                       ====	       I2  I2
+                       \	  (- 1)	  X
+                    + ( >	  -----------)	+  LOG(-1)
+                       /	      I2
+                       ====
+                       I2 = 1
+
+.end
+
+.end
+.endfunction
+
+.sec(Trigonometric Simplification,trigsimp)
+
+.function (TRIGEXPAND,exp)
+expands trigonometric and hyperbolic functions of sums
+of angles and of multiple angles occurring in 2exp1.  For best results, 2exp1 should be expanded.   To enhance user control of simplification, this function expands only one level at a time, expanding sums of angles or multiple angles.    To obtain full expansion into sines and cosines immediately, set the switch  TRIGEXPAND:TRUE.
+
+
+$var<TRIGEXPAND/FALSE> if TRUE causes expansion of all expressions containing
+SINs and COSs occurring subsequently.
+
+$var<HALFANGLES/FALSE> - if TRUE causes half-angles to be simplified away.
+
+.example
+(C1) X+SIN(3*X)/SIN(X),TRIGEXPAND=TRUE,EXPAND;
+
+.begin group
+                              2           2
+(D1)                     - SIN (X) + 3 COS (X) + X
+.end
+.begin group
+(C2) TRIGEXPAND(SIN(10*X+Y));
+
+(D2)               COS(10 X) SIN(Y) + SIN(10 X) COS(Y)
+.end
+.end
+.endfunction
+
+.function (TRIGREDUCE,|exp, var|)
+combines products and powers of trigonometric and hyperbolic SINs and COSs of
+2var1 into those of multiples of 2var1.  It also tries to eliminate these
+functions when they occur in denominators.  If 2var1 is omitted then all
+variables in 2exp1 are used.  Also see the POISSIMP function  ($ref<poissfun>).
+
+.example group
+(C4) TRIGREDUCE(D1);
+(D4)                        2 COS(2 X) + X + 1
+
+.end
+
+The trigonometric simplification routines will use declared information in some simple cases.  Declarations about variables $see<compilation> are used as follows, e.g.
+
+.example
+
+(C5) DECLARE(J, INTEGER, E, EVEN, O, ODD)$
+
+(C6) SIN(X + (E + 1/2)*%PI);
+
+(D6) 			  COS(X)
+
+(C7) SIN(X + (O + 1/2)*%PI);
+
+
+(D7) 			 - COS(X)
+
+.end
+
+.endfunction
+
+There are a number of ways the user may also explicitly invoke identities such as sin^2(x) + cos^2(x) = 1.    The simplest method is substitution.
+
+.example
+
+(C8) D1;
+			       2	   2
+(D8) 			  - SIN (X) + 3 COS (X) + X
+
+(C9) %,SIN(X)^2=1-COS(X)^2;
+				   2
+(D9) 			      4 COS (X) + X - 1
+
+
+.end
+
+Often one wishes to recognize that sin^4(x) can be transformed using the same rule.  For this one needs the added power of RATSUBST.
+
+.example
+
+(C10) RATSUBST(1-COS(X)^2,SIN(X)^2,SIN(X)^4);
+
+			      4		  2
+(D10) 			   COS (X) - 2 COS (X) + 1
+
+.end
+In general RATSUBST will perform a RATSIMP (and thus an expansion) as well as apply the substitution.   One can similarly use the LETSIMP and DEFRULE commands together with additional declarations to define more intricate rules.  
+
+Although not as powerful as RATSUBST, the TELLSIMP command enables the automatic application of a rule.
+
+.example
+
+(C11) TELLSIMP(SIN(X)^2,1-COS(X)^2)$
+
+(C12) (SIN(X)+1)^2;
+					    2
+(D12) 			        (SIN(X) + 1)
+
+(C13) EXPAND(%);
+					  2
+(D13) 			    2 SIN(X) - COS (X) + 2
+
+(C14) SIN(X)^2;
+					2
+(D14) 				 1 - COS (X)
+
+.end
+
+.sec(Laplace Transforms,laplace)
+
+.function (LAPLACE,|exp, ovar, lvar|)
+takes the Laplace transform of 2exp1 with respect to the variable 2ovar1
+and transform parameter 2lvar1.  2Exp1 may only involve the functions EXP,
+LOG, SIN, COS, SINH, COSH, and ERF.  It may also be a linear, constant coefficient 
+differential equation in which case $fun<ATVALUE> (see $ref<substfuns>) of the dependent
+variable will be used.  These may be supplied either before or after the
+transform is taken. Since the initial conditions must be specified at zero, if
+one has boundary conditions imposed elsewhere he can impose these on the general
+solution and eliminate the constants by solving the general solution for them
+and substituting their values back. 2exp1 may also involve convolution
+integrals.  Functional relationships must be explicitly represented in order for
+LAPLACE to work properly. That is, if F depends on X and Y it must be written as
+F(X,Y) wherever F occurs as in LAPLACE('DIFF(F(X,Y),X),X,S).
+
+.example group
+(C1) LAPLACE(%E**(2*T+A)*SIN(T)*T,T,S);
+
+                     A
+                 2 %E  (S - 2)
+(D1)            ---------------
+                        2     2
+                ((S - 2)  + 1)
+.end
+
+Currently only LAPLACE knows about the DELTA function:
+
+.example
+(C2) LAPLACE(DELTA(T-A)*SIN(B*T),T,S);
+
+Is A positive,negative or zero?
+
+POS;
+					  - A S
+(D2) 			       SIN(A B) %E
+
+
+.end
+.endfunction
+
+.function (ILT,|exp, lvar, ovar|)
+takes the inverse Laplace transform of 2exp1 with respect to 2lvar1 and
+parameter 2ovar1.  2exp1 must be a ratio of polynomials whose denominator
+has only linear and quadratic factors.  By using the functions LAPLACE and ILT
+together with the SOLVE or LINSOLVE functions the user can solve a single
+differential or convolution integral equation or a set of them.
+
+.example
+(C1) 'INTEGRATE(SINH(A*X)*F(T-X),X,0,T)+B*F(T)=T**2;
+
+.begin group
+              T
+             /
+             [                                     2
+(D1)         I (SINH(A X) F(T - X)) DX + B F(T) = T
+             ]
+             /
+             0
+.end
+
+(C2) LAPLACE(%,T,S);
+
+.begin group
+            A LAPLACE(F(T), T, S)                             2
+(D2)        ---------------------  +  B LAPLACE(F(T), T, S) = --
+                    2    2                                     3
+                   S  - A                                     S
+
+.end
+
+(C3) LINSOLVE([%],['LAPLACE(F(T),T,S)]);
+SOLUTION
+
+.begin group
+                                        2      2
+                                     2 S  - 2 A
+(E3)       LAPLACE(F(T), T, S) = --------------------
+                                    5         2     3
+                                 B S  + (A - A  B) S
+.end
+
+(D3)                         [E3]
+
+(C4) ILT(E3,S,T);
+
+Is  A B (A B - 1)  positive, negative, or zero?
+
+POS;
+
+.begin group
+                                       2
+                       SQRT(A) SQRT(A B  - B) T
+                2 COSH(------------------------) 
+                                  B              
+(D4)  F(T) =  - -------------------------------- 
+                               A                 
+
+	      2
+	   A T             2
+	+ ------- + ------------------
+	  A B - 1    3  2      2
+	            A  B  - 2 A  B + A
+.end
+
+.end
+.endfunction
+
+2Laplace Transforms of Special Functions1
+
+The following function for taking Laplace transforms of Special Functions 
+is available in MACSYMA.  The user must type LOADFILE(SPECFN,LISP,DSK,SHARE);
+to load in the special routines.  Since the latter take up a great deal of space, it is recommended that these computations be carried out in a fresh MACSYMA.
+
+.function(LAPINT,|exp,ovar|)
+takes the Laplace transform of 2exp1 with respect to the variable 2ovar1.   2exp1 may involve 
+.scon
+1) Special Functions of linear or quadratic argument multiplied by 
+.begin narrow 8,0
+.bcon
+a) arbitrary powers of the argument, or
+.bcon
+b) trigonometric and exponential functions of linear argument
+.end
+.scon
+2) Products of two Special Functions of linear or quadratic argument taken from only one of the following groups:
+.begin narrow 8,0
+.bcon
+a) Any kind of Bessel, Modified Bessel, or Hankel functions,
+.bcon
+b) Orthogonal polynomials,
+.bcon
+c) Confluent Hypergeometric Functions
+
+In this second category, factors of type 1a or 1b are also permitted.
+.end
+
+The basic method is to rewrite the expression in terms of Generalized Hypergeometric Functions (GHF), apply a general formula  for taking the Laplace transform of GHF's, and then, if possible, present the result in terms of  elementary functions or "common" Special Functions.   For further details, see  2Symbolic Laplace Transforms of Special Functions1 [Av].
+
+.example
+(C1) T^(1/2)*GAMMAINCOMPLETE(1/2,A*T)*%E^(-P*T);
+
+				   1		     - P T
+(D1) 		   GAMMAINCOMPLETE(-, A T) SQRT(T) %E
+				   2
+.begin group
+(C2) LAPINT(%,T);
+
+		       %PI			     2
+(D2) 	   --------------------------- - -------------------------
+		    3/2	       A   3/2	        3/2	   A   3/2
+	   2 (P + A)    (1 - -----)	 (P + A)    (1 - -----)
+			     P + A			 P + A
+
+.end
+.begin group
+(C3) T^(1/2)*J[1](2*A^(1/2)*T^(1/2))*%E^(-P*T);
+
+						    - P T
+(D3) 		    J (2 SQRT(A) SQRT(T)) SQRT(T) %E
+		     1
+
+.end
+(C4) LAPINT(%,T);
+
+					 - A/P
+			       SQRT(A) %E
+(D4) 			       ---------------
+				      2
+				     P
+
+(C5) T^2*J[1](A*T)*%E^(-P*T);
+
+				       2   - P T
+(D5) 			      J (A T) T  %E
+			       1
+
+.begin group
+(C6) LAPINT(%,T);
+
+				     3 A
+(D6) 			        --------------
+				  2
+				 A      5/2  4
+				(-- + 1)    P
+				  2
+				 P
+.end
+(C7) T^(3/2)*Y[1](A*T)*%E^(-T);
+
+				       3/2   - T
+(D7) 			      Y (A T) T	   %E
+			       1
+.begin group
+(C8) LAPINT(%,T);
+
+					  %I	 1	  3/4
+		15 %I SQRT(2) P	       (- --) (------ - 1)
+			       - 2, 1/2	  A     2
+					       A  + 1
+(D8) 	        ---------------------------------------------
+				2     2	   2	 2     1/4
+		  8 SQRT(%PI) (A  + 1)  ((A  + 1)  - 1)
+
+.end
+.end
+.endfunction
+
+
+.sec(Combinatorial Functions,combfun)
+
+.function (MINFACTORIAL,exp)
+examines 2exp1 for occurrences of two factorials which differ by an
+integer.  It then turns one into a polynomial times the other.  
+
+.example
+(C1) N!/(N+1)!;
+.begin group
+                                    N!
+(D1)                             --------
+                                 (N + 1)!
+.end
+
+(C2) MINFACTORIAL(%);
+.begin group
+                                     1
+(D2)                               -----
+                                   N + 1
+.end
+
+.end
+.endfunction
+
+.function (FACTCOMB,exp)
+tries to combine the coefficients of factorials in 2exp1 with the factorials
+themselves by converting, for example, (N+1)*N! into (N+1)!.
+
+
+
+$var<SUMSPLITFACT/TRUE> if set to FALSE will cause MINFACTORIAL to be applied after a FACTCOMB.   
+
+.example group
+(C1) (N+1)^B*N!^B;
+                                      B   B
+(D1)                           (N + 1)  N!
+
+(C2) FACTCOMB(%);
+                                         B
+(D1)                             (N + 1)!
+
+.end
+.endfunction
+
+.function(MAKEFACT,exp)
+transforms occurrences of binomial,gamma, and beta functions in 2exp*
+to factorials.
+.endfunction
+
+.function(MAKEGAMMA,exp)
+transforms occurrences of binomial,factorial, and beta functions in 2exp*
+to gamma functions.
+.endfunction
+
+.function (BERNPOLY,|v, n|)
+generates the 2n1th Bernoulli polynomial in the variable 2v1.
+
+.endfunction
+
+.sec(Continued Fractions,confrac)
+
+.function (CF,exp)
+converts 2exp1 into a continued fraction.  2exp1 is an expression composed of
+arithmetic operators and lists which represent continued fractions.  A continued
+fraction  a+1/(b+1/(c+...)) is represented by the list [a,b,c,...]. a,b,c,.. must
+be integers.  2Exp1 may also involve SQRT(2n1) where 2n1 is an integer.  In
+this case CF will give as many terms of the continued fraction as the value of the
+variable $var<CFLENGTH/1> times the period.  Thus the default is to give one
+period.
+
+.endfunction
+
+.function (CFDISREP,list)
+converts the continued fraction represented by 2list1 into general representation.
+
+.example
+(C1) CF([1,2,-3]+[1,-2,1]);
+
+(D1)                 [1, 1, 1, 2]
+
+(C2) CFDISREP(%);
+.begin group
+                            1
+(D2)                1 + ---------
+                              1
+                        1 + -----
+                                1
+                            1 + -
+                                2
+.end
+
+.end
+.endfunction
+
+.function (CFEXPAND,x)
+gives a matrix of the numerators and denominators of the next-to-last and last
+convergents of the continued fraction 2x1.
+
+.example group
+(C1) (CFLENGTH:4, CF(SQRT(3));
+(D1)                 [1, 1, 2, 1, 2, 1, 2, 1, 2]
+
+(C2) CFEXPAND(%);
+                             [265  97]
+(D2)                         [       ]
+                             [153  56]
+
+(C3) D2[1,2]/D2[2,2],NUMER;
+(D3)                        1.73214285
+.end
+.endfunction
+
+
+.sec(Number-Theoretic Functions,numtheory)
+
+
+.function(PRIME,n)
+gives the 2n1th prime. $var<MAXPRIME/489318> is the largest number accepted as argument.  
+.endfunction
+
+.function(DIVSUM,|n,k|)
+adds up all the factors of 2n1 raised to the 2k1th power.  If only one argument is given then 2k1  is assumed to be 1.
+.endfunction
+
+.function(TOTIENT,n)
+is the number of integers less than 2n1 which are relatively prime to 2n1.
+.endfunction
+
+.function(JACOBI,|p,q|)
+is the Jacobi symbol of p and q.
+.endfunction
+
+.function (QUNIT,n)
+gives the principal unit of the real quadratic number field $fun<SQRT>(2n*)
+where 2n1 is an integer, i.e. the element whose norm is unity.  This amounts to
+solving Pell's equation A**2-2n1*B**2=1.
+
+.example group
+(C1) QUNIT(17);
+(D1)              SQRT(17)+4
+
+(C2)  EXPAND(%*(SQRT(17)-4));
+
+(D2)               1
+
+.end
+.endfunction
+
+
+.chap(Declaring and Using Mathematical Information,fdusm)
+
+   	The commands in this chapter deal with the communication, use,
+and manipulation of mathematical information about objects and functions
+in MACSYMA.  Taken as a whole, this information comprises MACSYMA's
+2relational data base1.  Facts take the form of either "predicates" or
+"features".  A predicate is a well-formed formula consisting of  a relation and its arguments, e.g. A>B, or is a composition of predicates using the logical operators NOT, AND, and OR.
+Alternatively, certain facts about mathematical objects and functions can be
+expressed more naturally as "features", i.e. unary predicates. For example, one can say that a certain constant is an
+INTEGER or that a function is INCREASING.  Any feature, e.g. the linearity 
+of F, can also be expressed as a predicate via the relation KIND, as in
+KIND(F,LINEAR).
+
+.sec(Declaring and Assuming,decass)
+
+	The predicates and features communicated to MACSYMA with the ASSUME
+and DECLARE commands may be tested with IS and FEATUREP and removed with 
+FORGET and REMOVE.  The facts in the relational data base are used by 
+the simplifier and several commands, like SIGN, the IF statement, and
+INTEGRATE (certain integrations require sign information).  MACSYMA has
+a rudimentary inference capability enabling limited deductions from the
+data base.  It excels at taxonomic deductions, e.g. KIND(N,EVEN) implies
+KIND(N,INTEGER), and simple expression comparisons, e.g. X<0 and KIND(N,EVEN)
+imply Y^2+X^N>0.  The only sort of inequality information used by the 
+inference mechanism at the moment are relations between variables and
+other variables and numbers.
+
+	The operator "=" is a total relation that holds between two
+expressions if and only if the expressions are syntactically identical.  It is
+not a mathematical comparison.  Thus, IS((X+1)^2=X^2+2*X+1) would return 
+FALSE.  The relation EQUAL, on the other hand, is a mathematical comparison
+of its two arguments.  A predicate involving EQUAL is true if and only if its
+arguments are mathematically equivalent in light of the current data base.
+Thus, IS(EQUAL((X+1)^2,X^2+2*X+1)) would return TRUE.
+The operators ">", ">=", "<", and "<=" are also mathematical comparisons.
+
+	MACSYMA currently recognizes and uses the following features of 
+objects: EVEN, ODD, INTEGER, RATIONAL, IRRATIONAL, REAL, IMAGINARY, and COMPLEX.  The useful features of functions include: INCREASING, DECREASING, ODDFUN
+(odd function), EVENFUN (even function), COMMUTATIVE (or SYMMETRIC), ANTISYMMETRIC, ASSOCIATIVE.
+
+.function(ASSUME,|pred1, pred2, ...|)
+first checks the specified predicates for 
+redundancy and consistency with the current data base.  If the predicates
+are consistent and non-redundant, they are added to the data base; if
+inconsistent or redundant, no action is taken.   ASSUME returns 
+a list whose entries are the predicates added to the data base and the 
+atoms REDUNDANT or INCONSISTENT where applicable.  ASSUME also accepts
+lists of predicates as arguments.
+.endfunction
+
+.function(FORGET,|pred1, pred2, ...|)
+removes the specified predicates from the
+data base.  Note that it does not guarantee that equivalent facts are
+removed.  FORGET also accepts lists of predicates as arguments.
+.endfunction
+
+.function(DECLARE,|a1, f1, a2, f2, ...|)
+declares each ai to have the
+corresponding feature 2fi1.  The 2ai1 and 2fi1 may also
+be lists of objects or features.
+.endfunction
+
+.function(REMOVE,|a1, f1, a2, f2, ...|)
+removes each feature fi from the 
+corresponding object ai.  The ai and fi may also be lists of objects
+or features.
+.endfunction
+
+.function(IS,pred)
+attempts to determine whether the specified predicate is provable
+from the facts in the current data base.  IS returns TRUE if the predicate
+is true for all values of its variables consistent with the data base and
+returns FALSE if it is false for all such values.
+Otherwise, its action depends on the setting of the switch $var<PREDERROR/TRUE>. IS errs out if the value of PREDERROR is TRUE and returns a simplified
+expression if PREDERROR is FALSE.
+.endfunction
+
+.function(FEATUREP,|a,f |)
+attempts to determine whether the object 2a1 has the feature
+2f1 on the basis of the facts in the current data base.  If so, it returns
+TRUE, else FALSE.
+.endfunction
+.example
+(C1) DECLARE(J,EVEN)$
+
+(C2) FEATUREP(J,INTEGER);
+(D2) 				    TRUE
+
+.end
+
+.function(SIGN,exp)
+attempts to determine the sign of its specified expression on the
+basis of the facts in the current data base.  It returns one of the following
+answers: POS (positive), NEG (negative), ZERO, PZ (positive or zero), NZ
+(negative or zero), PN (positive or negative), or PNZ (positive, negative, or
+zero, i.e. nothing known).  For constant expressions, e.g. SIGN(SQRT(2)-%PI)/2,
+floating point approximations are used to determine the sign.  There is
+obviously some risk here of obtaining an incorrect answer in this manner for
+expressions which are very near zero.  Using SIGN(BFLOAT(2expression1))
+obviously greatly cuts down on this risk.
+.endfunction
+.example
+(C3) ASSUME(A>=B,B>=C,C>=D,D>=A);
+(D3) 		       [A >= B, B >= C, C >= D, D >= A]
+
+(C4) SIGN(B-C);
+(D4) 				     ZERO
+
+(C5) DECLARE(K,INTEGER,L,ODD,F,INCREASING)$
+
+(C6) ASSUME(X>0);
+(D6) 				   [X > 0]
+
+(C7) F(X+3*Y^(L+24*K+1))-F(0);
+			     L + 24 K + 1
+(D7) 		        F(3 Y		  + X) - F(0)
+
+(C8) SIGN(%);
+(D8) 				     POS
+.end
+
+.function(ASKSIGN,exp)
+first attempts to determine whether the specified expression is
+positive, negative, or zero.  If it cannot, it asks the user the necessary
+questions to complete its deduction.$$If the user wishes to look at the expression more closely before replying, the variable $var<ASKEXP/> is set to it.  Typing control-A results in a MACSYMA break $see<hints>; the user may now analyze the expression in order to give an appropriate answer.*  The user's answer is recorded in the data base for the duration of the current computation (one "C-line"). The value of ASKSIGN is one of POS, NEG, or ZERO.
+
+.endfunction
+
+
+The following function, when applicable, gives the user relational information.
+However, it does 2NOT1 use the data base.
+
+.function(ZEROEQUIV,|exp,var|)
+tests whether the expression 2exp* in the single variable 2var* is equivalent to zero.  It returns  either TRUE, FALSE, or DONTKNOW.  For example ZEROEQUIV(SIN(2*X) - 2*SIN(X)*COS(X),X) returns TRUE and ZEROEQUIV(%E^X+X,X) returns FALSE.  On the other hand ZEROEQUIV(LOG(A*B) - LOG(A) - LOG(B),A) will return DONTKNOW because of the presence  of an extra variable.   The restrictions are:
+.scon
+(1) Do not use functions that MACSYMA does not know how to differentiate and evaluate.
+.scon
+(2) If the expression has poles on the real line, there may be errors in the result (but this is unlikely to occur).
+.scon
+(3) If the expression contains functions which are not solutions to first order differential equations there may be incorrect results.
+.scon
+(4) The algorithm uses floating-point evaluation at randomly chosen points using a corresponding "epsilon"  for carefully selected subexpressions.  This is always  somewhat hazardous, although the algorithm tries to minimize the potential for error.
+
+.endfunction
+
+
+.sec(Contexts,contexts)
+
+	The context mechanism makes it possible for a user to bind together
+and name a selected portion of his data base, called a 2context1.  Once this
+is done, the user can have MACSYMA assume or forget large numbers
+of facts merely by activating or deactivating their context.  Any atom
+can be a context, and the facts contained in that context will be retained
+in storage until the user  destroys  them individually  by using FORGET or destroys them as a whole by using KILL to destroy the context to which they belong.
+
+
+.function(FACTS,context)
+returns a list of the facts in the specified 2context1.
+.endfunction
+
+.function(ACTIVATE,|cont1, cont2, ...|)
+causes the facts in the specified contexts 2contk1
+to be added to the current data base.
+.endfunction
+
+.function(DEACTIVATE,|cont1, cont2, ...|)
+causes the facts in the specified contexts 2contk1
+to be removed from the current data base, unless specified by some other active
+context.
+.skip 1
+$var<CONTEXT/GLOBAL>. Whenever a user assumes a new fact, it is placed in the 
+context named as the current value of the variable CONTEXT.  Similarly, FORGET
+references the current value of CONTEXT.  To add or delete a fact from a
+different context, one must bind CONTEXT to the intended context and then
+perform the desired additions or deletions.  The context specified by the
+value of CONTEXT is automatically activated.  All of MACSYMA's built-in 
+relational knowledge is contained in the default context GLOBAL.
+
+$var<CONTEXTS/[]> is a list of the currently active contexts, not including the value of CONTEXT.
+.endfunction
+
+.example
+(C9) CONTEXT:CON1$
+
+(C10) DECLARE(M,INTEGER)$
+
+(C11) FEATUREP(M,INTEGER);
+(D11) 				     TRUE
+
+(C12) CONTEXT:CON2$
+
+(C13) FEATUREP(M,INTEGER);
+(D13) 				    FALSE
+
+(C14) DECLARE(N,INTEGER);
+(D14) 				     DONE
+
+(C15) CONTEXT:CON1$
+
+(C16) FEATUREP(M,INTEGER);
+(D16) 				     TRUE
+
+(C17) FEATUREP(N,INTEGER);
+(D17) 				    FALSE
+
+(C18) ACTIVATE(CON2)$
+
+(C19) FEATUREP(N,INTEGER);
+(D19) 			             TRUE
+
+(C13) CONTEXTS;
+(D13) 				    [CON2]
+.end
+.function(LOCAL,|a1, a2, ...|)
+causes the external facts about the objects 2a1, a2, ...1
+to be forgotten for the duration of the enclosing BLOCK, independent
+of context.  Any facts assumed about 2a1, a2, ...1 within the BLOCK
+containing the LOCAL will be forgotten upon exit, again independent of
+context.
+.example
+(C14) DECLARE(P,INTEGER)$
+
+(C15) BLOCK(LOCAL(P),PRINT(FEATUREP(P,INTEGER)),ASSUME(P,IRRATIONAL))$
+FALSE
+
+(C16) FEATUREP(P,INTEGER);
+(D16) 				     TRUE
+
+(C17) FEATUREP(P,IRRATIONAL);
+(D17) 				    FALSE
+.end
+.endfunction
+.scon
+
+.chap(List Handling and LISP-like functions,lisp!functions)
+
+.function (APPLY,|function, list|)
+gives the result of applying the 2function1 to the 2list1 of its
+arguments.  This is useful when it is desired to compute the arguments to a function
+before applying that function.  For example, if L is the list [1, 5, -10.2, 4, 3],
+then APPLY(MIN,L) gives -10.2.  APPLY is also useful when calling functions which do
+not have their arguments evaluated if it is desired to cause evaluation of them.  For
+example, if FILESPEC is a variable bound to the list [TEST, CASE] then
+APPLY(CLOSEFILE,FILESPEC) is equivalent to CLOSEFILE(TEST,CASE).  In general the first
+argument to APPLY should be preceded by a ' to to make it evaluate to itself.  Since
+some atomic variables have the same name as certain functions the values of the
+variable would be used rather than the function because APPLY has its first argument
+evaluated as well as its second.
+
+.endfunction
+
+.function(FUNMAKE,|name,[arg1,...,argn]|)
+returns 2name*(arg1,...,argn) without calling the function 2name*.
+.endfunction
+
+.function(ARRAYMAKE,|name,[i1,i2,...]|)
+returns  2name1[2i1,i2,...1].
+.endfunction
+
+.function (MAP,|fn, exp1, exp2, ...|)
+ returns an expression whose leading operator is the same as that of the
+2expi1 but whose subparts are the results of applying 2fn1 to the
+corresponding subparts of the 2expi1.  2Fn1 is either the name of a function
+of n arguments (where n is the number of 2expi1) or is a LAMBDA form of n
+arguments.
+
+
+$var<MAPERROR/TRUE> - if FALSE will cause all of the mapping functions to (1)
+stop when they finish going down the shortest 2expi1 if not all of the
+2expi1 are of the same length and (2) apply 2fn1 to [2exp1, exp2,...1] if
+the 2expi1 are not all the same type of object. If MAPERROR is TRUE then an
+error message will be given in the above two instances.
+
+
+One of the uses of this function is to MAP a function (e.g. PARTFRAC) onto each
+term of a very large expression where it ordinarily wouldn't be possible to use the
+function on the entire expression due to an exhaustion of list storage space in the
+course of the computation.
+
+.example
+.begin group
+(C1) MAP(F,X+A*Y+B*Z);
+(D1) 			  F(B Z) + F(A Y) + F(X)
+.end
+(C2) MAP(LAMBDA([U],PARTFRAC(U,X)),X/(X^3+4*X^2+5*X+2));
+.begin group
+				1	 X
+(D2) 			   X (----- - --------)
+			      X + 2	     2
+				      (X + 1)
+.end
+
+(C3) MAP(RATSIMP, X/(X**2+X)+(Y**2+Y)/Y);
+
+.begin group
+                      1
+(D3)            Y + ----- + 1
+                    X + 1
+.end
+
+(C4) MAP("=",[A,B],[-.5, 3,2.5]);
+MAP IS TRUNCATING
+(D4)                [A = -.5, B = 3]
+
+.end
+.endfunction
+
+.function(MAPATOM,expr)
+is TRUE if and only if 2expr1 is treated  by the MAPping routines a
+as an "atom", a unit.   "Mapatoms" are atoms, numbers (including rational numbers), and subscripted variables.
+.endfunction
+
+.function (MAPLIST,|fn, exp1, exp2, ...|)
+yields a list of the applications of 2fn1 to the parts of the 2expi1.  This
+differs from MAP(2fn,exp1,exp2,...1) which returns an expression with the same
+main operator as expi has (except for simplifications and the case where MAP
+does an APPLY).  2Fn1 is of the same form as in MAP.
+
+.endfunction
+
+.function (FULLMAP,|fn, exp1, ...|)
+is similar to MAP but it will keep mapping down all subexpressions
+until the main operators of the exp2i1 (if there are more than one)
+are no longer the same or until "mapatoms" (see above) are met.
+
+The user should be aware that FULLMAP is used by the MACSYMA  simplifier for certain matrix manipulations; thus,   the user might see an error message concerning FULLMAP even though FULLMAP was not explicitly called by the user.
+
+.example
+(C1) A+B*C$
+
+(C2) FULLMAP(G,%);
+
+(D2)              G(B) G(C) + G(A)
+
+(C3)  MAP(G,D1);
+
+(D3)                G(B C) + G(A)
+
+.end
+.endfunction
+
+.function (FULLMAPL,|fn, list1, ...|)
+is similar to FULLMAP but it only maps onto lists and matrices
+
+.example group
+(C1) FULLMAPL("+",[3,[4,5]],[[A,1],[0,-1.5]]);
+
+(D1)                      [[A + 3, 4], [4, 3.5]]
+
+.end
+.endfunction
+
+.function(SCANMAP,|function,exp|)
+recursively applies 2function1 to 2exp*.  This is most useful when "complete" factorization is desired, for example:
+
+.example
+
+(C1) EXP:(A^2+2*A+1)*Y + X^2$
+
+(C2) SCANMAP(FACTOR,EXP);
+				    2	   2
+(D2) 			     (A + 1)  Y + X
+
+.end
+
+Note the way in which SCANMAP applies the given function FACTOR to the constituent subexpressions of 2exp1;  if another form of 2exp1 is presented to SCANMAP then the result may be different.  Thus, D2 is not recovered when SCANMAP is applied to the expanded form of 2exp1:
+
+.example
+
+(C3) SCANMAP(FACTOR,EXPAND(EXP));
+.begin group
+			   2		      2
+(D3) 			  A  Y + 2 A Y + Y + X
+.end
+.end
+
+Here is another example of the way in which SCANMAP recursively applies a given function to all subexpressions, including exponents:
+
+.example
+.begin group
+				 
+(C4) EXPR : U*V^(A*X+B) + C$
+.end
+
+(C5) SCANMAP('F, EXPR);
+.skip 1
+.begin group
+		    F(F(F(A) F(X)) + F(B))
+(D5) F(F(F(U) F(F(V)			  )) + F(C))
+.end
+.end
+.endfunction
+
+.function (APPEND,|list1, list2, ...|)
+returns a single list of the elements of 2list11 followed by the
+elements of 2list21,...
+
+.example group
+(C1) APPEND([Y+X,0,-3.2],[2.5E20,X]);
+
+(D1)             [Y+X, 0, -3.2, 2.5E20, X]
+
+.end
+.endfunction
+
+.function (CONS,|exp, list|)
+returns a new list constructed of the element 2exp1 as its first element, followed by
+the elements of 2list1.
+
+.endfunction
+
+.function (ENDCONS,|exp, list|)
+returns a new list consisting of the elements of 2list1 followed by 2exp1.
+
+.endfunction
+
+.function (MEMBER,|exp, list|)
+returns TRUE if 2exp1 occurs as a member of 2list1 (not within a member).  Otherwise
+FALSE is returned.
+
+.endfunction
+
+.function (REVERSE,list)
+reverses the order of the members of 2list1 (not the members themselves).
+
+.scon
+The functions $fun<FIRST>, $fun<REST>, $fun<LAST>, $fun<DELETE>, $fun<LENGTH>  ($ref<extracting!expressions>) also work on lists.
+
+.skip 2
+.example group once center
+2Examples*
+
+(C1) UNION(X,Y):=IF X = [] THEN Y ELSE
+           IF MEMBER(T:FIRST(X),Y) THEN UNION(REST(X),Y)
+           ELSE CONS(T,UNION(REST(X),Y)$
+
+(C2) UNION([A,B,1,1/2,X**2],[-X**2,A,Y,1/2]);
+
+                         2            2        1
+(D2)                   [X , 1, B,  - X , A, Y, -]
+                                               2
+.end continue
+
+In this example T is assigned the value of FIRST(X) in the call to MEMBER and is
+referenced later in CONS(T,UNION(...)).
+
+.example
+(C3) BERNPOLY(X,5);
+.begin group
+                               4      3
+                        5   5 X    5 X    X
+(D3)                   X  - ---- + ---- - -
+                             2      3     6
+.end
+
+(C4) MAPLIST(NUMFACTOR,%);
+.begin group
+                             5  5    1
+(D4)                   [1, - -, -, - -]
+                             2  3    6
+.end
+
+(C5) APPLY(MIN,%);
+.begin group
+                                  5
+(D5)                            - -
+                                  2
+.end
+
+.end
+.endfunction
+
+.sec (Property Specification Functions,property!specification,1)
+
+The functions in this section are used to specify properties for atomic
+variables.  A property is a piece of information which may be utilized during the
+user's session with MACSYMA.  MODEDECLARE (sec. $ref<compilation>) is one example of a property
+specification function.  Also, the subsequent section deals with functions for pattern
+matching and includes the function MATCHDECLARE.  As these are somewhat complicated
+they are described in other sections.  However, along with DECLARE (see below) and
+other functions, they all perform the task of setting up information which is used
+later.
+
+For most types of properties there exists a name which is an indicator of that
+property.  For example the command GRADEF(F(X),SIN(X**2)); causes F to receive a
+"gradef" property of LAMBDA([X],SIN(X**2)).  (The indicator is GRADEF and the property
+is the lambda expression).
+
+The presence of some properties is signified merely by the presence of the
+indicator and requires no additional information.  These indicators are known as flags.
+For example %I has associated with it the flag CONSTANT.  We can also speak of
+"constant" as being a property of %I.
+
+There are three principal operations which are needed by the user in dealing with
+properties.  He must be able to set up the property, to display it, and to remove it.
+Also he may sometimes want to know what properties he set up in his MACSYMA.  There
+are several lists (known as information lists) which contain all of the atoms
+that possess a particular property. Moreover, the value of the variable $var<INFOLISTS/> is a list of the names of all of the information lists in MACSYMA. These are:
+
+$var<LABELS/> - all bound C,D, and E labels.
+
+$var<VALUES/> - all bound atoms (set up by : , :: , or functional binding).
+
+$var<FUNCTIONS/> -  all user defined functions (set up by f(x):=...).
+
+$var<ARRAYS/> - declared and undeclared arrays (set up by : , :: , or a[x]:=...)
+
+$var<MYOPTIONS/> - all options ever reset by the user (whether or not they get reset to their default value). 
+
+$var<RULES/> - user defined pattern matching and simplification rules (set up by
+$fun<TELLSIMP>, $fun<TELLSIMPAFTER>, $fun<DEFMATCH>, or, $fun<DEFRULE>.)
+
+$var<ALIASES/> - atoms which have a user defined alias (set up by the $fun<ALIAS>,
+$fun<ORDERGREAT>, $fun<ORDERLESS> functions or by DECLAREing the atom a NOUN).
+
+$var<DEPENDENCIES/> - atoms which have functional dependencies (set up by the
+$fun<DEPENDS> or $fun<GRADEF> functions).
+
+$var<GRADEFS/> - functions which have user defined derivatives (set up by the
+$fun<GRADEF> function).
+
+$var<PROPS/> - atoms which have any property other than those mentioned above,
+such as atvalues, matchdeclares, etc. as well as properties specified in the
+DECLARE function.
+
+In addition to these information lists similar lists may be generated by
+the function
+.inline function(PROPVARS,prop)
+which yields a list of those atoms on the PROPS
+list which have the property indicated by 2prop1.  Thus PROPVARS(ATVALUE) will
+yield a list of atoms which have atvalues.
+
+.subsec (Functions for Handling MACSYMA Properties,MACSYMA!properties)
+
+
+.function (DECLARE,|a1, f1, a2, f2, ...|)
+gives the atom 2ai1 the flag 2fi1.  The 2ai1's and 2fi1's may also be
+lists of atoms and flags respectively in which case each of the atoms gets all of the properties.  The possible flags and their meanings are:
+
+
+$flag<CONSTANT> - makes 2ai1 a constant as is %PI.
+
+$flag<NONSCALAR> - makes 2ai1 behave as does a list or matrix with respect to the dot operator. $see<dotop>
+
+$flag<NOUN> - makes the function 2ai1 a noun so that it won't be evaluated
+automatically. $see<evaluation>
+
+$flag<ALPHABETIC> - adds 2ai1 to MACSYMA's alphabet (initially A-Z,%).
+Thus, DECLARE("_",ALPHABETIC) enables  NEW_VALUE to be used as a name.
+
+$flag<EVFUN> - makes 2ai* known to the EV function so that it will get applied if
+its name is mentioned.  Initial evfuns are $fun<FACTOR>, $fun<TRIGEXPAND>,
+$fun<TRIGREDUCE>, $fun<BFLOAT>, $fun<RATSIMP>, $fun<RATEXPAND>, $fun<RADCAN>,
+$fun<LOGCONTRACT>, $fun<RECTFORM>, and $fun<POLARFORM>.
+
+$flag<EVFLAG> - makes 2ai1 known to the $fun<EV> function so that it will be bound
+to TRUE during the execution of EV if it is mentioned.  Initial evflags are 
+$var<FLOAT/>, $var<PRED/>, $var<SIMP/>, $var<NUMER/>, $var<DETOUT/>,
+$var<EXPONENTIALIZE/>, $var<DEMOIVRE/>, $var<KEEPFLOAT/>, $var<LISTARITH/>, $var<TRIGEXPAND/>, $var<SIMPSUM/>, $var<ALGEBRAIC/>, $var<RATALGDENOM/>, $var<FACTORFLAG/>, and $var<LOGEXPAND/>. 
+
+$flag<BINDTEST> -  causes 2ai* to signal an error if it ever is used in a computation
+unbound (see Chapter $ref<debugmac>).
+
+.endfunction
+
+.function (ARRAYINFO,a)
+returns a list of information about the array 2a1.  For hashed arrays
+it returns a list of "HASHED", the number of subscripts, and the subscripts of every
+element which has a value.  For declared arrays it returns a list of "DECLARED", the
+number of subscripts, and the bounds that were given the the ARRAY function when it
+was called on 2a1.
+
+.example
+(C1) B[1,X]:1$
+(C2) ARRAY(F,2,3)$
+(C3) ARRAYINFO(B);
+
+(D3)            [HASHED, 2, [1, X]]
+(C4) ARRAYINFO(F);
+
+(D4)            [DECLARED, 2, [2, 3]]
+.end
+
+.endfunction
+
+.function (PROPERTIES,a)
+will yield a list showing the names of all the properties associated with
+the atom 2a1.
+
+.endfunction
+
+.function (PRINTPROPS,|a, i|)
+will display the property with the indicator 2i1 associated with the atom
+2a1. 2a1 may also be a list of atoms or the atom ALL in which case all of the atoms with the given property will be used.  For example,
+PRINTPROPS([F,G],ATVALUE).     PRINTPROPS is for properties that cannot otherwise be displayed, i.e. for ATVALUE,ATOMGRAD,GRADEF, and MATCHDECLARE.
+
+.endfunction
+
+.function (REMOVE,|a1, p1, a2, p2, ...|)
+removes the property 2pi1 from the atom 2ai1.  2Ai1 and 2pi1 may also be
+lists as with DECLARE.  2Pi1 may be any property e.g. FUNCTION, MODEDECLARE, etc.  It
+may also be TRANSFUN implying that the translated LISP version of the function is to
+be removed.  This is useful if one wishes to have the MACSYMA version of the function
+executed rather than the translated version. 2Pi* may also be OP or OPERATOR to remove a syntax extension given to 2ai* (see Appendix II).
+ If 2ai1 is "ALL" then the property
+indicated by 2pi1 is removed from all atoms which have it.  Unlike the more specific
+remove functions (REMVALUE, REMARRAY, REMFUNCTION, and REMRULE) REMOVE does not
+indicate when a given property is non-existent; it always returns "DONE".
+
+.endfunction
+
+.subsec (Functions for Handling Users' Properties,uspropfun)
+
+.function (PUT,|a, p, i|)
+associates with the atom 2a1 the property 2p1 with the indicator 2i1.  This
+enables the user to give an atom any arbitrary property.
+
+.endfunction
+
+.function (QPUT,|a, p, i|)
+is similar to PUT but it doesn't have its arguments evaluated.
+
+.endfunction
+
+.function (GET,|a, i|)
+retrieves the user property indicated by 2i1 associated with atom 2a1 or
+returns FALSE if 2a1 doesn't have property 2i1.
+
+.example
+.begin group
+(C1) PUT(%E,TRANSCENDENTAL,TYPE);
+(D1)                          TRANSCENDENTAL
+.end
+(C2) PUT(%PI,TRANSCENDENTAL,TYPE)$
+
+(C3) PUT(%I,ALGEBRAIC,TYPE)$
+
+.begin group
+(C4) TYPEOF(X) := BLOCK([Q], IF NUMBERP(X) THEN RETURN(ALGEBRAIC),
+                   IF NOT ATOM(X) THEN RETURN(MAPLIST(TYPEOF, X)),
+                   Q : GET(X, TYPE),
+                   IF Q=FALSE THEN ERROR("NOT NUMERIC") ELSE Q)$
+.end
+
+(C5) TYPEOF(2*%E+X*%PI);
+
+.begin group
+NOT NUMERIC
+QUIT
+(C6) TYPEOF(2*%E+%PI);
+(D6)          [[ALGEBRAIC, TRANSCENDENTAL], TRANSCENDENTAL]
+.end
+
+.end
+.endfunction
+
+.function (REM,|a, i|)
+removes the property indicated by 2i1 from the atom 2a1.
+
+.endfunction
+
+.function (NUMERVAL,|var1, exp1, var2, exp2, ...|)
+declares 2vari1 to have a numerical value of 2exp11 which is evaluated and
+substituted for the variable in any expressions in which the variable occurs if
+the $var<NUMER/> flag is TRUE. (see the EV function, sec. $ref<evsimpfun>).
+
+.endfunction
+
+.chap (Pattern Matching and Related Functions,patternfun)
+
+.sec (Type Testing Functions,typtestfun,1)
+
+.function (ATOM,exp)
+is TRUE if 2exp1 is atomic (i.e. a number or name) else FALSE.  Thus ATOM(5) is
+TRUE while ATOM(A[1]) and ATOM(SIN(X)) are FALSE.  (Assuming A[1] and X are unbound.)
+
+.endfunction
+
+.function(SUBVARP,exp) 
+is TRUE if 2exp1 is a subscripted variable, for example A[I].
+.endfunction
+
+
+.function (CONSTANTP,exp)
+is TRUE if 2exp1 is a constant (i.e. composed of numbers and %PI, %E,
+%I or any variables bound to a constant or DECLAREd constant $see<MACSYMA!properties>  else
+FALSE.  Any function whose arguments are constant is also considered to be a
+constant.
+
+.endfunction
+
+.function (NONSCALARP,exp)
+is TRUE if 2exp1 is a non-scalar, i.e. it contains atoms declared as
+non-scalars $see<property!specification>, lists, or matrices.
+
+.endfunction
+
+.function (INTEGERP,exp)
+is TRUE if 2exp1 is an integer else FALSE.
+.endfunction
+
+.function(EVENP,exp)
+is TRUE if 2exp1 is an even integer.  FALSE is returned in all other cases.
+.endfunction
+
+.function(ODDP,exp)
+is TRUE if 2exp1 is an odd integer.  FALSE is returned in all other cases.
+.endfunction
+
+.function (FLOATNUMP,exp)
+is TRUE if 2exp1 is a floating point number else FALSE.
+
+.endfunction
+
+.function(BFLOATP,exp)
+is TRUE is 2exp1 is a bigfloat number else FALSE.
+
+.endfunction
+
+.function (NUMBERP,exp)
+is TRUE if 2exp1 is an integer, a rational number, a floating point number or a bigfloat
+else FALSE.
+
+.endfunction
+
+.function (RATNUMP,exp)
+is TRUE if 2exp1 is a rational number (includes integers) else FALSE.
+
+.endfunction
+
+.function (LISTP,exp)
+is TRUE if 2exp1 is a list else FALSE.
+
+.endfunction
+
+.function (MATRIXP,exp)
+is TRUE if 2exp1 is a matrix else FALSE.
+
+.endfunction
+
+.function (RATP,exp)
+is TRUE if 2exp1 is in CRE or extended CRE form else FALSE.
+
+.endfunction
+
+.function (FREEOF,|x1, x2, ..., exp|)
+yields TRUE if the  2xi1 do not occur in 2exp1 and FALSE otherwise.
+The x2i1 are atoms or they may be subscripted names, functions (e.g. SIN(X) ), or
+operators enclosed in "s.  They may also be lists of these objects.
+
+.example
+(C1) FREEOF(Y,SIN(X+2*Y));
+
+(D1)                    FALSE
+
+(C2) FREEOF(COS(Y),"*",SIN(Y)+COS(X));
+
+(D2)                          TRUE
+.end
+.endfunction
+
+.sec (General Pattern Matching Functions,patmatfun,1)
+
+The pattern matching functions permit the user to test expressions for
+combinations of syntactic and semantic patterns and to automatically have variables
+set to parts of expressions which fit the patterns.  This enables one to transform an
+expression as well as to see if it fits a pattern.
+
+It is also possible to add simplification rules which apply to user or system
+defined functions or operators.  In order to choose the particular rule which applies,
+a pattern match must usually be performed on the operands of the expression which is
+to be simplified.
+
+.function (MATCHDECLARE,|patternvar, predicate, ...|)
+associates a 2predicate1 with a 2pattern1 2variable1 so that the
+2variable1 will only match expressions for which the 2predicate1 is not
+FALSE.  (The matching is accomplished by one of the functions described below). 
+For example after MATCHDECLARE(Q,FREEOF(X,%E)) is executed, Q will match any
+expression not containing X or %E.  If the match succeeds then the variable is
+set to the matched expression.  The predicate (in this case FREEOF) is written
+without the last argument which should be the one against which the pattern
+variable is to be tested.  Note that the 2patternvar1 and the arguments to the
+2predicate1 are evaluated at the time the match is performed.
+
+
+The odd numbered argument may also be a list of pattern variables all of which are
+to have the associated predicate.  Any even number of arguments may be given.
+
+For pattern matching, predicates refer to functions which are either FALSE or not
+FALSE (any non FALSE value acts like TRUE).
+
+MATCHDECLARE(var,TRUE) will permit var to match any expression.
+
+.endfunction
+
+PRINTPROPS([2v1,v2,*...],MATCHDECLARE)
+$see<MACSYMA!properties> will display the matchdeclare properties of the variables 2v1,v2,*...
+
+
+.function (TELLSIMPAFTER,|pattern, replacement|)
+defines a 2replacement1 for 2pattern1 which the MACSYMA
+simplifier uses after it applies the built-in simplification rules.  The 2pattern1 may
+be anything but a single variable or a number.
+
+.endfunction
+
+.function (TELLSIMP,|pattern, replacement|)
+is similar to TELLSIMPAFTER but places new information
+before old so that it is applied before the built-in simplification rules.  The
+2pattern1 may not be a sum, product, single variable, or number.
+
+$var<RULES/> is a list of names having simplification rules added to them by DEFRULE,
+DEFMATCH, TELLSIMP, or TELLSIMPAFTER.
+
+.example
+.begin group
+(C1) MATCHDECLARE([XX,A,B],TRUE);
+(D1) 				     DONE
+
+(C2) 
+TELLSIMP(D[XX](A,B),B(XX)*DIFF(A(XX),X)-A(XX)*DIFF(B(XX),XX));
+RULE PLACED ON SUBVAR
+(D2) 			     [SUBVARRULE1, FALSE]
+
+
+.end
+.begin fill indent 0,0
+1SUBVARRULE1 is the name assigned to the TELLSIMP rule from (C34).
+.end
+.begin group
+(C3) D[Z](X,Y);
+(D3) 			   Y(Z) X(Z)  - X(Z) Y(Z)
+				    X		 Z
+
+.end
+.end scon
+Another example of the use of TELLSIMP is shown in the following:
+.example
+(C4) 0^0;
+0^0 HAS BEEN GENERATED
+.end
+.scon
+To override such default simplification, the user can use the following paradigm:
+.example
+(C5) BLOCK([SIMP],SIMP:FALSE,TELLSIMP(0^0,1));
+
+RULE PLACED ON **
+(D5)                       [**RULE1, SIMPEXPT]
+
+(C6) 0^0;
+(D6)                                1
+
+(C7) REMRULE("**","**RULE1");
+(D7)				[ SIMPEXPT ]
+
+.end
+
+.endfunction
+
+.function (DEFMATCH,|progname, pattern, parm1, ..., parmn|)
+creates a function of n+1 arguments
+with the name 2progname1 which tests an expression to see if it can match a particular
+2pattern1.  The 2pattern1 is some expression containing pattern variables and
+2parameters1.  The 2parms1
+are given explicitly as arguments to DEFMATCH while the pattern variables (if
+supplied) were given implicitly in a previous MATCHDECLARE function.  The first
+argument to the created function 2progname1, is an expression to be matched against
+the "2pattern1" and the other n arguments are the actual variables occurring in the
+expression which are to take the place of dummy variables occurring in the
+"2pattern1".  Thus the parms in the DEFMATCH are like the dummy arguments to the
+SUBROUTINE statement in FORTRAN.  When the function is "called" the actual arguments are
+substituted.  For example:
+
+.example group
+(C1)  NONZEROANDFREEOF(X,E):=  IF E#0 AND FREEOF(X,E)
+            THEN TRUE ELSE FALSE$
+
+.begin fill indent 0,0
+(IS(E#0 AND FREEOF(X,E))1 is an equivalent function definition - see sec. $ref<MACSYMA!properties>.
+.end
+3
+(C2)  MATCHDECLARE(A,NONZEROANDFREEOF(X),B,FREEOF(X))$
+(C3)  DEFMATCH(LINEAR,A*X+B,X)$
+
+.end
+
+This has caused the function LINEAR(2exp,var11) to be defined.  It tests 2exp1 to
+see if it is of the form A*2var11+B where A and B do not contain 2var11 and A is
+not zero.  DEFMATCHed functions return (if the match is successful) a list of equations
+whose left sides are the pattern variables and parms and whose right sides are the
+expressions which the pattern variables and parameters matched.  The pattern variables,
+but not the parameters, are set to the matched expressions.  If the match fails, the
+function returns FALSE.  Thus LINEAR(3*Z+(Y+1)*Z+Y**2,Z) would return [B=Y**2, A=Y+4,
+X=Z].  Any variables not declared as pattern variables in MATCHDECLARE or as
+parameters in DEFMATCH which occur in 2pattern1 will match only themselves so that if
+the third argument to the DEFMATCH in (C4) had been omitted, then LINEAR would only
+match expressions linear in X, not in any other variable.
+
+A pattern which contains no parameters or pattern variables returns
+TRUE if the match succeeds.
+
+.example
+(C1) MATCHDECLARE([A,F],TRUE)$
+
+(C2) CONSTINTERVAL(L,H):=CONSTANTP(H-L)$
+
+(C3) MATCHDECLARE(B,CONSTINTERVAL(A))$
+
+(C4) MATCHDECLARE(X,ATOM)$
+
+(C5) BLOCK(REMOVE(INTEGRATE,OUTATIVE),
+           DEFMATCH(CHECKLIMITS,'INTEGRATE(F,X,A,B),
+           DECLARE(INTEGRATE,OUTATIVE))$
+
+(C6) 'INTEGRATE(SIN(T),T,X+%PI,X+2*%PI)$
+
+(C7) CHECKLIMITS(%);
+
+(D7)  [B = X + 2 %PI, A = X + %PI, X = T,
+
+                               F = SIN(T)]
+
+(C8) 'INTEGRATE(SIN(T),T,0,X)$
+
+(C9) CHECKLIMITS(%);
+
+(D9)                    FALSE
+
+.end
+
+.endfunction
+
+.function (DEFRULE,|rulename, pattern, replacement|)
+defines and names a 2replacement1 rule for the given p2attern1.  If the rule
+named 2rulename1 is applied to an expression (by one of the APPLY functions
+below), every subexpression matching the 2pattern1 will be replaced by the
+2replacement1.  All variables in the 2replacement1 which have been assigned
+values by the pattern match are assigned those values in the 2replacement1
+which is then simplified. The rules themselves can be treated as functions which
+will transform an expression by one operation of the pattern match and
+replacement.  If the pattern fails, the original expression is returned.
+
+.endfunction
+
+.function (APPLY1,|exp, rule1, ..., rulen|)
+repeatedly applies the first rule to 2exp1 until it fails, then repeatedly
+applies the same rule to all subexpressions of 2exp1, left-to-right, until the
+first rule has failed on all subexpressions.  Call the result of transforming
+2exp1 in this manner 2exp1'.  Then the second rule is applied in the same
+fashion starting at the top of 2exp1'.  When the final rule fails on the final
+subexpression, the application is finished.
+
+.endfunction
+
+.function (APPLY2,|exp, rule1, ..., rulen|)
+differs from APPLY1 in that if the first rule fails on a given
+subexpression, then the second rule is repeatedly applied, etc.  Only if they all fail
+on a given subexpression is the whole set of rules repeatedly applied to the next
+subexpression.  If one of the rules succeeds, then the same subexpression is
+reprocessed, starting with the first rule.
+
+$var<MAXAPPLYDEPTH/10000> is the maximum depth to which APPLY1 and APPLY2 will delve.
+
+.endfunction
+
+.function (APPLYB1,|exp, rule1, ..., rulen|)
+is similar to APPLY1 but works from the "bottom up" instead of from the "top
+down".  That is, it processes the smallest subexpression of 2exp1, then the
+next smallest, etc.
+
+$var<MAXAPPLYHEIGHT/10000> - is the maximum height to which APPLYB1 will reach before
+giving up.
+
+.endfunction
+
+.sec (Pattern Matching for Rational Expressions,patmatrat,1)
+
+.function (LETSIMP,exp)
+will continually apply the substitution rules previously defined by the
+function LET (see below) until no further change is made to 2exp1.
+
+.endfunction
+
+.function (LET,|prod, repl, predname, arg1, arg2, ..., argn|)
+defines a substitution rule for LETSIMP such that 2prod1 gets replaced by
+2repl1.  2prod1 is a product of positive or negative powers of the following types of terms:
+
+
+(1) 2Atoms1 which LETSIMP will search for literally unless previous to calling
+LETSIMP the MATCHDECLARE function is used to associate a predicate with the atom.  In
+this case LETSIMP will match the atom to any term of a product satisfying the
+predicate.
+
+(2) 2Kernels1 such as SIN(X), N!, F(X,Y),  etc.  As with atoms above LETSIMP will
+look for a literal match unless MATCHDECLARE is used to associate a predicate with the
+argument of the kernel.
+
+A term to a positive power will only match a term having at least that power in
+the expression being LETSIMPed.  A term to a negative power on the other hand will
+only match a term with a power at least as negative.  In the case of negative powers
+in "product" the switch LETRAT must be set to TRUE (see below).
+
+If a predicate is included in the LET function followed by a list of arguments,
+a tentative match (i.e. one that would be accepted if the predicate were
+omitted) will be accepted only if 2predname1(2arg11',...,2argn1')
+evaluates to TRUE where 2argi1' is the value matched to 2argi1.  The
+2argi1 may be the name of any atom or the argument of any kernel appearing in
+2prod1.  2repl1 may be any rational expression.  If any of the atoms or
+arguments from 2prod1 appear in 2repl1 the appropriate substitutions will be
+made.
+
+$var<LETRAT/FALSE> when FALSE, LETSIMP will simplify the numerator and
+denominator of 2expr1 independently and return the result.  Substitutions such
+as N!/N goes to (N-1)! will fail.  To handle such situations LETRAT should be
+set to TRUE, then the numerator, denominator, and their quotient will be
+simplified in that order.
+
+These substitution functions allow you to work with several rule packages at
+once. Each rule package can contain any number of LETed rules and is refered to
+by a user supplied name.  To insert a rule into the rule package 2name1,  do
+LET([2prod,repl,pred,arg11,...],2name1).  To apply the rules in rule package
+2name1, do LETSIMP(2expr1, 2name1).  The function
+LETSIMP(2expr,name1,name21,...) is equivalent to doing LETSIMP(2expr,name11)
+followed by LETSIMP(%,2name21) etc.
+
+There is a default rule package name which is
+assumed when no other name is supplied to any of the functions.  Whenever a LET
+includes a rule package name the default rule package is made to look like that
+rule package.
+.endfunction
+.function (REMLET,|prod, name|)
+deletes the substitution rule, 2prod1 --> 2repl1, most recently defined by
+the LET function.  If 2name1 is supplied the rule is deleted from the rule
+package 2name1. REMLET() and REMLET(ALL,2name1) delete all substitution
+rules from the default rule package. If 2name1 is supplied the rule package,
+2name1, is also deleted.
+
+If a substitution is to be changed using the same product, REMLET need not be
+called, just redefine the substitution using the same product (literally) with the LET
+function and the new replacement and/or predicate name.  Should REMLET(product) now be
+called the original substitution rule will be revived.
+
+.endfunction
+
+.function(LETRULES,name)
+and LETRULES() display the rule package 2name*, and the rules in the
+default rule package, respectively.  Note that the function
+LETRULES(2name*) will set the default rule package to the rule package,
+2name*.
+
+.example
+(C1) MATCHDECLARE([A1,A2],TRUE)$
+
+(C2) ONELESS(X,Y):=IS(EQUAL(X,Y-1))$
+
+(C3) LET(A1*A2!,A1!,ONELESS,A2,A1);
+
+(D3)         A1 A2! --> A1! WHERE ONELESS(A2, A1)
+
+(C4) LETRAT:TRUE$
+
+(C5) LET(A1!/A1,(A1-1)!);
+
+.begin group
+                        A1!
+(D5)                    --- --> (A1 - 1)!
+                        A1
+.end
+
+(C6) LETSIMP(N*M!*(N-1)!/M);
+
+(D6)                      (M - 1)! N!
+
+.end
+
+.scon
+The user should be aware that simplification rules for differential operators can be specified using MACSYMA's pattern-matching commands.
+
+Consider a function F(X). To inform MACSYMA that F depends on X,  the user must type  DEPENDS(F,X); (otherwise,  DIFF(F,X) will return 0).  We will assume that this has been done and that DERIVABBREV has been set to TRUE in the following example.
+
+Now suppose that the function F(X) satisfies some constraint, say that the d'Alembertian of f(x) is zero:
+.skip 1
+.once center
+711^2 f(x) = 0.
+
+In a curved space, this may take the form:
+
+.example
+
+(C4) -2*(DIFF(F,X)*X +2)
+       *(L*(DIFF(F,X)^3)*X^2
+          +(4*DIFF(F,X,2)+4*(DIFF(F,X)^2))*X+8*DIFF(F,X));
+.begin group
+			  3    2		   2
+(D4)  - 2 (F  X + 2) ((F )  L X  + (4 F    + 4 (F ) ) X + 8 F )
+	    X		X	       X X	 X	     X
+
+.end
+.end
+One can solve for the second-order term:
+.example
+.begin group
+(C5) SOLVE(%,DIFF(F,X,2));
+Solution
+
+			       3    2	      2
+			   (F )  L X  + 4 (F )  X + 8 F
+			     X		    X	       X
+(E5) 		  F    = - -----------------------------
+		   X X		        4 X
+.end
+(D5) 				   [E5]
+
+.end
+.continue
+which can be restated as a simplification rule:
+.example
+
+(C6) LET(DIFF(F,X,2),RHS(E5));
+.begin group
+(D6) 			   (F     -->  RHS(E5))
+			     X X
+.end
+.end
+.continue
+Then a relatively complicated expression such as
+.example
+.begin group
+	   4  2	 3			  3     2
+(D10) ((F )  L  X  + (8 F  F    L + 8 (F )  L) X
+	 X		 X  X X	        X
+
+	     2
+      + ((F )  (12 L + 16) + 16 F   ) X + 32 F )
+           X			 X X  	      X
+
+			    2    2
+	           /(X ((F )  L X  + 4 F  X + 4))
+		          X		        X
+.end 
+.end continue
+can be simplified using the LETSIMP command:
+.example
+(C11) FACTOR(LETSIMP(%));
+
+.begin group
+				       2
+(D11) 				 - (F )  L
+				     X
+.end
+
+.end
+
+
+.endfunction
+
+
+.chap ("Utility, Input-Output, and Display Functions",utility!functions)
+
+.sec ("Debugging Functions ",debugging,1)
+The functions in this section permit the user to examine his MACSYMA environment and to obtain debugging information.  Further detail is given in section 12.0.
+
+.function (TRACE,|name1, name2, ...|)
+gives a trace printout whenever the functions mentioned are
+called. TRACE() prints a list of the functions currently under TRACE.
+
+.endfunction
+
+.function (UNTRACE,|name1, ...|)
+removes tracing incurred by the TRACE function.  UNTRACE() removes tracing from all
+functions.
+
+.endfunction
+
+.function (REMTRACE)
+removes the tracing facilities from MACSYMA thus freeing up some storage.  They
+will be reloaded when TRACE is used again.
+
+.endfunction
+
+.function (DECLARE,|[var1, var2, ...], BINDTEST|)
+causes MACSYMA to give an error message whenever any of
+the 2vari1 occur unbound in a computation.
+
+.endfunction
+
+.function (BREAK,|arg1, ...|)
+evaluates and prints its arguments then enters a MACSYMA break loop.
+
+.endfunction
+
+
+.skip 2 once center
+2Options and Variables
+.skip 1
+
+$var<%%/> is the value of the last computation performed while in a (MACSYMA-BREAK).
+
+$var<DEBUGMODE/FALSE> if TRUE causes MACSYMA to enter a MACSYMA break loop whenever a MACSYMA error occurs. If DEBUGMODE:ALL then the user may examine BACKTRACE for the list of functions currently entered.
+
+
+$var<REFCHECK/FALSE> if TRUE causes a message to be printed each time a bound variable is used for the first time in a computation.
+
+$var<PREDERROR/TRUE> - if TRUE causes a message to be printed whenever the
+predicate of an IF statement or an IS function fails to evaluate to either TRUE
+or FALSE.
+
+$var<SETCHECK/FALSE> - if set to a list of variables (which can be subscripted)
+will cause a printout whenever the variables, or subscripted occurrences of
+them, are bound (with : or :: or function argument binding).  The printout
+consists of the variable and the value it is bound to.   SETCHECK may be set to  ALL or TRUE thereby including all variables.
+
+
+$var<SETCHECKBREAK/FALSE> - if set to TRUE will cause a (MACSYMA-BREAK) to
+occur just prior to the binding of variables on the SETCHECK list.  At this 
+point, $var<SETVAL/> holds the value to which the variable is about to be set.
+Hence, one may change this value by resetting SETVAL.
+
+$var<BACKTRACE/> (when DEBUGMODE:ALL has been done) has as value a list of all functions currently entered.
+(see Chapter $ref<debugmac>).
+
+.sec (Functions for Displaying,display!functions)
+
+.function (DISPFUN,|f1, f2, ...|)
+displays the definition of the user defined functions 2f1, f2, ...* which may
+also be the names of array associated functions, subscripted functions, or
+functions with constant subscripts which are the same as those used when the
+functions were defined. DISPFUN(ALL) will display all user defined functions as
+given on the $var<FUNCTIONS/> and $var<ARRAYS/> lists except subscripted functions
+with constant subscripts.
+
+.endfunction
+
+.function (DISPRULE,rulename)
+will display a rule with the name 2rulename* as was given by $fun<DEFRULE>,
+$fun<TELLSIMP>, or $fun<TELLSIMPAFTER> or a pattern defined by $fun<DEFMATCH>.  For
+example, the first rule modifying SIN will be called SINRULE1. (see $ref<patmatfun>)
+
+.endfunction
+
+.function (DISPLAY,|exp1, exp2, ...|)
+displays equations whose left side is 2expi1 unevaluated, and
+whose right side is the value of the expression centered on the line.  This function
+is useful in blocks and FOR statements in order to have intermediate results
+displayed.  The arguments to DISPLAY are usually atoms, subscripted variables, or
+function calls.  (see the DISP function below.)
+
+.example
+(C1) DISPLAY(B[1,2]);
+
+.begin group
+                                      2
+                         B     = X - X
+                          1, 2
+.end
+
+(D1)                            DONE
+
+.end
+.endfunction
+
+.function(LDISPLAY,|exp1,exp2,...|)
+is like DISPLAY but also generates intermediate labels.
+
+.endfunction
+
+.function (DISP,|exp1,exp2, ...|)
+is like DISPLAY but only the value of the arguments are displayed rather
+than equations.  This is useful for complicated arguments which don't have names or
+where only the value of the argument is of interest and not the name.
+
+.endfunction
+
+.function(LDISP,|exp1,exp2,...|)
+is like DISP but also generates intermediate labels.
+
+.endfunction
+
+.function (PRINT,|exp1, exp2, ...|)
+evaluates and displays its arguments one after the other "on a line"
+starting at the leftmost position.  If 2expi1 is unbound or is preceded by a single
+quote or is enclosed in "s then it is printed literally.  For example, PRINT("THE
+VALUE OF X IS ",X).  The value returned by PRINT is the value of its last argument.
+No intermediate lines are generated.
+
+.endfunction
+
+.function (DISPTERMS,exp)
+displays its argument in parts one below the other.  That is, each term in
+a sum or factor in a product is displayed separately.  This is useful if 2exp1 is too
+large to be otherwise displayed.  For example if P1, P2, ... are very large
+expressions then the display program may run out of storage space in trying to display
+P1+P2+... all at once. However, DISPTERMS(P1+P2+...) will display P1, then below it P2,
+etc.
+When not using DISPTERMS, if an exponential expression is too wide to be displayed as A**B it will appear
+as EXPT(A,B) (or as NCEXPT(A,B) in the case of A^^B).
+
+.endfunction
+
+.function (REVEAL,|exp,depth|)
+will display 2exp1 to the specified integer 2depth1 with
+the length of each part indicated.  Sums will be displayed as
+SUM(n) and products as PRODUCT(n) where n is the
+number of subparts of the sum or product.  Exponentials will
+be displayed as EXP.
+
+.EXAMPLE
+
+(C1) INTEGRATE(1/(X^3+2),X)$
+
+(C2) REVEAL(%,2);
+(D2)              PRODUCT(3) + PRODUCT(3) + PRODUCT(3)
+
+.BEGIN GROUP
+(C3) REVEAL(D1,3);
+		    EXPT LOG                    EXPT LOG
+(D3)              - -------- + EXPT EXPT ATAN + --------
+		       6                           3
+
+.END
+.END
+.endfunction
+ 
+.function (PLAYBACK,arg)
+"plays back" input and output lines.  If 2arg1=n (a number) the last n
+expressions (Ci, Di, and Ei count as 1 each) are "played-back", while if 2arg1 is
+omitted, all lines are.  If 2arg1=INPUT then only input lines are played back. 
+If 2arg1=[m,n] then all lines with numbers from m to n inclusive are played-back.
+If m=n then [m] is sufficient for arg.  2Arg1=SLOW places PLAYBACK in a slow-mode
+similar to $fun<DEMO>'s (as opposed to the "fast" $fun<BATCH>). This is useful in
+conjunction with $fun<SAVE> or $fun<STRINGOUT> (see below) when creating a
+secondary-storage file in order to pick out useful expressions.  If 2arg1=TIME
+then the computation times are displayed as well as the expressions. 
+2arg1=$flag<NOSTRING>  displays  all input lines when
+playing back rather than STRINGing them. If 2arg1=GRIND then the display will be in a more readable format.   One may include any number of options as in PLAYBACK([5,10],20,TIME,SLOW).
+
+.endfunction
+
+.function (STRING,exp)
+converts 2exp1 to MACSYMA's linear notation (similar to FORTRAN's) just as if
+it had been typed in and puts 2exp1 into the buffer for possible editing (in which
+case 2exp1 is usually Ci)  (see sec. $ref<simpform>).  The STRING'ed expression should not be
+used in a computation.
+
+.endfunction
+
+.function (STRINGOUT,args)
+will output an expression to a file in a linear format. STRINGOUT([filespec],...,FUNCTIONS,...) puts all the user's function definitions in the specified file. $see<disk!storage>
+
+$var<GRIND/FALSE> if TRUE will cause the $fun<STRING>, $fun<STRINGOUT>, and $fun<PLAYBACK> commands to use "grind" mode instead of "string" mode.  For PLAYBACK, "grind" mode can also be turned on (for processing input lines) by specifying GRIND as an option.
+
+
+.endfunction
+
+.function(GRIND,arg) 
+prints out 2arg* in a more readable format than the STRING command. It returns a D-line as value.
+.endfunction
+
+.function(FORTRAN,exp) 
+converts 2exp* into a FORTRAN linear expression in legal FORTRAN with 6 spaces inserted at the beginning of each line,continuation lines,and ** rather than ^ for exponentiation.   When the option $var<FORTSPACES/FALSE> is TRUE,  the FORTRAN command fills out to 80 columns using spaces.
+
+.endfunction
+
+.function(FORTMX,|name,matrix|)
+converts a MACSYMA 2matrix* into a sequence of FORTRAN assignment statements of the form
+
+   2name*(i,j)=  <the ij 2matrix* element> 
+
+.endfunction
+
+.function(DESCRIBE,|function|)
+prints out the portion of the MACSYMA manual describing the 2function*.
+.endfunction
+
+.function (EXAMPLE,|function|)
+does a DEMO of  relevant examples involving 2function*.
+.endfunction
+
+.sec (Functions for Freeing Storage,freeing!storage)
+
+.function (REMOVE,args)
+will remove some or all of the properties associated with variables or
+functions. $see<property!specification>
+
+.endfunction
+
+.function (REMFUNCTION,|f1, f2, ...|)
+removes the user defined functions 2f1,f21,... from
+MACSYMA.  If there is only one argument of ALL then all functions are removed.
+
+.endfunction
+
+.function (REMVALUE,|name1, name2, ...|)
+removes the values of user variables (which can be subscripted) from the system.
+If name is ALL then  the values of all user variables are removed.  Values are
+those items given names by the user as opposed to those which are automatically
+labeled by MACSYMA as Ci, Di, or Ei.
+
+.endfunction
+
+.function (REMARRAY,|name1, name2, ...|)
+removes arrays and array associated functions and frees the
+storage occupied.  If name is ALL then all arrays are removed.  It may be necessary to
+use this function if it is desired to redefine the values in a hashed array.
+
+.endfunction
+
+.function (REMRULE,|function, rulename|)
+will remove a rule with the name 2rulename1 from the 2function1 which was
+placed there by $fun<DEFRULE>, $fun<DEFMATCH>,  $fun<TELLSIMP>, or
+$fun<TELLSIMPAFTER>.  If 2rule-name1 is ALL, then all rules will be removed. (see
+example in $ref<patmatfun>)
+
+.endfunction
+
+.function (KILL,|arg1, arg2, ...|)
+eliminates its arguments from the MACSYMA system.  If 2argi1 is a variable
+(including a single array element), function, or array, the designated item with
+all of its properties is removed from core. If 2argi1=LABELS then all input,
+intermediate, and output lines to date (but not other named items) are
+eliminated. If 2argi1=CLABELS then only input lines will be eliminated;  if 2argi1=ELABELS then only intermediate E-lines will be eliminated; if 2argi1=DLABELS only the output lines will be eliminated.
+ If 2argi1 is the name of any of the other information lists (the elements of the MACSYMA variable $var<INFOLISTS/>), then every item in that class (and its properties) is
+KILLed and if 2argi1=ALL then every item on every information  list
+previously defined as well as LABELS is KILLed.  If 2argi1=a number (say n),
+then the last n lines (i.e. the lines with the last n line numbers) are deleted.
+If 2argi1 is of the form [m,n] then all lines with numbers between m and n
+inclusive are killed. Note that KILL(VALUES) or KILL(variable) will not freeup
+the storage occupied unless the labels which are pointing to the same
+expressions are also KILLed.  Thus if a large expression was assigned to X on
+line C7 one should do KILL(D7) as well as KILL(X) to release the storage
+occupied.
+
+
+KILL(ALLBUT(2name1,...,namek*)) will do a KILL(ALL) except it will not KILL the names specified.  (Note:  name2i1 means a name such as U, V, F, G,
+not an infolist such as FUNCTIONS.)
+
+.begin turn on ""
+KILL removes all properties from the given argument; thus KILL(VALUES) will kill all properties associated with every item on the VALUES list.   KILL always returns the value "DONE" even if the named item doesn't exist $see<property!specification>.
+
+The "REMOVE" functions ($fun<REMVALUE>,$fun<REMFUNCTION>, $fun<REMARRAY>,$fun<REMRULE>) remove a specific property.  These functions return a list of names or FALSE (if the specific argument doesn't exist).
+.end
+MACSYMA options may not be KILLed.  The user may do RESET() $see<miscfun> to reset all options to their default values.
+
+
+The error message "NO CORE - FASLOAD" results when either too many FASL files have been loaded in or when allocation level has gotten too high.   Note that 
+once this occurs,  KILLing expressions will not help.  In either of these cases, no amount of killing will cause the size of these spaces to decrease.  Killing expressions only causes some spaces to get emptied out but not made smaller.
+
+.endfunction
+
+.sec (Functions Which Reference Disk Files,disk!storage)
+
+
+.function (LOADFILE,|fn1, fn2, DSK, directory|)
+loads a file as designated by its arguments.  This function may be used to bring
+back quantities that were stored from a prior MACSYMA session by use of the SAVE or
+STORE functions.  If 2DSK1 and 2directory1 are omitted then the last directory
+seen (initially the same as the user's login name or USERS if the user has no file directory) will be used.  If 2DSK1 and 2directory1 are omitted, 2fn21 may also
+be omitted if 2fn11 > is to be loaded in (where > follows the conventions of
+ITS's file system).  2Fn11 2fn21 must be a file of LISP functions and
+expressions, not of MACSYMA command lines, in which case BATCH or DEMO is to be
+used.  (See Chapter $ref<batchap>).
+
+.endfunction
+
+.function (DELFILE,|file-specification|)
+will delete the file given by the 2file-specification1.
+.endfunction
+
+.function (BATCH,|file-specification|)
+reads in and evaluates MACSYMA command lines from a file. (see Chapter $ref<batchap>).
+
+.endfunction
+
+.function (DEMO,|file-specification|)
+same as BATCH but pauses after each command line and continues when a space is typed.
+(see Chapter $ref<batchap>).
+
+.endfunction
+
+.function (BATCON,argument)
+continues BATCHing in a file which was interrupted $see<batconfun>.
+
+.endfunction
+
+.function (WRITEFILE,|DSK, directory|)
+opens a file for writing.  See the CLOSEFILE command below for more information. 
+
+.endfunction
+
+.function (APPENDFILE,|filename1, filename2, DSK, directory|)
+is like WRITEFILE(DSK,2directory1) but appends
+to the file whose name is specified by the first two arguments.
+A subsequent CLOSEFILE will delete the original file and
+rename the appended file.
+
+.endfunction
+
+.function (CLOSEFILE,|filename1, filename2|)
+closes a file opened by WRITEFILE and gives it the name
+2filename11 2filename21.  Thus to save a file consisting of the display of all
+input and output during some part of a session with MACSYMA the user issues a WRITEFILE,
+transacts with MACSYMA, then issues a CLOSEFILE.
+The user can also issue the PLAYBACK function after a WRITEFILE to save the
+display of previous transactions.  (Note that what is saved this way is a copy
+of the 2display1 of expressions not the expressions themselves).  To save the
+actual expression in internal form the SAVE function may be used.  The
+expression can then be brought back into MACSYMA via the LOADFILE function.  To
+save the expression in a linear form which may then be BATCHed in later, the
+STRINGOUT function is used. (see below)
+
+.endfunction
+
+.function (STRINGOUT,|file-specification, A1, A2, ...|)
+outputs to a file given by 2file-specification1
+([filename1,filename2,DSK, directory]) the values given by 2A1,A21,.. in a
+MACSYMA readable format.  The 2file-specification1 may be omitted, in which
+case the default values will be used. (see $ref<autostor> - C)  The 2Ai1 are
+usually C labels or may be INPUT meaning the value of all C labels.   Another option is to make 2Ai1 FUNCTIONS which will cause all of the user's function definitions to be strungout (i.e. all those retrieved by DISPFUN(ALL)). 2Ai1 may
+also be a list [m,n] which means to stringout all labels in the range m through
+n inclusive.  This function may be used to create a file of FORTRAN statements
+by doing some simple editing on the strungout expressions.  Alternatively, the
+function $fun<FORTRAN> can be used  $see<display!functions>
+
+.endfunction
+
+.function (SAVE,args)
+saves quantities described by its arguments on disk and keeps them in core
+also. $see<explicitstor>.
+
+.endfunction
+
+.function (STORE,args)
+same as SAVE but doesn't retain quantities in core. $see<explicitstor>.
+
+.endfunction
+
+.function(FASSAVE,args)
+is similar to SAVE but produces a FASL file in which the sharing of subexpressions which are shared in core is preserved in the file created.  Hence, expressions which have common subexpressions will consume less space when loaded back from a file created by FASSAVE rather than by SAVE.
+
+.endfunction
+
+
+.function (UNSTORE,|name1, ...|)
+brings the named expressions into core that were stored away by use of
+the STORE function in the current MACSYMA. $see<explicitstor>.
+
+.endfunction
+
+.function (RESTORE,|file-specification|)
+reinitializes all quantities filed away by a use of the SAVE
+or STORE functions, in a prior MACSYMA session, from the file given by
+2file-specification1 without bringing them into core. $see<savmacsym>.
+
+.endfunction
+
+.function(REMFILE)
+removes files created by the secondary storage scheme in the MACSYMA under use
+$see<autostor>.  REMFILE(ALL) does what REMFILE() does and in addition deletes
+any files which have been created by the SAVE or STORE functions but which have not
+been assigned names by the user.
+
+.endfunction
+
+.sec (Ordering Functions,ordering!functions,1)
+
+Aside from declaring a variable to be constant or using options like POWERDISP (see below), the
+only other way in which a user can alter the ordering of parts of an expression is to
+set up special aliases for variables which cause them to be alphabetically less than
+or greater than any other variables.  Functions which do this are described below.
+This technique requires care because although the names have been aliased, they
+display with their original name.  Aside from the input/output phase the two names
+represent two different symbols and thus expressions which contain both the original
+name and the alias will not be simplified as the user desires.  This is shown in the
+examples below.
+
+.function (ORDERGREAT,|V1, ..., Vn|)
+sets up aliases for the variables 2V1, ..., Vn* such that
+.bcon
+2V1* > 2V2* > ... > 2Vn* > any other variable not mentioned as an argument.
+
+.endfunction
+
+
+.function (ORDERLESS,|V1, ..., Vn|)
+sets up aliases for the variables 2V1, ..., Vn* such that
+.bcon
+2V1* < 2V2* < ... < 2Vn* < any other variable not mentioned as an argument. 
+
+.endfunction
+.begin group
+.skip
+ Thus the complete ordering scale is:
+.skip
+.once center
+numerical constants < declared constants < 
+.skip
+.once center
+< first argument to ORDERLESS < ... < last argument to ORDERLESS < 
+.skip
+.once center
+< variables which begin with A < ... < variables which begin with Z < 
+.skip
+.once center
+< last argument to ORDERGREAT < ... < first argument to ORDERGREAT.
+.end
+.function(ORDERGREATP,|exp1,exp2|)
+returns TRUE  if  2exp21  precedes  2exp11 in the ordering induced by the variable ordering described above.
+.endfunction
+
+.function(ORDERLESSP,|exp1,exp2|)
+returns TRUE if 2exp11 precedes 2exp21 in the ordering induced by the variable ordering described above.
+.endfunction
+
+.function (UNORDER)
+removes the aliases created by the last use of the above ordering commands.
+ORDERGREAT and ORDERLESS may not be used more than one time each without calling
+UNORDER.
+
+.example
+(C1) A**2+B*X;
+.begin group
+                                        2
+(D1)                             B X + A
+.end
+
+(C2) ORDERGREAT(A);
+(D2)                               DONE
+
+(C3) A**2+B*X;
+.begin group
+                                  2
+(D3)                             A  + B X
+.end
+
+(C4) %-D1;
+.begin group
+                                  2    2
+(D4)                             A  - A
+.end
+
+(C5) UNORDER();
+(D5)                               [A]
+
+.end
+.endfunction
+
+.function(SORT,|list,optional-predicate|)
+sorts the 2list1 using a suitable 2optional-predicate1 of two arguments
+ (such as "<" or ORDERLESSP).  If the 2optional-predicate1 is not given, then MACSYMA's built-in ordering predicate is used.  
+.endfunction
+
+.begin group
+.sec (Miscellaneous Functions,miscfun)
+
+.function (TIME,|Di1, Di2, ...|)
+gives a list of the times in milliseconds taken to compute the 2Di1.
+
+.endfunction
+.end
+.function (LOGOUT)
+causes the user to be logged out and all jobs deleted.  This is useful when it is
+desired to BATCH in a file and have the terminal logged out automatically when the
+computations are finished.  (Equivalent to ^Z and :LOGOUT)
+
+.endfunction
+
+.function (QUIT)
+kills the current MACSYMA but doesn't affect the user's other jobs.  (Equivalent to ^Z and :KILL).
+
+.endfunction
+
+.function (READ,|string1, ...|)
+prints its arguments, then reads in and evaluates one expression.  For
+example:  A:READ("ENTER THE NUMBER OF VALUES").
+
+.endfunction
+
+.function(READONLY,|string1,...|)
+prints its arguments, then reads in an expression (which in contrast to READ is not evaluated).
+.endfunction
+
+.function (DEFINE,|f(x1, ...), body|)
+is equivalent to f(x1,...):=''body but when used inside functions it happens at
+execution time rather than at the time of definition of the function which contains it.  $see<evaluation>
+
+.endfunction
+
+.function (LOCAL,|v1, v2, ...|)
+causes the variables 2v1,v2,...1 to be local with respect to all the properties
+in the statement in which this function is used $see<program!blocks>.  LOCAL may only be used
+in BLOCKs, in the body of function definitions or LAMBDA expressions, or in the EV
+function and only one occurrence is permitted in each.
+
+.endfunction
+
+.function (ERROR,|arg1, arg2, ...|)
+will evaluate and print its arguments and then will cause an error return to top
+level MACSYMA or to the nearest enclosing ERRCATCH.  This is useful for breaking out of nested functions if an error
+condition is detected, or wherever one can't type control-G.
+
+$var<ERRORFUN/FALSE> - if set to the name of a function of no arguments will cause
+that function to be executed whenever an error occurs.  This is useful in BATCH files
+where the user may want his MACSYMA killed or his terminal logged out if an error
+occurs.  In these cases ERRORFUN would be set to QUIT or LOGOUT.
+
+.endfunction
+
+.function (ERRCATCH,|exp1, exp2, ...|)
+evaluates its arguments one by one and returns a list of the value of the last
+one if no error occurs.  If an error occurs in the evaluation of any arguments,
+ERRCATCH "catches" the error and immediately returns [] (the empty list).  This
+function is useful in BATCH files where one suspects an error might occur which
+would otherwise have terminated the BATCH if the error weren't caught.
+
+.endfunction
+
+.function(CATCH,|exp1,...,expn|)
+evaluates its arguments one by one; if the structure of the 2expi1 leads to the evaluation of an expression of the form THROW(arg),  then the value of the CATCH is the value of THROW(arg).  This  "non-local return"  thus goes through any depth of nesting to the nearest enclosing CATCH.  There must be a CATCH corresponding to a THROW, else an error is generated.     
+If the evaluation of the 2expi1 does not lead to the evaluation of any THROW then the value of the CATCH is the value of  2expn1.  
+
+.example
+
+(C1) G(L):=CATCH(MAP(LAMBDA([X],
+       IF X<0 THEN THROW(X) ELSE F(X)),L))$
+
+(C2) G([1,2,3,7]);
+(D2) 			 [F(1), F(2), F(3), F(7)]
+
+(C3) G([1,2,-3,7]);
+(D3) 				    - 3
+
+.end
+
+The function G returns a list of  F of each element of L  if  L consists only of non-negative numbers; otherwise, G "catches"  the first negative element of L and "throws" it up.
+
+.endfunction
+
+.function(THROW,exp)
+evaluates  2exp1 and throws the value back to the most recent CATCH.  THROW is used with CATCH as a structured nonlocal exit mechanism.
+
+.endfunction
+
+.function (BREAK,|arg1, ...|)
+will evaluate and print its arguments and will then cause a
+(MACSYMA-BREAK) at which point the user can examine and change his environment.  Upon
+typing EXIT; the computation resumes. (see Chapter $ref<debugmac>)
+
+.endfunction
+
+.function(RESET)
+causes all MACSYMA options to be set to their default values.
+
+.endfunction
+
+.function (%TH,i)
+is the 2i1th previous computation.  That is, if the next expression to be computed is
+D(j) this is D(j-2i1).  This is useful in BATCH files or for referring to a group of D
+expressions.  For example, if SUM is initialized to 0 then FOR I:1 THRU 10 DO
+SUM:SUM+%TH(I) will set SUM to the sum of the last ten D expressions.
+
+.endfunction
+
+.function (CONCAT,|arg1, arg2, ...|)
+evaluates its arguments and returns the concatenation of their
+values resulting in a name or a quoted string (see $ref<names> and $ref<quoted!strings>) the type being given
+by that of the first argument.  Thus if X is bound to 1 and D is unbound then
+CONCAT(X,2)="12" and CONCAT(D,X+1)=D2.
+
+.endfunction
+
+.function (GETCHAR,|a, i|)
+returns the 2i1th character of the
+quoted string or atomic name 2a1.  This function is useful
+in manipulating the LABELS list.
+
+.endfunction
+
+.function (STATUS,arg)
+will return miscellaneous status information about the user's MACSYMA
+depending upon the 2arg1 given.  Permissible arguments and results are as follows:
+
+.skip 1
+.begin preface 0
+TIME - the time used so far in the computation.
+
+DAY - the day of the week.
+
+DATE - a list of the year, month, and day.
+
+DAYTIME - a list of the hour, minute, and second.
+
+RUNTIME - accumulated cpu time times the atom "MSEC".
+
+REALTIME -the real time (in sec) elapsed since the user started up his MACSYMA.
+
+WRITEFILE - a list of the device and username for the current writefile or an empty
+list if no WRITEFILE has been done.
+
+LOADFILE - a list of the first file name, second file name, device, and username for
+the current BATCH, DEMO, or LOADFILE function.
+
+FILE - a list of the current first file name and second file name.
+
+UNIT - a list of the current device and username.
+
+.end
+.endfunction
+
+.function (ALARMCLOCK,|arg1, arg2, arg3|)
+will execute the function of no arguments whose name is 2arg31 when the time
+specified by 2arg11 and 2arg21 elapses.  If 2arg11 is the atom "TIME" then
+2arg31 will be executed after 2arg21 seconds of real-time has elapsed while
+if 2arg11 is the atom "RUNTIME" then 2arg31 will be executed after 2arg21
+milliseconds of cpu time. If 2arg21 is negative then the 2arg11 timer is shut
+off.
+
+.endfunction
+
+
+.function(LABELS,char)
+takes a char C,D,or E as arg and generates a list of all C-labels,D-labels, or E-labels, respectively.  (If you've generated many E-labels via SOLVE, then FIRST(REST(LABELS(C))); reminds you what the last C-label was.)
+
+.endfunction
+
+.function(ALIAS,|newname1, oldname1, newname2, oldname2, ...|) 
+provides an alternate name for a (user or system) function, variable, array,
+etc.  Any even number of arguments may be used.  Nouns are handles via aliases.
+
+.endfunction
+
+
+
+.sec(|Options and Variables for I/O, Status, and Display|,ioptions,1)
+
+.skip 1
+$var<GRIND/FALSE> if TRUE will cause the $fun<STRING>, $fun<STRINGOUT>, and $fun<PLAYBACK> commands to use "grind" mode instead of "string" mode.  For PLAYBACK, "grind" mode can also be turned on (for processing input lines) by specifying GRIND as an option.
+
+$var<SHOWTIME/FALSE> - if TRUE causes MACSYMA to print the cpu time taken by each
+computation. This figure does not include I/O time except in the case of the
+time given at the end of running a batch file.  By setting SHOWTIME:ALL, in addition to the cpu time MACSYMA now also prints out (when not zero) the amount of time spent in garbage collection (gc) in the course of a computation.  This time is of course included in the time printed out as "Total time=" .
+
+(It should be noted that since the "time=" time only includes computation time and not any intermediate display time, and since it is difficult to ascribe "responsibility" for  gc's,  the gctime printed will include all gctime incurred in the course of the computation and hence may in rare cases even be larger than "time=").
+
+$var<LASTTIME/>  - the time to compute the last expression in milliseconds presented as a list of "time" and "gctime" .
+
+$var<OPTIONSET/FALSE> - if TRUE, MACSYMA will print out a message whenever a
+MACSYMA option is reset.  This is useful if the user is doubtful of the spelling
+of some option and wants to make sure that the variable he assigned a value to
+was truly an option variable.
+
+$var<NOLABELS/FALSE> - if TRUE then no labels will be bound except for E lines
+generated by the solve functions (sect. 6.3).  This is most useful in the "BATCH"
+mode where it eliminates the need to do KILL(LABELS) in order to free up
+storage.
+
+$var<BFTRUNC/TRUE> causes trailing zeroes in non-zero bigfloat numbers not to be displayed.  Thus, if BFTRUNC:FALSE, BFLOAT(1); displays as 1.000000000000000B0. Otherwise, this is displayed as 1.0B0.
+
+$var<EXPTDISPFLAG/TRUE> - if TRUE, MACSYMA displays expressions with negative
+exponents using quotients e.g., X**(-1) as 1/X.
+
+$var<%EDISPFLAG/FALSE> - if TRUE, MACSYMA displays %E to a negative exponent as
+a quotient, i.e. %E^-X as 1/%E^X.
+
+$var<SQRTDISPFLAG/TRUE> - if FALSE causes SQRT to display with exponent 1/2.
+
+$var<PFEFORMAT/FALSE> - if TRUE will cause rational numbers to display in a
+linear form and denominators which are integers to display as rational number
+multipliers.
+
+
+$var<DISPFLAG/TRUE> - if set to FALSE within a BLOCK $see<program!blocks> will
+inhibit the display of output generated by the solve functions $see<SOLVE> called
+from within the BLOCK.  Termination of  the BLOCK with a dollar sign, $, sets DISPFLAG to FALSE.
+
+$var<LOADPRINT/TRUE> -  governs the printing of messages accompanying loading of files.  The following options are available: TRUE means always print the message; 'LOADFILE means print only when the LOADFILE command is used; 'AUTOLOAD means print only when a file is automatically loaded in (e.g. the integration file SIN FASL); FALSE means never print the loading message.
+
+
+$var<NOUNDISP/FALSE> - if TRUE will cause NOUNs to display with a single quote.
+This switch is always TRUE when displaying function definitions.
+
+$var<POWERDISP/FALSE> - if TRUE will cause sums to be displayed with their
+terms in the reverse order.  Thus polynomials would display as truncated
+power series, i.e., with the lowest power first.
+
+$var<BOTHCASES/FALSE> - if TRUE will cause MACSYMA to retain lower case text as well as upper case. Note, however, that the names of any MACSYMA special variables or functions must be typed in upper case.
+
+$var<STARDISP/FALSE> - if TRUE will cause multiplication to be displayed explicitly with an  * between operands.
+
+$var<DSKGC/FALSE> - if TRUE will cause user defined values, functions, arrays, and line labelled expressions to be automatically stored on disk whenever the system determines that the available in-core space is getting low (see also $ref<autostor>).
+
+$var<LABELS/> - a list of C, D, and E lines which are bound.
+
+$var<INCHAR/C> - the alphabetic prefix of the names of expressions typed by the
+user.
+
+$var<LINECHAR/E> - the alphabetic prefix of the names of intermediate displayed
+expressions.
+
+$var<OUTCHAR/D> - the alphabetic prefix of the names of outputted expressions.
+
+$var<LINENUM/> - the line number of the last expression.
+
+$var<CURSOR/_> is the prompt symbol of the MACSYMA editor, DEMO function,
+PLAYBACK(SLOW) mode, and (MACSYMA-BREAK).  (see chapters $ref<macedit> and $ref<debugmac>).
+
+$var<GENINDEX/I> -the alphabetic prefix of the index of summation for generated
+sums. (The values of GENINDEX and of the above four variables may be any number
+of characters though the default is a single character.)
+
+$var<IBASE/10> - the base for inputting numbers.
+
+$var<BASE/10> - the base for display of numbers.
+
+$var<LINEL/> - the length of the printed line on the terminal.  Also used for
+plotting (see Chapters $ref<simplot> and $ref<plot2>).
+
+$var<PLOTHEIGHT/> - the height of the area used for plotting (see Chapters $ref<simplot> and $ref<plot2>).
+
+$var<VERSION/267> - is the version number of MACSYMA.  This could be useful if
+the user wants to label his output.
+
+$var<INFOLISTS/> is the list of all the information lists which are in MACSYMA:
+.skip 
+.begin nofill
+[LABELS,VALUES,FUNCTIONS,ARRAYS,MYOPTIONS,PROPS,ALIASES,RULES,
+			GRADEFS,DEPENDENCIES]
+.end
+.skip
+Initially, all these information lists are empty.  As the user proceeds with his computation, he may examine these lists when necessary.
+
+
+.next page
+.sec ( Functions for Translation and Compilation,compilation,1)
+
+.function (MODEDECLARE,|y1, mode1, y2, mode2, ...|)
+is used to declare the modes of variables and
+functions for subsequent translation or compilation of functions. Its arguments are pairs consisting of a variable yi, and a mode which is one of BOOLEAN, INTEGER, NUMBER, RATIONAL, FLOAT, POLY (for polynomial), or CRE (for expression in CRE form).  Each 2yi* may also be a list of variables all of which are declared to have 2modei*.
+
+.scon
+If 2yi* is an array, and if every element of the array which is referenced in the
+function has a value then ARRAY(2yi*, COMPLETE, d1, d2, ...) rather than
+ARRAY(2yi*, d1, d2, ...) should be used when first declaring the bounds of the array. If all the elements of the array are of mode INTEGER (FLOAT), use INTEGER (FLOAT) instead of COMPLETE. 
+Also if every element of the array is of the same mode, say 2m*, then
+MODEDECLARE(COMPLETEARRAY(2yi*),2m*)) should be used for efficient translation.  Also numeric code using arrays can be made to run faster by declaring the expected size of the array, as in:
+.scon
+.once center
+MODEDECLARE(COMPLETEARRAY(A[10,10]),FLOAT)
+.scon
+for a floating point number array which is 10 x 10.
+
+Additionally one may declare the mode of the result of a function by using
+FUNCTION(F1,F2,...) as an argument;  here 2F1,F2,...1 are the names of functions.  For example the expression,
+.scon
+MODEDECLARE([FUNCTION(F1,F2,...),X],POLY,Q,COMPLETEARRAY(Q),FLOAT) 
+.scon
+declares that X and the value returned by F1,F2,... are polynomials and that Q is an array of floating point numbers.  MODEDECLARE is used either immediately inside of a function definition (see below) or at top-level for global variables.
+
+.endfunction
+
+.begin turn on ""
+.function(OPTIMIZE,exp)
+returns an expression that produces the same value and
+side effects as 2exp1 but does so more efficiently by avoiding the recomputation of common subexpressions.  OPTIMIZE also has the side effect of "collapsing" its argument so that all common subexpressions are shared.
+.example
+.begin group
+(C1) DIFF(%,X,2);
+
+			2	     2		    2		 2
+	       2   Y + X        Y + X	       Y + X	    Y + X
+	    4 X  %E	    2 %E	 4 X %E	        2 %E
+(D1) 	    ------------- + ---------- - ------------ + ----------
+		Y + X	      Y + X		  2	        3
+					   (Y + X)	 (Y + X)
+.end
+(C2) OPTIMIZE(%);
+.begin group
+					       2	 Y + T2	 
+(D2) BLOCK([T1, T2, T3, T4], T1 : Y + X, T2 : X , T3 : %E      ,  
+								 
+
+                     1				4 X T3	 2 T3
+   		T4: --,	 4 T2 T4 T3 + 2 T4 T3 - ------ + ----)
+                    T1				   2	   3
+						 T1	 T1
+
+.end
+.end
+.endfunction
+.end
+
+
+.function (TRANSLATE,|f1, f2, ...|)
+ translates the user defined functions 2f1,f21,... from the MACSYMA
+language to LISP (i.e. it makes them EXPRs).  This results in a gain in speed when
+they are called.  The functions should include a call to MODEDECLARE at the beginning
+when possible in order to produce more efficient code.  For example:
+.example
+    F(X1,X2,...):=BLOCK([v1,v2,...],MODEDECLARE(v1,mode1,v2,mode2,...),...)
+.end
+.scon
+where the X1,X2,... are the parameters to the function and the v1,v2,... are the local
+variables.  The names of translated functions are added to the PROPS lists $see<property!specification>.  Functions
+should not be translated unless they are fully debugged.
+
+TRANSLATE(FUNCTIONS) or TRANSLATE(ALL)  means translate all functions.
+
+$var<TRANSLATE/FALSE> - If TRUE, causes automatic translation of a user's function to LISP.  Note that translated functions may not run identically to the way they did
+before translation as certain incompatabilities may exist between the LISP and MACSYMA
+versions.  Principally, the RAT function with more than one argument and the RATVARS
+function $see<rational!functions> should not be used if any variables are MODEDECLAREd CRE.
+
+$var<SAVEDEF/TRUE> - if TRUE will cause the MACSYMA version of a user function to
+remain when the function is TRANSLATEd.  This permits the definition to be displayed
+by DISPFUN and allows the function to be edited.  If SAVEDEF is FALSE, the names of translated functions are removed from the FUNCTIONS list.
+
+$var<TRANSRUN/TRUE> - if FALSE will cause the interpreted version of all
+functions to be run (provided they are still around) rather than the translated
+version.
+
+$var<TRANSBIND/TRUE> - if TRUE removes global declarations in the local context.  This applies to variables which are formal parameters to functions.
+
+
+One can translate functions stored in a file by giving TRANSLATE an argument
+which is a file specification.  This is a list of the form [fn1,fn2,DSK,dir]
+where fn1 fn2 is the name of the file of MACSYMA functions, and dir is the name
+of a file directory.
+
+Such a file may contain declarations involving DECLARE,MODEDECLARE, or MATCHDECLARE in addition to the function definitions.  The file should not use %, since  %  is not maintained when the translated file is loaded.
+
+TRANSLATE will return DONE  when translation is accomplished.  In the case of a file translation, the file containing the translated  code is named fn1 LISP on the disk directory  dir.
+This file of LISP code may be read into MACSYMA by using the $fun<LOADFILE> function $see<disk!storage>.
+.endfunction
+
+.function(COMPFILE,|[filespec],f1,f2,...|)
+will translate MACSYMA function definitions (if necessary) and write out
+MACSYMA function definitions and other expressions into a disk file which
+can be read into the compiler. The 2filespec* (optional) specifies the
+file to be written.  The default for users with a directory is CMPFIL > and
+the standard MACSYMA default file for other users.  The file written contains
+declarations used by the compiler.  When $var<COMPGRIND/FALSE> is TRUE the
+function definitions are pretty-printed.
+The remaining arguments are atomic function names.
+.endfunction
+
+.chap(Tensor Manipulation,tensors)
+
+
+MACSYMA implements symbolic tensor manipulation of two distinct types: 5explicit* tensor manipulation and 5indicial* tensor manipulation.  
+
+
+5Explicit* tensor manipulation means that tensors are represented as arrays or matrices; tensor operations such as contraction or covariant differentiation are carried out by actually summing over repeated (dummy) indices---by explicitly performing operations on the appropriate tensor components stored in an array or matrix.
+
+5Indicial* tensor manipulation is implemented by representing tensors simply as functions of their covariant and contravariant indices; tensor operations such as contraction or covariant differentiation are represented by manipulating the indices themselves rather than the components which they refer to.   
+
+These two approaches to the question of treating differential, algebraic and analytic processes in the context of Riemannian geometry  have various advantages and disadvantages which reveal themselves only through the particular nature and difficulty of the user's problem.  However, one should keep in mind the following characteristics of the two implementations:
+
+2Explicit Tensor Manipulation* (ETENSR)
+
+.begin narrow 4,5
+
+i) The standard representation of tensors and tensor operations explicitly in terms of their components makes  ETENSR easy to use:  specification of the metric and the computation of the induced tensors and invariants is straightforward.
+
+ii) Although all of MACSYMA's powerful simplification capacity is at hand,  a complex metric with intricate functional and coordinate dependencies can easily lead to expressions whose size is excessive and whose structure is hidden.  
+
+.end
+
+2Indicial Tensor Manipulation* (ITENSR)
+
+.begin narrow 4,5
+
+i) Because of the special way in which tensors and tensor operations are represented in terms of symbolic operations on their indices,  expressions which in the 2explicit* representation would be unmanageable  can be greatly simplified by contraction and reduction to a "canonical" form (for symmetric tensors).  In this way the structure of a large expression may be more transparent.
+
+ii) On the other hand, because of the the special indicial representation in ITENSR,  in some cases the user must be careful about the specification of the metric, function definition, and the evaluation of differentiated "indexed" objects. 
+.end
+
+
+These two tensor manipulation packages, ETENSR and ITENSR, are available to the MACSYMA user on the SHARE directory $see<share>.  To use the functions in these files, the user can load them in by doing
+
+LOADFILE(ETENSR,FASL,DSK,SHARE); --- for explicit tensor manipulation.
+
+LOADFILE(ITENSR,FASL,DSK,SHARE); --- for indicial tensor manipulation
+
+
+Both of these packages enable the user to specify a metric and compute the basic quantities of interest---Christoffel symbols, Riemann curvature tensor, curvature invariants---in the study of Riemannian manifolds.   These routines were written primarily for research in gravitation theory; however, they may also be of some use in other areas of physics where Riemannian geometry is applied.
+
+
+.sec(Explicit Tensor Manipulation,explicit) 
+
+.function(TSETUP,)
+automatically loads the ETENSR package and  presents several options which are self-explanatory.  First the user chooses the kind of metric to be used---whether it will be one of the standard metrics already stored in some file, or a power-series approximation, or some new metric to be specified (perhaps only a slight modification of a metric already defined). After the metric has been specified,  a number of simplification options are provided which govern the rational simplification and factoring of the tensor components to be computed.   The particular quantity to be computed can then be indicated; the user can say whether the results (some of which may be quite lengthy) are to be immediately displayed or not.
+.skip
+Here is a sample protocol:
+.example
+.begin group
+.begin verbatim
+(C2) TSETUP();
+DO YOU WANT
+1 - TO CONSIDER A METRIC IN THE SPECIAL METRIC FILE?
+2 - TO APPROXIMATE A METRIC WITH A POWER SERIES?
+3 - TO ENTER A NEW METRIC?
+TYPE 1 OR 2 OR 3  
+3;
+.end
+.end
+.begin verbatim
+SPECIFY THE COORDINATES AS A LIST OF FOUR ELEMENTS  
+[R,THETA,PHI,T];
+DO YOU WANT
+1 - TO SPECIFY  A DIAGONAL METRIC?
+2 - TO CHANGE A COMPONENT IN A PREVIOUSLY DEFINED
+	METRIC?
+3 - TO SPECIFY A GENERAL (SYMMETRIC) METRIC?
+TYPE 1 2  OR  3  
+1;
+
+ENTER DIAGONAL MATRIX
+[1, 1]  
+-EXP(M);
+[2, 2]  
+-R^2;
+[3, 3]  
+-R^2*SIN(THETA)^2;
+[4, 4]  
+EXP(N);
+
+INDICATE THE KIND OF SIMPLIFICATION YOU WANT
+
+1 - RATIONAL SIMPLIFICATION ONLY
+2 - FACTORING AND RATIONAL SIMPLIFICATION
+3 - EXPANSION 
+TYPE 1 2 OR 3  
+2;
+
+.end
+.end
+.endfunction
+.skip 1
+At this point the user has the option of computing various quantities which are described below.
+
+.function(CHRISTOF,arg)
+computes the Christoffel symbols of both kinds;  the 2arg*, determines which results are to be immediately displayed.  The Christoffel symbols of the first kind are stored in the array LCS[I,J,K].   If the argument to CHRISTOF were LCS,  all the non-zero values of LCS[I,J,K] would be displayed.
+
+
+The Christoffel symbols of the second kind (Mixed Christoffel Symbols) are given by the array MCS[I,J,K]; in the example below, the argument MCS was given resulting in the immediate display of all the non-zero mixed Christoffel symbols.
+
+.example
+(C3) CHRISTOF(MCS);
+.begin group
+					  M
+					   R
+(E3) 			     MCS        = --
+				1, 1, 1	  2
+.end
+.begin group
+					   1
+(E4) 			      MCS        = -
+				 1, 2, 2   R
+.end
+.begin group
+					   1
+(E5) 			      MCS        = -
+				 1, 3, 3   R
+.end
+.begin group
+					  N
+					   R
+(E6) 			     MCS        = --
+				1, 4, 4	  2
+.end
+.begin group
+					   - M
+(E7) 			  MCS	     = - %E    R
+			     2, 2, 1
+.end
+.begin group
+				      COS(THETA)
+(E8) 			 MCS	    = ----------
+			    2, 3, 3   SIN(THETA)
+.end
+.begin group
+				     - M      2
+(E9) 		    MCS	       = - %E    R SIN (THETA)
+		       3, 3, 1
+.end
+.begin group
+(E10) 		   MCS	      = - COS(THETA) SIN(THETA)
+		      3, 3, 2
+.end
+.begin group
+					 N - M
+				       %E      N
+						R
+(E11) 			  MCS	     = ----------
+			     4, 4, 1	   2
+
+(D11) 				   DONE
+.end
+.end
+.endfunction
+
+
+.function(MOTION,dis)
+gives the geodesic equations of motion corresponding to a given metric.  They are stored in the array EM[I].  If the argument 2dis* is TRUE then these equations are displayed.
+
+.endfunction
+
+.function(RICCICOM,dis)
+This function first computes the contravariant components LR[I,J] of the Ricci tensor (LR is a mnemonic for "lower Ricci").  Then the mixed Ricci tensor is computed using the covariant metric tensor.  If the value of the argument to RICCICOM is TRUE, then these mixed components, RICCI[I,J]  (the index I is covariant (down) and the index J is contravariant (up) ),  will be displayed directly.  Otherwise,  RICCICOM(FALSE)  will simply compute the entries of the  array RICCI[I,J]  without presenting the results.
+
+.example
+.begin group
+(C13) RICCICOM(TRUE);
+		
+
+(E13) RICCI
+	   1, 1	
+
+	   - M		      2
+	 %E    ((2 N    + (N )  - M  N ) R - 4 M )
+  	 	    R R	    R	   R  R         R
+       = -----------------------------------------
+			  4 R
+.end
+.skip
+.begin group
+		       - M		      M
+		     %E	   ((M  - N ) R + 2 %E  - 2)
+			      R	   R
+(E14)  RICCI     = - -------------------------------
+	    2, 2		     2
+				  2 R
+.end
+.skip
+.begin group
+
+		       - M		      M
+		     %E	   ((M  - N ) R + 2 %E  - 2)
+			      R	   R
+(E15)  RICCI     = - -------------------------------
+	    3, 3		     2
+				  2 R
+.end
+.skip
+.begin group
+		
+		
+		
+(E16)  RICCI    
+	    4, 4
+
+		 - M		    2
+	       %E    ((2 N    + (N )  - M  N ) R + 4 N )
+			  R R	  R	 R  R	      R
+	     = -----------------------------------------
+				  4 R
+
+(D16) 				   DONE
+.end
+.end
+.endfunction
+
+.function(NTERMSRCI,) 
+ returns a list of pairs, whose second elements give the number of terms in the RICCI component specified by the first elements.  In this way, it is possible to quickly find the non-zero expressions and attempt simplification.
+
+.endfunction
+
+.function(LRICCICOM,dis)
+computes the covariant components LR[I,J] of the Ricci tensor.  If the argument 2dis* is TRUE, then the non-zero components are displayed.
+
+.endfunction
+
+.function(EINSTEIN,dis)
+computes the Einstein tensor once the Christoffel symbols and Ricci tensor have been obtained.  Again, if the argument evaluates to TRUE, then the non-zero values of the Einstein tensor G[I,J] will be displayed. $var<RATEINSTEIN/>:TRUE will perform rational simplification on these components; if $var<FACRAT/>:TRUE then the components will also be factored.
+
+.endfunction
+
+.function(NTERMSG,)
+gives the user a quick picture of the "size" of the Einstein tensor.  It returns  a list of pairs  whose second elements give the number of terms in the components specified by the first elements.  
+
+.endfunction
+
+Of course a detailed examination of the structure of the Einstein components can be made using the powerful simplification, factoring and extraction functions available in MACSYMA (see $ref<evsimpfun>,$ref<extracting!expressions>).
+
+
+.function(SCURVATURE,)
+returns the scalar curvature (obtained by contracting the Ricci tensor) of the Riemannian manifold with the given metric.
+
+.endfunction
+
+.function(RIEMANN,dis)
+computes the Riemann curvature tensor from the given metric (the Christoffel symbols should be obtained first using CHRISTOF).  If 2dis* is TRUE, the non-zero components R[I,J,K,L] will be displayed. 2All the indicated indices are covariant.*  As with the Einstein tensor, various switches set by the user control the simplification of the Riemann components.  If $var<RATRIEMAN/>:TRUE, then rational simplification will be done; if $var<FACRAT/>:TRUE then each of the components will also be factored.
+
+.example
+
+.begin group
+(C27) RIEMANN(TRUE);
+					   M  R
+					    R
+(E27) 			   R	       = - ----
+			    1, 2, 1, 2	    2
+.end
+.skip
+.begin group
+					     2
+				     M  R SIN (THETA)
+				      R
+(E28) 		     R	         = - ----------------
+		      1, 3, 1, 3	    2
+.end
+.skip
+.begin group
+			 N	    N	  2	   N
+		   - 2 %E  N    - %E  (N )  + M  %E  N
+			    R R	        R      R      R
+(E29) R	         = ------------------------------------
+       1, 4, 1, 4			   4
+.end
+.skip
+.begin group
+			 M	  - M  2    2
+(E30) R 	  = - (%E  - 1) %E    R  SIN (THETA)
+       2, 3, 2, 3
+.end
+.skip
+.begin group
+					 N - M
+				       %E      N  R
+						R
+(E31) 		       R	   = - ------------
+			2, 4, 2, 4	    2
+.end
+.skip
+.begin group
+			   N - M	 2
+			 %E      N  R SIN (THETA)
+				  R
+(E32)	 R	     = - ------------------------
+	  3, 4, 3, 4		    2
+
+(D32) 				   DONE
+.end
+.end
+.endfunction
+
+.function(RAISERIEMANN,dis) 
+returns the 2contravariant* components of the Riemann curvature tensor as  array elements  UR[I,J,K,L].  These are displayed if 2dis* is TRUE.
+
+.endfunction
+
+.function(RINVARIANT,)
+forms the scalar invariant obtained by contracting  R[I,J,K,L]*UR[I,J,K,L].
+
+.example
+
+
+(C34) RINVARIANT();
+.begin group
+	-2M           2          2	               4
+(D34) %E    ((4 (N   )  + (4 (N )  - 4 M  N ) N   + (N )
+                  R R	       R        R  R   R R    R
+
+	    3	    2	  2   4		 2	   2   2 
+ - 2 M  (N )  + (M )  (N ) ) R  + (8 (N )  + 8 (M ) ) R  
+      R	  R	  R     R	       R	 R
+
+        2 M        M           4
+ + 16 %E    - 32 %E  + 16)/(4 R )
+
+.end
+.end
+.endfunction
+
+.function(WEYL,dis)
+computes the Weyl conformal tensor. If the argument 2dis*
+is TRUE, the non-zero components W[I,J,K,L]  will be displayed to the user.  Otherwise, these components will simply be computed and stored.  If the switch $var<RATWEYL/> is set to TRUE, then the components will be rationally simplified; if $var<FACRAT/> is TRUE then the results will be factored as well. 
+
+.endfunction
+
+.function(DSCALAR,function)
+computes the d'Alembertian  of the scalar 2function*.
+
+.example
+
+(C41) DEPENDS(FIELD,R);
+(D41) 			        [FIELD(R)]
+
+(C42) DSCALAR(FIELD);
+.begin group
+
+(D43)
+    -M
+  %E  ((FIELD  N - FIELD  M + 2 FIELD   ) R + 4 FIELD )
+	     R  R       R  R         R R             R
+- -----------------------------------------------------
+			     2 R
+.end
+.end
+.endfunction
+.function(DALEM,|field,i,j|)
+computes the d'Alembertian of the i,j - component of the rank 2 tensor 2field1.  
+.endfunction
+
+.function(YT,|f,m,n|)
+computes the  m,n component of the  Yilmaz tensor  defined by
+.begin turn on "_"
+
+_t[m]^n = -2(7d[1m]fa^b 7d^[1n]fb^a - (1/2)6dm^n 7d^[1k]fa^b 7d[1k]fb^a) 
+
+_                           + 7d[1m]f7d^[1n]f1 - (1/2)6dm^n 7d1^kf7d1kf1,
+.scon
+where f is the trace of fa^b and repeated indices are summed.
+This reduces to the Newtonian stress-energy tensor.
+.end
+.endfunction
+
+.next page
+.sec(Indicial Tensor Manipulation ,indicial,1)
+
+
+In ITENSR a tensor is represented as an "indexed object" .  This is a function of 3 groups of indices which represent the covariant, contravariant and derivative indices.   The covariant indices are specified by a list as the first argument to the indexed object;  the contravariant indices are specified by a list as the second argument.  If the indexed object lacks either of these groups of indices, then the empty list, [], is given as the corresponding argument.  For example,  
+.once center
+G([mu,nu],[])
+.continue
+represents an indexed object called  G  which has covariant indices  mu,nu  and no contravariant or derivative indices. 
+
+The derivative indices, if they are present, follow as additional arguments to the (symbolic) function representing the tensor. They are usually not explicitly specified by the user but are created in the process of differentiation with respect to some coordinate variable.  A derivative index is not the coordinate variable itself, but rather the coordinate 2index*.   These indices are appended as additional arguments to the function representing the tensor.   Since it is assumed that ordinary differentiation is independent of the order in which it is carried out, the derivative indices are sorted alphabetically.  This canonical order makes it possible for MACSYMA to recognize that, for example, T([mu],[nu],i,j) is the same as T([mu],[nu],j,i).  Differentiation of an indexed object with respect to some coordinate whose index does not appear as an argument to the indexed object would normally yield zero since MACSYMA would not know that the tensor represented by the indexed object might depend implicitly on the corresponding coordinate.  This has been remedied by modifying the existing MACSYMA function DIFF so that in the tensor package it assumes that all indexed objects depend on any variable of differentiation unless otherwise stated.  This makes it possible for the summation convention to be extended to derivative indices.
+
+
+To specify that an indexed object is independent of all coordinate variables, it is specified a constant by using the $fun<DECLARE> function $see<property!specification>. Usually, DIFF(W([],[I,J]),K) results in  W([],[I,J],K);  if the command DECLARE(W,CONSTANT) had previously been given, the result of the differentiation would be 0.
+
+
+The following functions are available in the tensor package for manipulating indexed objects.  At present it is assumed that all tensor indices are completely symmetric.
+
+In what follows, general indexed objects will be denoted 2tensor, tensor1,tensor2,...* . The letters  2L1,L2*,... denote lists which are arguments to indexed objects.  Optional arguments are enclosed in  angle brackets.
+
+.function(SHOWTEN,|exp|)
+ will display 2exp* with the indexed objects in it shown having covariant indices as subscripts,contravariant indices as superscripts. The derivative indices will be displayed as subscripts, separated from the covariant indices by a comma.
+
+.endfunction
+
+.function(COMPONENTS,|tensor,exp|)
+permits one to 	assign an expression 2exp1 giving the values of the components of 2tensor1. These are automatically substituted for the 2tensor1 whenever it occurs with all integer indices. 
+
+The 2tensor1 must be of the form  T([...],[...]), which can specify a covariant (second list empty), contravariant (first list empty), or  mixed (neither list empty) tensor.  2exp1 can be a matrix, an array or any expression (except a single variable) involving other tensors.
+
+If 2exp1 is a matrix, then 2tensor1 must have exactly two indices. If it is an array, then 2exp1 and 2tensor1 must have the same number of indices.  If 2exp1 is some other expression involving tensors, then it must have the same free indices as 2tensor1.  This expression will be used even if the indices are not integers.
+
+.example
+(C1) COMPONENTS(G([I,J],[]),MATRIX)$
+
+(C2) COMPONENTS(G([],[J,K]),ARRAY)$
+
+(C3) COMPONENTS(E([I],[J]),G([I,K])*H([],[K,J]))$
+.end
+.scon
+Thus, the various covariant, contravariant, and mixed components of the same tensor (for example, G above) can be specified using COMPONENTS several times.
+The appropriate components will be chosen when required in a computation.
+.endfunction
+
+.function(INDEXED,tensor)
+must be executed before assigning components to a 2tensor1 for which a built in value already exists as with CHR1, CHR2, RIEMANN.
+.endfunction
+
+.function(REMCOMPS,tensor)
+unbinds all values from 2tensor1 which were assigned with the COMPONENTS function.
+.endfunction
+
+
+.function(INDICES,|exp|)
+ returns a list of two elements.  The first is a list of the free indices in 2exp* (those that occur only once); the second is the list of dummy indices in 2exp* (those that occur exactly twice).
+
+.endfunction
+
+.function(RENAME,|exp, <count>|)
+ returns an expression equivalent to 2exp* but with the dummy indices in each term chosen from the set [#1, #2,...], if the optional second argument is omitted. Otherwise, the dummy indices are indexed beginning at the value of  2count1.  Each dummy index in a product will be different; for a sum, RENAME will try to make each dummy index in a sum the same.  In addition, the indices will be sorted alphanumerically.
+
+.endfunction
+
+.function(DUMMY,|i1,i2,...|)
+ will set each index i1,i2,... to  name of the form #n  where n is a positive integer.  This guarantees that dummy indices which are needed in forming expressions will not conflict with indices already in use.
+
+$var<COUNTER/1> determines the numerical suffix to be used in generating the next dummy index.  The prefix is determined by the option $var<DUMMYX/#>.
+
+.endfunction
+
+.function(DEFCON,|tensor1,<tensor2,tensor3>|) 
+ gives 2tensor1* the property that the contraction of a product of 2tensor1* and 2tensor2*  results in 2tensor3*
+with the appropriate indices.  If only one argument, 2tensor1*, is given, then the contraction of the product of 2tensor11 with any indexed object having the appropriate indices (say 2tensor*) will yield an indexed object with that name,i.e.2tensor*, and with a new set of indices reflecting the contractions performed.
+.skip 1
+.begin preface 0
+For example, if METRIC: G, then DEFCON(G) 
+will implement the raising and lowering of indices  through contraction with the metric tensor.
+
+More than one DEFCON can be given for the same indexed object;  the latest one given which applies in a particular contraction will be used.
+
+CONTRACTIONS is a list of those indexed objects which have been given contraction properties with DEFCON.
+.end
+.endfunction
+
+.function(DISPCON,|tensor1,tensor2,...|)
+ displays the contraction properties of the 2tensori* as were given to DEFCON.  DISPCON(ALL) displays all the contraction properties which were defined.
+
+.endfunction
+
+.function(REMCON,|tensor1,tensor2,...|)
+ removes all the contraction properties from the 2tensori*. 
+REMCON(ALL) removes all contraction properties from all indexed objects.
+
+.endfunction
+
+.function(CONTRACT,|exp|)
+ carries out all possible contractions in 2exp*, which may be any well-formed combination of sums and products.  This function uses the information given to the DEFCON function.  Since all tensors are considered to be symmetric in all indices, the indices are sorted into alphabetical order.  Also all dummy indices are renamed using the symbols #1,#2,...  to permit the expression to be simplified as much as possible by reducing equivalent terms to a canonical form.   For best results 2exp* should be fully expanded.  
+
+RATEXPAND $see<evsimpfun> is the fastest way to expand products and powers of sums if there are no variables in the denominators of the terms.  The TAKEGCD switch should be FALSE if gcd cancellations are unnecessary.  
+
+.endfunction
+
+.function(CANTEN,|exp|)
+ reduces 2exp* to a canonical form and simplifies the expression as much as possible by renaming and permuting dummy indices. 
+The expression 2exp* must be fully expanded.
+
+As an example of the kind of simplification this function achieves, consider the following sum of tensor "monomials":
+
+.example
+
+(C4) P([I,J,S,V],[M,N,Q],V)*P1([Q,T],[R,S])*P2([R,L,M,N,U],[I,J,K])  + 
+
+     P2([L,N,U],[R,M,I,J,K])*P([M,I,J,V],[N,Q,S],V)*P1([R,S,Q,T],[])$
+
+(C6) SHOWTEN(D4);
+
+       R M I J K  N Q S	                 M N Q       R S     I J K
+(E6) P2 	 P	    P1        + P	   P1	   P2
+       L N U	  M I J V,V   R S Q T	 I J S V,V   Q T     R L M N U
+
+(D6) 				      E6
+
+.end
+.scon
+Recall that all these indexed objects are assumed to be completely symmetric in their indices.   The function RENAME renames the dummy indices:
+.example
+.begin group
+(C7) SHOWTEN(RENAME(D4))$
+
+
+      #6 #7 #8	       #2 #3 K	      #4 #5
+(E7) P		     P2		    P1
+      #1 #2 #3 #5,#1   #4 #6 #7 L U   #8 T
+
+
+		    #3 #4 #8			  #2 #5 #6 #7 K
+		 + P		   P1	        P2
+		    #1 #5 #6 #7,#1   #2 #3 #4 T	  #8 L U
+
+.end
+.end
+.scon
+but is not able to notice that by a sequence of raising and lowering operations, the original expression can be transformed into
+.example
+(C8) SHOWTEN(CANTEN(D4))$
+			  K		 I J M N   Q R S
+(E8) 		      2 P2	        P        P1
+			  I J L M N R U	 Q S V,V   T
+
+.end
+
+.endfunction
+
+.function(METRIC,G)
+specifies the metric by assigning the variable $var<METRIC/>:2G1;
+in addition, the contraction properties of the metric 2G1 are set up
+by executing the commands DEFCON(2G1), DEFCON(2G,G1,KDELTA).  
+.endfunction
+
+.function(CHR1,|1[*i,j,k1]*|)
+ yields the Christoffel symbol of the first kind
+.skip 1
+
+.begin turn on "{"
+.once center
+({sb(g,|[ik,j]|)} + {sb(g,|[jk,i]|)} - {sb(g,|[ij,k]|)})/2
+.end
+.skip 1
+.continue
+The variable $var<METRIC/> must be assigned the name of a function (which can be either defined or undefined); in the above example, METRIC:g.  
+
+.endfunction
+
+.function(CHR2,|1[*i,j1]*,1[*k1]*|)
+ yields the Christoffel symbol of the second kind.
+.skip 1
+.begin turn on "{"
+.once center
+CHR2([i,j],[k]) = {sp(g,|[ks]|)} CHR1([i,j,s])
+.end
+.endfunction
+
+.function(LC,|L|)
+ is the permutation (or Levi-Civita) tensor which yields 1 if the list 2L* consists of an even permutation of integers, -1 if it consists of an odd permutation, and 0 if some indices in 2L* are repeated.
+
+.endfunction
+
+.function(KDELTA,|L1,L2|)
+ is the generalized Kronecker delta function.
+2L1* and 2L2* are lists of indices of the same length.
+.scon
+a) If 2L1* and 2L2* have a single member, say L1=[a] and L2=[b].  Then
+
+.begin narrow 4,5  preface 0
+.scon
+1) if the index  a  is identical to the index b and they are non-numeric,  the value of the function KDELTA is the value of the variable $var<DIMENSION/4> ;
+.scon
+2) if a and b are numeric then the value of the function is 1 if they are equal, else 0;
+.scon
+3) otherwise the noun form of KDELTA.
+.end
+.scon
+b) If L1=[a1,a2] and L2=[b1,b2]. Then the value of the function is
+.example
+    KDELTA([a1],[b1])*KDELTA([a2],[b2])
+.once center
+   - KDELTA([a1],[b2])*KDELTA([a2],[b1]) 
+1
+.end
+.scon
+c) If L1 and L2 have more than two indices the result generalizes.
+
+.endfunction
+
+.function(RIEMANN,|1[*i,j,k1]*,1[*l1]*|) 
+ yields the Riemann curvature tensor in terms of the Christoffel symbols of the second kind (CHR2). 
+.scon
+Suppose the name specified by the value of METRIC corresponds to a tensor which has been given some structure via the COMPONENTS command above; in order to evaluate an 2expression1 involving the Riemann tensor and incorporate this given structure of the metric explicitly into the result, the user can simply do  2expression1,EVAL.
+.scon
+Consider the following example involving a metric, G, expressed in terms of the rank two tensors, P and E. First, the covariant and contravariant forms of the metric are specified:
+
+.example
+
+.begin group
+(C9) COMPONENTS(G([M,N],[]),
+
+E([M,N],[]) + L*(2*P([],[])*E([M,N],[])-4*P([M,N],[]))
+            L^2*(2*P([],[])^2*E([M,N],[])
+                - 8*P([],[])*P([M,N],[])+8*P([M],[Q])*P([Q,N],[])))$
+.end
+.scon
+.begin group
+(C10) COMPONENTS(G([],[M,N]),
+
+E([],[M,N]) - L*(2*P([],[])*E([],[M,N])-4*P([],[M,N]))
+          + L^2*(2*P([],[])^2*E([],[M,N]) 
+                - 8*P([],[])*P([],[M,N])+8*P([],[M,Q])*P([Q],[N])))$
+
+.end
+(C11) SHOWTEN(G([A,B],[]))$
+
+       2     Q	 	            2
+(E11) L  (8 P  P    - 8 P P    + 2 P  E   ) + L (2 P E    - 4 P   )
+             A  Q B	 A B	       A B 	      A B      A B 
+
+
+        + E
+           A B
+.begin group
+(C12) SHOWTEN(G([],[R,S]));
+
+       2     R Q  S	 R S	    2  R S	    R S      R S   
+(E12) L  (8 P    P  - 8 P P    + 2 P  E   ) - (2 P E    - 4 P   ) L
+  	          Q
+
+          R S
+       + E
+.end
+(C13) (RATVARS(L),RATWEIGHT(L,1),RATWTLVL:2)$
+.end
+
+.scon
+The above metric is an expansion to second order of the Yilmaz exponential metric
+.example
+.begin turn on "_^"
+_G = E.e^[2*L*(I.P - 2*P)]
+.end
+.end
+.begin turn on "_^"
+.scon
+where  L  is an expansion parameter, P is a rank two tensor field  viewed as a matrix whose components are P^[R,S] and whose trace is P.  
+.end
+
+To second order, the covariant and contravariant forms of the metric should be mutually inverse. As an example of the contraction and simplification functions CONTRACT,CANTEN  one can verify this as follows:
+
+.example
+(C14) SHOWTEN(EX:CONTRACT(RATEXPAND(G([M,R],[])*G([],[R,N]))))$
+
+		       N       N   2  #1       #1 N	   2
+(E14) 		 KDELTA  + 16 P	  L  P   - 16 P	    P	  L
+		       M       #1     M		     #1 M
+
+.end
+.scon
+Because RATWTLVL:2, the product of the expansions is truncated;  the second order terms are actually equal and should cancel.  Using a canonical form, the function CANTEN makes the appropriate simplification which enables the last two terms to be compared and cancelled:
+.example
+(C16) SHOWTEN(CANTEN(EX));
+
+					 N
+(E16) 				   KDELTA
+					 M
+
+.end
+The Ricci tensor is easily expressed in terms of the Riemann tensor, using the Einstein summation convention:
+.example
+
+(C18) RICCI:RIEMANN([I,J,K],[K])$
+
+(C19) %,EVAL$
+
+(C20) EXP1:CONTRACT(RATEXPAND(RICCI))$
+
+(C21) SHOWTEN(FACTOR(EXP1))$
+
+            #1 	         #1 #2	         
+(E21) - (2 P	    - 2 E      P	 
+            J,#1 I	        I J,#1 #2
+
+                                    #1 #2	     #1
+                         + P       E      E    + 2 P       ) L      
+                            ,#1 #2	    I J      I,#1 J
+.end
+.endfunction
+
+.function(DIFF,|exp,v1,n1,v2,n2,...|) 
+ is the usual MACSYMA differentiation function; it takes the derivative of 2exp* wrt 2v1 n1* times, wrt 2v2 n2* times, etc.  For the tensor package, the following modifications have been incorporated:
+.skip 1
+
+   1) the derivatives of any indexed objects in 2exp* will have the variables 2vi* appended as additional arguments.  Then all the derivative indices will be sorted.
+
+2) the 2vi* may be integers from 1 up to the value of the variable DIMENSION[4].  This will cause the differentiation to be carried out wrt the  2vi*th member of the list COORDINATES which should be set to a list of the names of the coordinates, e.g., [x,y,z,t]  .  If  COORDINATES is bound to an atomic variable, then that variable subscripted by 2vi* will be used for the variable of differentiation.  This permits an array of coordinate names or subscripted names like  X[1], X[2],...  to be used.  If COORDINATES has not been assigned a value, then the variables will be treated as in 1) above.
+
+.endfunction
+
+.function(COVDIFF,|exp,v1,v2,...|)
+ yields the covariant derivative of 2exp* with respect to the variables 2vi* in terms of the Christoffel symbols of the second kind (CHR2).  In order to evaluate these, one can use  2exp1, eval   or  EV(2exp1,CHR2). 
+
+.endfunction
+
+.function(UNDIFF,|exp|)
+ returns an expression equivalent to 2exp* but with all derivatives of indexed objects replaced by the noun form of the DIFF function with arguments which would yield that indexed object if the differentiation were carried out.  This is useful when it is desired to replace a differentiated indexed object with some function definition and then carry out the differentiation by saying  EV(...,DIFF).
+
+.endfunction
+
+.function(LORENTZ,|exp|)
+ yields 2exp* replacing by zero those indexed objects which have a derivative index identical to a contravariant index. This imposes the Lorentz condition.
+
+.endfunction
+
+.function(MAKEBOX,|exp|)
+ will display 2exp* in the same manner as SHOWTEN; however, any tensor d'Alembertian occurring in 2exp* will be indicated using the symbol [].  For example, []P([M],[N]) represents G([],[I,J])*P([M],[N],I,J).
+
+.endfunction
+
+.function(ZERO,tensor) 
+will give 2tensor1 a property such that the command 
+.inline function(FLUSH,expression)
+will, in 2expression1, replace by zero all occurrences of the 2tensor1
+not involving derivative indices. 
+
+.endfunction

@@ -1,0 +1,442 @@
+@Comment<(c) Copyright 1983 Massachusetts Institute of Technology>
+@Chapter[Debugging]
+@Label[debugmac]
+
+@Section[Debugging at MACSYMA Level]
+@Label[maxdbg]
+
+When MACSYMA detects a syntax error in an input line, the error
+message sometimes displays the offending expression to help the user
+pinpoint the source of error.  
+
+The variable @var<PARSEWINDOW (default: 10)> controls the maximum
+number of "lexical tokens" that are printed out on each side of the
+error-point when a syntax (parsing) error occurs.  This option is
+especially useful on slow terminals.  Setting it to -1 causes the
+entire input string to be printed out when an error occurs.
+
+The variable @var<ERROR_SIZE (default: 20)>
+controls the size of error messages.  For example,
+@Begin[Example]
+U:(C^D^E+B+A)/(COS(X-1)+1)
+@end[Example]
+U has an error size of 24.  So if ERROR_SIZE has value < 24 then 
+@Begin[Example]
+(C1) ERROR("The function", FOO,"doesn't like", U,"as input.");
+@end[Example]
+prints as:
+@begin[Example]
+The function FOO doesn't like ERREXP1 as input.
+@End[Example]
+If ERROR_SIZE > 24 then as:
+@Begin[Example]
+				 E
+				D
+			       C   + B + A
+The function FOO doesn't like -------------- as input.
+			      COS(X - 1) + 1
+@End[Example]
+Expressions larger than ERROR_SIZE are replaced by symbols, and the
+symbols are set to the expressions, so that the user may inspect
+them.  The symbols are taken from the
+list @var<ERROR_SYMS (default: [ERREXP1,ERREXP2,ERREXP3])>.  The user may set
+ERROR_SYMS to a different list of symbols, if desired.  The default
+value for ERROR_SIZE varies with terminal type, being 20 for display
+terminals and 10 for others.  This may change depending on user experience.
+
+ERRORMSG @Index[ERRORMSG] may be used in a MACSYMA ERROR-BREAK or at any time,
+and will reprint the last error message.  This is very helpful if you
+are using a display console and the message has gone off the screen.
+The variable ERROR is set to a list describing the error, the first
+of it being a string of text, and the rest the objects in question.
+
+TTYINTFUN:LAMBDA([],ERRORMSG(),PRINT("")) will set up the user-interrupt
+character (^U) to reprint the message.
+
+When the user's command lines, especially functions and BLOCK @Index[BLOCK]
+programs, do not do what is expected or generate errors, MACSYMA
+offers several debugging alternatives:
+
+@begin(enumerate)
+The user may trace function calls by typing
+TRACE(@i[fun1,fun2,...]), where the @i[funi] are either MACSYMA or
+user-defined functions.  This will cause a printout of the function
+name and its arguments each time it is entered, and of the function
+name and the value it returns each time it is exited.  A count which
+is the level of recursion is also printed.  Usually, this is all the
+tracing power the user will need, although MACSYMA offers the full
+capabilities of the LISP tracing package including conditional and
+breakpoint tracing.  This will not be described here - for information
+see [Mn1].  MACSYMA uses trace-syntax very similar to that of LISP.
+@begin(multiple)
+To check which functions are currently under trace, the user may type TRACE().
+To remove tracing of functions use UNTRACE(@i[fun1,fun2,...]).  To untrace all
+previously traced functions type UNTRACE().
+@end(multiple)
+
+The assignment of variables can be traced by setting the variable
+SETCHECK @Index[SETCHECK] to a list of variables (which can be
+subscripted).  When a variable on the list is bound (either with : or
+:: or function argument binding) then a message -- variable "SET TO" value --
+will be printed. If the variable @var<SETCHECKBREAK (default: FALSE)>
+is set to TRUE then a (MACSYMA-BREAK) will be caused each time
+a variable on the SETCHECK list is bound.  The break takes place
+before the actual binding is done, however, and the variable SETVAL
+@Index[SETVAL] contains the actual binding, so the binding may be
+changed at this point by re-setting SERVAL.
+
+By setting the variable @var<REFCHECK (default: FALSE)> to TRUE,
+the user will be informed when each of his variables which has a value
+comes up for evaluation for the first time during the course of a
+computation.  This has a dual purpose.  The user will be informed of
+evaluations he may not have been aware of which are the result of
+assignments he made long ago. It also gives him a sort of
+chronological trace of his computations which may be helpful in
+finding out where an error has occurred.
+
+By setting the variable PREDERROR @Index[PREDERROR] to TRUE, the
+user will be informed of predicates of IF-THEN-ELSE statements which
+failed to evaluate to either TRUE or FALSE.
+
+The user may have variables which he intends not to use purely
+symbolically, i.e. they are to have values all the time.  By typing
+DECLARE([@i[var1,var2,]...],BINDTEST) MACSYMA will give the user an error
+whenever any of the vari appear in a computation unbound.  To remove a BINDTEST
+declaration, the user may use the function REMOVE @Index[REMOVE].  (see @Ref[property!specification])
+
+When an error occurs in the course of a computation, MACSYMA prints
+out an error message and terminates the computation.  At times the
+user may find it helpful to investigate the environment at the place
+of the error.  To do so, type DEBUGMODE:TRUE or DEBUGMODE:ALL and
+@index(DEBUGMODE) repeat the computation.  This enters a special
+debugging mode which will "break" or pause when an error occurs.  This
+mode may be terminated by typing DEBUGMODE:FALSE.  When an error
+occurs in debugging mode, (ERROR-BREAK) is printed. MACSYMA is then
+waiting for the user to type something.  He may type any command line
+just as if he were at "top level".  The command lines will be
+evaluated in the environment of the error.  If the user had done
+DEBUGMODE:ALL, he may now type BACKTRACE;, and MACSYMA will print out
+a backtrace, which is a list of the function calls the user is
+currently in together with the arguments they were called with,
+ordered from most recent to earliest i.e., when reversed, this list
+shows a trace beginning from the initial function and ending at the
+last call entered including only those function calls from which the
+user still has not exited.  To exit from the MACSYMA error-break and
+return to "top-level", type EXIT;.
+@begin(multiple)
+The user may also enter the error-break at any point, by typing
+control-A or by executing the function BREAK @Index[BREAK] (see
+@Ref[miscfun]).  This will simply cause his computation to pause,
+while he investigates at will.  %% @Index[%%] refers to the last
+computed result while in the MACSYMA break.  % @Index[%] still refers
+to the last result computed at top-level.  Upon typing EXIT;, the
+computation will resume.  If he wants to quit a computation begun in a
+control-A break without quitting the top-level suspended computation,
+the user can type control-X.
+
+During a break one may type TOPLEVEL @Index[TOPLEVEL];.  This will
+cause top-level MACSYMA to be entered recursively.  Labels will now be
+bound as usual.  Everything will be identical to the previous
+top-level state except that the computation which was interrupted is
+saved. The function @fcn[name= "TOBREAK", args= "()"] will cause the
+break which was left by typing TOPLEVEL; to be re-entered.  If TOBREAK
+is given any argument whatsoever, then the break will be exited, which
+is equivalent to typing TOBREAK() immediately followed by EXIT;.
+
+In the following example, an attempt is made to define a function ROOT
+which finds an approximate root to an expression using Newton-Raphson
+iteration.
+@Begin[Example]
+(C1) ROOT(F,V):=BLOCK([VAL,FUN,DER],DER:DIFF(F,V),VAL:0.0,
+        TEST,FUN:SUBST(VAL,V,F),IF ABS(FUN)<5.0E-7 THEN
+        RETURN(VAL),DER:SUBST(VAL,V,DER),VAL:VAL-FUN/DER,
+        GO(TEST))$
+@hinge
+(C2) NUMER:TRUE$
+@hinge
+(C3) F:SIN(%PI*X)-%PI*(X-1)$
+@hinge
+(C4) ROOT(F,X);
+
+Division by 0
+@hinge
+(C5) REFCHECK:TRUE$
+@hinge
+(C6) DEBUGMODE:TRUE$
+@hinge
+(C7) ''C4;
+F has value
+V has value
+VAL has value
+FUN has value
+DER has value
+
+
+Division by 0
+
+ERROR-BREAK
+
+_VAL;
+1.0541436E+8
+
+_DER;
+- 2.98023224E-8
+
+_TRACE(SUBST)
+
+_''C4;
+@end(Example)
+(The numerical value of %PI is present below due to NUMER being set to TRUE
+above.)
+@begin(Example)
+1 ENTER SUBST [0.0, X, SIN(3.1415927 X) - 3.1415927 (X - 1)]
+1 EXIT SUBST: 3.1415927
+1 ENTER SUBST [0.0, X, 3.1415927 COS(3.1415927 X) - 3.1415927]
+1 EXIT SUBST: 0.0
+1 ENTER SUBST[0.0, X, SIN(3.1415927 X) - 3.1415927 (X - 1)]
+
+
+Division by 0
+
+(Still in break loop)
+@end(example)
+(This message is due to an error-break occurring within another error break.)
+@begin(example)
+_EXIT;
+Exited from the break
+
+@hinge
+(C8) <>
+_''C4
+MYFROOT<><$>
+@end(example)
+(The user uses the MYF command of the MACSYMA editor to insert the
+definition of ROOT into the edit buffer. The editor is then used to
+insert an IF statement to test for DER being close to 0. The actual
+editing work is not shown.)
+
+@begin(example)
+(C8) ROOT(F,V):=BLOCK([VAL,FUN,DER],DER:DIFF(F,V,1),VAL:0.0,
+        TEST,FUN:SUBST(VAL,V,F),IF ABS(FUN)<5.0E-7 THEN
+         RETURN(VAL),DER:SUBST(VAL,V,DER),IF ABS(DER)<5.E-8
+         THEN ERROR("Derivative is zero"),VAL:VAL-FUN/DER,
+        GO(TEST))$
+@hinge
+(C9) UNTRACE();
+(D9)                             [SUBST]
+@hinge
+(C10) REFCHECK:FALSE$
+@hinge
+(C11) ''C4;
+Derivative is zero
+@end(example)
+(This is due to the ERROR function being executed.)
+
+@begin(function)
+@fcn[Name="TRACE_OPTIONS", Args="F,option1,option2,..."]) 
+gives the function F the
+options indicated.  An option is either a keyword or an expression.
+The possible Keywords are:
+@begin(format)
+@tabclear
+@tabset(.5inches,4inches)
+@\Keyword@\Meaning of return value
+
+@\NOPRINT@\If TRUE do no printing. 
+@\BREAK@\If TRUE give a breakpoint.
+@\LISP_PRINT@\If TRUE use lisp printing.
+@\INFO@\Extra info to print.
+@\ERRORCATCH@\If TRUE errors are caught.
+@end(format)
+A keyword means that the option is in effect.  Using a keyword as an
+expression, e.g. NOPRINT(@i[predicate_function]) means to apply
+@i[predicate_function] (which is user-defined) to some arguments to
+determine if the option is in effect. The argument list to this
+predicate_function is always [LEVEL, DIRECTION, FUNCTION, ITEM] where
+LEVEL is the recursion level for the function.  DIRECTION is either
+ENTER or EXIT.  FUNCTION is the name of the function.  ITEM is either
+the argument list or the return value.  
+@Begin[Example]
+(C1) F(N):=IF N=0 THEN 1 ELSE N*F(N-1);
+(D1) 		   F(N) := IF N = 0 THEN 1 ELSE N F(N - 1)
+@hinge
+(C2) TRACE(F);
+
+MTRACE FASL DSK MACSYM being loaded 
+Loading done
+(D2) 				     [F]
+@hinge
+(C3) F(5);
+1 Enter F [5]
+ 2 Enter F [4]
+  3 Enter F [3]
+   4 Enter F [2]
+    5 Enter F [1]
+     6 Enter F [0]
+     6 Exit  F 1
+    5 Exit  F 1
+   4 Exit  F 2
+  3 Exit  F 6
+ 2 Exit  F 24
+1 Exit  F 120
+(D3) 				     120
+@hinge
+(C4)TRACE_OPTIONS(F,LISP_PRINT)$
+@hinge
+(C5) F(5);
+
+(1 ENTER F (5)) 
+ (2 ENTER F (4)) 
+  (3 ENTER F (3)) 
+   (4 ENTER F (2)) 
+    (5 ENTER F (1)) 
+     (6 ENTER F (0)) 
+     (6 EXIT F 1) 
+    (5 EXIT F 1) 
+   (4 EXIT F 2) 
+  (3 EXIT F 6) 
+ (2 EXIT F 24) 
+(1 EXIT F 120) 
+(D5) 				     120
+@hinge
+(C6) FOO(LEVEL,DIRECTION,NAME,ITEM):= IF DIRECTION='ENTER 
+                                      THEN TIMEDATE()$
+@hinge
+(C7) TRACE_OPTIONS(F,INFO(FOO))$
+@hinge
+(C8) F(5);
+
+STATUS FASL DSK MAXOUT being loaded 
+Loading done
+1 Enter F [5] -> Wednesday, Jul 21, 1982  5:20am
+ 2 Enter F [4] -> Wednesday, Jul 21, 1982  5:20am
+  3 Enter F [3] -> Wednesday, Jul 21, 1982  5:20am
+   4 Enter F [2] -> Wednesday, Jul 21, 1982  5:20am
+    5 Enter F [1] -> Wednesday, Jul 21, 1982  5:20am
+     6 Enter F [0] -> Wednesday, Jul 21, 1982  5:20am
+     6 Exit  F 1
+    5 Exit  F 1
+   4 Exit  F 2
+  3 Exit  F 6
+ 2 Exit  F 24
+1 Exit  F 120
+(D8) 				     120
+@End[Example]
+@end(function)
+
+The following functions are part of the TRACE package and are useful
+for determining timings and benchmarks for different functions:
+
+@begin(function)
+@fcn[Name="TIMER", Args="fn"]
+ will put a timer-wrapper on the function @i[fn], within the TRACE
+package, i.e. it will print out the time spent in computing @i[fn].
+See also the TIME @Index[TIME] function, (see @PageRef[miscfun]).
+
+@fcn[Name="UNTIMER", Args="fn"]
+Removes the timer-wrapper from the function @i[fn].
+@end(function)
+
+The conventions for TIMER and UNTIMER are like those for TRACE and UNTRACE.
+TIMER will tell you how many calls a function got, and to a moderate 
+degree of accuracy (there might be a few percent error in the timing 
+figures) how much time was spent during the call.
+
+@begin(function)
+@fcn[Name="TIMER_INFO", Args="F"]
+will print the information on timing which is stored
+also as GET('F,'CALLS); GET('F,'RUNTIME); and GET('F,'GCTIME); .  
+@end(function)
+
+The switch @var<TIMER_DEVALUE (default: FALSE)> when set to TRUE
+causes the TIMER functions to report the time charged against a
+function as the time spent dynamically inside the function devalued by
+the time spent inside other TIMED functions.
+
+@Section[Debugging at LISP Level]
+@Label[ldbg]
+
+When functions have been translated into LISP using the MACSYMA translator
+and it is necessary to debug them, it is convenient to be able to debug
+them directly in LISP rather than debugging them in MACSYMA and then
+re-translating them.
+
+@begin(function)
+@fcn[Name="DEBUG", Args=""]
+calls the LISP stack debugger and enters a LISP debugging break.
+(Which is the LISP function (DEBUG)).
+
+@fcn[Name="LISPDEBUGMODE", Args="TRUE"]
+will cause lisp errors to enter
+normal lisp break points, from which it is normal to
+call the lisp function (DEBUG) which prompts for single
+character commands to move up and down the evaluation
+stack at the point of the error. The following are some
+of its commands:
+@Begin[Example]
+U .... move up the stack.
+D .... move down the stack.
+S .... pretty-print the expression current stack level.
+A .... print indented list of function calls on stack.
+? .... type out list of commands.
+@End[Example]
+It is possible to do sophisticated 
+error recovery from inside LISPDEBUGMODE break loops.
+
+LISPDEBUGMODE(FALSE) turns off the LISPDEBUGMODE breaks.
+LISPDEBUGMODE() returns the current debugging state.
+Note: LISPDEBUGMODE also passes its argument
+to DEBUGMODE. 
+
+@fcn[Name="DEBUGPRINTMODE", Args=""]
+returns current printing mode
+used by the DEBUG() function.
+DEBUGPRINTMODE(LISP) sets it to lisp printing (the default),
+DEBUGPRINTMODE(@i[x],@i[y]) where @i[x] is FALSE or a positive
+fixnum, sets the maximum length to which LISP expressions
+are printed to @i[x], and the maximum depth to @i[y].
+This is used to abreviate printout. FALSE means INFINITY.
+DEBUGPRINTMODE(MACSYMA) sets it to try printing
+expressions as they would be displayed at macsyma
+level, except with more information and a slightly
+different notation:
+@begin(enumerate)
+Well-formed Macsyma expressions print out as Macsyma String
+expressions, with some special conventions:
+@begin(enumerate)
+Unsimplified subexpressions are prefixed with #;
+
+Subexpressions with properties on the Car are enclosed
+in curly brackets ( {} ) and subscripted with the
+properties, if Showflags [Nil] is true.
+
+If neither (a) nor (b) is wanted, do
+(defun display_struct (x) x).
+@End[enumerate]
+(Quote ...) prints as '...;
+
+Otherwise, the expression prints out as if it were a normal
+s-expression--Mrat's have a special form that shows their
+structure.
+
+The definition of "well-formed Macsyma expression" is somewhat
+heuristic, so occasionally strange forms will appear.  For example:
+@end(enumerate)
+@Begin[Example]
+(reconsider ((mexpt simp) ((mplus) a b) ((mtimes simp ratsimp) 1 a))
+ (quote (foo (mexpt simp) 1 2)))
+@End[Example]
+will appear as
+@Begin[Example]
+(reconsider #(a+b)^(1+a) '(foo . 1^2))   (Showflags Nil)
+(reconsider #(a+b)^{1+a}[ratsimp] '(foo . 1^2))  (Showflags T)
+@End[Example]
+The result of
+@begin(example)
+RAT(%E^(2*x))/(x^2-1))
+@end(Example)
+will appear as
+@Begin[Example]
+RAT(G16:%E^X,X; G16^2 / X^2-1)
+@End[Example]
+@end(function)

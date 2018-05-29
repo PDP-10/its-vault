@@ -1,0 +1,168 @@
+		Multics MACSYMA
+
+MACSYMA is also implemented on the Multics operating system which runs on
+Honeywell Level 68/DPS hardware.  It is the same MACSYMA as on the ITS system.
+Those differences which arise may be traced back to differences in the MacLisp
+implementation and to differences in the host operating system.  Since this
+manual is mainly written for using MACSYMA on ITS, one has to be aware of
+these differences if one is to use this manual while using MACSYMA on Multics.
+
+Procedures for logging in and out will not be given here.  It is assumed that
+if one has access to a Multics system one will either know the procedures for
+logging in or will be able to obtain adequate documentation in order to learn
+how to do so.
+
+
+		Loading up MACSYMA
+
+To use MACSYMA on Multics one simply invokes the "macsyma"
+command.  On MIT-Multics, this command is in the default search space.
+The absolute pathname is >lib>macsyma>macsyma, with a link in
+>iml.  In addition, there are the entrypoints "minima" and
+"dmacsyma", which are not in the default search space, but may be
+found in >lib>macsyma.  These will not be of interest to the casual
+user.  "minima" loads up the subset of MACSYMA corresponding to the
+ITS in-core system.  "dmacsyma" (for Debugging MACSYMA) loads up the
+full MACSYMA and LISP macro packages.
+
+		Special Characters and Obvious Differences
+
+1.  All command names should be in lower case, since Multics, unlike
+ITS, is "case sensitive".
+
+2.  All input must end with a newline (return) after the semi-colon or
+dollar-sign is typed.  Failure to type a return is the most common cause
+of "no response" encountered by users of Multics MACSYMA.
+
+3.  The character to enter the editor and to terminate editor commands
+is "&" (ampersand) instead of altmode.  The character to use for "rubout"
+or "delete" (to erase the previous character typed) is "#" (number-sign or
+pound-sign).
+
+4.  Control characters are not entered in the manner described in
+the rest of this manual but are instead entered by the conventions of
+the Multics implementation of LISP.  This is done by using the
+"attention" or "break" button on the console followed by the letter of
+the alphabet for the control character you want, followed by a newline
+character.  When you hit the break key, the system will type "CTRL/",
+and you should respond by typing the appropriate character. If you
+want a Control-Z, for example, you would type the letter "Z" followed
+by a newline. The various control characters have the same meaning as
+on ITS MACSYMA.  The only one that is different is Control-Z which
+rather than "returning" to a monitor level instead calls a new
+invocation of the monitor at a higher level i.e. it is the same thing
+as a normal Multics quit signal.  A "start" command will start the
+macsyma moving again.  Hitting "break" twice has the same effect as
+typing Control-Z.
+
+5.  The character to use with the DEMO command to continue the demo
+is return.  To terminate a demo, type any character followed by a
+return.
+
+		Files and File names
+
+There are two different ways of referring to files in the Multics
+hierarchy. MACSYMA commands that take file names as arguments can be given the
+Multics file name enclosed in double quotes as a single argument. An
+alternative form of reference is one that maps the ITS way of referring to
+files with two or three arguments into a reasonable Multics filename.  Thus:
+
+(c1) batch("random.demo");
+(c1) batch(">udd>Project>JRUser>random.demo");
+(c1) batch(random,demo);
+
+would all refer to the same file if the current working directory were
+">udd>Project>JRUser".  
+
+There are two directories which users will find useful,
+>lib>macsyma>demo> and >lib>macsyma>share>.
+These are the equivalents of the ITS DEMO; and SHAREn; directories.
+Demo files and share packages listed in other sections of this manual
+will (if they have been transported to Multics) reside in these directories.
+There is a naming scheme adopted for these files which will allow you
+to determine which command to use to access a given file:
+
+xxxx.macsyma    ->  a batchable (i.e. MACSYMA readable) file, use batch
+xxxx.lisp       ->  a lisp file, use loadfile
+xxxx.fasl       ->  a compiled lisp file, use loadfile
+xxxx.usage      ->  a text file, to be printed
+xxxx.demo       ->  a demo file, MACSYMA readable, use demo or batch
+
+Multics MACSYMA has some additional functions for dealing with the file
+system.  The functions PWD and CWD work similarly to the Multics "print_wdir"
+and "change_wdir" commands.  As with other Multics commands, the LOADFILE and
+BATCH functions will work with respect to the working directory when a
+relative pathname is specified.
+
+(c1) cwd(">udd>Mathlab>Tensor");
+(d1)                       [>udd>Mathlab>Tensor]
+
+(c2) pwd();
+(d2)                       [>udd>Mathlab>Tensor]
+
+(c3) cwd();
+(d3)                       [>udd>Project>JRUser]
+
+
+
+		Plotting
+
+Setting the variable MULTGRAPH to TRUE will enable the Multics plotting
+package.  In this mode, the functions PLOT and PLOT3D will generate their
+output via the Multics graphics system, rather than assuming a
+character-oriented output device.  Before doing this, the Multics
+"setup_graphics" command must be issued from command level.  For instance,
+"setup_graphics tek_4013" should be typed if a Tektronix 4013 console is to be
+used.  In this mode, the variable PLOT3DSIZE [20] may be used to control the
+resolution of 3D plots.
+
+		Interacting with the Multics Monitor
+
+The MACSYMA function CLINE (for Command Line) may be used to pass an arbitrary
+line to the command processor.
+
+(c1) cline("who");
+
+will print a list of those people currently logged in to the system.
+
+A major advantage of the Multics implementation over the PDP10 implementation
+is the much larger address space available to the MACSYMA user.  The address
+space is so large that available disk space on the system becomes the first
+constraint encountered when running space-intensive problems.  By default, the
+LISP system will construct its data structures in the process directory.  The
+maximum size (or "disk quota") of a process directory is a per-system
+parameter.  On the MIT-Multics system, it is 1024 records, which may be
+insufficient for certain large problems.  The Multics command line "get_quota
+[process_dir]" will display the maximum and current size of the process
+directory in terms of records (1 record is 1024 36-bit words).  It may be
+useful to insert the statement
+
+cline ("get_quota [process_dir]");
+
+at a key point in a space-intensive MACSYMA program.  The LISP system can also
+be directed to construct its data structures in some other directory than the
+process directory.  The Multics command "set_lisp_temp_dir" performs this
+action.  Thus, one can create a directory with a large disk quota and use it
+for creating temporary storage.
+
+To exit temporarily from your MACSYMA to do something at monitor level, you
+type two "break"s in succession, or use control-Z.  You may return to your
+MACSYMA by giving the start command.
+
+		On-line Help
+
+The MACSYMA Primer has not yet been transported to Multics.
+However, the DESCRIBE command works.  The DESCRIBE database may not be
+quite as up to date as the ITS version, and its references to files are
+at present in ITS format.
+
+The SEND, MAIL, and BUG commands work, and will send mail to the maintainers
+on ITS who deal with Multics MACSYMA.  It is recommended however that you use
+the Multics mail program to communicate, sending problems to
+multics-macsyma-bugs -at MIT-MC.
+
+		Special Documentation
+
+There is a version of the MACSYMA Primer [Mo5], "MACSYMA Primer for
+Multics", which is available from MIT's Information Processing
+Services.

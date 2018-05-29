@@ -1,0 +1,2223 @@
+.<<(c) Copyright 1983 Massachusetts Institute of Technology>>
+.chap ("Utility, Input-Output, and Display Functions",utility!functions)
+
+.sec ("Debugging Functions ",debugging)
+The functions in this section permit the user to examine his MACSYMA
+environment and to obtain debugging information.  Further detail is
+given in section $see<debugmac>.
+
+.function (TRACE,|name1, name2, ...|)
+gives a trace printout whenever the functions mentioned are
+called. TRACE() prints a list of the functions currently under TRACE.
+.endfunction
+
+.function (UNTRACE,|name1, ...|)
+removes tracing invoked by the TRACE function.  UNTRACE() removes
+tracing from all functions.
+
+.endfunction
+
+.function (DECLARE,|[var1, var2, ...], BINDTEST|)
+causes MACSYMA to give an error message whenever any of the 2vari1
+occur unbound in a computation.
+
+.endfunction
+
+.function (BREAK,|arg1, ...|)
+evaluates and prints its arguments then enters a MACSYMA break loop.
+
+.endfunction
+
+The following functions are for make available to the user debugging
+features used by systems programmers.  These tools are powerful, and
+although some conventions are different from the usual macsyma level
+it is felt their use is very intuitive.  [Some printout may be verbose
+for slow terminals, there are switches for controlling this.]  These
+commands were most useful for the user who must debug translated
+macsyma code.  For a more complete discussion see $see<debugmac>.
+
+.function(DEBUG,)
+Starts up a Lisp debugging break.
+.endfunction
+
+.function(DEBUGPRINTMODE,)
+returns current printing mode used by the DEBUG() function.
+.endfunction
+
+.function(DEBUGPRINTMODE,LISP)
+sets the current printing mode to lisp printing (the default),
+DEBUGPRINTMODE(2x*,2y*) where 2x* is FALSE or a positive fixnum,
+sets the maximum length to which LISP expressions are printed to
+2x*, and the maximum depth to 2y*.  This is used to abreviate
+printout. FALSE means INFINITY.  DEBUGPRINTMODE(MACSYMA) sets it to
+try printing expressions as they would be displayed at macsyma level,
+except with more information and a slightly different notation.
+.endfunction
+
+.function(LISPDEBUGMODE,TRUE)
+will cause lisp errors to enter
+normal lisp break points, from which it is normal to
+call the lisp function (DEBUG) which prompts for single
+character commands to move up and down the evaluation
+stack at the point of the error.  See $see<debugmac> for details.
+.endfunction
+.skip 2 once center
+2Options and Variables
+.skip 1
+
+$var<%%/> The value of the last computation performed while in a
+(MACSYMA-BREAK).  Also may be used in compound statements in the nth
+statement to refer to the value of the (n-1)th statement.  E.g.
+F(N):=(INTEGRATE(X^N,X),SUBST(3,X,%%)-SUBST(2,X,%%)); is in essence
+equivalent to F(N):=BLOCK([%%], %%:INTEGRATE(X^N,X),
+SUBST(3,X,%%)-SUBST(2,X,%%));
+This will also work for communicating between the (n-1)th and nth
+(non-atomic) BLOCK statements.
+
+$var<DEBUGMODE/FALSE> if TRUE causes MACSYMA to enter a MACSYMA break
+loop whenever a MACSYMA error occurs. If DEBUGMODE:ALL then the user
+may examine BACKTRACE for the list of functions currently entered.
+
+
+$var<REFCHECK/FALSE> if TRUE causes a message to be printed each time
+a bound variable is used for the first time in a computation.
+
+$var<PREDERROR/TRUE> - If TRUE, an error message is signalled whenever
+the predicate of an IF statement or an IS function fails to evaluate
+to either TRUE or FALSE.  If FALSE, UNKNOWN is returned instead in
+this case.  The PREDERROR:FALSE mode is not supported in translated
+code.
+
+$var<SETCHECK/FALSE> - if set to a list of variables (which can be
+subscripted) will cause a printout whenever the variables, or
+subscripted occurrences of them, are bound (with : or :: or function
+argument binding).  The printout consists of the variable and the
+value it is bound to.  SETCHECK may be set to ALL or TRUE thereby
+including all variables.  Note: No printout is generated when a
+SETCHECKed variable is set to itself, e.g. X:'X.
+
+$var<SETCHECKBREAK/FALSE> - if set to TRUE will cause a
+(MACSYMA-BREAK) to occur just prior to the binding of variables on the
+SETCHECK list.  At this point, $var<SETVAL/> holds the value to which
+the variable is about to be set.  Hence, one may change this value by
+resetting SETVAL.
+
+$var<BACKTRACE/> (when DEBUGMODE:ALL has been done) has as value a
+list of all functions currently entered.  (see Chapter
+$ref<debugmac>).
+
+.function(ERRORMSG,)
+reprints the last error message.  This is very helpful if
+you are using a display console and the message has gone off the
+screen.  The variable ERROR is set to a list describing the error,
+the first of it being a string of text, and the rest the objects in
+question.
+
+TTYINTFUN:LAMBDA([],ERRORMSG(),PRINT(""))$ will set up the user-interrupt
+character (^U) to reprint the message.
+.endfunction
+.sec (Functions for Displaying,display!functions)
+
+.function (DISPFUN,|f1, f2, ...|)
+displays the definition of the user defined functions 2f1, f2, ...*
+which may also be the names of array associated functions, subscripted
+functions, or functions with constant subscripts which are the same as
+those used when the functions were defined. DISPFUN(ALL) will display
+all user defined functions as given on the $var<FUNCTIONS/> and
+$var<ARRAYS/> lists except subscripted functions with constant
+subscripts.  E.g. if the user has defined a function F(X), then
+DISPFUN(F); will display the definition.
+
+.endfunction
+
+.function (FUNDEF,functionname)
+returns the function definition associated with 2functionname1.
+FUNDEF(2fnname1); is similar to DISPFUN(2fnname1); except that
+FUNDEF does not invoke display.
+.endfunction
+
+.function (DISPRULE,|rulename1,rulename2,...|)
+will display the rules with the names 2rulename1, rulename2, ...*
+as were given by $fun<DEFRULE>, $fun<TELLSIMP>, or $fun<TELLSIMPAFTER>
+or a pattern defined by $fun<DEFMATCH>.  For example, the first rule
+modifying SIN will be called SINRULE1. (see $ref<patmatfun>)
+DISPRULE(ALL) displays all rules.
+
+.endfunction
+
+.function (DISPLAY,|exp1, exp2, ...|)
+displays equations whose left side is 2expi1 unevaluated, and whose
+right side is the value of the expression centered on the line.  This
+function is useful in blocks and FOR statements in order to have
+intermediate results displayed.  The arguments to DISPLAY are usually
+atoms, subscripted variables, or function calls.  (see the DISP
+function below.)
+
+.example
+(C1) B[1,2]:=X-X^2$
+
+(C2) DISPLAY(B[1,2]);
+
+.begin group
+                                      2
+                         B     = X - X
+                          1, 2
+.end
+
+(D2)                            DONE
+
+.end
+.endfunction
+
+.function(LDISPLAY,|exp1,exp2,...|)
+is like DISPLAY but also generates intermediate labels.
+
+.endfunction
+
+.function (DISP,|exp1,exp2, ...|)
+is like DISPLAY but only the value of the arguments are displayed
+rather than equations.  This is useful for complicated arguments which
+don't have names or where only the value of the argument is of
+interest and not the name.
+
+.endfunction
+
+.function(LDISP,|exp1,exp2,...|)
+is like DISP but also generates intermediate labels.
+
+.endfunction
+
+.function (PRINT,|exp1, exp2, ...|)
+evaluates and displays its arguments one after the other "on a line"
+starting at the leftmost position.  If 2expi1 is unbound or is
+preceded by a single quote or is enclosed in "s then it is printed
+literally.  For example, PRINT("THE VALUE OF X IS ",X).  The value
+returned by PRINT is the value of its last argument.  No intermediate
+lines are generated.
+
+.endfunction
+
+.function (DISPTERMS,exp)
+displays its argument in parts one below the other.  That is, each
+term in a sum or factor in a product is displayed separately.  This is
+useful if 2exp1 is too large to be otherwise displayed.  For example
+if P1, P2, ... are very large expressions then the display program may
+run out of storage space in trying to display P1+P2+... all at once.
+However, DISPTERMS(P1+P2+...) will display P1, then below it P2, etc.
+When not using DISPTERMS, if an exponential expression is too wide to
+be displayed as A**B it will appear as EXPT(A,B) (or as NCEXPT(A,B) in
+the case of A^^B).
+
+.endfunction
+
+.function (REVEAL,|exp,depth|)
+will display 2exp1 to the specified integer 2depth1 with the
+length of each part indicated.  Sums will be displayed as Sum(n) and
+products as Product(n) where n is the number of subparts of the sum or
+product.  Exponentials will be displayed as Expt.
+
+.example
+(C1) INTEGRATE(1/(X^3+2),X)$
+
+(C2) REVEAL(%,2);
+
+(D2)                    Negterm + Quotient + Quotient
+
+(C3) REVEAL(D1,3);
+.begin group
+				     ATAN         LOG
+(D3)                 - Quotient + ---------- + ----------
+				  Product(2)   Product(2)
+.end
+.END
+.endfunction
+
+.function(TRUNC,exp)
+causes exp which is in general representation to be
+displayed as if its sums were truncated Taylor series.  E.g. 
+.example
+(C1) EXP1:X^2+X+1;
+				   2
+(D1)                              X  + X + 1
+
+(C2) EXP2:TRUNC(X^2+X+1);
+				       2
+(D2)                          1 + X + X  + . . .
+.end
+Note that IS(EXP1=EXP2); gives TRUE.
+.endfunction
+
+.function (PLAYBACK,arg)
+"plays back" input and output lines.  If 2arg1=n (a number) the last
+n expressions (Ci, Di, and Ei count as 1 each) are "played-back",
+while if 2arg1 is omitted, all lines are.  If 2arg1=INPUT then
+only input lines are played back.  If 2arg1=[m,n] then all lines
+with numbers from m to n inclusive are played-back.  If m=n then [m]
+is sufficient for arg.  2Arg1=SLOW places PLAYBACK in a slow-mode
+similar to $fun<DEMO>'s (as opposed to the "fast" $fun<BATCH>). This
+is useful in conjunction with $fun<SAVE> or $fun<STRINGOUT> (see
+below) when creating a secondary-storage file in order to pick out
+useful expressions.  If 2arg1=TIME then the computation times are
+displayed as well as the expressions.  If 2arg1=$flag<GCTIME> or
+$flag<TOTALTIME>, then a complete breakdown of computation times are
+displayed, as with $flag<SHOWTIME>:ALL;.  2arg1=$flag<NOSTRING>
+displays all input lines when playing back rather than STRINGing them.
+If 2arg1=GRIND (or if GRIND is set to TRUE) then the display will be
+in a more readable format.  One may include any number of options as
+in PLAYBACK([5,10],20,TIME,SLOW).
+
+.endfunction
+
+.function (STRING,exp)
+converts 2exp1 to MACSYMA's linear notation (similar to FORTRAN's)
+just as if it had been typed in and puts 2exp1 into the buffer for
+possible editing (in which case 2exp1 is usually Ci) (see sec.
+$ref<entered>).  The STRING'ed expression should not be used in a
+computation.  Setting the $var<GRIND/FALSE> switch to TRUE will make
+STRING's output a little more readable.
+
+.endfunction
+
+.function (STRINGOUT,args)
+will output an expression to a file in a linear format.
+$see<disk!storage>
+.endfunction
+
+.function(GRIND,arg) 
+prints out 2arg* in a more readable format than the STRING command. It returns a D-line as value.
+.endfunction
+
+.function(FORTRAN,exp) 
+converts 2exp* into a FORTRAN linear expression in legal FORTRAN
+with 6 spaces inserted at the beginning of each line,continuation
+lines,and ** rather than ^ for exponentiation.  When the option
+$var<FORTSPACES/FALSE> is TRUE, the FORTRAN command fills out to 80
+columns using spaces.  If FORTRAN is called on a bound symbolic atom,
+e.g. FORTRAN(X); where X:A*B$ has been done, then X={value of X}, e.g.
+X=A*B will be generated.  In particular, if e.g. M:MATRIX(...); has
+been done, then FORTRAN(M); will cause the appropriate assignment
+statements to be generated.
+
+.endfunction
+
+.function(FORTRAN,|name=matrix|)
+converts a MACSYMA 2matrix* into a sequence of FORTRAN assignment
+statements of the form
+.example
+   2name*(i,j)=  <the i,j 2matrix* element> 
+.end continue
+(If "name" is bound, FORTRAN('name=matrix);  may be necessary.)
+
+.endfunction
+.scon
+The variable $var<FORTINDENT/0> controls the left margin indentation
+of expressions printed out by the FORTRAN command.  0 gives normal
+indentation, which is 6 spaces, and positive values will causes the
+expressions to be printed farther to the right.  This is useful for
+structured FORTRAN code where the MACSYMA output is to be inserted
+into nested DO loops.
+
+.function(DESCRIBE,|entity|)
+prints outa description of 2entity*, which may be a command, switch,
+flag, or concept.
+.endfunction
+
+.function (EXAMPLE,|function|)
+does a DEMO of relevant examples involving 2function*.
+.endfunction
+
+The following two functions are useful in programs which want to
+generate neat output:
+
+.function(CLEARSCREEN,)
+Clears the screen.  The same as typing control-L.
+.endfunction
+
+.function(PAUSE,)
+Causes a the display to "pause", printing "--Pause--" and
+waiting for the usual "space" for "yes" to resume printing.  
+Then it clears the screen and continues.
+PAUSE("--Something else--"); will use "--Something else--" as the string
+printed instead of "--Pause--".
+PAUSE("--Something else--","--And some more--"); will use "--Something else--"
+instead of "--Pause--" and "--And some more--" instead of "--Continued--".
+
+.endfunction
+
+
+.sec (Functions for Freeing Storage,freeing!storage)
+
+.function (REMOVE,args)
+will remove some or all of the properties associated with variables or
+functions. $see<property!specification>
+
+.endfunction
+
+.function (REMFUNCTION,|f1, f2, ...|)
+removes the user defined functions 2f1,f21,... from
+MACSYMA.  If there is only one argument of ALL then all functions are removed.
+
+.endfunction
+
+.function (REMVALUE,|name1, name2, ...|)
+removes the values of user variables (which can be subscripted) from the system.
+If name is ALL then  the values of all user variables are removed.  Values are
+those items given names by the user as opposed to those which are automatically
+labeled by MACSYMA as Ci, Di, or Ei.
+
+.endfunction
+
+.function (REMARRAY,|name1, name2, ...|)
+removes arrays and array associated functions and frees the
+storage occupied.  If name is ALL then all arrays are removed.  It may be necessary to
+use this function if it is desired to redefine the values in a hashed array.
+
+.endfunction
+
+.function (REMRULE,|function, rulename|)
+will remove a rule with the name 2rulename1 from the 2function1 which was
+placed there by $fun<DEFRULE>, $fun<DEFMATCH>,  $fun<TELLSIMP>, or
+$fun<TELLSIMPAFTER>.  If 2rule-name1 is ALL, then all rules will be removed. (see
+example in $ref<patmatfun>)
+
+.endfunction
+
+.function (KILL,|arg1, arg2, ...|)
+eliminates its arguments from the MACSYMA system.  If 2argi1 is a
+variable (including a single array element), function, or array, the
+designated item with all of its properties is removed from core. If
+2argi1=LABELS then all input, intermediate, and output lines to date
+(but not other named items) are eliminated. If 2argi1=CLABELS then
+only input lines will be eliminated; if 2argi1=ELABELS then only
+intermediate E-lines will be eliminated; if 2argi1=DLABELS only the
+output lines will be eliminated.
+ If 2argi1 is the name of any of the other information lists (the
+elements of the MACSYMA variable $var<INFOLISTS/>), then every item in
+that class (and its properties) is KILLed and if 2argi1=ALL then
+every item on every information list previously defined as well as
+LABELS is KILLed.  If 2argi1=a number (say n), then the last n lines
+(i.e. the lines with the last n line numbers) are deleted.  If
+2argi1 is of the form [m,n] then all lines with numbers between m
+and n inclusive are killed. Note that KILL(VALUES) or KILL(variable)
+will not free the storage occupied unless the labels which are
+pointing to the same expressions are also KILLed.  Thus if a large
+expression was assigned to X on line C7 one should do KILL(D7) as well
+as KILL(X) to release the storage occupied.
+
+
+KILL($fun<ALLBUT>(2name1,...,namek*)) will do a KILL(ALL) except it
+will not KILL the names specified.  (Note: name2i1 means a name such
+as U, V, F, G, not an infolist such as FUNCTIONS.)
+
+.begin turn on ""
+KILL removes all properties from the given argument; thus KILL(VALUES)
+will kill all properties associated with every item on the VALUES
+list.  KILL always returns the value "DONE" even if the named item
+doesn't exist $see<property!specification>.
+
+The "REMOVE" functions ($fun<REMVALUE>,$fun<REMFUNCTION>,
+$fun<REMARRAY>,$fun<REMRULE>) remove a specific property.  These
+functions return a list of names or FALSE (if the specific argument
+doesn't exist).
+.end
+MACSYMA options may not be KILLed.  The user may do RESET()
+$see<miscfun> to reset MACSYMA options to their default values.
+
+
+The error message "NO CORE - FASLOAD" results when either too many
+FASL files have been loaded in or when allocation level has gotten too
+high.  Note that once this occurs, KILLing expressions will not help.
+In either of these cases, no amount of killing will cause the size of
+these spaces to decrease.  Killing expressions only causes some spaces
+to get emptied out but not made smaller.
+
+.endfunction
+
+.sec (Functions Which Reference Disk Files,disk!storage)
+
+.function (FILEDEFAULTS,)
+returns the current default file specification for the commands
+LOADFILE, BATCH, DELFILE, and DEMO.  This is the file specification
+which will be tried for LOADFILE or BATCH if they are called with no
+arguments.
+
+FILEDEFAULTS('[2file1]) - sets the current file defaults to
+2file1.  The argument to FILEDEFAULTS is evaluated as it is
+anticipated that the command will be used mainly in programs.  The
+2file1 need not be a real file, so one can use this function e.g.  if
+one's real purpose is to set the "device" field back to "DSK", where
+one does not care about the settings for the other fields.  E.g.
+FILEDEFAULTS('[FN1,FN2,DSK,USER]); .
+.endfunction
+
+$var<CHANGE_FILEDEFAULTS/TRUE> on PDP10 systems, and FALSE
+elsewhere.  Controls whether the user doing a LOADFILE or BATCH has
+his file defaults changed to the file LOADFILEd or BATCHed.  The TRUE
+setting is for people who like DDT-style file defaulting.  The FALSE
+setting is for people who like the conventions of other operating
+systems, who like LISP-style file defaulting, or who write packages
+which do LOADFILEs or BATCHes which should not interfere with their
+user's file defaults.
+
+$var<FILE_STRING_PRINT/FALSE> FALSE on MC, TRUE elsewhere.  If
+TRUE, filenames are output as strings; if FALSE, as lists.  For
+example, the message when an out of core file is loaded into
+MACSYMA (e.g. the LIMIT package), appears on MC in list format as
+.example
+  LIMIT FASL DSK MACSYM being loaded
+.end continue
+and in string format as:
+.example
+  DSK:MACSYM;LIMIT FASL being loaded
+.end continue
+The string format is like the top level (DDT) file specifications.
+
+.function(FILE_TYPE,filename)
+returns FASL, LISP, or MACSYMA, depending on
+what kind of file 2filename1 is.  This is helpful when you are not
+sure whether to use LOADFILE or BATCH.  (See the LOAD function below.)
+.endfunction
+
+.function(LOAD,|file-specification|)
+takes one argument, a filename represented as a "string" (i.e. inside
+quotation marks), as a list (i.e. inside square brackets), or (on ITS)
+a first filename.  It then locates and loads the indicated file.  If
+no directory is designated, it searches the SHARE2i1 directories and
+any other directories listed in the $var<FILE_SEARCH/SHARE2I1>
+variable and loads the indicated file. LOAD(EIGEN) will load the
+eigen package without the need for the user to be aware of the details
+of whether the package was compiled, translated, saved, or fassaved,
+i.e. LOAD will work on both LOADILEable and BATCHable files.  Note:
+LOAD will use $fun<BATCHLOAD> if it finds the file is BATCHable (which
+means that it will BATCH the file in "silently" without terminal
+output or labels).
+.endfunction
+
+.function (LOADFILE,|fn1, fn2, DSK, directory|)
+loads a file as designated by its arguments.  This function may be
+used to bring back quantities that were stored from a prior MACSYMA
+session by use of the SAVE or STORE functions.  If 2DSK1 and
+2directory1 are omitted then the last directory seen (initially the
+same as the user's login name or USERS if the user has no file
+directory) will be used.  If 2DSK1 and 2directory1 are omitted,
+2fn21 may also be omitted if 2fn11 > is to be loaded in (where >
+follows the conventions of ITS's file system).  2Fn11 2fn21 must
+be a file of LISP functions and expressions, not of MACSYMA command
+lines, in which case BATCH or DEMO is to be used.  (See Chapter
+$ref<batchap>).
+
+.endfunction
+
+.function(FILE_SEARCH,|filename|)
+searches on those directories and devices
+specified by the FILE_SEARCH variable, and returns the name of the
+first file it finds.  This function is invoked by the LOAD function,
+which is why LOAD("FFT") finds and loads DSK:SHARE;FFT FASL.  You may
+do FILE_SEARCH:CONS("dsk:dir\;",FILE_SEARCH); to add other directories
+to the search rules.
+.endfunction
+
+.function (DELFILE,|file-specification|)
+will delete the file given by the 2file-specification1.
+.endfunction
+
+.function (BATCH,|file-specification|)
+reads in and evaluates MACSYMA command lines from a file. (see Chapter
+$ref<batchap>).
+
+.endfunction
+
+.function (DEMO,|file-specification|)
+same as BATCH but pauses after each command line and continues when a
+space is typed.  (see Chapter $ref<batchap>).
+
+.endfunction
+
+.function (BATCON,argument)
+continues BATCHing in a file which was interrupted $see<batconfun>.
+
+.endfunction
+
+.function (BATCHLOAD,|file-specification|)
+Batches in the file silently without
+terminal output or labels.  (See Chapter $ref<batchap>).
+
+.endfunction
+
+.function (WRITEFILE,|DSK, directory|)
+opens a file for writing.  On a Lisp
+Machine one uses WRITEFILE("filename").  All interaction
+between the user and MACSYMA is then recorded in this file, just as it
+is on the console.  Such a file is a transcript of the session, and is
+not reloadable or batchable into MACSYMA again.  See the CLOSEFILE command below for more information. 
+
+.endfunction
+
+.function (APPENDFILE,|filename1, filename2, DSK, directory|)
+is like WRITEFILE(DSK,2directory1) but appends
+to the file whose name is specified by the first two arguments.
+A subsequent CLOSEFILE will delete the original file and
+rename the appended file.
+
+.endfunction
+
+.function (CLOSEFILE,|filename1, filename2|)
+closes a file opened by WRITEFILE and gives it the name
+2filename11 2filename21.  (On a Lisp Machine one need
+only say CLOSEFILE();.)  Thus to save a file consisting of the display of all
+input and output during some part of a session with MACSYMA the user issues a WRITEFILE,
+transacts with MACSYMA, then issues a CLOSEFILE.
+The user can also issue the PLAYBACK function after a WRITEFILE to save the
+display of previous transactions.  (Note that what is saved this way is a copy
+of the 2display1 of expressions not the expressions themselves).  To save the
+actual expression in internal form the SAVE function may be used.  The
+expression can then be brought back into MACSYMA via the LOADFILE function.  To
+save the expression in a linear form which may then be BATCHed in later, the
+STRINGOUT function is used. (see below)
+
+.endfunction
+
+.function (STRINGOUT,|file-specification, A1, A2, ...|)
+outputs to a file given by 2file-specification1
+([filename1,filename2,DSK, directory]) the values given by
+2A1,A21,.. in a MACSYMA readable format.  The 2file-specification1
+may be omitted, in which case the default values will be used. (see
+$ref<autostor> - C) The 2Ai1 are usually C labels or may be INPUT
+meaning the value of all C labels.  Other options are FUNCTIONS which
+will cause all of the user's function definitions to be strungout
+(i.e. all those retrieved by DISPFUN(ALL)), and VALUES, which will
+STRINGOUT all variables to which the user has assigned values. 2Ai1
+may also be a list [m,n] which means to stringout all labels in the
+range m through n inclusive.  This function may be used to create a
+file of FORTRAN statements by doing some simple editing on the
+strungout expressions.  Alternatively, the function $fun<FORTRAN> can
+be used $see<display!functions>.  If the $var<GRIND/FALSE> switch is
+set to true, then "grind" format will be used instead of "string" format
+in the file, which may give a more easily readable result for long
+function definitions.  Note:  STRINGOUT may be done while a
+WRITEFILE is in process.
+
+.endfunction
+
+.function (SAVE,args)
+saves quantities described by its arguments on disk and keeps them in core
+also. $see<explicitstor>.  Note:  SAVE may be used while a WRITEFILE is
+in progress.
+
+.endfunction
+
+.function (STORE,args)
+same as SAVE but doesn't retain quantities in core. $see<explicitstor>.
+Note:  SAVE may be used while a WRITEFILE is in progress.
+.endfunction
+
+.function(FASSAVE,args)
+is similar to SAVE but produces a FASL file in which the sharing of
+subexpressions which are shared in core is preserved in the file
+created.  Hence, expressions which have common subexpressions will
+consume less space when loaded back from a file created by FASSAVE
+rather than by SAVE.  See also the $fun<COLLAPSE> command below.
+Note:  FASSAVE may be used while a WRITEFILE is in progress.
+.endfunction
+
+
+.function (UNSTORE,|name1, ...|)
+brings the named expressions into core that were stored away by use of
+the STORE function in the current MACSYMA. $see<explicitstor>.
+
+.endfunction
+
+.function (RESTORE,|file-specification|)
+reinitializes all quantities filed away by a use of the SAVE
+or STORE functions, in a prior MACSYMA session, from the file given by
+2file-specification1 without bringing them into core. $see<savmacsym>.
+Note: RESTORE will not work on files written with FASSAVE.
+.endfunction
+
+.function(REMFILE)
+removes files created by the secondary storage scheme in the MACSYMA under use
+$see<autostor>.  REMFILE(ALL) does what REMFILE() does and in addition deletes
+any files which have been created by the SAVE or STORE functions but which have not
+been assigned names by the user.
+
+.endfunction
+
+The following functions provide some primitive file operations for
+MACSYMA Users from inside MACSYMA, making it unnecessary to interact
+with the operating system:
+
+.function(PRINTFILE,|file,name,dsk,directory|)
+will print the specified file on your terminal.
+.endfunction
+
+.function(LISTFILES,|dsk,username|)
+will list your files for you.  If you use a shared directory such as
+USERS or PLASMA, only your files--the ones with your login name as
+first file name--will be shown.  The length and date of creation of
+each file is also shown.  LISTFILES indicates
+whether each file is stored on secondary disk and whether it
+has been backed up to tape (an exclamation point appears if
+it has not).  In order to list just the names of your files without the
+length and date information, use $fun<QLISTFILES> (Quick LIST Files)
+with the same arguments as LISTFILES.
+
+.endfunction
+
+.function(FILELENGTH,|name1,name2,directory|)
+returns the length of the file argument
+in blocks and fractional blocks.
+There are five characters in a word and 1024 words in a disk block.
+(So if it returns 5.6, the file is 6 blocks long, but the last block
+is only 60% full.  This file would be 5.6*1024*5 (= 28672) characters
+long.)  If the file named does not exist, an error message is printed,
+and False is returned to permit easier recovery in a program.
+.endfunction
+
+.function(RENAMEFILE,|oldname,newname|)
+renames a file from oldname
+to newname. 
+Files may not be renamed across directories or devices. Both oldname
+and newname must be on the same directory. Renaming a file to a filename
+that already exists gives an error. You must explicitly DELFILE the
+existing file first if that's what you want.  Both oldname and newname
+must be list-type filespecs. E.g.
+.example
+(C1) RENAMEFILE([myold,file,dsk,foo],[mynew,file]);
+(D1)                     [MYNEW,FILE,DSK,FOO]
+.end
+.endfunction
+
+The following function may be useful when writing a "package" in
+MACSYMA where you want to manipulate filenames and may need to merge
+a partially specified user filename with default information from the
+user's MACSYMA to produce an actual filename.
+
+.function(FILENAME_MERGE,|"filename1","filename2",...|)
+ merges together
+filenames, using a "*" convention for unspecified components of
+filenames, with the leftmost filenames getting precedence.
+.endfunction
+
+The following functions offer information about the amount of disk
+space available and the amount in use by any given user.
+
+.function(DISKFREE,)
+With no args or an arg of TRUE, will return the total
+number of free blocks of disk space in the system.  With an arg of 0,
+1, or 13, it will return the number of free blocks of diskspace on the
+respective disk pack.  With an arg of SECONDARY or PRIMARY, it will
+return the total number of free blocks of disk space on the secondary
+or primary disk pack respectively.
+.endfunction
+
+.function(DISKUSE,username)
+returns the total number of disk blocks in use by a
+user.  The result is of the form <n>*BLOCKS
+.endfunction
+
+.function(PRINTDISKUSE,username)
+displays in English information about a user's
+disk usage.
+.endfunction
+
+.function(FULLDISKUSE,username)
+Returns a long list of info about the user's disk usage of
+the form:
+.example
+  [["TOTAL FREE BLOCKS", [<pack-type>, <pack-number>, <n> BLOCKS],
+			 [<pack-type>, <pack-number>, <n> BLOCKS], ...]
+   ["DIRECTORY BLOCK USAGE", <directory-name>
+			     ["PRIMARY", <n> BLOCKS],
+			     ["SECONDARY", <n> BLOCKS]]
+   ["USER BLOCK USAGE", <user-name>,
+			[PRIMARY, <n> BLOCKS],
+			[SECONDARY, <n> BLOCKS]]]
+.end
+If the user has his own directory, the last element of the list ("USER
+BLOCK USAGE") is omitted since it would be the same as "DIRECTORY
+BLOCK USAGE".
+.example
+	<pack-type> ::= "PRIMARY PACK" or "SECONDARY PACK"
+	<pack-number> ::= a fixed point number
+	<n> ::= a fixed point number
+.end
+Occurrences of `<n> BLOCKS' are in the form of a Macsyma multiplication
+between a fixnum <n> and the Macsyma symbol BLOCKS.
+
+If no name is supplied, it defaults to the current user's.
+.endfunction
+
+.sec (Ordering Functions,ordering!functions,1)
+
+Aside from declaring a variable to be constant or using options like
+POWERDISP (see below), the only other way in which a user can alter
+the ordering of parts of an expression is to set up special aliases
+for variables which cause them to be alphabetically less than or
+greater than any other variables.  Functions which do this are
+described below.  This technique requires care because although the
+names have been aliased, they display with their original name.  Aside
+from the input/output phase the two names represent two different
+symbols and thus expressions which contain both the original name and
+the alias will not be simplified as the user desires.  This is shown
+in the examples below.
+
+.function (ORDERGREAT,|V1, ..., Vn|)
+sets up aliases for the variables 2V1, ..., Vn* such that
+.bcon
+2V1* > 2V2* > ... > 2Vn* > any other variable not mentioned as an argument.
+
+.endfunction
+
+.function (ORDERLESS,|V1, ..., Vn|)
+sets up aliases for the variables 2V1, ..., Vn* such that
+.bcon
+2V1* < 2V2* < ... < 2Vn* < any other variable not mentioned as an argument. 
+
+.endfunction
+.begin group
+.skip
+ Thus the complete ordering scale is:
+.skip
+.begin nofill
+numbers < numerical constants < declared constants < scalars
+
+< first argument to ORDERLESS < ...
+       < last argument to ORDERLESS < 
+
+< variables which begin with A < ...
+      < variables which begin with Z < 
+
+< last argument to ORDERGREAT < ...
+      < first argument to ORDERGREAT
+
+< declared MAINVARS
+.end
+.end
+.function(ORDERGREATP,|exp1,exp2|)
+returns TRUE  if  2exp21  precedes  2exp11 in the ordering induced by the variable ordering described above.
+.endfunction
+
+.function(ORDERLESSP,|exp1,exp2|)
+returns TRUE if 2exp11 precedes 2exp21 in the ordering induced by the variable ordering described above.
+.endfunction
+
+.function (UNORDER)
+stops the aliasing created by the last use of the above ordering commands.
+ORDERGREAT and ORDERLESS may not be used more than one time each without calling
+UNORDER.
+
+.example
+(C1) A**2+B*X;
+.begin group
+                                        2
+(D1)                             B X + A
+.end
+
+(C2) ORDERGREAT(A);
+(D2)                               DONE
+
+(C3) A**2+B*X;
+.begin group
+                                  2
+(D3)                             A  + B X
+.end
+
+(C4) %-D1;
+.begin group
+                                  2    2
+(D4)                             A  - A
+.end
+
+(C5) UNORDER();
+(D5)                               [A]
+
+.end
+.endfunction
+
+.function(SORT,|list,optional-predicate|)
+sorts the 2list1 using a suitable 2optional-predicate1 of two arguments
+ (such as "<" or ORDERLESSP).  If the 2optional-predicate1 is not given, then MACSYMA's built-in ordering predicate is used.  
+.endfunction
+
+You may $fun<DECLARE> variables to be $flag<MAINVAR>  The ordering
+scale for atoms then is essentially: numbers < constants (e.g. %E,%PI) <
+scalars < other variables < mainvars.  E.g. compare EXPAND((X+Y)^4);
+with (DECLARE(X,MAINVAR), EXPAND((X+Y)^4)); .  (Note: Care should be
+taken if you elect to use the above feature.  E.g. if you subtract an
+expression in which X is a MAINVAR from one in which X isn't a
+MAINVAR, resimplification e.g. with EV(expression,SIMP) may be
+necessary if cancellation is to occur.  Also, if you SAVE an
+expression in which X is a MAINVAR, you probably should also SAVE X.)
+
+.begin group
+.sec (Miscellaneous Functions,miscfun)
+
+.function (TIME,|Di1, Di2, ...|)
+gives a list of the times in milliseconds taken to compute the 2Di1.
+.endfunction
+.end
+
+.function(TIMEDATE,)
+prints out the current date and time.
+.endfunction
+
+.function(WHO,)
+On those systems where such interaction with the operating system is possible,
+prints out the currently logged in users.  Currently this is only the MIT-MC
+system and Multics.
+.endfunction
+
+.function (LOGOUT,)
+On MIT-MC and Multics, causes the user to be logged out and all jobs
+deleted.  This is useful when it is desired to BATCH in a file and
+have the terminal logged out automatically when the computations are
+finished.  (Equivalent to ^Z and :LOGOUT).  On other systems, LOGOUT();
+works like QUIT(); below.
+.endfunction
+
+.function (QUIT,)
+kills the current MACSYMA but doesn't affect the user's other jobs.
+(Equivalent to ^Z and :KILL).  Note: on the Tops-20 version of
+MACSYMA QUIT(); halts the job, but does not kill it.
+.endfunction
+
+.function(TO_LISP,)
+- enters the LISP system under MACSYMA.  This is useful on
+those systems where control-uparrow is not available for this
+function.
+.endfunction
+.function(DDT,)
+- exits from MACSYMA to the operating system level.  (The same
+as control-Z on ITS, or control-C on Tops-20.)
+.endfunction
+.function (READ,|string1, ...|)
+prints its arguments, then reads in and evaluates one expression.  For
+example:  A:READ("ENTER THE NUMBER OF VALUES").
+
+.endfunction
+
+.function(READONLY,|string1,...|)
+prints its arguments, then reads in an expression (which in contrast to READ is not evaluated).
+.endfunction
+
+.function (DEFINE,|f(x1, ...), body|)
+is equivalent to f(x1,...):=''body but when used inside functions it happens at
+execution time rather than at the time of definition of the function which contains it.  $see<evaluation>
+
+.endfunction
+
+.function (LOCAL,|v1, v2, ...|)
+causes the variables 2v1,v2,...1 to be local with respect to all the properties
+in the statement in which this function is used $see<program!blocks>.  LOCAL may only be used
+in BLOCKs, in the body of function definitions or LAMBDA expressions, or in the EV
+function and only one occurrence is permitted in each.
+
+.endfunction
+
+.function (ERROR,|arg1, arg2, ...|)
+will evaluate and print its arguments and then will cause an error return to top
+level MACSYMA or to the nearest enclosing ERRCATCH.  This is useful for breaking out of nested functions if an error
+condition is detected, or wherever one can't type control-G.  The variable ERROR is set to a list describing the error,
+the first of it being a string of text, and the rest the objects in
+question.  $fun<ERRORMSG>(); is the preferred way to get the last error message
+printed out.
+
+$var<ERRORFUN/FALSE> - if set to the name of a function of no arguments will cause
+that function to be executed whenever an error occurs.  This is useful in BATCH files
+where the user may want his MACSYMA killed or his terminal logged out if an error
+occurs.  In these cases ERRORFUN would be set to QUIT or LOGOUT.
+
+.endfunction
+
+.function (ERRCATCH,|exp1, exp2, ...|)
+evaluates its arguments one by one and returns a list of the value of the last
+one if no error occurs.  If an error occurs in the evaluation of any arguments,
+ERRCATCH "catches" the error and immediately returns [] (the empty list).  This
+function is useful in BATCH files where one suspects an error might occur which
+would otherwise have terminated the BATCH if the error weren't caught.
+
+.endfunction
+
+.function(CATCH,|exp1,...,expn|)
+evaluates its arguments one by one; if the structure of the 2expi1 leads to the evaluation of an expression of the form THROW(arg),  then the value of the CATCH is the value of THROW(arg).  This  "non-local return"  thus goes through any depth of nesting to the nearest enclosing CATCH.  There must be a CATCH corresponding to a THROW, else an error is generated.     
+If the evaluation of the 2expi1 does not lead to the evaluation of any THROW then the value of the CATCH is the value of  2expn1.  
+
+.example
+
+(C1) G(L):=CATCH(MAP(LAMBDA([X],
+       IF X<0 THEN THROW(X) ELSE F(X)),L))$
+
+(C2) G([1,2,3,7]);
+(D2) 			 [F(1), F(2), F(3), F(7)]
+
+(C3) G([1,2,-3,7]);
+(D3) 				    - 3
+
+.end
+
+The function G returns a list of  F of each element of L  if  L consists only of non-negative numbers; otherwise, G "catches"  the first negative element of L and "throws" it up.
+
+.endfunction
+
+.function(THROW,exp)
+evaluates  2exp1 and throws the value back to the most recent CATCH.  THROW is used with CATCH as a structured nonlocal exit mechanism.
+
+.endfunction
+
+.function (BREAK,|arg1, ...|)
+will evaluate and print its arguments and will then cause a
+(MACSYMA-BREAK) at which point the user can examine and change his environment.  Upon
+typing EXIT; the computation resumes. (see Chapter $ref<debugmac>)
+
+.endfunction
+
+.function(RESET)
+causes all MACSYMA options to be set to their default values.  (Please
+note that this does not include features of terminals such as LINEL
+which can only be changed by assignment as they are not considered to
+be computational features of MACSYMA.  See the $fun<TTY_INIT>();
+function for that purpose.)
+
+.endfunction
+
+.function (%TH,i)
+is the 2i1th previous computation.  That is, if the next expression to be computed is
+D(j) this is D(j-2i1).  This is useful in BATCH files or for referring to a group of D
+expressions.  For example, if SUM is initialized to 0 then FOR I:1 THRU 10 DO
+SUM:SUM+%TH(I) will set SUM to the sum of the last ten D expressions.
+
+.endfunction
+
+.function (CONCAT,|arg1, arg2, ...|)
+evaluates its arguments and returns the concatenation of their
+values resulting in a name or a quoted string (see $ref<names> and $ref<quoted!strings>) the type being given
+by that of the first argument.  Thus if X is bound to 1 and D is unbound then
+CONCAT(X,2)="12" and CONCAT(D,X+1)=D2.
+
+.endfunction
+
+.function (GETCHAR,|a, i|)
+returns the 2i1th character of the
+quoted string or atomic name 2a1.  This function is useful
+in manipulating the LABELS list.
+
+.endfunction
+
+.function (STATUS,arg)
+will return miscellaneous status information about the user's MACSYMA
+depending upon the 2arg1 given.  Permissible arguments and results are as follows:
+
+.skip 1
+.begin preface 0
+TIME - the time used so far in the computation.
+
+DAY - the day of the week.
+
+DATE - a list of the year, month, and day.
+
+DAYTIME - a list of the hour, minute, and second.
+
+RUNTIME - accumulated cpu time times the atom "MSEC".
+
+REALTIME - the real time (in sec) elapsed since the user started up
+his MACSYMA.
+
+GCTIME - the garbage collection time used so far in the current computation.
+
+TOTALGCTIME - gives the total garbage collection time used in MACSYMA
+so far.
+
+FREECORE - the number of blocks of core your MACSYMA can expand before
+it runs out of address space.  (A block is 1024 words.)  Subtracting
+that value from 250*BLOCKS (the maximum you can get on MC) tells you
+how many blocks of core your MACSYMA is using up.
+(A MACSYMA with no "fix" file starts at approx. 191 blocks.)
+
+FEATURE - gives you a list of system features. At present the list for
+MC is: MACSYMA, NOLDMSG, MACLISP, PDP10, BIGNUM, FASLOAD, HUNK,
+FUNARG, ROMAN, NEWIO, SFA, PAGING, MC, and ITS.  Any of these
+"features" may be given as a second argument to STATUS(FEATURE,...);
+If the specified feature exists, TRUE will be returned, else FALSE.
+Note: these are system features, and not really "user related".
+
+For information about your files, see the $fun<FILEDEFAULTS>(); command.
+
+.end
+.endfunction
+.function(SSTATUS,|feature,package|)
+- meaning SET STATUS.  It can be used to
+SSTATUS(FEATURE,HACK_PACKAGE) so that STATUS(FEATURE,HACK_PACKAGE)
+will then return TRUE.  This can be useful for package writers, to
+keep track of what FEATURES they have loaded in.
+.endfunction
+
+.function (ALARMCLOCK,|arg1, arg2, arg3|)
+will execute the function of no arguments whose name is 2arg31 when
+the time specified by 2arg11 and 2arg21 elapses.  If 2arg11 is
+the atom "TIME" then 2arg31 will be executed after 2arg21 seconds
+of real-time has elapsed while if 2arg11 is the atom "RUNTIME" then
+2arg31 will be executed after 2arg21 milliseconds of cpu time. If
+2arg21 is negative then the 2arg11 timer is shut off.
+
+.endfunction
+
+
+.function(LABELS,char)
+takes a char C,D,or E as arg and generates a list of all C-labels,D-labels, or E-labels, respectively.  (If you've generated many E-labels via SOLVE, then FIRST(REST(LABELS(C))); reminds you what the last C-label was.)
+LABELS will take as argument any symbolic name, so if you have reset INCHAR,
+OUTCHAR, or LINECHAR, it will return the list of labels whose first
+character matches the first character of the argument you give to LABELS.
+
+.endfunction
+
+.function(ALIAS,|newname1, oldname1, newname2, oldname2, ...|) 
+provides an alternate name for a (user or system) function, variable, array,
+etc.  Any even number of arguments may be used.  Nouns are handled via aliases.
+
+.endfunction
+
+.function(TTY_INIT,)
+- ("initialize TTY") is an MC-only command of no
+arguments which can be used if you change your TCTYP after starting up
+a MACSYMA or when you reown a MACSYMA on a terminal with different
+characteristics from the terminal from which the MACSYMA was disowned.
+TTY_INIT(); informs MACSYMA of your terminal's new characteristics,
+e.g.  linelength, pagesize, etc.
+.endfunction
+
+.sec(|Options and Variables for I/O, Status, and Display|,ioptions,1)
+
+.skip 1
+$var<GRIND/FALSE> if TRUE will cause the $fun<STRING>,
+$fun<STRINGOUT>, and $fun<PLAYBACK> commands to use "grind" mode
+instead of "string" mode.  For PLAYBACK, "grind" mode can also be
+turned on (for processing input lines) by specifying GRIND as an
+option.
+
+$var<DISPLAY2D/TRUE> - if set to FALSE will cause the standard
+display to be a string (1-dimensional) form rather than a display
+(2-dimensional) form.  This may be of benefit for users on printing
+consoles who would like to conserve paper.
+
+$var<LINEDISP/TRUE> - Allows the use of line graphics in the
+drawing of equations on those systems which support them (e.g. the
+Lisp Machine).  This can be disabled by setting LINEDISP to FALSE.  It
+is automatically disabled during WRITEFILE.
+
+$var<DISPLAY_FORMAT_INTERNAL/FALSE> - if set to TRUE will cause
+expressions to be displayed without being transformed in ways that
+hide the internal mathematical representation.  The display then
+corresponds to what the INPART command returns rather than the PART
+command.  Examples:
+.example
+User       PART       INPART
+
+a-b;      A - B     A + (- 1) B
+
+            A            - 1
+a/b;        -         A B
+            B
+                       1/2
+sqrt(x);   SQRT(X)    X
+
+           4 X          4
+X*4/3;     ---          - X
+            3           3
+.end
+
+$var<SHOWTIME/FALSE> - if TRUE causes MACSYMA to print the cpu time
+taken by each computation. This figure does not include I/O time
+except in the case of the time given at the end of running a batch
+file.  By setting SHOWTIME:ALL, in addition to the cpu time MACSYMA
+now also prints out (when not zero) the amount of time spent in
+garbage collection (gc) in the course of a computation.  This time is
+of course included in the time printed out as "Total time=" .
+
+(It should be noted that since the "time=" time only includes
+computation time and not any intermediate display time, and since it
+is difficult to ascribe "responsibility" for gc's, the gctime printed
+will include all gctime incurred in the course of the computation and
+hence may in rare cases even be larger than "time=").
+
+$var<LASTTIME/>  - the time to compute the last expression in milliseconds presented as a list of "time" and "gctime" .
+
+$var<TIMER_DEVALUE/FALSE> - when set to TRUE then the time
+charged against a function is the time spent dynamically inside the
+function devalued by the time spent inside other timed functions.
+
+$var<OPTIONSET/FALSE> - if TRUE, MACSYMA will print out a message whenever a
+MACSYMA option is reset.  This is useful if the user is doubtful of the spelling
+of some option and wants to make sure that the variable he assigned a value to
+was truly an option variable.
+
+$var<NOLABELS/FALSE> - if TRUE then no labels will be bound except for E lines
+generated by the solve functions (sect. 6.3).  This is most useful in the "BATCH"
+mode where it eliminates the need to do KILL(LABELS) in order to free up
+storage.
+
+$var<CURSORDISP/TRUE> - if TRUE, causes expressions to be drawn by
+the displayer in logical sequence.  This only works with a console
+which can do cursor movement.  If FALSE, expressions are simply
+printed line by line.  CURSORDISP is FALSE when a WRITEFILE is in
+effect.
+
+$var<BFTRUNC/TRUE> causes trailing zeroes in non-zero bigfloat numbers not to be displayed.  Thus, if BFTRUNC:FALSE, BFLOAT(1); displays as 1.000000000000000B0. Otherwise, this is displayed as 1.0B0.
+
+$var<EXPTDISPFLAG/TRUE> - if TRUE, MACSYMA displays expressions with negative
+exponents using quotients e.g., X**(-1) as 1/X.
+
+$var<NEGSUMDISPFLAG/TRUE> - when TRUE, X-Y displays as X-Y
+instead of as -Y+X.  Setting it to FALSE causes the special check in
+display for the difference of two expressions to not be done.  One
+application is that thus A+%I*B and A-%I*B may both be displayed the
+same way.
+
+$var<%EDISPFLAG/FALSE> - if TRUE, MACSYMA displays %E to a negative exponent as
+a quotient, i.e. %E^-X as 1/%E^X.
+
+$var<SQRTDISPFLAG/TRUE> - if FALSE causes SQRT to display with exponent 1/2.
+
+$var<PFEFORMAT/FALSE> - if TRUE will cause rational numbers to display in a
+linear form and denominators which are integers to display as rational number
+multipliers.
+
+
+$var<DISPFLAG/TRUE> - if set to FALSE within a BLOCK $see<program!blocks> will
+inhibit the display of output generated by the solve functions $see<SOLVE> called
+from within the BLOCK.  Termination of  the BLOCK with a dollar sign, $, sets DISPFLAG to FALSE.
+
+$var<LOADPRINT/TRUE> -  governs the printing of messages accompanying loading of files.  The following options are available: TRUE means always print the message; 'LOADFILE means print only when the LOADFILE command is used; 'AUTOLOAD means print only when a file is automatically loaded in (e.g. the integration file SIN FASL); FALSE means never print the loading message.
+
+
+$var<NOUNDISP/FALSE> - if TRUE will cause NOUNs to display with a single quote.
+This switch is always TRUE when displaying function definitions.
+
+$var<POWERDISP/FALSE> - if TRUE will cause sums to be displayed with their
+terms in the reverse order.  Thus polynomials would display as truncated
+power series, i.e., with the lowest power first.
+
+$var<BOTHCASES/FALSE> - if TRUE will cause MACSYMA to retain lower case text as well as upper case. Note, however, that the names of any MACSYMA special variables or functions must be typed in upper case.
+
+$var<STARDISP/FALSE> - if TRUE will cause multiplication to be displayed explicitly with an  * between operands.
+
+$var<DSKGC/FALSE> - if TRUE will cause user defined values, functions,
+arrays, and line labelled expressions to be automatically stored on
+disk whenever the system determines that the available in-core space
+is getting low (see also $ref<autostor>).
+
+$var<LABELS/> - a list of C, D, and E lines which are bound.
+
+$var<INCHAR/C> - the alphabetic prefix of the names of expressions typed by the
+user.
+
+$var<LINECHAR/E> - the alphabetic prefix of the names of intermediate displayed
+expressions.
+
+$var<OUTCHAR/D> - the alphabetic prefix of the names of outputted expressions.
+
+Note:  The first alphabetic character of INCHAR,
+OUTCHAR, and LINECHAR are assumed to be different.
+
+$var<LINENUM/> - the line number of the last expression.
+
+$var<PROMPT/_> is the prompt symbol of the DEMO function,
+PLAYBACK(SLOW) mode, and (MACSYMA-BREAK).  (see chapter $ref<debugmac>).
+
+$var<CURSOR/$> is the prompt symbol of the MACSYMA editor.  (see chapter
+$ref<macedit>).
+
+$var<PAGEPAUSE/> - is set by MACSYMA according to what the
+system knows about your terminal type.  If it is set to TRUE, then
+"more" processing, which involves the printing of --More Display?-- or
+--Pause-- at the bottom of your screen or after so many lines on a
+printing terminal, and pausing, will be enabled.  It may be set to
+FALSE to turn off the "more" processing on a display terminal.
+PAGEPAUSE is sometimes useful in batch files on slow lines where you
+just wish to watch the output run past, and can keep up with the line
+speed well enough.  On MC, you can also do this by typing ^_M
+(control-underscore M) which toggles "more" processing.
+
+$var<MOREWAIT/FALSE> - Controls the action of more processing.  In its
+default FALSE setting, a space typed at --More Display?-- will
+continue the display, a rubout (or delete) will flush the display of
+the expression (to both the terminal and any WRITEFILE which is open)
+and anything else will flush only output to the terminal.  Type-ahead
+is allowed (i.e. you can begin typing the next command-line and the
+display to the console will be flushed and your typing will be saved
+and put on the C-line).  "carriage return" is frequently used for this
+last function of just flushing the output to the terminal.  If
+MOREWAIT is set to TRUE, then space and rubout work as above, but only
+carriage return is enabled to flush display to the terminal, and
+type-ahead is ignored.  If MOREWAIT is set to ALL, then only space (to
+continue output) and carriage return (to flush it) are enabled, and
+any other characters (including rubout) are ignored.  This may be
+useful for users on noisy connections where rubouts transmitted by the
+phone line sometimes flush output accidently.
+
+$var<GENINDEX/I> - the alphabetic prefix of the index of summation for
+generated sums. (The values of GENINDEX and of the above four
+variables may be any number of characters though the default is a
+single character.)
+
+$var<IBASE/10> - the base for inputting numbers.
+
+$var<OBASE/10> - the base for display (output) of numbers.
+
+$var<LINEL/> - the length of the printed line on the terminal.  Also used for
+plotting (see Chapters $ref<simplot> and $ref<plot2>).
+
+$var<PLOTHEIGHT/> - the height of the area used for plotting (see Chapters $ref<simplot> and $ref<plot2>).
+
+$var<VERSION/300> - is the version number of MACSYMA.  This could be useful if
+the user wants to label his output.
+
+$var<INFOLISTS/> is the list of all the information lists which are in MACSYMA:
+.skip 
+.begin nofill
+[LABELS, VALUES, FUNCTIONS, MACROS, ARRAYS, MYOPTIONS, 
+
+         PROPS, ALIASES, RULES, GRADEFS, DEPENDENCIES,
+
+         LET_RULE_PACKAGES]
+.end
+.skip
+Initially, all these information lists are empty, except
+LET_RULE_RACKAGES.  As the user proceeds with his computation, he may
+examine these lists when necessary.
+
+
+.next page
+.sec (Functions for Translation and Compilation,compilation,1)
+
+Translating functions and packages written in MACSYMA into Lisp, and
+then compiling the Lisp code will result in faster running code.  This
+is recommended for well worked out routines which are going to be used
+a lot.  When MACSYMA code is going to be translated or compiled,
+declarations as to data types must be made.  The first two functions
+below do this.
+
+.function (MODE_DECLARE,|y1, mode1, y2, mode2, ...|)
+is used to declare the modes of variables and functions for subsequent
+translation or compilation of functions. Its arguments are pairs
+consisting of a variable yi, and a mode which is one of BOOLEAN,
+FIXNUM, NUMBER, RATIONAL, or FLOAT.  Each 2yi* may also be a list of
+variables all of which are declared to have 2modei*.
+
+.scon
+If 2yi* is an array, and if every element of the array which is
+referenced in the function has a value then ARRAY(2yi*, COMPLETE,
+dim1, dim2, ...) rather than ARRAY(2yi*, dim1, dim2, ...) should be used
+when first declaring the bounds of the array. If all the elements of
+the array are of mode FIXNUM (FLOAT), use FIXNUM (FLOAT) instead of
+COMPLETE.  Also if every element of the array is of the same mode, say
+2m*, then MODE_DECLARE(COMPLETEARRAY(2yi*),2m*)) should be used
+for efficient translation.  Also numeric code using arrays can be made
+to run faster by declaring the expected size of the array, as in:
+.scon
+.once center
+MODE_DECLARE(COMPLETEARRAY(A[10,10]),FLOAT)
+.scon
+for a floating point number array which is 10 x 10.
+Array functions translate and compile correctly.  This includes the
+simple array function  FA[J]:=J^2;  and the complex one  FC[J](X):=X^J; 
+which is actually a definition of a class of functions.  (It is 
+implemented in translated code as an upward funarg.)
+
+Additionally one may declare the mode of the result of a function by using
+FUNCTION(F1,F2,...) as an argument;  here 2F1,F2,...1 are the names of functions.  For example the expression,
+.scon
+MODE_DECLARE([FUNCTION(F1,F2,...),X],FIXNUM,Q,COMPLETEARRAY(Q),FLOAT) 
+.scon
+declares that X and the values returned by F1,F2,... are single-word
+integers and that Q is an array of floating point numbers.
+MODE_DECLARE is used either immediately inside of a function definition
+(see below) or at top-level for global variables.
+
+.endfunction
+Sometimes one wants to declare a value to be a list of flonums, a list
+of lists of flonums, or other compound data object.  Since macros have
+been introduced into macsyma ($see<macr>) it is now possible to
+implement these compound data types in a simple way.  The required
+primitive is $fun<MODE_IDENTITY>, a special form of two arguments.  Its
+first argument is a primitive value mode name as given to MODE_DECLARE
+(i.e. [FLOAT,FIXNUM,NUMBER, LIST,ANY]), and the second argument is an
+expression which is evaluated and returned as the value of
+MODE_IDENTITY.  However, if the return value is not allowed by the
+mode declared in the first argument, an error or warning is signalled.
+The important thing is that the MODE of the expression as determined
+by the Macsyma-to-Lisp translator, will be that given as the first
+argument, independent of anything that goes on in the second argument.
+
+E.g. X:3.3; MODE_IDENTITY(FIXNUM,X); is an error.  MODE_IDENTITY(FLONUM,X) 
+returns 3.3 . 
+
+This has a number of uses, e.g., if you knew that FIRST(L) returned a
+number then you might write MODE_IDENTITY(NUMBER,FIRST(L)).  However,
+a more efficient way to do it would be to define a new primitive,
+.example
+FIRSTNUMB(X)::=BUILDQ([X],MODE_IDENTITY(NUMBER,X))$
+.end continue
+and use FIRSTNUMB every time you take the first of a list of numbers.
+
+This is the simplest example, and it doesn't show the full power of the 
+method. 
+
+There is a switch, $var<UNDECLAREDWARN/COMPFILE> to warn about
+undeclared variables. It is recommended to do
+MODE_DECLARE(<variable>,ANY) to declare a variable to be a general
+macsyma variable (i.e. not limited to being FLOAT or FIXNUM).  The
+extra work in declaring all your variables in code to be compiled
+should pay off.  However, there are four relevant settings for UNDECLAREDWARN
+.example
+.begin turn on "\" tabs 15;
+SETTING\ACTION
+
+FALSE\never print warning messages.
+COMPFILE\warn when in COMPFILE
+TRANSLATE\warn when in TRANSLATE and when TRANSLATE:TRUE
+ALL\warn in COMPFILE and TRANSLATE
+.end end
+To assist in making sure the MACSYMA code to be translated is reasonably
+efficient, the following two functions are useful:
+
+.begin turn on ""
+.function(OPTIMIZE,exp)
+returns an expression that produces the same value and
+side effects as 2exp1 but does so more efficiently by avoiding the recomputation of common subexpressions.  OPTIMIZE also has the side effect of "collapsing" its argument so that all common subexpressions are shared.
+
+$var<OPTIMPREFIX/%> - The prefix used for generated symbols by
+the OPTIMIZE command.
+
+.example
+.begin group
+(C1) DIFF(%,X,2);
+
+			2	     2		    2		 2
+	       2   Y + X        Y + X	       Y + X	    Y + X
+	    4 X  %E	    2 %E	 4 X %E	        2 %E
+(D1) 	    ------------- + ---------- - ------------ + ----------
+		Y + X	      Y + X		  2	        3
+					   (Y + X)	 (Y + X)
+.end
+(C2) OPTIMIZE(%);
+.begin group
+					       2	 Y + T2	 
+(D2) BLOCK([%1, %2, %3, %4], %1 : Y + X, %2 : X , %3 : %E      ,  
+								 
+
+                     1				4 X %3	 2 %3
+   		%4: --,	 4 %2 %4 %3 + 2 %4 %3 - ------ + ----)
+                    %1				   2	   3
+						 %1	 %1
+
+.end
+.end
+.endfunction
+.end
+
+.function(COLLAPSE,exp)
+"collapses" its argument by causing all of its
+common (i.e. equal) subexpressions to share (i.e. use the same cells),
+thereby saving space.  (COLLAPSE is a subroutine used by the OPTIMIZE
+command.)  Thus, calling COLLAPSE may be useful before using FASSAVE
+or after loading in a SAVE file.  You can collapse several expressions
+together by using COLLAPSE([expr1,...,exprN])$.  Similarly, you can
+collapse the elements of the array A by doing
+COLLAPSE(LISTARRAY('A))$.
+.endfunction
+The function FLOATDEFUNK (see below) offers some automation of
+OPTIMIZE and COLLAPSE, and helps with some MODE_DECLAREs.
+
+.function(COMPILE,|function1,function2,...|)
+compiles the functions, it uses the name
+of 2function1* as the first name of the file to put the lisp output.
+
+The COMPILE command is a convenience feature in macsyma. It handles
+the calling of the function COMPFILE, which translates macsyma
+functions into lisp, the calling of the lisp compiler on the file
+produced by COMPFILE, and the loading of the output of the compiler,
+known as a FASL file, into the macsyma. It also checks the compiler
+comment listing output file for certain common errors. All these
+things can be done manually of course, but using COMPILE, with its
+convenient default actions, makes some work go much faster, mainly use
+of PLOT2 and numerical integration.
+
+COMPILE(ALL); or COMPILE(FUNCTIONS) will compile all functions.
+Also, see FLOATDEFUNK, below.
+
+COMPILE(); causes macsyma to prompt for arguments.
+
+COMPILE(2[file-name],function1,function2,...*); N.B. all arguments are 
+evaluated, just like a normal function (it is a normal function!).
+Therefore, if you have variables with the same name as part of the file
+you can not ignore that fact.
+
+$var<DEFAULT_DIRECTORY_COMPILE/STATUS(UDIR)>
+STATUS(UDIR) is your "home" directory. And it is set at DDT level.
+COMPILE is not affected by previous LOADFILEs, although it does use
+LOADFILE to load the FASL file.
+
+$var<FIRST_FILENAME_COMPILE/FALSE>
+If you are doing a lot of compilations and always want the same file
+to be used as scratch, you might set this.
+
+$var<FUNCTIONS_TO_COMPILE/FALSE>
+It is not usually useful to set this, athough it can save some typing
+if you are changing and recompiling the same functions a lot.
+
+$var<COMPILER_CALL/INFERIOR> can also be set to DDT. This controls
+whether the lisp compiler is called as an inferior job to macsyma
+or by valreting to toplevel DDT.
+.endfunction
+.function(COMPILE_LISP_FILE,|"input filename"|)
+can be used in conjunction with
+TRANSLATE_FILE("filename").  It takes an optional second
+argument of "output filename".   For convenience you might define
+.example
+	Compile_and_load(FILENAME):=
+	 LOAD(COMPILE_LISP_FILE(TRANSLATE_FILE(FILENAME)[2]))[2]);
+.end
+These file-oriented commands are to be preferred over the use of
+COMPILE, COMPFILE, and the TRANSLATE SAVE combination.
+.endfunction
+.skip
+.if lines < 10 then next page
+.once nofill center
+EXAMPLES
+
+In order to get the most out of compilation, declarations must be made
+to describe your function types and variables. The basic idea of
+compilation is for the computer to make certain calculations only
+once, that is, at compile time.
+
+F(X,Y):=X*Y; If what you want to do is call F(3.2,2.2) then there is
+some inefficiency, because you could have also done F('X,'X) and
+expected to receive back X^2, and it takes many times longer for
+macsyma to figure out that it needs to call the PDP-10 floating point
+multiply instruction, than it does for the PDP-10 to execute this
+instruction.
+
+F(X,Y):=(MODE_DECLARE(X,FLOAT,Y,FLOAT),X*Y); tells macsyma that X and Y
+are the equivalent of the Fortran REAL, and when you compile or
+TRANSLATE the function, it can use that information to decide to use
+the PDP-10 multiply instruction.
+
+In general, the MODE_DECLARE should appear as the first "function call"
+where ever new variables are introduced. Variables should be
+MODE_DECLAREd as soon as they are introduced, not before, or after. By
+"introduced" we mean the lexical contour in which they appear. The
+following things, and only these things, mark the beginning of a
+contour:
+
+":="     starts a contour for all the formal parameters, and for
+all free variables used in the function.
+
+"BLOCK", starts a contour for all of the "block" variables.
+
+"DO" starts a contour for its "FOR" variable, presently the "FOR"
+variable should be declared in the next outer contour though, this
+bug will be soon fixed. Then a proper example would be
+FOR X:X1 THRU XN STEP DX DO(MODE_DECLARE(X,FLOAT),SUM:SUM+F(X)*DX)
+
+"LAMBDA" starts a contour for its lambda variables.
+
+Certain constructs, such as SUM, have an implied contour of limited scope.
+e.g. SUM(J^2,J,1,N). In this case, it is not the responsibility of the
+user to declare the mode of the variable "J", which is
+bound by the construct. The code which handles the SUM can look at
+those modes of the lower and upper limits and infer the mode of "J".
+.example
+F(X,Y):=(MODE_DECLARE([X,Y],FLOAT),SIN(4*X)+SQRT(1+X^2)*COS(X));
+F(X,Y):=(MODE_DECLARE([X,Y,A,B],FLOAT,N,INTEGER), SQRT(A*B*X+Y^N));
+F(X):=(MODE_DECLARE(X,FLOAT),
+       BLOCK([P,Q],
+             MODE_DECLARE([P,Q],FLOAT),
+             P:SIN(X)*X^2,
+	     Q:4*X^2-X+14,
+	     IF X>0 THEN SQRT(P^2+ABS(P*Q)+SIN(Q)+1)
+                     ELSE P+Q/10));
+
+/* dY/dX=F(X,Y), [X0,Y0] and X_FIN and DX */
+.end
+Declaring that a function will return a floating point number.
+.example
+EULER(F,X0,Y0,X_FIN,DX):=
+     (MODE_DECLARE([X0,Y0,X_FIN,DX],FLOAT,FUNCTION(F),FLOAT),
+      BLOCK([Y:Y0,X:X0],
+	    MODE_DECLARE([Y,X],FLOAT),
+	    LOOP, IF X>=X_FIN THEN RETURN(Y),
+	    Y:Y+DX*APPLY(F,[X]),   X:X+DX,
+	    GO(LOOP)));
+.end
+Or, without the GO TO,
+.example
+EULER(F,X0,Y0,X_FIN,DX):=
+     (MODE_DECLARE([X0,Y0,X_FIN,DX],FLOAT,FUNCTION(F),FLOAT),
+      BLOCK([Y:Y0],
+	    MODE_DECLARE([Y,X],FLOAT),
+	    FOR X:X0 THRU X_FIN STEP DX 
+               DO Y:Y+DX*APPLY(F,[X]),
+	    Y);
+.end
+Declaring arrays, for example, A is an array that returns some number,
+.example
+SUM_ARRAY(A):=(MODE_DECLARE(ARRAY(A),NUMBER),
+               IF LENGTH(ARRAYDIMS(A))#1 
+               THEN ERROR("Takes only 1 dim array"),
+	       BLOCK([N:ARRAYDIMS(A)[1],SUM:0],
+	             MODE_DECLARE([N,J],FIXNUM,SUM,NUMBER),
+		     FOR J:1 THRU N DO SUM:SUM+A[J],
+		     SUM));
+.end
+$fun<FLOATDEFUNK> is a utility for making floating point functions from
+mathematical expression. It will take the input expression and FLOAT it,
+then OPTIMIZE it, and then insert MODE_DECLARATIONS for all the variables.
+This is THE way to use ROMBERG, PLOT2, INTERPOLATE, etc. e.g.
+EXP:some-hairy-macsyma-expression;
+FLOATDEFUNK('F,['X],EXP); will define the function F(X) for you.
+
+.example
+F():=BLOCK([MY_FLAG:TRUE],MODE_DECLARE(MY_FLAG,SPECIAL),FOOBAR())
+
+F(U,EXP):=(MODE_DECLARE(FUNCTION(MY_MAP(CLOSURE,ANY)),ANY),
+	   MY_MAP(LAMBDA([X],U:Q(U,X)),EXP));
+.end
+
+
+.function(TRANSLATE_FILE,file)
+- translates a file of MACSYMA code (a BATCH file) into a file
+of LISP code.  It takes one or two arguments.  The first argument is
+the name of the MACSYMA file, and the optional second argument is the
+name of the LISP file to produce.  The second argument defaults to the
+first argument with second file name the value of
+TR_OUTPUT_FILE_DEFAULT which defaults to TRLISP.  E.g.
+TRANSLATE_FILE(TEST); will translate a file called TEST > into TEST TRLISP.
+It also produces is a file of translator warning
+messages of various degrees of severity.  The second file name is
+always UNLISP.  This file contains valuable
+information for tracking down bugs in translated code.  See also the
+$fun<MAKE_INDEX_FILE> in $ref<batchap> for hints on checking BATCH files
+before translating them.
+.endfunction
+
+.function (TRANSLATE,|f1, f2, ...|)
+ translates the user defined functions 2f1,f21,... from the MACSYMA
+language to LISP (i.e. it makes them EXPRs).  This results in a gain
+in speed when they are called.  The functions should include a call to
+MODE_DECLARE at the beginning when possible in order to produce more
+efficient code.  For example:
+.example
+F(X1,X2,...):=BLOCK([v1,v2,...],
+              MODE_DECLARE(v1,mode1,v2,mode2,...),...)
+.end
+.scon
+where the X1,X2,... are the parameters to the function and the v1,v2,... are the local
+variables.  The names of translated functions are added to the PROPS lists $see<property!specification>.  Functions
+should not be translated unless they are fully debugged.
+
+TRANSLATE(FUNCTIONS) or TRANSLATE(ALL)  means translate all functions.
+
+$var<TRANSLATE/FALSE> - If TRUE, causes automatic translation of a
+user's function to LISP.  Note that translated functions may not run
+identically to the way they did before translation as certain
+incompatabilities may exist between the LISP and MACSYMA versions.
+Principally, the RAT function with more than one argument and the
+RATVARS function $see<rational!functions> should not be used if any
+variables are MODE_DECLAREd CRE.
+
+$var<TRANSCOMPILE/FALSE> - if true, TRANSLATE will generate the
+declarations necessary for possible compilation.  The COMPFILE command
+uses TRANSCOMPILE:TRUE;.
+
+$var<SAVEDEF/TRUE> - if TRUE will cause the MACSYMA version of a
+user function to remain when the function is TRANSLATEd.  This permits
+the definition to be displayed by DISPFUN and allows the function to
+be edited.  If SAVEDEF is FALSE, the names of translated functions are
+removed from the FUNCTIONS list.  If SAVEDEF is set to ALL, then if a
+TRANSLATEd function is redefined, it's TRANSLATEd definition will still
+remain, although the MACSYMA version of its definition will be changed.
+If the function had been TRACEd, then the tracing is deleted.
+
+$var<TRANSRUN/TRUE> - if FALSE will cause the interpreted version of all
+functions to be run (provided they are still around) rather than the translated
+version.
+
+$var<TRANSBIND/FALSE> - if TRUE removes global declarations in the
+local context.  This applies to variables which are formal parameters
+to functions.
+
+$var<PREDERROR/TRUE> - the setting of this variable to FALSE is not
+currently supported in the translator.
+
+One can translate functions stored in a file by giving TRANSLATE an argument
+which is a file specification.  This is a list of the form [fn1,fn2,DSK,dir]
+where fn1 fn2 is the name of the file of MACSYMA functions, and dir is the name
+of a file directory.
+
+Such a file may contain declarations involving DECLARE,MODE_DECLARE, or
+MATCHDECLARE in addition to the function definitions.  The file should
+not use %, since % is not maintained when the translated file is
+loaded.
+
+TRANSLATE will return DONE when translation is accomplished.  In the
+case of a file translation, the file containing the translated code is
+named fn1 LISP on the disk directory dir.  This file of LISP code may
+be read into MACSYMA by using the $fun<LOADFILE> or $fun<LOAD>
+function, $see<disk!storage>.
+.endfunction
+
+.function(COMPFILE,|[filespec],f1,f2,...|)
+will translate MACSYMA function definitions (if necessary) and write out
+MACSYMA function definitions and other expressions into a disk file which
+can be read into the compiler. The 2filespec* (optional) specifies the
+file to be written.  The default for users with a directory is CMPFIL > and
+the standard MACSYMA default file for other users.  The file written contains
+declarations used by the compiler.  When $var<COMPGRIND/FALSE> is TRUE the
+function definitions are pretty-printed.
+The remaining arguments are atomic function names.  COMPFILE([2filespec1],FUNCTIONS); will translate all FUNCTIONS.
+.endfunction
+
+On MC,
+there is a version of macsyma with the macsyma to lisp translator 
+pre-loaded into it.  It is available from DDT level by typing :TM (for 
+TranslateMacsyma).  When given JCL it takes it as a file name to give 
+to TRANSLATE_FILE, and proceeds without further user interaction.
+With no JCL it gives a regular macsyma "(C1)" line.
+A user init file with second name "TM" will be loaded if it exists.
+(You might want to link such a "TM" init file to your regular MACSYM
+init file so that a TM job will use your standard init.)
+
+There is a top-level special form
+which is a general convenience
+feature that is very useful to package writers.
+Basicaly
+.inline function(EVAL_WHEN,|key-words,form1,form2,...|)
+has
+the following semantics: 2key-words1 is a single key-word
+or a list of keywords from the set BATCH,LOADFILE,TRANSLATE.
+The 2forms1 are evaluated when BATCHing if the BATCH keyword is present,
+they are evaluated when the file is being translated with
+TRANSLATE_FILE when the TRANSLATE keyword is present, and
+the forms are evaluated when the translated file is LOADFILEd
+if the LOADFILE keyword is present. This feature can only be
+used at TOPLEVEL. Here is an example usage:
+.example
+EVAL_WHEN(BATCH,TTYOFF:TRUE)$
+
+EVAL_WHEN([BATCH,LOADFILE],
+          IF NOT STATUS(FEATURE,"MY PACKAGE") 
+             THEN LOADFILE(FOO,FASL,DSK,BAR),
+          SSTATUS(FEATURE,"MY PACKAGE"),
+          INITIALIZE_MY_PACKAGE())$
+/* special things might need to be in the environment to translate
+   my package. */
+
+EVAL_WHEN(TRANSLATE,
+          IF NOT STATUS(FEATURE,"MY PACKAGE MODEDECLARATIONS"),
+             THEN LOADFILE(FOO,MODES,DSK,BAR),
+          MODE_DECLARE(EXTRA STUFF...))$
+
+
+ ....MY PACKAGE .....$
+
+EVAL_WHEN(BATCH,TTYOFF:FALSE)$
+.end
+.subsec(|Switches which affect the Translator and Compiler|,trswitch)
+
+$var<TR_ARRAY_AS_REF/TRUE> - If TRUE runtime code uses the value
+of the variable as the array.
+
+$var<TR_BOUND_FUNCTION_APPLYP/TRUE> - Gives a warning if a bound
+variable is found being used as a function.
+
+$var<TR_FILE_TTY_MESSAGESP/FALSE> - Determines whether messages
+generated by TRANSLATE_FILE during translation of a file will be sent
+to the TTY.  If FALSE (the default), messages about translation of the
+file are only inserted into the UNLISP file.  If TRUE, the messages
+are sent to the TTY and are also inserted into the UNLISP file.
+
+$var<TR_FLOAT_CAN_BRANCH_COMPLEX/TRUE> - States whether the arc
+functions might return complex results.  The arc functions are SQRT,
+LOG, ACOS, etc.  e.g. When it is TRUE then ACOS(X) will be of mode ANY
+even if X is of mode FLOAT. When FALSE then ACOS(X) will be of mode
+FLOAT if and only if X is of mode FLOAT.
+
+$var<TR_FUNCTION_CALL_DEFAULT/GENERAL> - FALSE means give up and call
+MEVAL, EXPR means assume Lisp fixed arg function.  GENERAL, the
+default gives code good for MEXPRS and MLEXPRS but not MACROS.
+GENERAL assures variable bindings are correct in compiled code.  In
+GENERAL mode, when translating F(X), if F is a bound variable, then it
+assumes that APPLY(F,[X]) is meant, and translates a such, with
+apropriate warning. There is no need to turn this off.
+With the default settings, no warning messages implies
+full compatibility of translated and compiled code with the macsyma 
+interpreter.
+
+$var<TR_GEN_TAGS/FALSE> - If TRUE, TRANSLATE_FILE generates a
+TAGS file for use by the text editor.
+
+$var<TR_NUMER/FALSE> - If TRUE numer properties are used for
+atoms which have them, e.g. %PI.
+
+$var<TR_OPTIMIZE_MAX_LOOP/100> - The maximum number of times the
+macro-expansion and optimization pass of the translator will loop in
+considering a form.  This is to catch MACRO expansion errors, and
+non-terminating optimization properties.
+
+$var<TR_OUTPUT_FILE_DEFAULT/TRLISP> - This is the second file
+name to be used for translated lisp output.
+
+$var<TR_PREDICATE_BRAIN_DAMAGE/FALSE> - If TRUE, output possible
+multiple evaluations in an attempt to interface to the COMPARE
+package.
+
+$var<TR_SEMICOMPILE/FALSE> - If TRUE TRANSLATE_FILE and COMPFILE
+output forms which will be macroexpanded but not compiled into machine
+code by the lisp compiler.  With this you can produce a FASL file with
+all macros expanded, and still run translated code interpreted.  The
+procedure would be
+.example
+TR_SEMICOMPILE:TRUE;
+TRANSLATE_FILE("USER\;MYFILE");
+.end skip continue
+then at DDT level,
+.example
+:CL USER;MY TRLISP (T)
+.end skip continue
+producing USER;MY FASL.
+
+$var<TR_STATE_VARS/TRANSCOMPILE, TR_SEMICOMPILE,
+TR_WARN_UNDECLARED, TR_WARN_MEVAL, TR_WARN_FEXPR, TR_WARN_MODE,
+TR_WARN_UNDEFINED_VARIABLE, TR_FUNCTION_CALL_DEFAULT, TR_ARRAY_AS_REF,
+TR_NUMER> - The list of the switches that affect the form of the
+translated output.  This information is useful to system people when
+trying to debug the translator.  By comparing the translated product
+to what should have been produced for a given state, it is possible to
+track down bugs.
+
+$var<TR_TRUE_NAME_OF_FILE_BEING_TRANSLATED/FALSE> is bound to
+the quoted string form of the true name of the file most recently
+translated by TRANSLATE_FILE.
+
+$flag<TR_VERSION> - The version number of the translator.
+
+$var<TR_WARN_BAD_FUNCTION_CALLS/TRUE> - Gives a warning when
+when function calls are being made which may not be correct 
+due to improper declarations that were made at translate time.
+
+$var<TR_WARN_FEXPR/COMPFILE> - Gives a warning if any FEXPRs are
+encountered.  FEXPRs should not normally be output in translated code,
+all legitimate special program forms are translated.
+
+$var<TR_WARN_MEVAL/COMPFILE> - Gives a warning if the function
+MEVAL gets called.  If MEVAL is called that indicates problems in the
+translation.
+
+$var<TR_WARN_MODE/ALL> - Gives a warning when variables are
+assigned values inappropriate for their mode.
+
+$var<TR_WARN_UNDECLARED/COMPILE> - Determines when to send
+warnings about undeclared variables to the TTY.
+
+$var<TR_WARN_UNDEFINED_VARIABLE/ALL> - Gives a warning when undefined
+global variables are seen.  Possible settings of this switch are:
+ALL,COMPILE,COMPFILE,TRANSLATE,FALSE, controlling when warnings will
+be seen.  FALSE disables the feature.  This picks up many spelling
+errors in variable names which could cause obscure errors once code is
+translated/compiled.  Cases where one accidently uses a symbol as a
+variable will also be picked up, e.g.  APPLY(APPEND,L) when
+APPLY('APPEND,L) is intended.
+
+$fun<TR_WARNINGS_GET>() - Prints a list of warnings which have been given by
+the translator during the current translation.
+
+$var<TR_WINDY/TRUE> - Generate "helpful" comments and
+programming hints (verbose).
+
+$var<MODE_CHECKP/TRUE> - If TRUE, MODE_DECLARE checks the modes
+of bound variables.
+
+$var<MODE_CHECK_WARNP/TRUE> - If TRUE, mode errors are
+described.
+
+$var<MODE_CHECK_ERRORP/FALSE> - If TRUE, MODE_DECLARE calls
+error.
+
+For information on debugging and timing your functions once they are
+translated, see $see<debugmac>.
+
+.sec(Hints for Writers of Packages in MACSYMA,phints)
+
+.function(DEFINE_VARIABLE,|name,default-binding,mode,optional-documentation|)
+introduces a global variable into the MACSYMA environment.  This is
+for user-written packages, which are often translated or compiled.
+
+E.g.: DEFINE_VARIABLE(FOO,TRUE,BOOLEAN);  does the following:
+.skip begin indent 0,5;turn on "";
+(1)(6)MODE_DECLARE(FOO,BOOLEAN); sets it up for the translator, so
+that the resultant code will be more efficient.
+
+(2)(6)If the variable is unbound, it sets it: FOO:TRUE.  The user of a
+package can set the values of various switches before the file which
+contains the package is loaded in, and these values take effect,
+rather than being bashed by ":" which would otherwise happen.  This is
+especially convenient for autoloading packages (packages which get
+loaded automatically when a function is invoked, rather than having to
+be explicitly LOADFILEd.)
+
+(3)(6)DECLARE(FOO,SPECIAL); declares it special.
+This is vital to have if code refering to the variable is to be compiled.
+
+(4)(6)Sets up an assign property for it to make sure that it never
+gets set to a value of the wrong mode.  E.g.  FOO:44 would be an error
+once FOO is defined BOOLEAN.  This is important for proper error
+checking.  For example in the code "IF FOO THEN 7 ELSE 8", FOO should
+be TRUE or FALSE, i.e. of BOOLEAN mode.  Suppose the user sets it to
+4.44.  If you used DEFINE_VARIABLE then it would catch the error as
+"ERROR: Trying to assign variable FOO of mode BOOLEAN to 4.44 "
+instead of the more enigmatic: "Macsyma was unable to evaluate the
+predicate: 4.44", which might be misunderstood as a bug in the package
+instead of a misuse of the variable.
+.end scon
+The possible 2mode1s are as for MODE_DECLARE.
+
+The optional 4th argument is a documentation string.  When
+TRANSLATE_FILE is used on a package which includes documentation
+strings, a second file is output in addition to the LISP file (it will have
+TRDOC as its second file name) which
+will contain the documentation strings, formatted suitably for use in
+manuals, usage files, or (for instance) DESCRIBE.
+
+With any variable which has been DEFINE_VARIABLE'd with mode other than 
+ANY, you can give a VALUE_CHECK property, which is a function of one 
+argument called on the value the user is trying to set the variable to.
+
+PUT('G5,LAMBDA([U],IF U#'G5 THEN ERROR("Don't set G5")),'VALUE_CHECK);
+Use DEFINE_VARIABLE(G5,'G5,ANY_CHECK, "this ain't supposed to be set 
+by anyone but me.")
+
+ANY_CHECK is a mode which means the same as ANY, but which 
+keeps DEFINE_VARIABLE from optimizing away the assign property.
+
+.endfunction
+
+.function(SETUP_AUTOLOAD,|file,func1,...,funcN|)
+makes the 2funci1 "AUTOLOADing".  SETUP_AUTOLOAD takes two or more
+arguments: a file specification, and one or more function names,
+2funci*, and which indicates that if a call to 2funci* is made and
+2funci* is not defined, that the file specified by 2file* is to be
+automatically loaded in via LOAD, which file should contain a
+definition for 2func*.  (This is the process by which calling e.g.
+INTEGRATE in a fresh MACSYMA causes various files to be loaded in.)
+If the second file name of 2file1 is not specified (preferred usage
+is to specify) then the standard search for second file names of
+"FASL", "TRLISP", and ">" is done.  As with the other file-handling
+commands in MACSYMA, the arguments to SETUP_AUTOLOAD are not
+evaluated.
+
+Example:
+
+SETUP_AUTOLOAD([BESSEL,FASL,SHARE],J1)$ J1(0.0); .
+
+.endfunction
+
+Note that the variable $var<CHANGE_FILEDEFAULTS/TRUE> can be set to FALSE
+and thus files loaded in by a package will not disturb the user'
+FILEDEFAULTS.
+
+Package designers who use SAVE,
+FASSAVE, or TRANSLATE to create packages (files) for others
+to use may want to set $var<PACKAGEFILE/FALSE> to TRUE to prevent information
+from being added to MACSYMA's information-lists (e.g. VALUES,
+FUNCTIONS) except where necessary when the file is loaded in.
+In this way, the contents of the package will not get in the
+user's way when he adds his own data.  Note that this will not
+solve the problem of possible name conflicts.  Also note that
+the flag simply affects what is output to the package file.
+Setting the flag to TRUE is also useful for creating MACSYMA
+init files.
+
+.subsec(|Functions Which Do Not Evaluate Some Arguments|,fxpr,1)
+
+It is now possible to define a user-function in MACSYMA which does 
+not evaluate or simplify some of its arguments at function-call time. 
+This is done by using "single-quotes" in the parameter-list of the 
+function definition, as in the following definitions:
+Suppose A is assigned the value 2, A:2$
+.example
+[1] F('X):=PRINT(X,"has value",EV(X))$  F(A); 
+.end continue
+prints "A HAS VALUE 2" and returns 2 .
+.example
+[2] F('X,Y):=X+Y$  F(A,A);
+.end continue
+gives A+2 .
+.example
+[3] F('X):=BLOCK([SIMP:FALSE],PRINT(EV(X)))$  F(A+A); 
+.end continue
+prints "2+2" and returns 4.
+
+Please note the following: 
+
+The syntax F(X,['L]):=... also works.
+One cannot now TRANSLATE and TRACE such function definitions.
+The above scheme does not work for array function definitions.
+Working with expressions which have not been evaluated or simplified
+can lead to difficulties, and care should be taken.  In particular,
+the use of EV inside such function definitions can have unpredictable
+results.
+
+.subsec(|Advanced Programming Hints - Macros|,macr,1)
+
+Introduction
+
+The Macsyma macro facility allows the user to define forms which are
+similar in appearance to Macsyma functions but whose evaluation and
+simplification can be more carefully controlled. This high degree of
+control provides users with many powerful capabilities (the ability
+to write definitions of operators which act as extended control
+structures, which implicitly quote certain of their arguments, or
+which establish special environments for the evaluation of their
+arguments, to name just a few). Additionally, macros are highly
+efficient from a compilation standpoint - references to macros can
+be made to yield extremely good code when compiled.
+
+The Concept
+
+A macro is a definition of a transformation between some syntactic
+construct typed in by the user and a form which can be interpreted
+by the Macsyma evaluator. Suppose a user had several lists (X, Y,
+and Z) which he often wanted to print out the values of in the
+following way:
+.example
+FOR I THRU LENGTH(X) DO PRINT('X[I]=X[I]);
+FOR I THRU LENGTH(Y) DO PRINT('Y[I]=Y[I]);
+ ... etc
+.end continue
+This could get tedious to type. He might, for instance, want to
+define a Macsyma operator which did most the work for him, so that
+he could type
+.example
+SHOWME(X);
+.end continue
+and have the same thing happen as if he had typed out the FOR loop.
+Without using macros, trying to write a definition for SHOWME which
+allows this syntax is tedious at best, and in any case would require
+the user to type
+.example
+SHOWME('X);
+.end continue
+in order to get ahold of the name of the form being displayed.
+
+Here is an example of how it could be done as a macro: SHOWME will be
+an operator with just one thing in its argument position, so we'll
+want to write
+.example
+SHOWME(LISTNAME) ::= ...something...$
+.end continue
+(The "::=" is used instead of ":=" to indicate that what follows is
+a macro definition, rather than an ordinary functional definition.)
+Proceeding, we must next write a definition. The definition should
+do something to create the form which we really want to evaluate,
+returning that form as a value.  In this case, we shall want
+.example
+FOR I THRU LENGTH(LISTNAME) DO PRINT('LISTNAME[I]=LISTNAME[I])
+.end continue
+to get returned by SHOWME. Note that we don't want to do this action,
+we only want to return the new ("expanded") form.  The Macsyma
+interpreter will take care of any evaluation later. One way to do this
+might be to use FUNMAKE and SUBSTPART but that can be pretty hard to
+do, especially with a form like FOR. An easier way is to use the
+Macsyma BUILDQ function.
+Using BUILDQ, the definition would look like:
+.example
+    SHOWME(LISTNAME)::=
+          BUILDQ([LISTNAME],
+                 FOR I THRU LENGTH(LISTNAME)
+                     DO PRINT('LISTNAME[I]=LISTNAME[I]))$
+.end
+BUILDQ is a generalized substitution function used to create macsyma
+forms.
+.inline function(BUILDQ,|variable list,expression|)
+where the 2variable list1 is similar to the variable list for a BLOCK
+(i.e. it can contain both atomic variables and assignment-forms).  The
+right hand sides of any assignment-forms in the 2variable list1 are
+evaluated left to right and the resulting variable bindings are 
+substituted in parallel into the 2expression1 (actually, the process
+is more complicated than what SUBST would provide, as we shall see farther 
+down). The 2expression1 can be any macsyma expression (including a nested
+BUILDQ).  The new expression is returned as is, not evaluated.  For example,
+.example
+        S:A+B$
+
+        BUILDQ([S,A:B*C,FUN:BAR],
+               S^2+G(A,'A)+FUN(S) );
+
+                       2
+        =>      (A + B) + G(B C, '(B C)) + BAR(A + B)
+
+.end
+The parallel nature of the substitution can probably be most easily seen
+in the following example:
+.example
+        BUILDQ([A:'B,B:'A], SIN(A)+COS(B));
+
+        => SIN(B) + COS(A)
+.end
+BUILDQ also recognizes specially the keyword SPLICE when it is used in
+a functional position within the expression.  If SPLICE is used with
+only one argument and that argument is the name of one of the
+variables being substituted for, then the value of the variable is
+"spliced" into the expression instead of being substituted.  The
+spliced variable must evaluate to a list.
+.example
+        L:[A,B,C]$
+
+        BUILDQ([L],F(L,SPLICE(L)));
+
+        F([A, B, C], A, B, C)
+.end
+
+Returning to our definition:
+.example
+    SHOWME(LISTNAME)::=
+          BUILDQ([LISTNAME],
+                 FOR I THRU LENGTH(LISTNAME)
+                     DO PRINT('LISTNAME[I]=LISTNAME[I]))$
+.end continue
+what happens when the Macsyma evaluator encounters a Macro? First it
+calls the macro definition on the appropriate parts of the form;
+for example, in the case of SHOWME(X), the SHOWME macro would be
+called with LISTNAME bound to X. Note that no evaluation of
+arguments is done prior to application of the macro -- that will
+come later. The SHOWME definition will then create a new form which
+looks like
+.example
+FOR I THROUGH LENGTH(X) DO PRINT('X[I]=X[I])
+.end continue
+and return that to the evaluator. The evaluator will then take the
+new form, and evaluate that in place of the original SHOWME form,
+finally returning the value of this second evaluation as the value
+of the SHOWME. So we might actually type:
+.example
+        X:['A,'B]$
+
+        SHOWME(X)$
+
+        X  = A
+         1
+
+        X  = B
+         2
+.end
+A symbol can have either a macro property or a function property but
+not both at the same time.  Defining an atom with ::= will remove
+the atom's function properties and vice versa.
+.skip 2 if lines < 8 then next page
+
+Useful Functions and Variables
+
+A. Information about Definitions
+
+$var<MACROS/> is a variable (similar to FUNCTIONS) which lists at
+any time all macros defined in the current environment. It is
+one of the variables which can be found in INFOLISTS.
+
+$fun<DISPFUN>(2name1) and $fun<GRIND>(2name1) will use either the
+function property or the macro property if either exist.
+
+STRINGOUT(FUNCTIONS) may be used to stringout all functions and 
+macros in the current environment.
+
+B. Removing definitions
+
+$fun<REMFUNCTION>(2func1) removes all functional properties and macro
+properties from 2func1.  REMFUNCTION(ALL) removes all functions
+and macros from the current environment.
+
+$fun<REMOVE>(2name1,FUNCTION) removes the function property of 2name1
+if one exists, but will not remove macro properties.  See MACROS
+and REMFUNCTION.
+
+REMOVE(2name1,MACRO) removes the macro property of 2name1 if one
+exists, but will not remove function properties.  See MACROS and
+REMFUNCTION.
+
+$fun<KILL>(FUNCTIONS) only affects the functions in the current
+environment and has no effects on any macros. Similarly,
+KILL(MACROS) only affects macros and hase no effects on any
+defined functions.
+
+C. Controlling Expansions
+
+The switch $var<MACROEXPANSION/FALSE> controls advanced features
+which affect the efficiency of macros. Possible settings:
+.begin indent 0,5;
+FALSE -- Macros expand normally each time they are called.
+
+EXPAND -- The first time a particular call is evaluated,
+the expansion is "remembered" internally, so that
+it doesn't have to be recomputed on subsequent calls 
+making subsequent calls faster.  The macro call still
+GRINDs and DISPLAYs normally, however extra memory is 
+required to remember all of the expansions.
+
+DISPLACE -- The first time a particular call is evaluated,
+the expansion is substituted for the call.  This requires
+slightly less storage when MACROEXPANSION is set to EXPAND
+and is just as fast, but has the disadvantage that the 
+original macro call is no longer remembered and hence the 
+expansion will be seen if DISPLAY or GRIND is called.
+.end continue
+Macros always expand and displace at the time of translation 
+when calls to them are translated.  (See $ref<compilation>.)
+
+For examples of usage, do DEMO(MACEX,DEMO,DSK,DEMO);
+
+D. Forcing Macro Expansion
+
+The following commands are useful in debugging MACROS:
+
+.function(MACROEXPAND1,form)
+- expands 2form1 exactly once if 2form1 is a
+macro call without doing the automatic evaluation.  If 2form1 is
+not a macro call, 2form1 is returned, again unevaluated.
+.endfunction
+.function(MACROEXPAND,form)
+- expands 2form1 repeatedly until it is no
+longer a macro call.  The final expansion is returned without
+doing the automatic evaluation.
+.endfunction
+For examples of usage, do DEMO(MACEX,DEMO,DSK,DEMO);
+
+.skip 3 if lines < 10 then next page
+More Examples
+
+    A. PUSH, POP -- Stack Control Operators
+.example
+        PUSH(VALUE,STACKNAME)::=BUILDQ([VALUE,STACKNAME],
+                                  STACKNAME:CONS(VALUE,STACKNAME))$
+
+        POP(STACKNAME)::=BUILDQ([STACKNAME],
+                           BLOCK([TEMP:FIRST(STACKNAME)],
+                                 STACKNAME:REST(STACKNAME),TEMP))$
+
+        A:[];           => []
+        PUSH('FOO,A);   => [FOO]
+        PUSH('BAR,A);   => [BAR, FOO]
+        A;              => [BAR, FOO]
+        POP(A);         => BAR
+        A;              => [FOO]
+        POP(A);         => FOO
+        A;              => []
+.end
+On MC, the SHAREM; directory contains some useful demo files which
+serious package writers might like to look at.  Notably:
+
+KEYARG DEMO - a description of argument passing using key words.
+
+DEFM DEMO - substitution macros.
+
+PACKG > - some macros for organizing packages.
+
+TRANSL HINTS - hints for translating MACSYMA code.

@@ -1,0 +1,337 @@
+.chap(Complex Plotting and Graphics---PLOT2,plot2)
+
+.sec(Introduction,plot2intro)
+
+This is a description of the functions contained in the following 6
+files:
+.once center
+APLOT2 > ARC CFFK,   TEKPLT > ARC CFFK,  PLOT3D > ARC CFFK
+.once center
+WORLD  > ARC CFFK,   PRINT  > ARC CFFK,  IFFUN  > ARC CFFK.
+.bcon
+They will be loaded up as needed when most of the functions below are
+used.  However to get the "complete" PLOT2 environment,
+LOADFILE(PLOT2,LISP,DSK,SHARE) is recommended.  This loads in complete
+AUTOLOAD properties for the functions described below.  The effect of
+loading this file will be to cause the PLOT2 package to be
+automatically loaded when you need it.  If you use PLOT2 regularly,
+you should consider including PLOT2 LISP DSK SHARE in your MACSYM
+(INIT) file; it will take up neglegible room in your MACSYM.
+
+The capabilities of the routines described here include plotting of
+several curves on a single graph, plotting several graphs in different
+positions on the screen, saving plots, replotting plots with different
+scales without having to recompute any points, plotting of 3 dimensional
+surfaces, plotting of user defined dashed lines and symbols.
+
+The devices supported are: the Tektronix 4010 and 4013, the Imlac PDS 1 and PDS 4 (using ARDS graphics conventions), the XGP and the Gould line-printer (at MIT) and printing and display consoles in a "preview" mode.
+
+.sec(Two-Dimensional Plotting,d2plot)
+
+.function(PLOT2,|y-exprs,variable,var-range,optionals-args|)
+plots 2y-exprs* on the y axis as 2variable* (the x axis) takes on  values specified by 2var-range*.
+.bcon
+2y-exprs* can take one of two forms:
+.begin narrow 8,5
+.scon
+i) 2expr* plots a curve of 2expr* against 2variable*
+.scon
+ii) [2expr1*,2expr2*, .. ,2expri*, .. ,2exprn*] plots n curves of 2expri* against 2variable*.  2expri* gets evaluated in the context FLOAT(EV(2expri*,2variable*=2value gotten from var-range*, NUMER)). It is an error if this doesn't result in a floating point number.
+.end
+.scon
+2var-range* can have the following forms:
+.begin narrow 8,5
+.scon
+i) 2low*,2high*, where 2low* and 2high* evaluate to numbers.  2low* may be either greater or less than 2high*.  2variable* will take on PLOTNUM values equally spaced between 2low* and 2high*. 
+.begin narrow 2,2
+Note that the first argument will be evaluated at 2low* first e.g. PLOT2(1/X,X,-1,-3); calculates 1/(-1.0) before 1/(-3.0). This will only make a difference if the computation of the first arg changes a variable which changes the value returned by subsequent computation.  Whether or not 2low* < 2high*, min(2low*,2high*) will be on the left of the plot. 
+.end
+.scon
+ii) 2low1,2high*,INTEGER.  As in i), except 2variable* will take on all integer values between 2low* and 2high* inclusive.
+.scon
+iii) [2val1*,2val2*, ... , 2valn*] . 2variable* takes the values specified by the list
+.scon
+iv) 2arrayname* where 2arrayname* is the name of a declared floating-point  one-dimensional array (i.e. declared by ARRAY(2arrayname*,FLOAT, 2max-index*);).  2variable* takes the values from 2arrayname*[0] thru 2arrayname*[2max-index*] (2max-index* is the maximum index of 2arrayname*
+.end
+.scon
+2optional-args* can be any of the following:
+.begin narrow 8,5
+.bcon
+i) X-Label, Y-Label or Title descriptor
+.bcon
+ii) Line type descriptor
+.bcon
+iii) FIRST, SAME and LAST
+.bcon
+iv) POLAR, LOG, LINLOG, LOGLIN
+.end
+.scon
+The optional arguments may appear in any order.  The rule for 	evaluation of the optional args is as follows.  If the argument is atomic it gets evaluated.  The resulting arguments are the	ones that get used.
+
+If you want to plot more than 3-4 curves on the same plot investigate using the NOT3D option to PLOT3D $see<d3plot>
+
+.example
+.once center
+2Examples1
+
+  PLOT2(SIN(X),X,-%PI,%PI);	plots sin(X) against X as X takes on
+				PLOTNUM values between -%PI to %PI
+  PLOT2(X!,X,0,6,INTEGER);	plots X! as X takes integral values
+				between 0 and 6
+  F(X):=SQRT(X);
+  PLOT2(F(X),X,[-2,3,100.12]);	plots F(X) as X takes the values in the
+				values in the list
+  PLOT2([X+1,X^2+1],X,-1,1);	plots 2 curves on top of each other
+.end
+.endfunction
+
+.function(PLOT2,|y-funs,var-range,optionals-args|)
+is the alternative form for PLOT2.  2y-funs* must be a function of
+one argument or a list of functions of one argument.  The functions
+must be either translated or compiled functions which return a
+floating point number when it is given floating point arg (or integer
+arg if the INTEGER arg to PLOT2 is given).  This form of PLOT2 acts as
+though you had given a argument to the 2y-funs*, and also specified
+that argument as the 2variable* in the form above. E.g.
+PLOT2(F,-2,2); acts like PLOT2(F(X),X,-2,2); This is supposed to
+provide a quicker evaluation of the first arg and for that reason NO
+checking is done on the result.  If the wrong kind of number is
+returned, the resulting plot will not be meaningful.
+
+.example
+
+      TRANSLATE:TRUE;
+      F(X):=(MODEDECLARE(X,FLOAT),EXP(-X*X));
+      PLOT2(F,-2,2);
+      PLOT2(F,[-2,-1,0,1,2]); 
+      ARRAY(V,FLOAT,10);
+      FOR I FROM 0 THRU 10 DO V[I]:FLOAT(I*I);
+      PLOT2(F,V);
+.end
+.endfunction
+
+.function(GRAPH2,|x-lists,y-lists,optional-args|)
+plots points specified by the first 2x-lists* and 2y-lists*.  The
+format for 2x-lists* can be one of
+.begin narrow 8,5
+.scon
+i) [2x-pt1*,2x-pt2*, .. ,2x-pti*, .. ,2x-ptn*] 	where 2x-pti* evaluates to a number
+.scon
+ii) 2arrayname* where 2arrayname* is the name of a declared one-dimensional array of floating point numbers
+.scon
+iii) 22d-arrayname* where 22d-arrayname* is the name of a declared two-dimensional array of floating point numbers (i.e. by ARRAY(22d-arrayname*, FLOAT, 2max-row-index*,2max-col-index*);)
+.scon
+iv) [2x-list1*,2x-list2*, .. ,2x-listi*, .. ,2x-listk*]	where 2x-listi* can have the form of either i) or ii).
+.end
+.scon
+The format of 2y-lists* is similar.  The format of 2optional-args* is the same as for PLOT2.
+
+(Note that GRAPH2 is more similar to the MACSYMA function MULTIGRAPH than to GRAPH.)
+.endfunction
+
+
+.function(PARAMPLOT2,|x-exprs,y-exprs,variable,var-range,optional-args|)
+plots 2x-exprs* as the x coordinate against 2y-exprs* as the y coordinate.
+.scon
+      The format for the first two arguments is the same as that for the first argument to PLOT2.  Thus if 2x-exprs* is [2x-expr1*, 2x-expr2*, .. ,2x-expri*, .. ,2x-exprn*] and 2y-exprs* is [2y-expr1*,2y-expr2*, .. ,2y-expri*, .. ,2y-exprk*], then max(n,k) curves will be plotted. They will be (assuming n > k): 
+.scon
+.once center
+2x-expr1* vs. 2y-expr1*, .. ,2x-exprk* vs. 2y-exprk*,
+.once center
+2x-expr(k+1)* vs. 2y-exprk*, .. ,2x-exprn* vs. 2y-exprk*
+.scon
+The format for the remaining arguments is the same as for PLOT2.
+.endfunction
+
+.function(PARAMPLOT2,|x-funs.y-funs,var-range,optional-args|)
+efficiently evaluates its first 2 arguments in the same way that the alternative form of PLOT2 works.
+.endfunction
+.skip 1
+.once center
+2Examples1
+.example
+  TRANSLATE:TRUE;	causes automatic translation
+  F(X):=(MODEDECLARE(X,FLOAT),COS(X)); 
+  G(X):=(MODEDECLARE(X,FLOAT),SIN(X));
+  PARAMPLOT2(F,G,0,2*%PI); plots F(x) vs G(x) as x goes from 0 to 2*%PI
+
+  PARAMPLOT2(SIN(T),COS(T),T,0,2*%PI);
+.end bcon
+plots sin(T) for the x-axis and cos(T) for the y-axis as T takes on PLOTNUM $see<d2plot> values between 0 and 2*%PI.  (If EQUALSCALE is TRUE this draws a circle.)
+.scon
+$var<PLOTNUM/20> is the number of points PLOT2 and PARAMPLOT2 plot when given the 2low*,2high* type of variable range.  The default if you    load up PLOT2,LISP,DSK,SHARE is 20, which is sufficient for   trying things out.  100 is a suitable value for a final hard copy.
+
+.sec(What to Type When PLOT2 has Finished Plotting,whatnow)
+
+When a plot is finished the bell on your terminal will be dinged.  (In fact, this happens only if WAIT is TRUE and if you're plotting on the terminal.)  The plotting
+function is now waiting for you to type something before it exits and prints
+the next C-Label on your nice plot.  It does nothing with most characters; 
+they are left to be part of the next C-Line.  However, the following characters
+are read and interpreted specially.
+.scon
+2space1 exits the plotting function. 
+.scon
+2return1 clears the screen and then exits.  
+.scon
+2tab1 causes the previous plot to be replotted.
+.begin narrow 8,5
+.bcon
+This is useful if the line is noisy, or, in conjunction with 2control-A1  if various plotting parameters need to be changed.
+.end
+.scon
+2linefeed1 sends out a hardcopy signal.  
+
+.begin narrow 8,5 
+.bcon
+At present this can only  be used to generate  hardcopy on the Tektronix hardcopy unit or on the Gould line-printer.
+.end
+.scon
+2rubout1 names the plot.  
+.begin narrow 8,5 
+.bcon
+PLOT2 types out "Enter name of plot" you reply 2plotname*;  this is identical to typing a space instead of a rubout, followed by NAMEPLOT(2plotname*);.  
+.end 
+.scon
+2control-A1
+.begin narrow 8,5 
+.bcon
+This is not really read by the plotting function, but enables you to enter a 2control-A1 break and change various options, before typing tab to have the plot replotted.  Make sure the plot has finished before you type this.
+
+.end
+.scon 
+$var<PLOTBELL/TRUE> when FALSE inhibits the dinging of the bell.  
+.scon
+While your plot is coming out your terminal is in a rather strange state (e.g. not echoing characters).  Thus it is OK to type ahead to MACSYMA, but the ONLY way you should interrupt the plot is with 2control-^1.  E.g. do not use 2control-A1 until the plot has finished.  
+
+
+.sec("Three-Dimensional Plotting",D3plot)
+
+.function(PLOT3D,|z-exprs,x-var,var-range,y-var,var1-range,optional-args|)
+makes a 3-dimensional plot of 2z-exprs* against 2x-var* and 2y-var*.  The plot consists of curves of 2y-exprs* against 2x-var* (the x coordinate) with 2y-var* (the y coordinate) held fixed.  Perspective is used and curves further away from the viewer have those parts of them which are hidden by the closer curves removed. 
+
+The format of 2y-exprs* is the same as for PLOT2.  The context of evaluation is FLOAT(EV(2expri*,2x-var*=2value gotten from var-range1,2y-var*=2value gotten from var1-range1,NUMER)).
+
+The format for 2var-range* and 2var1-range* is the same as for PLOT2 except that if 2var1-range* is of the form 2low*,2high* then 2y-var* will take on PLOTNUM1 values. 
+
+      The format of 2optional-args* is the same as for PLOT2 except that additional options $var<NOT3D/>, $var<\3D/>, $var<CONTOUR/> are available. 
+.endfunction
+.function(PLOT3D,|z-funs,var-range,var1-range,optional-args|)
+is analogous to the alternative form for PLOT2.  2z-funs* must be a function or list of functions of 2 arguments, which must return a floating point argument when given floating point (integer, if the INTEGER argument is used for either 2var-range* or 2var1-range*) arguments.  The functions must be translated or compiled.  If you expect to make several 3D plots this form is recommended. 
+
+ A simple example is 
+.example
+  TRANSLATE:TRUE;	causes automatic translation
+  G(X,Y):=(MODECLARE(X,FLOAT),EXP(-X*X-Y*Y));	defines a funtion G
+  PLOT3D(G,-2,2,-2,2);	plots it 
+.end
+.endfunction
+.function(GRAPH3D,|x-lists,y-lists,z-lists,optional-args|) 
+takes 3 arguments (GRAPH2 takes 2) and  interprets them as lists of x, y, and z points which it uses to draw lines using the 3d transformations.  It can be used to add lines (e.g.  axes) to your 3D plot.  The hidden line routines are not used.  
+.endfunction 
+
+2NOT3D1
+
+In this section we describe the option $var<NOT3D/>.   As an example, consider 
+.example 
+.once center 
+PLOT3D(SIN(X)+A,X,-%PI,%PI,A,[-2,3,4,6],NOT3D) 
+.end scon
+which plots sin(X)+A for X from -%PI to %PI ($var<PLOTNUM/20> points) and A
+taking the values in the list.  This is equivalent to:  
+.example 
+.once center
+PLOT2([SIN(X)-2,SIN(X)+3,SIN(X)+4,SIN(X)+6],X,-%PI,%PI) 
+.end 
+.scon 
+but requires less typing. 
+
+The additional NOT3D argument to PLOT3D, causes exactly the same points as in the bare PLOT3D to be calculated.  Instead of plotting a 3-dimensional representation of the data, the data is plotted in a 2D one.  Specifically 1 2D curve of z vs. x for each y value, and so is a convenient way to plot several curves on the same plot. 
+
+2PERSPECTIVE, REVERSE, VIEWPT, and CENTERPLOT1
+
+The following options govern the type of perspective view given. 
+
+$var<PERSPECTIVE/TRUE>, if FALSE causes a non-perspective view to be
+taken.  This is equivalent to extending the viewing position out to
+infinity along a line connecting the origin and VIEWPT.
+
+$var<REVERSE/FALSE>, if TRUE cause a left-handed coordinate system to
+be assumed.
+
+$var<VIEWPT/> and $var<CENTERPLOT/> determine the perspective view
+taken.  They are defaulted to be unbound.  VIEWPT may be set to a list
+of 3 numbers and gives the point from which the projection should be
+made.  CENTERPLOT may likewise be set to a list of 3 numbers and gives
+a point on the line of sight.  The projection will be made onto a
+plane perpendicular to a line joining VIEWPT and CENTERPLOT.
+
+If VIEWPT and CENTERPLOT are unbound (the default) then they will be
+chosen as follows: the extreme values of the coordinates are
+determined.  This gives the two points min: [xmin,ymin,zmin],
+max:[xmax,ymax,zmax]. CENTERPLOT is chosen as (min+max)/2, and VIEWPT
+is chosen as max+3*(max-min).  The view is then one in which the z
+axis is vertical, the x axis is increasing towards you to the left and
+the y axis is increasing towards you to the right.
+
+If CENTERPLOT is FALSE then the old type of perspective view will be
+given (like setting the x and z components of CENTERPLOT to the
+corresponding components of VIEWPT).
+
+.sec("Using the XGP from PLOT2",plot2!xgp)
+
+To get plots out on the XGP, simply do PLOTMODE(XGP, ...) where ... is
+the correct plot mode for your terminal (i.e. GR for Grinnell TV's, T
+for Tektronix, or D for character display terminals like VT52's).
+Then you can use linefeed at the end of the display of a plot, or
+HARDCOPY(); to cause a hardcopy to be submitted to the XGP (it is
+processed by the Gould spooler first).  If MIT-AI$$The computer at the
+MIT AI Lab* is up and the queuing for the XGP is successful, you will
+receive a message from the XGP spooler when your plot is printed.  If
+MIT-AI is down, your plot will be processed into an XGP scan file,
+.GLPT.; > SCN, and the Gould spooler will send you a warning message
+telling you that MIT-AI is down.  You must copy the SCN file to MIT-AI
+yourself when MIT-AI comes up and queue it by doing
+.example
+.once center
+	:XGP ;SCAN AI:dir;* SCN
+.end
+.scon
+where dir is the directory on MIT-AI to which you copied the files (use
+MACSYM;  if you don't know of any other directory to use).
+
+If you use the NAMEFILE$$NAMEFILE(filespec) simply copies the PLOT2
+scratch file to filespec* command instead of HARDCOPY or linefeed, you
+can print the plot file later by doing
+.example
+.once center
+	:GTPL dir;fn1 fn2/a/o[x]
+.end
+.scon
+where dir, fn1, fn2 are the directory, first file name, and second
+file name of the plot file stored with NAMEFILE.  $var<PLOTLFTMAR/128>
+and $var<PLOTBOTMAR/320> adjust the bottom margin and left margin for
+the XGP plots. These default to values$$Whose units are given in
+increments of 1/200 th of an inch* such that the plots will fit
+comfortably on an 8 1/2 x 11 page.
+ 
+
+
+There are many other features of PLOT2 (such as three-dimensional and
+contour plotting) which the user can learn about by reading
+SHARE;PLOT2 USAGE and SHARE;PLOT2 RECENT.  As an example, consider
+
+.begin narrow 8,0
+.example
+(PLOTMODE(XGP,D),WINDOW:[100,900,0,950])$
+
+(PLOTNUM:PLOTNUM:40,VIEWPT:[-30,-20,5])$
+
+PLOT3D((X^3+Y^4-0.2*X)*EXP(-X^2-Y^2)+0.3*EXP(-(X-1.225)^2-Y^2),
+             X,-3,3,Y,-3,3);
+
+NAMEFILE(PLOT,TEST,DSK,CFFK);
+.end
+.end
+.scon
+The resulting plot is shown on the next page
+.next page
