@@ -1,0 +1,858 @@
+;;; -*- Mode: LISP; Package: COLOR; Base: 10. -*-
+
+(defmacro mid-x () (// (screen-x2 tv-default-screen) 2))
+
+(defmacro mid-y () (// (screen-y2 tv-default-screen) 2))
+
+(defmacro screen-mid-x (screen) `(// (screen-x2 ,screen) 2))
+
+(defmacro screen-mid-y (screen) `(// (screen-y2 ,screen) 2))
+
+(defun :boot () (setq base 10. ibase 10.) (pkg-goto 'color))
+
+(defmacro -1+ (x) `(1- ,x))
+
+(defmacro  () 3.1415926536)
+(defun 2sin (a b) (* 2 (sin (// (* () a) b))))
+
+(declare (special cf-size sqrt-cf-size gcd-cf tri-size tri-array minx miny maxx maxy))
+
+(setq cf-size 77 sqrt-cf-size (isqrt cf-size)
+      tri-size 77)
+
+(defun array-reset ()
+  (and (boundp 'tri-array) (return-array tri-array))
+  (and (boundp 'gcd-cf) (return-array gcd-cf))
+  (setq gcd-cf (make-array nil 'art-q (1+ cf-size)))
+  (setq tri-array (make-array nil 'art-q tri-size)))
+
+(array-reset)
+
+(defun hash-atan (x y) (// (* cf-size x) (+ (* sqrt-cf-size (abs y)) x)))	;assumes x  0
+
+;Assertion:  let c, d be vals returned by cf-gcd.  then
+;(equal (nthcdr n c) (nthcdr m d))  (eq ...), n=m or n,m > 1
+
+(defun cf-gcd (x y &optional (bkt% (aloc gcd-cf (hash-atan x y))) ans
+		   &aux (tem (assq y (car bkt%))))
+      (or tem (rplaca bkt% `(,(setq tem `(,y)) . ,(car bkt%))))
+      (or (assq x (cdr tem))
+	  (cadr (rplacd tem (cons (or ans (cf-hard x y bkt%)) (cdr tem))))))
+
+(defun cf-hard (x y bkt% &aux tem)
+      `(,x ,y . ,(if (and (= x (car (setq tem
+					  (if (= 0 x) '(0 1)
+					      (multiple-value-bind (q r) (g-i-div y x)
+						`(,(car (setq tem (cdddr (cf-gcd r x))))
+						  ,(// y (// x (car tem)))
+						  ,q
+						  . ,(cdr tem)))))))
+	       (= y (cadr tem)))
+	  tem
+	  (cddr (cf-gcd (car tem) (cadr tem) bkt% `(,(car tem) ,(cadr tem) . ,tem))))))
+
+;(defun cf-gcd (x y &optional (bkt% (aloc gcd-cf (hash-atan x y))) ans &aux tem)
+;      (if (setq tem (assq y (car bkt%)))		;assumes x  0
+;	  (or (assq x (cdr tem))
+;	      (cadr (rplacd tem (cons (or ans (cf-hard x y bkt%)) (cdr tem)))))
+;	  (cadaar (rplaca bkt% `((,y ,(or ans (cf-hard x y bkt%))) . ,(car bkt%))))))
+
+;(defun cf-hard (x y bkt% &aux tem)
+;      `(,x ,y . ,(if (= x 0)
+;		    '(0 1)
+;		     (multiple-value-bind (q r) (g-i-div y x)
+;		       (if (eq x (car (setq tem `(,(car (setq tem (cdddr (cf-gcd r x))))
+;						   ,(// y (// x (car tem)))
+;						   ,q
+;						   . ,(cdr tem)))))
+;			   tem
+;			   (cddr (cf-gcd (car tem)
+;					 (cadr tem)
+;					 bkt%
+;					 `(,(car tem) ,(cadr tem) . ,tem))))))))
+
+;hashbucket = ((y0 (x0 y0 x0' y0' t00 t01 ...) (x1 y0 x1' y0' t10 t11 ...) ... )
+;              (y1 (x2 y1 x2' y1' t20 t21 ...) ...)
+;              ...)
+
+(defun g-i-div (y x)				;This is what // should do!
+      (prog ((z (+ y (* x (abs y)))))		;(But not how it should do it!)
+	    (return (- (// z x) (abs y)) (\ z x))))
+
+(defun g-i-div (y x)				;Another defense, but weird for x < 0
+      (prog ((z (if (< y 0) (-1+ x) 0)))
+	    (return (// (- y z) x) (+ (\ (- y z) x) z))))
+
+(defun simplest (x y z w) (simple1 (cddr (cf-gcd x y)) (cddr (cf-gcd z w))))
+
+(defun simple1 (x z) (selectq (det (car x) (cadr x) (car z) (cadr z))
+		       ((-1 0 1) (if (< (car x) (car z)) (cf-gcd (car x) (cadr x))
+							 (cf-gcd (car z) (cadr z))))
+		       (t (simple2 (cddr x) (cddr z) 1 0 0 1))))
+
+(defun simple2 (x z a b c d)
+    (if x (if z (selectq (- (car x) (car z))
+		  (0 (simple2 (cdr x) (cdr z) (+ (* (car x) a) b) a (+ (* (car x) c) d) c))
+		  (1 (if (cdr x) (simfin (car x) a b c d)
+			 (simple2 '(1) (cdr z) (+ (* (car z) a) b) a (+ (* (car z) c) d) c)))
+		  (-1 (if (cdr z) (simfin (car z) a b c d)
+			  (simple2 (cdr x) '(1) (+ (* (car x) a) b) a (+ (* (car x) c) d) c)))
+		  (t (simfin (1+ (min (car x) (car z))) a b c d)))
+	      (simfin (1+ (car x)) a b c d))
+	(if z (simfin (1+ (car z)) a b c d) (cf-gcd c a))))
+
+(defun simfin (x a b c d) (cf-gcd (+ (* x c) d) (+ (* x a) b)))
+
+;(defun simple2 (x z a b c d)
+;      (cond ((not (and x z)) (cf-gcd c a))
+;	    (( (car x) (car z)) (cf-gcd (+ (* (setq x (1+ (min (car x) (car z)))) c) d)
+;					 (+ (* x a) b)))
+;	    (t (simple2 (cdr x) (cdr z) (+ (* (car x) a) b) a (+ (* (car x) c) d) c))))
+
+(defun area (a1 a2 b1 b2 c1 c2)
+      (det (- b1 a1) (- b2 a2) (- c1 a1) (- c2 a2)))
+
+(defun det (a b c d) (- (* a d) (* b c)))
+
+(defun rel-tri (x0 y0 x1 y1 x2 y2
+		 &aux (z0 (s-val x0 y0)) (z1 (s-val x1 y1)) (z2 (s-val x2 y2)))
+      (if (< z0 z1) (if (< z0 z2) `(,x0 ,y0 . ,(abs-tri (cf-gcd (- x1 x0) (- y1 y0))
+							(cf-gcd (- x2 x0) (- y2 y0))))
+				  `(,x2 ,y2 . ,(abs-tri (cf-gcd (- x1 x2) (- y1 y2))
+							(cf-gcd (- x0 x2) (- y0 y2)))))
+		    (if (< z1 z2) `(,x1 ,y1 . ,(abs-tri (cf-gcd (- x0 x1) (- y0 y1))
+							(cf-gcd (- x2 x1) (- y2 y1))))
+				  `(,x2 ,y2 . ,(abs-tri (cf-gcd (- x1 x2) (- y1 y2))
+							(cf-gcd (- x0 x2) (- y0 y2)))))))
+;; reltri = (x y . abstri)
+;; abstri = (x . y) | (reltri reltri) | (reltri reltri reltri)
+;; only abstris are hashed
+
+;(defun abs-tri (v1 v2 &aux (bkt% (aloc tri-array (hash2 v1 v2))) tem)
+;      (or (< (s-val (car v1) (cadr v1)) (s-val (car v2) (cadr v2))) (psetq v1 v2 v2 v1))
+;      (cdr (if (setq tem (assq v2 (car bkt%)))
+;	       (or (assq v1 (cdr tem))
+;		   (cadr (rplacd tem `((,v1 . ,(tri-hard v1 v2)) . ,(cdr tem)))))
+;	       (cadaar (rplaca bkt% `((,v2 (,v1 . ,(tri-hard v1 v2))) . ,(car bkt%)))))))
+
+(defun abs-tri (v1 v2 &aux (bkt% (aloc tri-array (hash2 v1 v2))) tem)
+      (or (< (s-val (car v1) (cadr v1)) (s-val (car v2) (cadr v2))) (psetq v1 v2 v2 v1))
+      (or (setq tem (assq v2 (car bkt%))) (rplaca bkt% `(,(setq tem `(,v2)) . ,(car bkt%))))
+      (cdr (or (assq v1 (cdr tem))
+	       (cadr (rplacd tem `((,v1 . ,(try-hard v1 v2)) . ,(cdr tem)))))))
+
+(defmacro hafhaf (x y) ``(,(si:xash ,x -1) . ,(si:xash ,y -1)))
+
+(defun tri-hard (u v)
+      (if (= 1 (abs (det (car u) (cadr u) (car v) (cadr v))))
+	  (if (oddp (car u))
+	      (if (oddp (cadr u)) (hafhaf (car u) (cadr u))
+		  (if (oddp (car v)) (hafhaf (car v) (cadr v))
+		      (hafhaf (+ (car u) (car v)) (+ (cadr u) (cadr v)))))
+	      (if (oddp (cadr v)) (hafhaf (car v) (cadr v))
+		  (hafhaf (+ (car u) (car v)) (+ (cadr u) (cadr v)))))
+	  (let ((s (simple1 (cddr u) (cddr v))))
+	    (if (or (eq (cddr s) (cddr u)) (eq (cddr s) (cddr v)))
+		(if (and (= (car u) (caddr u)) (= (cadr u) (cadddr u)))
+		   `((0 0 . ,(abs-tri u (cf-gcd (caddr v) (cadddr v))))
+		    ,(rel-tri (caddr v) (cadddr v) (car v) (cadr v) (car u) (cadr u)))
+		   `((0 0 . ,(abs-tri v (cf-gcd (caddr u) (cadddr u))))
+		    ,(rel-tri (caddr u) (cadddr u) (car u) (cadr u) (car v) (cadr v))))
+	       `((0 0 . ,(abs-tri u s)) (0 0 . ,(abs-tri s v))
+		 .
+		,(and ( 0 (det (- (car u) (car s)) (- (cadr u) (cadr s))
+				(- (car v) (car s)) (- (cadr v) (cadr s))))
+		     `(,(rel-tri (car s) (cadr s) (car u) (cadr u) (car v) (cadr v)))))))))
+
+(defun try-hard (u v)
+      (if (= 1 (abs (det (car u) (cadr u) (car v) (cadr v))))
+	  (if (oddp (car u))
+	      (if (oddp (cadr u)) (hafhaf (car u) (cadr u))
+		  (if (oddp (car v)) (hafhaf (car v) (cadr v))
+		      (hafhaf (+ (car u) (car v)) (+ (cadr u) (cadr v)))))
+	      (if (oddp (cadr v)) (hafhaf (car v) (cadr v))
+		  (hafhaf (+ (car u) (car v)) (+ (cadr u) (cadr v)))))
+	  (if (and (= (car u) (caddr u)) (= (cadr u) (cadddr u)))
+	      (if (and (= (car v) (caddr v)) (= (cadr v) (cadddr v)))
+		  (let ((s (cf-gcd (- (car v) (car u)) (- (cadr v) (cadr u)))))
+			(cond ((and (= (car s) (caddr s)) (= (cadr s) (cadddr s)))
+			       (setq s (simple1 (cddr u) (cddr v)))
+			      `((0 0 . ,(abs-tri u s)) (0 0 . ,(abs-tri s v))
+				.
+				,(and ( 0 (det (- (car u) (car s)) (- (cadr u) (cadr s))
+						(- (car v) (car s)) (- (cadr v) (cadr s))))
+				      `(,(rel-tri (car s) (cadr s) (car u) (cadr u)
+								   (car v) (cadr v))))))
+			      (t `(,(rel-tri 0 0 (car u) (cadr u)
+					     (+ (car u) (caddr s)) (+ (cadr u) (cadddr s)))
+				   ,(rel-tri 0 0 (car v) (cadr v)
+					     (+ (car u) (caddr s)) (+ (cadr u) (cadddr s)))))))
+		 `((0 0 . ,(abs-tri u (cf-gcd (caddr v) (cadddr v))))
+		  ,(rel-tri (caddr v) (cadddr v) (car v) (cadr v) (car u) (cadr u))))
+	     `((0 0 . ,(abs-tri v (cf-gcd (caddr u) (cadddr u))))
+	      ,(rel-tri (caddr u) (cadddr u) (car u) (cadr u) (car v) (cadr v))))))
+
+(defun s-val (x y) (+ (ash x 9) y))
+
+(defun hash2 (u v) (\ (+ (%make-pointer dtp-fix u) (%make-pointer dtp-fix v)) tri-size))
+						;tri-fill-s req symm fcn of u, v
+(defmacro plot (x1 y1)
+      `(store nil (1+ (funcall '#,(screen-buffer-pixel-array tv-color-screen)
+				  (+ '#,(// (screen-x2 tv-color-screen) 2) ,x1)
+				  (+ '#,(// (screen-y2 tv-color-screen) 2) ,y1)))))
+
+(defmacro plt (x1 y1)
+      `(aset 1
+	     '#,(screen-buffer-pixel-array tv-default-screen)
+	     ,x1
+	     ,y1))
+
+(defun rel-plt (l) (abs-plt (car l) (cadr l) (cddr l)))
+
+(defun abs-plt (x y l)
+      (if (atom (cdr l)) (plt (+ x (car l)) (+ y (cdr l)))
+			 (dolist (l l) (abs-plt (+ x (car l)) (+ y (cadr l)) (cddr l)))))
+
+(defun cheapo (r e)
+      (do ((x r)
+	   (y 0))
+	  ((kbd-tyi-no-hang))
+	(draw-tri (mid-x) (mid-y)
+		  (+ (mid-x) (fix x))
+		  (+ (mid-y) (fix y))
+		  (+ (mid-x) (fix (setq x (- x (* y e)))))
+		  (+ (mid-y) (fix (setq y (+ y  (* x e))))))))
+
+(declare (special tv-alu-and itsy tv-off-screen wide-array spectrays alu))
+
+(or (boundp 'tv-off-screen)
+    (setq tv-off-screen
+	 (tv-define-screen "Off Color"
+			   ':plane-mask 0
+			   ':height (screen-height tv-color-screen)
+			   ':width (screen-width tv-color-screen)
+			   ':x1 (screen-x1 tv-color-screen)
+			   ':y1 (screen-y1 tv-color-screen)
+			   ':x2 (screen-x2 tv-color-screen)
+			   ':y2 (screen-y2 tv-color-screen)
+			   ':buffer (+ 3 (%pointer (setq wide-array
+							 (make-array permanent-storage-area
+								     'art-4b
+								     `(,(screen-width
+									  tv-color-screen)
+								       ,(screen-height
+									  tv-color-screen))))))
+			   ':bits-per-pixel 4)
+	 wide-array (make-array permanent-storage-area
+				'art-1b
+				`(,(* 4 (screen-width tv-off-screen))
+				  ,(screen-height tv-off-screen))
+				wide-array)))
+
+(setq itsy (make-array nil 'art-4b '(8 1)))
+
+(dotimes (i 8) (aset 7 itsy i 0))
+
+(setq spectrays (make-array nil 'art-q 16.))
+
+(dotimes (i 16.) (aset (make-array nil 'art-4b '(8 1)) spectrays i)
+		 (dotimes (j 8) (aset (- 15. i) (aref spectrays i) j 0)))
+
+(setq tv-alu-and (logxor tv-alu-ior tv-alu-xor))
+
+(defun draw-tri (x1 y1 x2 y2 x3 y3 &optional (alu tv-alu-xor) ignore)
+  (setq x1 (fix x1) y1 (fix y1) x2 (fix x2) y2 (fix y2) x3 (fix x3) y3 (fix y3))
+  (if (> y1 y2) (if (> y1 y3) (if (> y2 y3) (draw-t1 x1 y1 x2 y2 x3 y3)
+					    (draw-t1 x1 y1 x3 y3 x2 y2))
+			      (draw-t1 x3 y3 x1 y1 x2 y2))
+		(if (> y2 y3) (if (> y1 y3) (draw-t1 x2 y2 x1 y1 x3 y3)
+					    (draw-t1 x2 y2 x3 y3 x1 y1))
+			      (draw-t1 x3 y3 x2 y2 x1 y1))))
+
+(defun draw-t1 (x1 y1 x2 y2 x3 y3 &aux (x12 (ash (- x1 x2) 1))
+				       (y12 (ash (- y1 y2) 1))
+				       (x13 (ash (- x1 x3) 1))
+				       (y13 (ash (- y1 y3) 1))
+				       (x23 (ash (- x2 x3) 1))
+				       (y23 (ash (- y2 y3) 1))
+				       (det (det x12 y12 x13 y13)))
+      (cond (( det 0) (tv-select-screen tv-default-screen)
+		       (funcall (if (> det 0) #'draw-tl #'draw-tr)
+			     x1 y1 x2 y2 x3 y3
+			     (lrem x1 y1 x2 y2) (lrem x1 y1 x3 y3) (lrem x2 y2 x3 y3)
+			     y12 y13 y23 x12 x13 x23))))
+
+(defun draw-tl (x1 y1 x2 y2 x3 y3 l r p ld rd pd lx rx px)
+  (do ((y (-1+ y1) (-1+ y))
+       (l l (- l lx))
+       (r r (- r rx)))
+      ((< y y2) (do ((y y (-1+ y))
+		     (l p (- l px))
+		     (r r (- r rx)))
+		    ((< y y3))
+		  (drawl (// l pd) (// r rd) y)))
+    (drawl (// l ld) (// r rd) y)))
+
+(defun draw-tr (x1 y1 x2 y2 x3 y3 r l p rd ld pd rx lx px)
+  (do ((y (-1+ y1) (-1+ y))
+       (l l (- l lx))
+       (r r (- r rx)))
+      ((< y y2) (do ((y y (-1+ y))
+		     (l l (- l lx))
+		     (r p (- r px)))
+		    ((< y y3))
+		  (drawl (// l ld) (// r pd) y)))
+    (drawl (// l ld) (// r rd) y)))
+
+(defun drawl (x1 x2 y)  (tv-erase (- x2 x1) 1 x1 y alu))
+
+(defun lrem (x1 y1 x2 y2) (- x2 x1 (* (+ 1 x1 x1) (- y2 y1))))
+
+(defun color-tri (x1 y1 x2 y2 x3 y3 &optional (alu tv-alu-xor))
+  (setq x1 (fix x1) y1 (fix y1) x2 (fix x2) y2 (fix y2) x3 (fix x3) y3 (fix y3))
+  (if (> y1 y2) (if (> y1 y3) (if (> y2 y3) (color-t1 x1 y1 x2 y2 x3 y3)
+					    (color-t1 x1 y1 x3 y3 x2 y2))
+			      (color-t1 x3 y3 x1 y1 x2 y2))
+		(if (> y2 y3) (if (> y1 y3) (color-t1 x2 y2 x1 y1 x3 y3)
+					    (color-t1 x2 y2 x3 y3 x1 y1))
+			      (color-t1 x3 y3 x2 y2 x1 y1))))
+
+(defun color-t1 (x1 y1 x2 y2 x3 y3 &aux (x12 (- x1 x2))
+					(y12 (- y1 y2))
+					(x13 (- x1 x3))
+					(y13 (- y1 y3))
+					(x23 (- x2 x3))
+					(y23 (- y2 y3))
+					(det (det x12 y12 x13 y13))
+					(xn (min x1 x2 x3))
+					(xw (- (max x1 x2 x3) xn -1))
+					(x1n (- x1 xn))
+					(x2n (- x2 xn))
+					(x3n (- x3 xn))
+					(y13+ (1+ y13)))
+      (cond (( 0 det)
+	     (tv-select-screen tv-default-screen)
+	     (tv-erase (+ 3 (ash xw 2)) y13+ 0 0 tv-alu-andca)
+	     (funcall (if (> det 0) #'color-tl #'color-tr)
+		      x1n y13 x2n y23 x3n 0
+		      (lrem x1n y1 x2n y2) (lrem x1n y1 x3n y3) (lrem x2n y2 x3n y3)
+		      (ash y12 1) (ash y13 1) (ash y23 1) (ash x12 1) (ash x13 1) (ash x23 1))
+	     (bitblt tv-alu-andca (ash xw 2) y13+
+		     itsy 0 0
+		     (screen-buffer-pixel-array tv-default-screen) 0 0)	    
+	     (dotimes (i 3)
+	       (bitblt tv-alu-xor xw y13+
+		       (screen-buffer-pixel-array tv-default-screen) i 0
+		       (screen-buffer-pixel-array tv-color-screen) xn y3)
+	       (bitblt tv-alu-andca (- (ash xw 2) i) y13+
+		       (screen-buffer-pixel-array tv-color-screen) xn y3
+		       (screen-buffer-pixel-array tv-default-screen) i 0))
+	     (bitblt tv-alu-xor xw y13+
+		     (screen-buffer-pixel-array tv-default-screen) 3 0
+		     (screen-buffer-pixel-array tv-color-screen) xn y3))))
+
+(defun chromo-tri (x1 y1 x2 y2 x3 y3 &optional (alu tv-alu-xor) (col 1))
+  (setq x1 (fix x1) y1 (fix y1) x2 (fix x2) y2 (fix y2) x3 (fix x3) y3 (fix y3))
+  (if (> y1 y2) (if (> y1 y3) (if (> y2 y3) (chromo-t1 x1 y1 x2 y2 x3 y3 col)
+					    (chromo-t1 x1 y1 x3 y3 x2 y2 col))
+			      (chromo-t1 x3 y3 x1 y1 x2 y2 col))
+		(if (> y2 y3) (if (> y1 y3) (chromo-t1 x2 y2 x1 y1 x3 y3 col)
+					    (chromo-t1 x2 y2 x3 y3 x1 y1 col))
+			      (chromo-t1 x3 y3 x2 y2 x1 y1 col))))
+
+(defun chromo-t1 (x1 y1 x2 y2 x3 y3 col &aux (x12 (- x1 x2))
+					     (y12 (- y1 y2))
+					     (x13 (- x1 x3))
+					     (y13 (- y1 y3))
+					     (x23 (- x2 x3))
+					     (y23 (- y2 y3))
+					     (det (det x12 y12 x13 y13))
+					     (xn (min x1 x2 x3))
+					     (xw (- (max x1 x2 x3) xn -1))
+					     (y13+ (1+ y13)))
+      (cond (( 0 det)
+	     (tv-select-screen tv-off-screen)
+	     (tv-erase (ash xw 2) y13+ (ash xn 2) y3 tv-alu-andca)
+	     (funcall (if (> det 0) #'color-tl #'color-tr)
+		      x1 y1 x2 y2 x3 y3
+		      (lrem x1 y1 x2 y2) (lrem x1 y1 x3 y3) (lrem x2 y2 x3 y3)
+		      (ash y12 1) (ash y13 1) (ash y23 1) (ash x12 1) (ash x13 1) (ash x23 1))
+	     (bitblt tv-alu-andca xw y13+
+		     (screen-buffer-pixel-array tv-off-screen) xn y3
+		     (screen-buffer-pixel-array tv-color-screen) xn y3)
+	     (bitblt tv-alu-andca xw y13+
+		     (aref spectrays (logand col 15.)) 0 0
+		     (screen-buffer-pixel-array tv-off-screen) xn y3)
+	     (bitblt tv-alu-xor xw y13+
+		       (screen-buffer-pixel-array tv-off-screen) xn y3
+		       (screen-buffer-pixel-array tv-color-screen) xn y3))))
+
+;(setq c1 (make-array nil 'art-1b `(,(ash (screen-x2 tv-color-screen) 2)
+;				   ,(screen-y2 tv-color-screen))
+;		     (screen-buffer-pixel-array tv-color-screen)))
+
+;(defun color-t1 (x1 y1 x2 y2 x3 y3 &aux (x12 (- x1 x2))
+;					(y12 (- y1 y2))
+;					(x13 (- x1 x3))
+;					(y13 (- y1 y3))
+;					(x23 (- x2 x3))
+;					(y23 (- y2 y3))
+;					(det (det x12 y12 x13 y13))
+;					(xn (min x1 x2 x3))
+;					(xw (- (max x1 x2 x3) xn))
+;					(x1n (- x1 xn))
+;					(x2n (- x2 xn))
+;					(x3n (- x3 xn)))
+;      (cond (( 0 det)
+;	     (tv-select-screen tv-default-screen)
+;	     (tv-erase (+ 3 (ash xw 2)) y13 0 0 tv-alu-andca)
+;	     (funcall (if (> det 0) #'color-tl #'color-tr)
+;		      x1n y13 x2n y23 x3n 0
+;		      (lrem x1n y1 x2n y2) (lrem x1n y1 x3n y3) (lrem x2n y2 x3n y3)
+;		      (ash y12 1) (ash y13 1) (ash y23 1) (ash x12 1) (ash x13 1) (ash x23 1))
+;	     (bitblt tv-alu-and (ash xw 2) y13
+;		     itsy 0 0
+;		     (screen-buffer-pixel-array tv-default-screen) 0 0)	    
+;	     (dotimes (i 3)
+;	       (bitblt tv-alu-xor (ash xw 2) y13
+;		       (screen-buffer-pixel-array tv-default-screen) i 0
+;		       c1 (+ -1 (ash xn 2)) y3)
+;	       (bitblt tv-alu-andca (- (ash xw 2) i) y13
+;		       c1 (+ -1 (ash xn 2)) y3
+;		       (screen-buffer-pixel-array tv-default-screen) i 0))
+;	     (bitblt tv-alu-xor (ash xw 2) y13
+;		     (screen-buffer-pixel-array tv-default-screen) 3 0
+;		     c1 (+ -1 (ash xn 2)) y3))))
+
+
+(defun wide-tri (x1 y1 x2 y2 x3 y3 &optional (alu tv-alu-xor) ignore)
+  (setq x1 (fix x1) y1 (fix y1) x2 (fix x2) y2 (fix y2) x3 (fix x3) y3 (fix y3))
+  (if (> y1 y2) (if (> y1 y3) (if (> y2 y3) (wide-t1 x1 y1 x2 y2 x3 y3)
+					    (wide-t1 x1 y1 x3 y3 x2 y2))
+			      (wide-t1 x3 y3 x1 y1 x2 y2))
+		(if (> y2 y3) (if (> y1 y3) (wide-t1 x2 y2 x1 y1 x3 y3)
+					    (wide-t1 x2 y2 x3 y3 x1 y1))
+			      (wide-t1 x3 y3 x2 y2 x1 y1))))
+
+(defun wide-t1 (x1 y1 x2 y2 x3 y3 &aux (x12 (ash (- x1 x2) 1))
+				       (y12 (ash (- y1 y2) 1))
+				       (x13 (ash (- x1 x3) 1))
+				       (y13 (ash (- y1 y3) 1))
+				       (x23 (ash (- x2 x3) 1))
+				       (y23 (ash (- y2 y3) 1))
+				       (det (det x12 y12 x13 y13))
+				       (nx (min x1 x2 x3))
+				       (xx (max x1 x2 x3)))
+      (cond (( det 0)
+	     (tv-select-screen tv-off-screen)
+	     (setq minx (min minx nx) miny (min miny y3) maxx (max maxx xx) maxy (max maxy y1))
+	     (funcall (if (> det 0) #'color-tl #'color-tr)
+				x1 y1 x2 y2 x3 y3
+				(lrem x1 y1 x2 y2) (lrem x1 y1 x3 y3) (lrem x2 y2 x3 y3)
+				y12 y13 y23 x12 x13 x23))))
+
+(defun color-tl (x1 y1 x2 y2 x3 y3 l r p ld rd pd lx rx px)
+  (do ((y (-1+ y1) (-1+ y))
+       (l l (- l lx))
+       (r r (- r rx)))
+      ((< y y2) (do ((y y (-1+ y))
+		     (l p (- l px))
+		     (r r (- r rx)))
+		    ((< y y3))
+		  (draw4 (// l pd) (// r rd) y)))
+    (draw4 (// l ld) (// r rd) y)))
+
+(defun color-tr (x1 y1 x2 y2 x3 y3 r l p rd ld pd rx lx px)
+  (do ((y (-1+ y1) (-1+ y))
+       (l l (- l lx))
+       (r r (- r rx)))
+      ((< y y2) (do ((y y (-1+ y))
+		     (l l (- l lx))
+		     (r p (- r px)))
+		    ((< y y3))
+		  (draw4 (// l ld) (// r pd) y)))
+    (draw4 (// l ld) (// r rd) y)))
+
+(defun draw4 (x1 x2 y)  (tv-erase (ash (- x2 x1) 2) 1 (ash x1 2) y alu))
+
+
+;;		Circle Algorithm
+
+;;	x(n+1) = x(n) - e y(n)
+
+;;	y(n+1) = y(n) + e x(n+1)
+
+;;		implies
+
+;;	x(n) = r cos( + n d),  y(n) = r sin( + (n+1/2)d)
+
+;;		where
+
+;;	  e/2 = sin d/2
+
+;;	2      x(0)^2 - 2 (sin d/2) x(0) y(0) + y(0)^2
+;;     r   =   ---------------------------------------
+;;				(cos d/2)^2
+
+;;	           y(0) - (sin d/2) x(0)
+;;	r sin  =  --------------------- ,   r cos  = x(0)
+;;			cos d/2
+
+;;			  x(0) - (sin d/2) y(0)
+;;	r cos( + d/2) =  --------------------- , r sin( + d/2) = y(0)
+;;				cos d/2
+
+;;  Since waveforms are (-1) d/2 apart, we get a perfect circle by running two versions,
+;; d/2 out of phase, and using x from one and y from the other, or by running them /2
+;; out of phase and using x1 for x and x2 for y, or by solving the above to get
+
+;;		    sqrt(1 - e^2/4) (x(0) y(n) - y(0) x(n))
+;;	sin(n d) =  -------------------------------------
+;;		   x(0)^2 - e x(0) y(0) + y(0)^2
+
+;;		    (x(0) - e y(0)/2) x(n) + (y(0) - e x(0)/2) y(n)
+;;	cos(n d) =  -----------------------------------------------
+;;		      x(0)^2 - e x(0) y(0) + y(0)^2
+
+(defun dearo (x y r e &aux (s (sqrt (- 1 (* e e .25))))
+			   (den (+ (* x x) (* e x y -1.0) (* y y)))
+			   (a (- (// (* s y) den)))
+			   (b (// (* s x) den))
+			   (c (// (- x (* e y .5)) den))
+			   (d (// (- y (* e x .5)) den)))
+       (do ((x (* r x))
+	    (y (* r y)))
+	   ((kbd-tyi-no-hang))
+	 (draw-tri (mid-x) (mid-y)
+		   (+ (mid-x) (fix (+ (* c x) (* d y))))
+		   (+ (mid-y) (fix (+ (* a x) (* b y))))
+		   (+ (mid-x) (fix (+ (* c (setq x (- x (* y e))))
+				      (* d (setq y (+ y  (* x e)))))))
+		   (+ (mid-y) (fix (+ (* a x) (* b y)))))))
+
+(defun tachy (r e &optional (arms 8)
+		  &aux (b (small-float (* e -.5s0))) (d (small-float (sqrt (- 1 (* b b)))))
+		       (elbx (make-array nil 'art-q (1+ arms)))
+		       (elby (make-array nil 'art-q (1+ arms)))
+		       (r (small-float r)))
+      (do ((i 0 (1+ i))
+	   (cx (mid-x) (+ cx r))
+	   (r r (// r -2)))
+	  ((> i arms))
+	(aset cx elbx i)
+	(aset (mid-y) elby i))
+      (do ((x 1) (y 0))
+	  ((kbd-tyi-no-hang) (return-array elby) (return-array elbx) (cursorpos t))
+	(setq x (- x (* e y)) y (+ y (* e x)))
+	(do ((i 0 (1+ i))
+	     (x (+ x (* b y)) (1+ (* -.2s1 y y)))
+	     (y  (* d y) (* -.2s1 x y))
+	     (r r (// r -.2s1))
+	     (cx (mid-x))
+	     (cy (mid-y)))
+	    ((= i arms) (aset cx elbx i) (aset cy elby i))
+	  (draw-tri (aref elbx i) (aref elby i)
+		    (aref elbx (1+ i)) (aref elby (1+ i))
+		    (aset cx elbx i) (aset cy elby i))
+	  (draw-tri cx cy (aref elbx (1+ i)) (aref elby (1+ i))
+		    (setq cx (+ cx (* r x)))
+		    (setq cy (+ cy (* r y)))))))
+
+(defmacro color-mid-x () (// (screen-x2 tv-color-screen) 2))
+(defmacro color-mid-y () (// (screen-y2 tv-color-screen) 2))
+
+(defun color-tachy (r e &optional (arms 8)
+		  &aux (b (small-float (* e -.5s0))) (d (small-float (sqrt (- 1 (* b b)))))
+		       (elbx (make-array nil 'art-q (1+ arms)))
+		       (elby (make-array nil 'art-q (1+ arms)))
+		       (r (small-float r)))
+      (do ((i 0 (1+ i))
+	   (cx (color-mid-x) (+ cx r))
+	   (r r (// r -2)))
+	  ((> i arms))
+	(aset cx elbx i)
+	(aset (color-mid-y) elby i))
+      (do ((x 1) (y 0))
+	  ((kbd-tyi-no-hang) (return-array elby) (return-array elbx))
+	(setq x (- x (* e y)) y (+ y (* e x)))
+	(do ((i 0 (1+ i))
+	     (x (+ x (* b y)) (1+ (* -.2s1 y y)))
+	     (y  (* d y) (* -.2s1 x y))
+	     (r r (// r -.2s1))
+	     (cx (color-mid-x))
+	     (cy (color-mid-y)))
+	    ((= i arms) (aset cx elbx i) (aset cy elby i))
+	  (color-tri (aref elbx i) (aref elby i)
+		    (aref elbx (1+ i)) (aref elby (1+ i))
+		    (aset cx elbx i) (aset cy elby i))
+	  (color-tri cx cy (aref elbx (1+ i)) (aref elby (1+ i))
+		    (setq cx (+ cx (* r x)))
+		    (setq cy (+ cy (* r y)))))))
+
+(defun square (r e &optional (arms 14) (coeffs '(1 -1 3 -3 5 -5 7 -7 9 -9 11 -11 13 -13 15))
+				       (aosp (circular-list nil t))
+		   &aux (b (small-float (* e -.5s0))) (d (small-float (sqrt (- 1 (* b b)))))
+		       (elbx (make-array nil 'art-q (1+ arms)))
+		       (elby (make-array nil 'art-q (1+ arms)))
+		       (r (small-float r)))
+      (do ((i 0 (1+ i))
+	     (coeffs coeffs (cdr coeffs))
+	     (aosp aosp (cdr aosp))
+	     (cx (mid-x) (+ cx (// .1s1 (car coeffs)))))
+	    ((> i arms))
+	(aset cx elbx i)
+	(aset (mid-y) elby i))
+      (do ((x 1) (y 0))
+	  ((kbd-tyi-no-hang) (return-array elby) (return-array elbx) (cursorpos t))
+	(setq x (- x (* e y)) y (+ y (* e x)))
+	(do ((i 0 (1+ i))
+	     (coeffs coeffs (cdr coeffs))
+	     (aosp aosp (cdr aosp))
+	     (x (* r (+ x (* b y))) (if (car aosp) (+ (* x xx) (* y yy)) x))
+	     (y (* d y r) (if (car aosp) (- (* x yy) (* y xx)) (- y)))
+	     (xx (-1+ (* .2s1 (^ (+ x (* b y)) 2))))
+	     (yy (* .2s1 d y (+ x (* b y))))	     
+	     (cx (mid-x))
+	     (cy (mid-y)))
+	    ((= i arms) (aset cx elbx i) (aset cy elby i))
+	  (draw-tri (aref elbx i) (aref elby i)
+		    (aref elbx (1+ i)) (aref elby (1+ i))
+		    (aset cx elbx i) (aset cy elby i))
+	  (draw-tri cx cy (aref elbx (1+ i)) (aref elby (1+ i))
+		    (setq cx (+ cx (// x (car coeffs))))
+		    (setq cy (+ cy (// y (car coeffs))))))))
+
+(defun chmoo (r e) (arb-rot (mapcar #'(lambda (x) (// r x))
+				    '(1 3 5 7 9 11 13 15 17 19))
+			    '(0 0 0 0 0 0 0 0 0 0)
+			    (mapcar #'(lambda (x) (* e x))
+				    '(-1 1 3 5 7 9 11 13 15 17))
+			    'alu tv-alu-ior
+			    'paint 'dry))
+
+(defun shmoo (r e &optional (arms 8)
+		  &aux (b (small-float (* e -.5s0))) (d (small-float (sqrt (- 1 (* b b)))))
+		       (elbx (make-array nil 'art-q (1+ arms)))
+		       (elby (make-array nil 'art-q (1+ arms)))
+		       (r (small-float r)))
+      (do ((i 0 (1+ i))
+	   (cx (mid-y) (+ cx (// r (+ i i 1)))))
+	  ((> i arms))
+	(aset (mid-x) elbx i)
+	(aset cx elby i))
+      (do ((x 1) (y 0))
+	  ((kbd-tyi-no-hang) (return-array elby) (return-array elbx))
+	(setq x (- x (* e y)) y (+ y (* e x)))
+	(do ((i 0 (1+ i))
+	     (x (* r (+ x (* b y))) (+ (* y xx) (* x yy)))
+	     (y (* d y r) (- (* y yy) (* x xx)))
+	     (xx (* .2s1 d y (+ x (* b y))))
+	     (yy (-1+ (* .2s1 (^ (+ x (* b y)) 2))))	     
+	     (cx (mid-x))
+	     (cy (mid-y)))
+	    ((= i arms) (aset cx elbx i) (aset cy elby i))
+	  (draw-tri (aref elbx i) (aref elby i)
+		    (aref elbx (1+ i)) (aref elby (1+ i))
+		    (aset cx elbx i) (aset cy elby i))
+	  (draw-tri cx cy (aref elbx (1+ i)) (aref elby (1+ i))
+		    (setq cx (+ cx (// y (+ i i 1))))
+		    (setq cy (+ cy (// x (+ i i 1))))))))
+
+(defun strobe (r a b &optional (arms 8)) (shmoo r (* 2 (sin (// (* () a) b))) arms))
+
+(defun tacky (r e &optional (arms 8) (x0 1) (y0 0)
+		  &aux (b (small-float (* e -.5s0))) (d (small-float (sqrt (- 1 (* b b)))))
+		       (elbx (make-array nil 'art-q (1+ arms)))
+		       (elby (make-array nil 'art-q (1+ arms)))
+		       (r (small-float r)))
+      (do ((i 0 (1+ i))
+	   (cx (mid-x) (+ cx r))
+	   (r r (// r -2)))
+	  ((> i arms))
+	(aset cx elbx i)
+	(aset (mid-y) elby i))
+      (do ((x x0) (y y0))
+	  ((kbd-tyi-no-hang) (return-array elby) (return-array elbx) (cursorpos t))
+	(setq x (- x (* e y)) y (+ y (* e x)))
+	(do ((i 0 (1+ i))
+	     (x (+ x (* b y)) (1+ (* -.2s1 y y)))
+	     (y  (* d y) (* -.2s1 x y))
+	     (r r (// r -.2s1))
+	     (cx (mid-x))
+	     (cy (mid-y)))
+	    ((= i arms) (aset cx elbx i) (aset cy elby i))
+	  (draw-tri (aref elbx i) (aref elby i)
+		    (aref elbx (1+ i)) (aref elby (1+ i))
+		    (aset cx elbx i) (aset cy elby i))
+	  (draw-tri cx cy (aref elbx (1+ i)) (aref elby (1+ i))
+		    (setq cx (+ cx (* r x)))
+		    (setq cy (+ cy (* r y)))))))
+
+(defun arb-rot (xl yl al &rest kwds
+			 &aux (n (min (length xl) (length yl) (length al)))
+			      (x1 (make-array nil 'art-q n))
+			      (y1 (make-array nil 'art-q n))
+			      (x2 (make-array nil 'art-q n))
+			      (y2 (make-array nil 'art-q n))
+			      (e  (make-array nil 'art-q n))
+			      (ox (make-array nil 'art-q (1+ n)))
+			      (oy (make-array nil 'art-q (1+ n)))
+			      (mr 0)
+			      da alu tri-func screen)
+      (setq da (cadr (or (memq 'speed kwds) '(speed .01s0))))
+      (setq alu (cadr (or (memq 'alu kwds) `(alu ,tv-alu-xor))))
+      (selectq (cadr (or (memq 'paint kwds) '(paint wet)))
+	(wet (setq screen tv-off-screen tri-func #'wide-tri)
+	     (tv-select-screen tv-off-screen))
+	(dry (setq screen tv-off-screen tri-func #'chromo-tri))
+	(black (setq screen tv-default-screen tri-func #'draw-tri) (tv-black-on-white))
+	(white (setq screen tv-default-screen tri-func #'draw-tri) (tv-white-on-black))
+	(t (ferror ':wrong-type-paint
+		   "~S is neither wet, dry, black, nor white"
+		   (cadr (memq 'paint kwds)))))
+      (do ((i 0 (1+ i))
+	   (cx (screen-mid-x screen) (+ cx (aref x1 i)))
+	   (cy (screen-mid-y screen) (+ cy (aref y2 i)))
+	   (x xl (cdr x))
+	   (y yl (cdr y))
+	   (a al (cdr a))
+	   (sin)
+	   (cos))
+	  ((= i n) (aset cx ox i) (aset cy oy i))
+	(setq sin (sin (* () (car a) da .5s0)) cos (cos (* () (car a) da .5s0))
+	      mr (+ mr (^ (car x) 2) (^ (car y) 2)))
+	(aset (small-float (car x)) x1 i)
+	(aset (small-float (+ (* (car y) cos) (* (car x) sin))) y1 i)
+	(aset (small-float (+ (* (car x) cos) (* (car y) sin))) x2 i)
+	(aset (small-float (car y)) y2 i)
+	(aset (small-float (* 2 sin)) e i)
+	(aset (small-float cx) ox i)
+	(aset (small-float cy) oy i))
+      (setq mr (1+ (fix (sqrt mr))))
+      (do ()
+	  ((kbd-tyi-no-hang) (return-array oy) (return-array ox) (return-array e)
+			     (return-array y2) (return-array x2) (return-array y1)
+			     (return-array x1))
+	(setq minx 999999 miny 999999 maxx 0 maxy 0)
+	(and (eq tri-func #'wide-tri)
+	     (tv-erase (+ 3 (* 8 mr)) (+ 1 mr mr) (ash (- (screen-mid-x tv-off-screen) mr) 2)
+						  (- (screen-mid-y tv-off-screen) mr)
+		       tv-alu-andca))
+	(do ((i 0 (1+ i))
+	     (cx (screen-mid-x screen))
+	     (cy (screen-mid-y screen)))
+	    ((= i n) (aset cx ox i) (aset cy oy i)) 
+	  (aset (- (aref x1 i) (* (aref e i) (aref y1 i))) x1 i)
+	  (aset (+ (aref y1 i) (* (aref e i) (aref x1 i))) y1 i)
+	  (aset (- (aref x2 i) (* (aref e i) (aref y2 i))) x2 i)	;2 circle algs
+	  (aset (+ (aref y2 i) (* (aref e i) (aref x2 i))) y2 i)
+	  (funcall tri-func (aref ox i) (aref oy i)
+			    (aref ox (1+ i)) (aref oy (1+ i))
+			    (aset cx ox i) (aset cy oy i)
+			    alu (1+ i))
+	  (funcall tri-func cx cy
+			    (aref ox (1+ i)) (aref oy (1+ i))
+			    (setq cx (+ cx (aref x1 i))) (setq cy (+ cy (aref y2 i)))
+			    alu (1+ i)))
+	(bit-blaos)))
+
+(defun bit-blaos ()
+	(or (> minx maxx)
+	    (let ((xw (- maxx minx -1))
+		  (yw (- maxy miny -1)))
+	      (bitblt tv-alu-andca xw yw
+		      itsy 0 0
+		      (screen-buffer-pixel-array tv-off-screen) minx miny)
+	      (dotimes (i 3)
+		(bitblt tv-alu-xor xw yw
+			wide-array (+ (ash minx 2) i) miny
+			(screen-buffer-pixel-array tv-color-screen) minx miny)
+		(bitblt tv-alu-andca (- (ash xw 2) i) yw
+			(screen-buffer-pixel-array tv-color-screen) minx miny
+			wide-array (+ (ash minx 2) i) miny))
+	      (bitblt tv-alu-xor xw yw
+		      wide-array (+ (ash minx 2) 3) miny
+		      (screen-buffer-pixel-array tv-color-screen) minx miny))))
+	
+(defun fuck ()(arb-rot '(128 64 32 16 8 4 2 1)'(0 0 0)'(1 -2 4 -8 16 -32 64 128)
+		       'paint 'dry))
+
+(defun kcuf ()(arb-rot '(0 0 0 0 0 0 0 0)'(128 -64 32 -16 8 -4 2 -1)'(1 -2 4 -8 16 -32 64 128)
+		       'paint 'dry))
+
+(defun fibby ()(arb-rot '(0 0 0 0 0 0 0 0 0 0 0 0)
+			'(89 -55 34 -21 13 -8 5 -3 2 1 -1)
+			(mapcar #'// '(89.0 -55.0 34.0 -21.0 13.0 -8.0 5.0 -3.0 2.0 1 -1))
+			'speed 1
+			'paint 'dry
+			'alu tv-alu-ior))
+(prog2 (clear) (arb-rot '(0 0 0)`(-100 ,(// 100 (sqrt 2)) -50)`(1 ,(-(sqrt 2)) 2)
+			'alu tv-alu-ior
+			'paint 'wet))
+(comment
+(defun real-square (r)
+  (clear)
+  (arb-rot '(0 0 0 0 0 0 0 0 0 0 0 0)
+	   (mapcar  #'(lambda(x) (// r x))
+		    '(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0))
+	   '(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0)
+	   'paint 'wet
+	   'speed (// 50.0 51)))
+
+(prog2 ()(arb-rot '(0 0 0 0 0 0 0 0 0 0 0 0)
+	 (mapcar  #'(lambda(x) (// 69 ( // x (sqrt(abs x)))))
+		  '(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0))
+	 '(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0)
+	 'speed (// 31.0 222)
+	 'paint 'wet))
+(prog2 (clear)(arb-rot '(0 0 0 0 0 0 0 0 0 0 0 0)
+	 (mapcar  #'(lambda(x) (// 169 (* x (abs x))))
+		  '(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0))
+	 '(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0)
+	 'paint 'dry))
+(arb-rot '(0 0 0 0 0 0 0 0 0 0 0 0)
+	 (mapcar #'(lambda(x) (// 105 x))
+		    '(1.0 -1.0 3.0 -3.0 5.0 -5.0 7.0 -7.0 9.0 -9.0 11.0 -11.0))
+	 '(1.0 -1.0 3.0 -3.0 5.0 -5.0 7.0 -7.0 9.0 -9.0 11.0 -11.0))
+
+(prog2 (clear) (arb-rot (mapcar #'(lambda(x) (if (= x 0) 0 (// 69 x)))
+				'(0 -1.0 0 -3.0 0 -5.0 0 -7.0 0 -9.0 0 -11.0))
+			(mapcar #'(lambda(x) (if (= x 0) 0 (// 69 x)))
+				'(1.0 0 3.0 0 5.0 0 7.0 0 9.0 0 11.0 0))
+			'(1.0 -3.0 5.0 -7.0 9.0 -11.0 13.0 -15.0 17.0 -19.0 21.0 -23.0)))
+)
+
+(defun pow-wow (r0 rf &optional (rrf .01) (paint 'wet) (s2 1) (arms 15) (size 169)
+		   &aux (h nil) (f nil) (r 1.0) (s0 1) (s1 1) (s 0) (z nil))
+      (dotimes (n arms)
+	(setq h (append h (list (* s0 r))))
+	(setq f (append f (list rrf)))
+	(setq z (append z `(0)))
+	(setq s (+ s (abs r)))
+	(setq r (* r r0))
+	(setq rrf (* rrf rf))
+	(setq s0 (* s0 s1))
+	(setq s1 (* s1 s2)))
+      (setq h (mapcar #'(lambda (x) (// (* x size) s)) h))
+      (apply #'arb-rot (print (list z h f 'paint paint))))
+
+(defun tst () (do ()(())(setq minx 999999 miny 999999 maxx 0 maxy 0)
+		  (tv-select-screen tv-off-screen)
+		  (tv-erase 400 90 120 30 tv-alu-andca)
+		  (chromo-tri 30 40 50 120 130 30 tv-alu-xor)
+		  (bit-blaos)
+		  (tyi)))
+
+(defun sts () (arb-rot '(100 -50) '(100 -50) '(1 -2) 'paint 'dry))
+
+(defun rtri (s)
+      (do ((w (- (screen-x2 tv-color-screen) s))
+	   (z (- (screen-y2 tv-color-screen) s)))
+	  ((kbd-tyi-no-hang))
+	(let ((w (random w)) (z (random z)))
+	  (color-tri (+ w (random s))
+		     (+ z (random s))
+		     (+ w (random s))
+		     (+ z (random s))
+		     (+ w (random s))
+		     (+ z (random s))))))

@@ -1,0 +1,199 @@
+;;; This program takes a .PBIN (Palx binary file) and converts it
+;;; back to ascii so that MACN11 can handle it.  SIGH.
+
+;;; this was translated from lisp, does not take full advantage
+;;; of the PDP-10 instruction set.
+
+title UNPALX -- convert PALX binary to ASCII
+
+.decsav
+
+ac1=1 ? ac2=2 ? ac3=3 ? ac4=4
+a=5
+b=6
+d=7
+e=10
+t=11
+tt=12
+p=17
+
+
+call=<pushj p,>
+return=<popj p,>
+
+define .princ &string&
+	move  ac1,outjfn
+	move  ac2,[440700,,[asciz string]]
+	movei ac3,0
+	sout
+	 jfcl
+termin
+
+define .terpri
+	.princ "
+"
+termin
+
+define .nout
+	move  ac2,ac1
+	move  ac1,outjfn
+	movei ac3,8
+	nout
+	 jfcl
+termin
+
+define .error &string*
+	move ac1,[440700,,[asciz string]]
+	esout
+	 jfcl
+termin
+
+define .8in
+	move ac1,injfn
+	bin
+	 jfcl
+	move ac1,ac2
+termin
+
+define .16in
+	.8in
+	move ac4,ac1
+	.8in
+	lsh ac1,8
+	add ac1,ac4
+termin
+
+lpdl==40
+.vector pdl(lpdl)		;stack
+.scalar injfn,outjfn		;input and output jfns
+.scalar begadr			;starting address
+
+go:	reset
+	move p,[-lpdl,,pdl-1]
+	call getfil		;get the filenames
+	call doit		;do the unpalxing
+	call clsfil		;close files
+	haltf
+	jrst go
+	
+getfil:
+getin:	move  ac1,[440700,,[asciz /Input  file (palx  binary): /]]
+	psout
+	move  ac1,[gj%old\gj%fns\gj%sht]
+	move  ac2,[.priin,,.priout]
+	gtjfn
+	 jrst getin
+	move  ac2,[<080000,,>+of%rd]
+	openf
+	 jrst getin
+	movem ac1,injfn
+
+getout:	move  ac1,[440700,,[asciz /Output file (macn11 ascii): /]]
+	psout
+	move  ac1,[gj%fou\gj%fns\gj%sht]
+	move  ac2,[.priin,,.priout]
+	gtjfn
+	 jrst getout
+	move  ac2,[<070000,,>+of%wr]
+	openf
+	 jrst getout
+	movem ac1,outjfn
+
+	return
+
+doit:	.terpri
+	.princ "LOC0:"
+	.terpri
+	call dumpit		;dump the file
+	.terpri
+	.princ ".end "
+	move a,begadr
+	trnn a
+	 call [	move ac1,a
+		.nout
+		return]
+	.terpri
+	return
+
+.scalar stopp			;stop flag
+.scalar lodadr			;current load address
+.scalar lladdr			;last load address
+.scalar lodcnt			;load count
+
+dumpit:	setzm stopp		;don't stop for a while
+	setzm lladdr		;last load addr was zero
+	jrst lootst
+looupd:	move  a,lodadr
+	add   a,lodcnt
+	subi  a,6
+	movem a,lladdr
+lootst:	skipe stopp
+	 jrst [	move  a,lodadr
+		movem a,begadr
+		return]
+
+	.16in			;get a 16 bit word
+	caie ac1,1
+	 jrst [	.error "?Bad leader to PALX binary block."
+		setom stopp
+		jrst looupd]
+	.16in
+	movem ac1,lodcnt
+	.16in
+	movem ac1,lodadr
+
+	move a,lodcnt
+	caige a,6
+	 jrst [	.error "Bad load count in palx BIN file."
+		setom stopp
+		jrst looupd]
+	cain a,6
+	 jrst [	.terpri
+		.princ ".=.-"
+		move ac1,lladdr
+		.nout
+		.terpri
+		.terpri
+		setom stopp
+		jrst looupd]
+	call lodblk
+	jrst looupd
+
+lodblk:	.terpri
+	.princ ".=.+<"
+	move  ac1,lodadr
+	sub   ac1,lladdr
+	.nout
+	.princ ">"
+	move a,lodcnt
+	subi a,6
+	setzi b,
+	jrst lodtst
+lodupd:	subi a,1
+	aos b
+	andi b,7
+lodtst:	skipn a
+	 jrst [	.8in		;checksum
+		.terpri
+		return]
+	skipn b
+	 call [	.terpri
+		.princ ".byte "
+		aos (p)		;skip else clause
+		return]
+	 call [	.princ ","
+		return]
+	.8in
+	.nout
+	jrst lodupd		;go loop
+
+
+clsfil:	move  ac1,injfn
+	closf
+	 jfcl
+	move  ac1,outjfn
+	closf
+	 jfcl
+	return
+
+end go
