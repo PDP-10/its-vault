@@ -1,0 +1,191 @@
+BABYL OPTIONS:
+Version:5
+Append:1
+
+1, recent,,
+Date: 17 Jul 84 22:41-PDT
+From: mclure @ Sri-Unix.arpa
+To: sasw @ Mit-Mc.arpa
+Subject: Hakmem original munch memo
+
+*** EOOH ***
+Date: 17 Jul 84 22:41-PDT
+From: mclure at Sri-Unix.arpa
+To:   sasw at Mit-Mc.arpa
+Re:   Hakmem original munch memo
+
+Received: from Mit-Mc.arpa.arpa by Sri-Unix.arpa with TCP; 17 Jul 84 18:00-PDT
+Date: 17 July 1984 20:35-EDT
+From: Ed Schwalenberg <ED @ MIT-MC>
+Subject: munching squares
+To: mclure @ SRI-UNIX
+
+From HAKMEM (AI memo 239):
+ITEM 146:
+Another simple display program ("munching squares")
+It is thought that this was discovered by
+Jackson Wright on the RLE PDP-1 circa 1962.
+	DATAI 2
+	ADDB 1,2
+	ROTC 2,-22
+	XOR 1,2
+	JRST .-4
+2=X, 3=Y.  Try things like 1001002 in data switches.  This also
+does interesting things with operations other than XOR,
+and rotations other than -22.  (Try IOR; AND; TSC; FADR; FDV(!);
+ROT -14, -9, -20, ...)
+
+Hope this satisfies your curiosity.
+
+Date: 17 Jul 84 22:43-PDT
+From: mclure at Sri-Unix.arpa
+To:   sasw at Mit-Mc.arpa
+Re:   munch
+
+Received: from Mit-Mc.arpa.arpa by Sri-Unix.arpa with TCP; 17 Jul 84 22:12-PDT
+Date: 18 July 1984 01:12-EDT
+From: Alan Bawden <ALAN @ MIT-MC>
+Subject:  munching squares
+To: mclure @ SRI-UNIX
+In-reply-to: Msg of 07/17/84 19:46:33 from mclure at SRI-UNIX
+
+Here is a more-or-less recent message from Bill Gosper on the subject of
+the original munching squares.  You might also see if you can get ahold of
+HAKMEM (MIT AI Memo 239) which might have some additional bits in one of
+its items.  If you can get your hands on any Lisp Machine whose software
+sprouted at MIT (Symbolics, LMI, etc.) you will find something called
+munching squares in the menu popped up by doing "(HACKS:DEMO)".  Its
+relation to the original is close, but there is some debate on the
+exactness of the match. 
+
+I haven't re-read this message completely before forwarding it to you, I
+think it wanders into some far out speculations about fractals eventually,
+but it certainly starts off with some info you might want:
+
+Date: Wednesday, 16 November 1983, 03:42-PST
+From: Bill Gosper <rwg at SPA-NIMBUS>
+To:   aramini%umass-cs at CSNET-CIC
+cc:   dlw at SPA-NIMBUS, rem at MIT-MC, rwg at SPA-NIMBUS,
+      cwr at SPA-NIMBUS, acw at SPA-NIMBUS, alan at SPA-NIMBUS,
+      ho%aerospace at MIT-MC
+Re:   "Munching Squares" and fractals
+Return-path: <rwg@SPA-NIMBUS>
+
+First of all, let's define Munching Squares.  As far as I am concerned, it
+refers to a program written by Jackson Wright on the PDP-1 circa 1963, which,
+when converted to the later PDP-1 order code, read
+
+	lat	/load ac from test word
+	adm 9s	/1's complement add to memory.  9s = 777
+	rcl 9s	/rotate ac-io left 9
+	xor 9s	/xor from memory
+	dpy	/twink x from hi 10 bits of ac, y from io
+	jmp .-5
+
+which was named after the pattern produced by 1000 in the test-word.  This
+Munching Square pattern is, as observed by Schroeppel, a movie whose frames
+are the graphs of y = x xor time, for consecutive values of time.  In a
+certain higher level language, this becomes
+
+(DEFUN MUNCH (LG-SIZE &OPTIONAL (WINDOW TERMINAL-IO) &AUX (SIZE (1- (LSH 1 LG-SIZE))))
+  (LOOP FOR TIME FROM 0
+	DO (LOOP WITH TIME = (LOGAND TIME SIZE)
+		 FOR X FROM 0 TO SIZE
+		 DO (SEND WINDOW ':DRAW-POINT X (LOGXOR X TIME) TV:ALU-XOR))))
+
+which forms the cumulative exclusive-or of all of the graphs (which are
+disjoint until time "wraps around" modulo size).  (This crudely simulates
+the persistence of vision and phosphor effect of the non-bitmap PDP-1 type
+30 display.)  (MUNCH 8) is equivalent to a switch-setting of 1 in the
+(HACKS:DEMO) muncher.
+
+At any time, the bitmapped munch pattern consists of a large square, along
+whose main diagonal are 2^a squares of the opposite color, along each of
+whose main diagonals are 2^b squares of the first color, etc., with
+successive diagonals perpendicular.  In an infinite bitmap, truly recursive
+patterns would occur for non-terminating rational values of time.  (Is
+Euclidean 2-space an infinite bitmap?  We would be talking about an
+uncountable union (over continuous time) of these disjoint graphs, each of
+area 0, but summing to finite.  Sounds fishy.  Maybe an infinite bitmap
+should only contain points with dyadic (terminating) rational coordinates.)
+
+But these recursive patterns are not your usual fractals, since the
+dimension at almost all points is 0 or 2.  I.e., ultramagnifying a randomly
+chosen patch will almost always show all black or all white, even in an
+infinite bitmap.
+
+I have seen the PDP-1 muncher produce much more authentically
+fractal-looking patterns (Flying Wedges and Binary Tree) for other switch
+settings, but after spending several fruitless hours in the aforementioned
+higher level language, I gave up trying to recreate them.  (I might try
+adding a persistence simulator, but something much more bogus is going on.)
+
+(Leaping out of the bitmap for a moment, I'll bet a spacetime plot of
+munching squares would produce a dandy of a fractal surface.)
+
+The pattern you sent shows up all over the place, e.g. Pascal's Triangle
+mod 2, spacetime diagrams of simple 1-dimensional cellular automata, Cantor
+sets, etc.  However, the most interesting zoo it inhabits is perhaps the
+zoo of sets fixed under certain operations on the plane.  In your case, the
+operation is:  form the union of three halfsize images, with one displaced
+upward and one displaced rightward.  Almost no matter what you start with,
+the iteration of this procedure will converge to your fractal.
+(Technically, you might have to take closures of the limits for them to be
+all identical, but first you have to define the limit of a sequence of
+sets!)
+
+If the scale factor is 1/sqrt(number of copies), then you get two
+dimensional blobs with fractal boundaries, corresponding to base-and-digit
+systems in the complex plane.  E.g., for base -2 and digits 0, and the
+cuberoots of 1, the rule is:  shrink to half size, rotate 180, and adjoin 3
+copies at r = 1, theta = 0, 120 and 240.  This is the subset of the complex
+plane representable by positionally notated pure fractions base -2 with
+those four digits.  Try it, it's weird.  Note that this seems like a
+perfectly legitimate operation in an infinite bitmap, but since it involves
+sqrt(3), seems to contradict the dyadic rational requirement.  But I'm not
+so sure, since on any iteration, it is possible to determine whether or not
+any given dyadic rational point is in the set.
+
+Anyway, I think it would be a truly interesting program that let you start
+with blob0, make n copies twisted by theta and shrunk by s, and united to
+form blob1, etc., iterating in search of a fixed limit set.
+
+A related gang of fractals are the sets fixed under complex functions.
+E.g., the set fixed under z  z^2 + i looks sort of like a lightning bolt,
+and has many intriguing properties.  (Schroeppel has played with them.)
+Note that the inverse of this fcn is two-valued.  You can compute the
+lightning bolt by starting with any bounded blob, and iteratively uniting
+the two inverse images, analogously to the earlier descriptions.
+
+As for relationships between bottom up vs top down algorithms, I can't say
+much, except that it is probably a hairy subject, since most bottom up
+specifications correspond to some sort of cellular automata, whose
+statistical mechanics have been intensively analyzed in recent papers by
+Stephen Wolfram.  (One will soon appear in Physica-D.)  He finds most
+automata to be fractal.
+
+Date: 16 November 1983 02:48 EST
+From: Alan Bawden <ALAN>
+To:   ALAN
+Re:   PDP-1 Munching Squares
+
+[MESSAGE FROM RWG at MIT-MC  1:33am]
+do you recall anything of PDP-1 munching squares?^_
+[MESSAGE FROM RWG at MIT-MC  1:40am]
+no, it is
+ lat, adm, rcl, xor, dpy, jmp .-5 .
+but i am trying to faithfully reproduce it on 3600
+and getting batshit.^_
+[MESSAGE FROM RWG at MIT-MC  1:42am]
+you mean in hacks:demo?^_
+[MESSAGE FROM RWG at MIT-MC  1:42am]
+well, that wouldn't help much--16 bit 2's complement
+instead of 18 bit 1's.  btw, do you know if 3600
+DISASSEMBLE is weird about LDB?  I grant that the
+hardware takes non-obvious values, but the
+Size(), Rotl() values in the comments are screwy.
+at least the Rotl.  Not so of DPB.^_
+[MESSAGE FROM RWG at MIT-MC  2:15am]
+i'll be dzm'ed, you were right.  the pdp-1 version is not
+in hakmem.^_
+

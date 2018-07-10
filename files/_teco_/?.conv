@@ -1,0 +1,129 @@
+Syntactic onventions for macros files:
+
+Every macro must begin with a comment which ends with a colon.
+This comment is the name of the macro.  No other comment
+may have a colon before the second "!".
+
+The documentation must be in another comment starting on the
+same line as the name comment.  The first line alone constitutes
+"short form" documentation, and the rest "long form".
+The first two characters of the documentation should be the
+"macro class" and a space.  The macro class is used by commands
+that decide which macros to list, and should usually be
+either "U" for "User command", "S" for "Subroutine", or
+"^R" for "^R-mode command".  That is Uparrow-R, not Control-R.
+Subroutines' names should start with "& ",
+and ^R commands' with "^R ".  User commands'
+names need no prefix.  Those basic subroutines kept in standard
+q-registers and accesed through them have names that start
+with two uparrows.
+
+All the text from the end of the documentation to the
+following <cr><lf><ff> is the macro.  The macro compressor
+will delete all spaces and all comments with "*" after
+the leading "!".  To get a space in a macro, use "_".
+Spaces and tabs will be deleted, multiple CRLFs replaced
+by single ones, and uparrow-L's replaced by formfeeds.
+The character transformations/deletions can be inhibited
+by putting a ^Q before or inside the string replaced
+(perhaps with a ^] before it, in contexts such as I commands
+where ^Q by itself does not quote).  For example,
+CRLF-^Q-CRLF is a double CRLF that will not be replaced
+by a single one.  If a :! or !* is to appear in the file
+without its usual significance, a ^Q (or ^]^Q) should go
+in the middle to fool searches.
+
+Every file should have a "macro" in it named ~filename~.
+This macro shoudl be some kind of identification for the file.
+It need not have any relation to the ITS filename you use.
+~Filename~ should be given documentation, which should describe
+the contents of the file as a whole.
+
+
+Programming conventions:
+
+For good programming practise, every CRLF that is not
+part of a string argument should be followed by an indentation
+to a position that indicates the current depth in iterations
+and conditionals.  Since the FS S ERROR$ flag is normally
+set in ?, searches that are followed by ";" must always be
+given the ":" modifier;  otherwise, they will cause errors
+when they fail, before noticing the ";".
+
+Use named subroutines whenever convenient.  The subroutine
+should usually have name and documentation beginning with
+"S " so that users doing a "List Commands" will not see it.
+Call the subroutine with M( M.M&_Subroutine$)  (note the
+_ is used to get a space).  MM&_Subroutine$ would work, but
+macros are not supposed to depend on having no-dot q-regs
+set up.
+
+Commands that take input should do M.I before actually
+reading it.  That will prompt for the input and also
+make the winning SUDS macro feature work.  The user may
+redefine .I if he wishes to eliminate prompting, but
+even so he should still define all his macros to use M.I
+so that other users will receive the behavior they want.
+
+No non-dotted Q-regs should be reserved by the macros,
+except for user interfaces like M.  Also, avoid using
+double-dot Q-regs except as defined in TECO ORDER.  All
+temporary Q-regs should be pushed and popped.  All macros
+should return with  if possible.
+
+Reserved single-dot Q-regs:
+	.E	^^ Qvector Subscript.
+		<idx>M.E<q>$ returns the <idx>'th element of
+		the qvector in q<q>.  <new>,<idx>M.E<q>$
+		returns the old element, and stores <new> in it.
+	.H	The horizontal position "goal" for ^N and ^P
+		commands.
+	.I	^^ Prepare for Input.  Do M.I before doing an
+		FI to read input.  Type-out commands that read
+		input should use 1,M.I.
+	.M	^^ Macro Get.  M.M<name>$ returns a pointer to
+		the macro <name>.
+	.N	the saved most recent minibuffer command.
+	.P	M.P is the driver for "prefix"  characters,
+		which read another character and dispatch on it.
+		Whatever you put in .P should work like what is
+		usually put there:  ^^ Prefix Character Driver.
+		See Make Prefix Character.
+	.Q	A q-vector used as a symbol table by .V.
+	.V	^^ Variable.
+		M.V<var> gets <var>'s value.
+		<arg>M.V<var> sets it, returning old value.
+		M.V[<var> pushes the value (doesn't return it).
+		<arg>M.V[<var> pushes and sets <var>.
+		M.V]<var> pops into <var>, undoing a M.V[<var>.
+		M.V^<var> pops one slot off the qreg pdl
+		into <var>.  So [0 M.V^<var> copies Q0 into <var>.
+		M.V^ cannot be used to undo an M.V[.
+
+	..K	A qvector used to hold strings of deleted text
+		by the  Kill ... and  Un-kill commands.
+		The elements are the strings, in the order they
+		were killed.  The beginning may be filled with zeros,
+		if there are not enough remembered killed strings
+		to use the whole qvector.
+
+Pure file conventions:
+
+In addition to the names of macros, there are several names that
+(usually or always) be found in purified files of ? macros.
+For every macro FOO, an object named ~DOC~ FOO is available,
+that contains FOO's documentation.  In addition, ~DIRECTORY~
+contains a list (one per line) of all the macros that the file
+wishes to advertise that it contains.  Special things such as
+described in this section are not included.
+
+~FILENAME~'s value is the "name" of the file - see above.  It
+is present only if you define it explicitly in the source file.
+Its use is for listing the loaded files with List Files or
+List Commands.  ~DOC~ FILENAME~ should exist if ~FILENAME~ does.
+
+~INVERT~ is supposed to be a macro that is the inverse of the
+loader macro.  That is, <object in file>,<pointer to file>
+fed to the ~INVERT~ macro should return a string containing
+the name of the object.  ~INVERT~ is called by
+& MACRO GET FULL NAME, so you need not call it yourself.
