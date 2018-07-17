@@ -1,0 +1,315 @@
+BEGOF("ALGOL")
+
+COMMENT
+
+The ALGOL (SAIL) subset of PUB -- statements, conditionals, and
+expressions.
+
+The statement parser is recursive descent.  Its top-level production
+is MANUSCRIPT.  A manuscript is a sequence of CHUNKs, including
+ASSIGNMENTs, LABELDEFinitions, COMMANDs, PROCedureSTATEMENTs, and
+TEXTLINEs.
+
+The expression parser is iterative descent.  Its top-level production
+is E.  An E is a conditional expression, an assignment expression, or
+a simple expression.
+
+;
+
+PROCEDURES
+PUBLIC SIMPLE PROCEDURE ALGOL! ;$"#
+BEGIN "ALGOL!"
+ON _ TRUE ; COMMENT TO EXECUTE PARSED CODE ;
+LIT!ENTITY _ LIT!TRAIL _ NULL ;
+EMPTYTHIS ; EMPTYTHAT ;
+END "ALGOL!" ;
+PUBLIC RECURSIVE BOOLEAN PROCEDURE CHUNK(BOOLEAN VALID) ;$"#
+BEGIN
+IF PAGEMARKS > PAGEWAS THEN
+	BEGIN comment, might be AT PAGEMARK response ;
+	FOR PAGEWAS _ PAGEWAS + 1 THRU PAGEMARKS DO IF SIGNALD[FF] THEN RESPOND(SIGNALD[FF]) ;
+	PAGEWAS _ PAGEMARKS ;
+	END ;
+RETURN(THISISID AND (ASSIGNMENT OR LABELDEF OR COMMAND OR PROCSTATEMENT)
+	OR TEXTLINE OR EMPTYCHUNK OR NONSENSE(VALID)) ;
+TES ADDED PROCSTATEMENT 8/20/74 ;
+END "CHUNK" ;
+PUBLIC RECURSIVE PROCEDURE DCONDITIONAL ;$"#
+BEGIN
+BOOLEAN WASON ;
+WASON _ ON ; PASS ; ON _ TRUESTR(E(NULL,"THEN")) AND WASON ;
+IF ITS(THEN) THEN PASS ELSE WARN("=","Missed THEN in conditional statement") ;
+IF STATEMENT THEN BEGIN ON_TRUE; RETURN END; TES 8/14/74 DONE FROM REPEAT ;
+IF ITS(ELSE) THEN BEGIN ON_WASON AND  NOT ON; PASS ; IF STATEMENT THEN BEGIN ON_TRUE; RETURN END END ;
+ON _ WASON ;
+END "DCONDITIONAL" ;
+PUBLIC RECURSIVE STRING PROCEDURE E(STRING DEFAULT, STOPWORD) ;$"#
+COMMENT Scan a SAIL-Like <Expression>.  First check trivial case. ;
+IF ITS(IF) THEN
+	BEGIN "CONDITIONAL EXPRESSION"
+	STRING BOOLX, THENX, ELSEX ; BOOLEAN WASON ;
+	WASON _ ON ;  PASS ;
+	BOOLX _ E(NULL, "THEN") ;  ON _ WASON AND TRUESTR(BOOLX) ;
+	IF ITS(THEN) THEN PASS ELSE WARN("=","Missed THEN in conditional expression "&THISWD) ;
+	THENX _ E(NULL, "ELSE") ;
+	IF ITS(ELSE) THEN
+		BEGIN
+		ON _ WASON AND FALSTR(BOOLX) ;  PASS ;
+		ELSEX _ E(NULL, STOPWORD) ;
+		END
+	ELSE ELSEX _ NULL ;
+	ON _ WASON ;
+	RETURN(IF TRUESTR(BOOLX) THEN THENX ELSE ELSEX) ;
+	END "CONDITIONAL EXPRESSION"
+ELSE IF THISTYPE = -TERQ OR THISTYPE = CMDTYPE OR ITSV(STOPWORD) THEN
+	RETURN(DEFAULT) comment omitted expression ;
+ELSE IF THISTYPE GEQ -1 AND (THATTYPE = -TERQ OR THATTYPE=CMDTYPE OR NEXTSV(STOPWORD)) THEN
+	RETURN(SPASS(<IF THISISCON THEN THISWD[2 TO ] ELSE VEVAL>))
+ELSE IF THISISID AND NEXTSCH(_) THEN comment, Assignment Expression ;
+	RETURN(VASSIGN(SYMB, THISTYPE, IX, E(IPASS(PASS), STOPWORD)))
+ELSE
+BEGIN "SIMPLE EXPRESSION"
+STRING	ANY, comment, result of A OR B OR ...: has value of first TRUE operand;
+	ALL, comment, result of A AND B AND ...: has value of first FALSE operand;
+	COMPARE, comment, result of A<B LEQ ...: TRUE if all relations are TRUE;
+		LEFT, comment, preceding right comparator, saved for another comparison;
+	BOUNDARY, comment, result of A MAX B MIN... ;
+	PRODUCT, comment, result of * / MOD & ;
+	PRIMARY ; comment, <const>|<var>|( <expr> )|<unary><primary>|<primary><substr spec> ;
+INTEGER	OROP, comment, =0 signals OR waiting for right operand ;
+	ANDOP, NOTOP, comment, =0 signals AND or NOT operator waiting ;
+	RELOP, ODDOP, BOUNDOP, ADDOP, MULOP, comment,  GEQ 0 signals operator waiting ;
+	UNARYOP, comment,  GEQ 0 signals unary operators waiting ;
+		U, comment, last of a series of unary operators ;
+	SS1, comment, starting byte number in substring spec ;
+		SAVEINF, comment, saved outside value of  ;
+	SYMPTR, comment, symbol table number of identifier ;
+		IDTYPE, comment, type field in its NUMBER entry ;
+	ICOMPARE, ILEFT, IBOUNDARY, ISUM, IPRODUCT, IPRIMARY ; comment, CVD(corresponding string);
+BOOLEAN WASONA, WASONO ; comment value of ON before a series of conjuncts or disjuncts ;
+DEFINE	TRYFAMILY(FAM) = [IF THISTYPE=-FAM THEN IPASS(IX)];
+COMMENT Multiple Unary operators ( + , - , ABS , LENGTH , XLENGTH , and ^ ) are combined
+	into a single operator by inventing new operators such as
+	"-ABS" and "ABS LENGTH" ;
+DEFINE 	  P = [0], comment, +X ;   M = [1], comment, -X ;   A = [2], comment, ABS X ;
+	 MA = [3], comment, -ABS X ;		  C = [4], comment, ^X ;
+	  L = [5], comment, LENGTH(X) ;		 ML = [6], comment -LENGTH(X) ;
+	 AL = [7], comment, ABS LENGTH(X) ;	MAL = [8], comment, -ABS LENGTH(X) ;
+	  Z = [9], comment, XLENGTH(X) ;	 MZ = [10], comment -XLENGTH(X) ;
+	 AZ = [11], comment, ABS XLENGTH(X) ;	MAZ = [12]; comment, -ABS XLENGTH(X) ; TES 8/14/74 ;
+PRELOAD!WITH comment 		    RIGHT OPERATOR
+			       ---------------------------------
+		LEFT OPERATOR   +   -  ABS  ^   LENGTH   XLENGTH
+		-------------  --- --- --- --- -------- ---------
+		    none;	P,  M,  A,  C,     L,	   Z,
+	comment	      P ;	P,  M,  A,  P,     L,      Z,
+	comment       M ;	M,  P, MA,  M,     ML,     MZ,
+	comment       A ;	A,  A,  A,  A,    AL,      AZ,
+	comment      MA ;      MA, MA, MA,  MA,  MAL,     MAZ,
+	comment	      C ;	P,  M,  A,   C,    L,       Z ;
+OWN INTEGER ARRAY COMBINE[-1:4,0:5] ;
+COMMENT This is a top-down expression parser, but iteration is used
+	instead of recursion for rapidity ;
+
+OROP _ ANDOP _ NOTOP _ RELOP _ BOUNDOP _ ADDOP _ MULOP _ -1 ;
+WASONO _ ON ;
+DO BEGIN "DISJUNCTS" COMMENT Operands of OR ;
+WASONA _ ON ;
+DO BEGIN "CONJUNCTS" COMMENT Operands of AND ;
+WHILE THISTYPE = -NOTQ DO BEGIN NOTOP _ -1 - NOTOP ; PASS END ;
+ICOMPARE _ TRUE ;
+DO BEGIN "COMPARATORS" COMMENT Operands of < = etc. ;
+ODDOP _ TRYFAMILY(ODDQ) ELSE -1 ;
+DO BEGIN "BOUNDS" COMMENT Operands of MAX and MIN ;
+DO BEGIN "TERMS" COMMENT Operands of + -   ;
+DO BEGIN "FACTORS" COMMENT Operands of * / MOD & ;
+UNARYOP _ -1 ; COMMENT check for Unary Operators ;
+WHILE UNARYOP LEQ 3 COMMENT no, P, M, A, or MA left operator ;
+	AND 0 LEQ (U _ TRYFAMILY(ADDQ) ELSE -1) COMMENT some right operator ;
+	DO UNARYOP _ COMBINE[UNARYOP, U] ;
+comment PRIMARY ;
+IF THISISCON THEN BEGIN PRIMARY _ THISWD[2 TO ] ; PASS END
+ELSE IF THISISID THEN
+	IF ITSV(STOPWORD) THEN
+		BEGIN
+		PRIMARY _ DEFAULT ;
+		WARN("=","Ill-Formed Expression" & THISWD) ;
+		END
+	ELSE IF PROCSTATEMENT THEN PRIMARY _ PROCVALUE
+	ELSE IF NEXTSCH(<(>) THEN
+		BEGIN "FUNCALL" TES 8/19/74 ;
+		IF ITS(DECLARATION) THEN
+			BEGIN
+			DCLR!ID _ TRUE ; TES 1/8/75 ;
+			PASS ; PASS ;
+			PRIMARY _ CVS(THISTYPE) ;
+			DCLR!ID _ FALSE ; TES 1/8/75 ;
+			PASS ;
+			END
+		ELSE IF ITS(OCTAL) THEN
+			BEGIN
+			STRING T ;
+			PRIMARY _ NULL ; PASS ; PASS ; T _ E(NULL,NULL) ;
+			WHILE T DO PRIMARY _ PRIMARY & "'" & CVOS(LOP(T)) ;
+			END
+		ELSE IF ITS(BEWARE) THEN
+			BEGIN TES 8/21/74 INVERSE OCTAL ;
+			      RKJ: 6-Feb-75 ALSO DECIMAL ;
+			STRING T ; INTEGER BRC ;
+			PRIMARY _ NULL ; PASS ; PASS ; T _ E(NULL,NULL) ;
+			SETBREAK(LOCAL!TABLE,"'#",NULL,"IS") ;
+			DO	BEGIN
+				SCAN(T, LOCAL!TABLE, BRC) ;
+				IF BRC = "'"
+				    THEN PRIMARY _ PRIMARY & CVO(T)
+				    ELSE IF BRC = "#" THEN PRIMARY _ PRIMARY & CVD(T) ;
+				END UNTIL NOT BRC ;
+			END
+		ELSE IF ITS(SCAN) THEN
+			BEGIN "SCANCALL"
+			BOOLEAN ISBRC ;
+			STRING STR, STOPPERS, IGNORES, OPTIONS ;
+			INTEGER SYMWAS, IXWAS, TYPEWAS, BRC ;
+			STOPPERS_IGNORES_OPTIONS_NULL ;
+			ISBRC _ FALSE ; PASS ; PASS ;
+			IF THISISID AND NEXTSCH(<,>) THEN
+				BEGIN COMMENT VARIABLE TO LOP ;
+				SYMWAS_SYMBOL; IXWAS_IX; TYPEWAS_THISTYPE;
+				STR _ VEVAL ; PASS ;
+				END
+			ELSE	BEGIN COMMENT EXPRESSION ;
+				IXWAS _ -1 ;
+				STR _ E(NULL, NULL) ;
+				END ;
+			IF ITSCH(<,>) THEN
+			    BEGIN COMMENT STOPPERS ;
+			    PASS ; STOPPERS_E(NULL, NULL) ;
+			    IF ITSCH(<,>) THEN
+				BEGIN COMMENT IGNORES ;
+				PASS ; IGNORES _ E(NULL,NULL) ;
+				IF ITSCH(<,>) THEN
+				    BEGIN COMMENT OPTIONS ;
+				    PASS ; OPTIONS _ E(NULL,NULL) ;
+				    IF ITSCH(<,>) THEN
+					BEGIN COMMENT BRC VARIABLE ;
+					PASS ;
+					IF THISISID AND NEXTSCH(<)>) THEN
+						ISBRC_TRUE
+					ELSE WARN(NULL, "SCAN's BRC must be variable name") ;
+					END ;
+				    END ;
+				END ;
+			    END ;
+			SETBREAK(LOCAL!TABLE, STOPPERS, IGNORES,
+				IF FULSTR(OPTIONS) THEN OPTIONS ELSE "IR") ;
+			PRIMARY _ SCAN(STR, LOCAL!TABLE, BRC) ;
+			BREAKSET(LOCAL!TABLE, NULL, "O") ; TES 10/1/74 ;
+			IF ISBRC THEN
+				BEGIN
+				VASSIGN(SYMBOL, THISTYPE, IX, IF BRC=0 THEN NULL ELSE BRC) ;
+				PASS ;
+				END ;
+			IF IXWAS NEQ -1 THEN VASSIGN(SYMWAS, TYPEWAS, IXWAS, STR) ;
+			END "SCANCALL"
+		ELSE	BEGIN
+			WARN(NULL,"Unknown Function " & THISWD) ;
+			PASS ; PASS ; PRIMARY _ DEFAULT ;
+			WHILE NOT ITSCH(<)>) DO
+				IF ITSCH(<,>) THEN PASS
+				ELSE E(NULL,NULL) ;
+			END ;
+		IF ITSCH(<)>) THEN PASS
+		ELSE WARN(NULL, <"Missing ) after function call">) ;
+		END "FUNCALL"
+	ELSE BEGIN PRIMARY _ VEVAL ; PASS END
+ELSE IF ITSCH(<(>) THEN
+	BEGIN "( <EXPR> )"
+	PASS ; PRIMARY _ E(DEFAULT, 0) ;
+	IF ITSCH(<)>) THEN PASS ELSE WARN("=",<"Missed )">) ;
+	END "( <EXPR> )"
+ELSE BEGIN WARN("=","Ill-Formed expression" & THISWD) ; PRIMARY _ DEFAULT END ;
+WHILE THISTYPE=-BROKQ DO COMMENT Substring Specifications ;
+	BEGIN "SUBSPEC"
+	PASS ; SAVEINF _ INF ; INF _ LENGTH(PRIMARY) ;
+	SS1 _ CVD(E("1", IF NEXTS(TO) THEN "TO" ELSE "FOR")) ;
+	IF ITS(TO) THEN BEGIN PASS ; PRIMARY_PRIMARY[SS1 TO CVD(E("0",0))] END
+	ELSE IF ITS(FOR) THEN BEGIN PASS ; PRIMARY_PRIMARY[SS1 FOR CVD(E("1",0))] END
+	ELSE PRIMARY _ PRIMARY[SS1 FOR 1] ;
+	SAIL!SKIP! _ !SKIP! ;
+	IF ITSCH(<]>) THEN PASS ELSE WARN("=",<"Missed ] in substring spec " & THISWD>) ;
+	INF _ SAVEINF ;
+	END "SUBSPEC" ;
+IF UNARYOP LEQ 3 THEN COMMENT both int & str versions maintained when needed ;
+	IPRIMARY _ IF PRIMARY="'" THEN CVO(PRIMARY[2 TO ]) TES 8/19/74 ;
+		   ELSE CVD(PRIMARY) ;
+IF UNARYOP GEQ 0 THEN IF UNARYOP=C THEN IPRIMARY_CVD(PRIMARY_CAPITALIZE(PRIMARY))
+	ELSE PRIMARY _ CVS(IPRIMARY _ CASE UNARYOP OF (IPRIMARY, -IPRIMARY,
+		ABS IPRIMARY, -ABS IPRIMARY, 0, LENGTH(PRIMARY), -LENGTH(PRIMARY),
+		ABS LENGTH(PRIMARY), -ABS LENGTH(PRIMARY),
+		XLENGTH(PRIMARY), -XLENGTH(PRIMARY),
+		ABS XLENGTH(PRIMARY), -ABS XLENGTH(PRIMARY) ) ) ; TES 8/14/74;
+IF MULOP<0 THEN BEGIN PRODUCT _ PRIMARY ; IPRODUCT _ IPRIMARY END
+ELSE IF MULOP = 3 THEN IPRODUCT _ CVD(PRODUCT _ PRODUCT & PRIMARY)
+ELSE PRODUCT _ CVS(IPRODUCT _ IF IPRIMARY=0 OR  NOT ON THEN 0 ELSE CASE MULOP OF
+	(IPRODUCT*IPRIMARY, IPRODUCT DIV IPRIMARY, IPRODUCT MOD IPRIMARY) ) ;
+MULOP _ TRYFAMILY(MULQ) ELSE -1 ;
+END "FACTORS" UNTIL MULOP < 0 ;
+
+ISUM _ CASE ADDOP+2 OF (IPRODUCT, IPRODUCT, ISUM + IPRODUCT,
+	ISUM - IPRODUCT, ISUM  IPRODUCT, ISUM  IPRODUCT) ;
+ADDOP _ TRYFAMILY(ADDQ) ELSE IF ADDOP<0 THEN -1 ELSE -2 ;
+END "TERMS" UNTIL ADDOP < 0 ;
+
+IBOUNDARY _ CASE BOUNDOP+2 OF (ISUM, ISUM, IBOUNDARY MAX ISUM, IBOUNDARY MIN ISUM) ;
+BOUNDOP _ TRYFAMILY(BOUNDQ) ELSE IF ADDOP=-1 AND BOUNDOP<0 THEN -1 ELSE -2 ;
+END "BOUNDS" UNTIL BOUNDOP < 0 ;
+BOUNDARY _ IF BOUNDOP = -1 THEN PRODUCT COMMENT, hasn't changed since then; ELSE CVS(IBOUNDARY) ;
+IF ODDOP GEQ 0 THEN BOUNDARY_CVS(IBOUNDARY_(IBOUNDARY MOD 2)=ODDOP);
+IF ICOMPARE THEN CASE RELOP+2 OF BEGIN comment SAIL Bug precludes case expression with relationals;
+	BEGIN END ; BEGIN END ; ICOMPARE_ILEFT<IBOUNDARY; ICOMPARE_ILEFT>IBOUNDARY; ICOMPARE _
+	EQU(LEFT,BOUNDARY); ICOMPARE_ILEFT LEQ IBOUNDARY; ICOMPARE_ILEFT GEQ IBOUNDARY;
+	ICOMPARE_ NOT EQU(LEFT,BOUNDARY) END ;
+RELOP _ TRYFAMILY(RELQ) ELSE IF RELOP < 0 THEN -1 ELSE -2 ;
+LEFT _ BOUNDARY ; ILEFT _ IBOUNDARY ;
+END "COMPARATORS" UNTIL RELOP < 0 ;
+COMPARE _ IF RELOP=-1 THEN BOUNDARY ELSE CVS(ICOMPARE) ;
+IF NOTOP = 0 THEN COMPARE _ IF TRUESTR(COMPARE) THEN "0" ELSE "-1" ;
+NOTOP _ -1 ;
+IF ANDOP < 0 OR TRUESTR(ALL) THEN IF FALSTR(ALL _ COMPARE) THEN ON _ FALSE  ;
+ANDOP _ TRYFAMILY(ANDQ) ELSE -1 ; ALL _ ALL ; comment SAIL bug -- force it to store;
+END "CONJUNCTS" UNTIL ANDOP < 0 ;
+ON _ WASONA ;
+IF OROP < 0 OR FALSTR(ANY) THEN IF TRUESTR(ANY _ ALL) THEN ON _ FALSE ;
+OROP _ TRYFAMILY(ORQ) ELSE -1 ;  ANY _ ANY ; comment SAIL bug -- force it to store ;
+END "DISJUNCTS" UNTIL OROP < 0 ;
+ON _ WASONO ;
+RETURN(DUMMYSTR _ ANY) ; comment, DUMMYSTR due to SAIL RECURSIVE STRING PROCEDURE bug (see DCS);
+END "SIMPLE EXPRESSION" ;
+PRIVATE BOOLEAN SIMPLE PROCEDURE EMPTYCHUNK ;$"#
+        RETURN(IF ITSCH(;) THEN IPASS(TRUE) ELSE FALSE) ;
+PUBLIC SIMPLE PROCEDURE MANUSCRIPT ;$"#
+BEGIN
+BOOLEAN VALID ;
+PASS ; COMMENT 9/9/74 TES ;
+VALID _ TRUE ;
+DO VALID _ CHUNK(VALID) UNTIL LAST < 1 ;
+IF  NOT NEXTS(7!MANUSCRIPT) THEN WARN("=","Brackets don't pair up!!!!!!!!!") ;
+FINPORTION ; IF BLNMS=0 THEN ENDBEGIN ELSE IF BLNMS>0 THEN
+	WARN("=",CVS(BLNMS) & " Extra BEGINs and STARTs") ;
+END "MANUSCRIPT" ;
+PRIVATE BOOLEAN SIMPLE PROCEDURE NONSENSE(BOOLEAN VALID) ;$"#
+	BEGIN
+	IF VALID THEN WARN("=","Can't make sense out of: "&SOMEINPUT) ;
+	PASS ; RETURN(FALSE) ;
+	END "NONSENSE" ;
+PUBLIC RECURSIVE BOOLEAN PROCEDURE STATEMENT ;$"#
+BEGIN "STATEMENT"
+INTEGER LVL, RLVL ; BOOLEAN VALID ;
+LVL _ BLNMS ; RLVL _ DEEPREPEATS ; TES 8/14/74 ;
+DO VALID _ CHUNK(VALID) UNTIL BLNMS LEQ LVL ;
+RETURN(RLVL > DEEPREPEATS) ; TES 8/14/74 ;
+END "STATEMENT" ;
+FINISHED
+
+ENDOF("ALGOL")
+

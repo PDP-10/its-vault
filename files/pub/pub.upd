@@ -1,0 +1,857 @@
+ COMMENT    VALID 00018 PAGES
+C REC  PAGE   DESCRIPTION
+C00001 00001
+C00003 00002	2 December 1975		PUB Update		edited by Les Earnest
+C00007 00003	3			XGP Commands
+C00011 00004	4			New or Extended Commands
+C00015 00005	5			New Variables
+C00019 00006	6			Bugs and Fudge Factors
+C00024 00007	7			String Operations
+C00029 00008	8			Procedures, Repeat, While, Until
+C00033 00009	9			Debugging Commands
+C00040 00010	10			Other New Features
+C00043 00011	11			Suggestions and Warnings
+C00047 00012	12			More Suggestions and Warnings
+C00050 00013	13			Still More Suggestions and Warnings
+C00054 00014	14			PUB REFERENCE SUMMARY
+C00058 00015	15        Fonts, Counters, Vertical Position, Justification
+C00062 00016	16  Macros, Responses, Labels, Control, Comments, Program Structure
+C00067 00017	17               String Ops, Debugging, Expressions
+C00071 00018	18                      Predeclared Variables
+C00077 ENDMK
+C;
+2 December 1975		PUB Update		edited by Les Earnest
+
+While Pub is a rather versatile documentation language, its own documentation is
+ironically atrocious.  This file is a collection of facts, folklore, and fables
+that attempts to remedy this shortcoming.  Your corrections, additions and
+remarks are solicited.
+
+Pub began as a document compiler for fixed-font devices such as line printers
+and teletypes.  Microfilm output was added, but still for a fixed-size character
+set.  When XGPs came on the scene, features were added for variable-size
+characters and finer contol of spacing.  Unfortunately, it was done in a rather
+kludgy way.  As a consequence, Pub still gets confused sometimes about how many
+lines will fit on a page.  (For a kludgy fix to this problem, see XGENLINES,
+below.)
+
+While Pub may be a very large and slow program, it compensates by being
+idiosyncratic.  If you think it is buggy now, you should have seen it earlier.
+With all its faults, it is the only practical way to do many tasks.
+
+The first part of this note is an update of the Pub manual, which is currently
+out-of-print, but available on the disk [1].  The latter part of this note is a
+Pub Reference Summary/Index.
+
+There are some useful Pub macro collections on the disk in [SUB,SYS] (see
+References 2, 3, and 4, below).  If you have any macros that might be of general
+interest, please put them in [SUB,SYS].
+
+
+			References
+
+[1] Larry Tesler, "PUB, the Document Compiler", SAILON-70, Sept. 1972.  Hard
+copy currently out-of-print; in file PUB.TES [S,DOC], update (i.e. this note) in
+PUB.UPD [S,DOC].
+
+[2] BASKER.PUB [SUB,SYS] contains declarations for Baskerville fonts and
+text responses that automatically substitute ligatures (run-together characters)
+for sequences such as "ff" and "fi".
+
+[3] TWOCOL.PUB [SUB,SYS] has Pub macros for both one- and two-column format,
+including section numbering and automatic table of contents.
+
+[4] COVER.PUB [SUB,SYS] has a macro for generating cover and title pages of AI
+Memos.
+3			XGP Commands
+
+There have been several additions and extensions to PUB to facilitate XGP
+output.  There are two ways to specify XGP output: by placing the PUB command
+.DEVICE XGP
+near the front of the source file, or by putting an "X" switch in the command
+line, as in "PUB file(X)".
+
+The PUB variable XCRIBL will be set to TRUE iff the XGP has been selected and
+THISDEVICE will be set to "XGP".  These read-only variables can be used in
+conditional statements to select different actions for different devices.
+
+
+.FONT <c> "<font file>";
+
+The font declaration associates a character <c> with a font file, specified in a
+quoted string.  The exact form of <c> and <font file> are site dependent.  At
+SAIL, <c> can be digits 1-9 or letters A-G (upper and lower case are equivalent).
+The file extension defaults to "FNT" and the directory to [XGP,SYS].  For example,
+.FONT 1 "BASL30";
+declares that Font 1 is to be taken from file BASL30.FNT [XGP,SYS], which
+contains Baskerville Lightface with a height of 30 XGP lines.
+
+It is a good idea to make font 1 your "standard" font, since Pub uses the height
+of this font in estimating vertical page capacity.  You should also avoid
+declaring fonts that you don't need, especially large ones, since they will slow
+down the printing process and may even cause the font compiler to barf.
+
+
+.SELECT <c>; or (in text) %<c>
+
+Fonts may be selected by the SELECT command, where the character <c> is the one
+used in the FONT declaration, above.  Alternatively, you may use the control
+character "%" provided that the command TURN ON "%" has been given earlier.
+As with other control characters, you may use another character to perform this
+function by saying, for example, TURN ON "" for "%".
+
+An important difference between SELECT and "%" is that SELECT causes a paragraph
+BREAK, while "%" does not.  Thus "%" must be used to change fonts within a line.
+"%*" causes PUB to switch back to the previously selected font (one level only).
+
+Font selections are both area- and block-dependent.  Thus, if you say SELECT 3
+after you have done a PLACE HEADING, the current font will be changed to 3 only
+for the HEADING area.  Similarly, when the END of a block is passed, the font
+reverts to whatever was selected at the corresponding BEGIN.
+
+Pub selects Font 1 initially.  The read-only variable THISFONT holds the
+character designating the currently selected font.  FONT, SELECT, and % are
+no-ops for devices other than XGP (FONT a time consuming one).
+4			New or Extended Commands
+
+In the following commands, the optional <units> is one of
+ MILL | MILLS | INCH | INCHES | LINE | LINES
+and, if omitted, is taken to be LINES (of text).  For the XGP, the height of
+Font 1 is used to convert LINES into actual space.
+
+.SKIP <e> [<units>];
+
+leaves the specified amount of blank space, or as close as possible within the
+resolution of the selected device, except at the top of a page, where the blank
+space is suppressed.  Use GROUP SKIP ... to force space even at the top of a page.
+
+
+.PREFACE <e> [<units>];
+
+causes a paragraph BREAK, evaluates the expression <e> and causes each
+subsequent paragraph to be preceded with that amount of blank area.  As with
+other modes, this change is confined to the current block.
+
+Internally, there are two variables called MILLPREFACE and LINEPREFACE
+that control interparagraph spacing and get set as follows.
+.PREFACE k		sets MILLPREFACE_0 and LINEPREFACE_k;
+.PREFACE m MILLS	sets MILLPREFACE_m and LINEPREFACE_0;
+.PREFACE n INCHES	sets MILLPREFACE_n*1000 and LINEPREFACE_0.
+If you wish, you may set these variables directly yourself with assignment
+statements.  At the beginning of each paragraph, the two variables are added
+together (with appropriate scaling) to determine the spacing.  Spacing for the
+LPT or TTY is necessarily rounded to an integeral number of lines.
+
+Note that there are actually two independent sets of these preface variables,
+one set associated with FILL mode and one with NOFILL.
+
+
+.SPACING <e> [<units>];
+
+sets the distance between the bottom of one text line and the beginning of the
+next in FILL mode only (in NOFILL, the PREFACE command controls spacing).  As
+with PREFACE, this spacing is block-dependent.
+
+Internally, there are two variables called MILLSPACING and LINESPACING that work
+the same way as MILLPREFACE and LINEPREFACE.  For historical compatibility,
+there are two other variables whose effects are simulated (as read-write variables),
+namely SPREAD (equivalent to LINESPACING+1) and !XGPINTRA (intraline spacing
+in XGP lines).  Best to forget them.
+
+
+.XLENGTH <string>;
+
+If in XGP mode, XLENGTH returns the bit length of <string> in the current font.
+For other devices, it returns 0.  Be careful, font switching does NOT take place
+inside <string>!
+5			New Variables
+
+VBPI and HBPI
+
+initially have the vertical and horizontal resolution of the specified device.
+For LPT and TTY they are 1.  For other devices they are in units of bits per
+inch.  These variables can be changed from their initial values if you so
+desire.
+
+CHARW
+
+is 1 for LPT and TTY and read-only.  For other devices CHARW is the bit width of
+a space.  It is initially set to 16, but can be set by the user at the beginning
+of the file and never changed again.  CHARW is used by PUB to calculate the bit
+width of a line; thus the statement
+.PAGE FRAME PAGEHEIGHT HIGH PAGEWIDTH WIDE;
+would cause PUB to generate lines of CHARW*PAGEWIDTH bits.  CHARW is
+independent of the selected font.
+
+
+CHARH
+
+is read-only at all times and is 1 for LPT and TTY.  For other devices CHARH is
+bit height of the selected font.
+
+
+EVENLEFTBORDER, ODDLEFTBORDER, !XGPLFTMAR
+
+In XGP mode, EVENLEFTBORDER and ODDLEFTBORDER specify the left border widths (in
+mills) of even and odd numbered pages.  They both start out at 1300 mills (1.3
+inches) and the minimum value possible on our XGP is 500 (1/2 inch).  Any change
+you make will take effect on the next page that is closed.  They have no effect
+for LPT and TTY.
+
+For compatibility with an older Pubism, !XGPLFTMAR is simulated as a readwrite
+variable that is interpreted as XGP units (200/inch for us).  An assignment to
+!XGPLFTMAR sets both EVENLEFTBORDER and ODDLEFTBORDER to the equivalent in
+mills.
+
+
+TOPBORDER, BOTTOMBORDER
+
+Similar to the EVEN/ODDLEFTBORDER, but for top and bottom of the page.
+6			Bugs and Fudge Factors
+
+Align Command Bug
+
+The align command, invoked by "&" [Pub manual, Page 19], and used to align
+superscripts and subscripts, works on devices TTY and LPT, but not alas on
+device XGP.  It doen't blow up or anything, it just doesn't align.
+
+
+!XGPCOMMANDS
+
+Allows the user to give commands to the XGP system that PUB might not otherwise
+permit.  For example,
+.!XGPCOMMANDS_"/PMAR=1000"; 
+would change the size of the printed portion of the page to 1000 lines (about 5
+inches), which works only if the PAGE FRAME has been made suitably small.
+Don't try to change anything other than margins this way.
+
+
+XGENLINES
+
+This is a fudge factor, to deal with cases in which Pub misjudges the number of
+lines that will fit on a given page.  For example, if Pub is putting out too
+many lines on a certain page, with the result that the last three lines actually
+get XGPed on a continuation page, then put
+.XGENLINES_XGENLINES-3;
+in the source file on the offending page.  This reduces Pubs estimate of the
+amount of text it can fit on the current page.
+
+Conversely, if it is not putting enough on the page, a positive change in
+XGENLINES will fool it into putting out more.
+
+Changing XGENLINES should be considered only as a last ditch effort and fixes
+only one page each time you use it.  If you have a number of pages with too few
+or too many lines, you should consider changing your area declarations.
+
+Experimental evidence indicates that the following relation always holds:
+  LINES = <height of area> - 1 - LINE + XGENLINES
+where LINES is the estimated number of (font 1 size) lines remaining on this
+page, LINE is the number of the last or current line (increases by 1 for each
+line) and XGENLINES is twiddled by Pub to try to make things come out even.
+
+
+.SNEAK <string>
+
+takes the <string> and sneaks it into the XGP output.  <string> is not
+considered for justification purposes.  For example the command
+.SNEAK "FOO"
+would slip that string into the output.  If you want to sneak a
+rubout into the document and don't mind living dangerously, say
+.SNEAK(BEWARE "'177");
+(see next page for "BEWARE").
+7			String Operations
+
+SCAN
+
+Adopted from SAIL, this function scans a string in search of break characters
+and can divide the string into a pre-break and a post-break substring.  The
+various forms of call, in order of increasing complexity, are as follows.
+
+.ANS_SCAN(<string>,<stoppers>);
+
+Scans the <string> in search of any of the break characters listed in
+<stoppers>.  If one is found, then ANS _ <substring before the break character>,
+and if <string> is a variable then <string> _ <substring that remains>,
+retaining the break character.  If no break character is found, then ANS_<string>,
+and if <string> is a variable then <string> _ NULL.
+
+.ANS_SCAN(<string>,<stoppers>,<omits>);
+
+Similar, but characters in the string <omits> are dropped from ANS.
+
+.ANS_SCAN(<string>,<stoppers>,<omits>,<options>)
+
+where <options> is a string with an (R, A, or S) and an (I or X) varies the
+behavior of SCAN as follows:
+   R       Retain break character in <string> (Default),
+   A       Append break character to ANS instead,
+   S       Skip break character -- neither in <string> nor ANS,
+
+   I       "Inclusive": Break characters are those in <stoppers> (default),
+   X       "eXclusive": Break characters are all ascii characters EXCEPT those
+				in <stoppers>.
+
+.ANS_SCAN(<string>,<stoppers>,<omits>,<options>,<brcvar>);
+
+where <brcvar> is a variable name, sets <brcvar> to a one-character string
+containing the break character which actually stopped the scan.  If no break
+character was found, then <brcvar>_NULL.
+
+The effect of SAIL break tables can be had (functionally, not speedily) by the
+use of a macro to supply the middle arguments of the function call.
+
+
+.OCTAL("<s>");
+
+OCTAL returns the octal codes of the characters in its argument, e.g.,
+OCTAL("ABC")="'101'102'103".  If the value of OCTAL is used in arithmetic, only
+the code of the first character is involved.
+
+.BEWARE("'octal'values");
+
+For generality, the inverse of OCTAL is provided, i.e.,
+BEWARE("'101'102'103")="ABC".  The function is so named to remind you that the
+insertion of a cr, lf, tab, vtab, altmode, rubout, or null in a text line will
+hopelessly confuse PUB and forfeit your right to aid or sympathy.  If you wish
+the result to be handled as "computed text", then enclose the expression in
+parentheses, as in
+.(beware("'106 '117 '117"));
+8			Procedures, Repeat, While, Until
+
+.PROCEDURE name(args,...)  ... RETURN(value) ... 
+
+A procedure is a variety of macro.  The advantage of a procedure is that it may
+RETURN at any time, with or without a value.  The default RETURN is RETURN(NULL).
+Example:
+
+.PROCEDURE DOUBLE(N)  N _ N+N; RETURN("OK") 
+.X _ 5 ;
+.TTY _ DOUBLE(X) ;
+
+This will set X to 10 and print OK on the terminal.  Good news: the restriction
+on recursive macros which sometimes requires a double semicolon is not
+applicable to procedures.  Bad news: procedures are as slow as macros, i.e.,
+very slow.
+
+
+.REPEAT  ... DONE ... ;
+
+The command REPEAT followed by a template will execute  that template
+repeatedly until the statement DONE is executed.  Example:
+
+.PROCEDURE FACTORIAL(N)   <<  means N is a value parameter >>
+.  ANS _ I _ 1 ;
+.  REPEAT  ANS_ANS*I ; I_I+1 ; IF I>N THEN DONE ;
+.  RETURN(ANS)
+.  ;
+.TTY_FACTORIAL(4)
+
+This will print 24 on the terminal.
+
+
+.WHILE(<pretest>,<action>);  UNTIL(<posttest>,<action>);
+
+These macros will execute the <action> repeatedly while the <pretest> before
+each repetition is true or until the <posttest> after some repetition is true.
+Their arguments usually are enclosed in vertical bars.
+
+9			Debugging Commands
+
+.PUB!DEBUG; or "P" response to error message
+
+Pub's interactive debugging facility can be invoked either by typing "P" in
+response to an error message or by placing a PUB!DEBUG command in the source
+text.  This allows for both examination of the state of a compilation and
+keyboard entry of commands by going into a "read-eval-print" loop.  It prompts
+with # and waits for you to type a segment of text terminated by <cr> or <esc>.
+While typing the segment, <del> starts over.
+
+PUB!DEBUG expects the first line of the segment to be in one of the following
+forms:
+        <expression>
+        <expression> ; <commands>
+        ; <commands>
+The value of the <expression> is printed, and then the <commands> are executed.
+
+It is legal to include temporarily unmatched BEGINs, STARTs, and ENDs in the
+segment, but unmatched template brackets will cause havoc of a very unpleasant
+sort.
+
+The read-eval-print loop is terminated as soon as an empty segment is typed
+(i.e., just <cr>).
+
+THISLINE
+
+A useful variable to examine while debugging is THISLINE, which is the current
+output line formed so far by PUB.  It is NULLed out by every line break.  In it,
+word breaks are represented by $ and forward references by ^K<number>.
+
+.BURP INPUT
+
+To discover your context while debugging, execute the BURP INPUT command.  It
+types out some of the yet unparsed input at the current level and at several
+previous levels of macros and requires.  BURP INPUT VERBOSE may type out more
+characters at each level, and always proceeds to the outermost level.
+
+.BURP AREAS
+
+If you are hopelessly fouled up with area declarations, try BURP AREAS, which
+types out 10-30 lines of information about all areas known by PUB, even those
+that are inaccessible in outer blocks.  BURP AREAS VERBOSE includes a picture of
+each area that has text in it, with numbers that reference the numbers found in
+the intermediate ".TXTn" files.
+
+.DEBUG("<herald>"); DEBUGFLAG; BUGOFF
+
+A convenient way to activate PUB!DEBUG is by planting calls on the macro
+DEBUG("herald") throughout the manuscript.  The herald (if any) is printed, and
+then PUB!DEBUG is called.  However, the macro is a no-op if the variable
+DEBUGFLAG is FALSE.  An easy way to turn it off is by calling the macro BUGOFF.
+10			Other New Features
+
+Error Message Responses
+
+In addition to the usual responses (CR to continue, LF to continue
+automatically, T or E to edit, X to exit, S to restart), you can now type P to
+call PUB!DEBUG.
+
+A LF to continue automatically sets the variable ERRLF to TRUE.  It can be
+cancelled by the command ERRLF_FALSE either in the manuscript or in a debug
+loop.
+
+
+.USERERR "<message>"
+
+This command lets  you activate  the error machinery yourself.
+
+
+.BLANK PAGE <n>
+
+Closes the current page and leaves <n> blank pages in the document.  the page
+counter is NOT affected.  If <n> is omitted, 1 is assumed.
+
+
+.DECLARATION(<identifier>);
+
+Borrowed from SAIL, this function takes an identifier as an argument and returns
+its PUB internal type code.  The most useful value of DECLARATION(X) is 0
+(FALSE) which signifies that X is undeclared.
+
+
+.$(, )$, $[
+
+For TTY users, instead of braces and horseshoes, you can now use the following:
+  "$(" means "" (open macro),
+  ")$" means "" (close macro),
+  "]$" means "~" (switch to text mode).
+These are valid only in Command Mode and need not be turned on.  On the other
+hand, the following control characters are only recognized in text mode and must
+be turned on (other characters may be turned on for them):
+  "$[" means "{" (switch to Command Mode).
+
+
+.TURN ON|OFF TAB FOR "<c>" ;;
+
+As Pub reads the manuscript, it substitutes for each TAB character from one to
+eight spaces.  This command changes Pub so that it substitutes the single
+character <c> instead.  The command must be followed by two semicolons or else
+it may not take effect on the next line.  If it is declared in a block, the END
+of the block must be followed by two semicolons or the original meaning of TAB
+may not reappear in time for the next line.
+11			Suggestions and Warnings
+
+The Order of Things
+
+Pub expects to see declarations in the following sequence:
+.PAGE FRAME n HIGH w WIDE;
+.AREA TEXT ...
+.TITLE AREA HEADING ...
+.TITLE AREA FOOTING ...
+.PLACE TEXT;
+If you change the PAGE FRAME, then you had better redo the things further down.
+Similarly, if you change an AREA, then you should say PLACE TEXT to make certain
+you are there.  Failure to do this may or may not cause mysterious things to
+happen, depending on the phase of the moon and whether or not you brushed your
+teeth this morning.
+
+PAGE FRAME and AREA re-declarations do not take effect until the current page
+is closed.
+
+Also, do NOT declare a macro called TITLE or your TITLE AREA declarations will
+be swallowed by it!
+
+
+.COUNT PAGE
+
+This sets PAGE to null.  It gets stepped to 1 (or whatever) the next time a page
+is opened.  That is why the first page has a blank page number.  Its border will
+be ODDLEFTBORDER to be consistent with the way books are made.  However, if you
+set PAGE_0 (but leave PAGE!=NULL to inhibit numbering) then the title page will
+get an EVENLEFTBORDER.
+
+Isn't that a mess?
+
+
+.EVERY HEADING | FOOTING
+
+These functions are carried out by a BEFORE PAGE transition response, when the
+first line of text is ready to be emitted for that page.  Thus nothing that you
+do subsequently will affect the heading/footing on this page.
+
+
+.!
+
+It is inadvisable to use the "!" variable, which has the last value assigned
+to any P-counter, including PAGE!.  For example, if you say
+.NEXT FOOTNOTE; ...; !
+and before ! gets evaluated a NEXT PAGE happens (e.g. caused by GROUP), then
+! will be the page number.  Use FOOTNOTE! instead of !.
+
+12			More Suggestions and Warnings
+
+Macro Call Bugs
+
+If one of your macro calls isn't working right, look for one of the following
+bugs:
+a)  omitted "." in column 1, especially on subsequent lines of a multi-line call;
+b)  an argument not enclosed in quotes or "|"s and containing "," or something
+        equally evil;
+c)  an argument enclosed in quotes and containing one or more quotes that are
+        not doubled-up (""), as they must be;
+d)  an argument enclosed in quotes extending over more than one line.
+
+
+Text Response Bugs
+
+If a text response call isn't working right, look for one of the following bugs:
+a)  omitted separator or terminator;
+b)  signal declared with more than 5 characters (works only if you're lucky).
+
+
+Large Documents
+
+For long documents, it is usually best to have a separate file for each chapter,
+then REQUIRE them from a header file that contains your global macros.  For
+example, the following arrangement is useful.
+.macro get(file);	 begin "file"
+.    require "file" sourcefile;
+.    end "file" ;
+.<<
+.get chap1
+.get chap2
+.>>
+.get chap3
+.get chap4
+
+The macro GET requires the given file and puts it inside a named block,
+so that any mismatch in BEGINs, STARTs, and ENDs in that file will be
+recognized.  In this example, chapters 1 and 2 have been "commented out"
+(by the "<< ... >>"), so that only chapters 3 and 4 will be compiled.
+
+If the number of pages will exceed 100, be sure to declare the page counter
+with something like "COUNT PAGE FROM 1 TO 300", since Pub expects no more
+than two digits unless you tell it.
+
+13			Still More Suggestions and Warnings
+
+GROUP vs. FOOT
+
+If a SEND FOOT occurs inside a group, then not only will the first line of the
+first footnote be forced onto the same page as the reference but the whole
+footnote will be.  This usually means that the reference will be pushed to the
+next page so that both it and the footnote will fit together.  If there are a
+lot of footnotes referenced from the same line in this way, or if there is a
+long footnote, Pub does the best it can but may break something across pages.
+
+If a GROUP occurs inside a SEND FOOT, then it will all fall on one page if
+possible, but only the first line of the footnote will be tied to the reference,
+as usual.  If the whole template of the SEND FOOT is a GROUP, then the whole
+footnote will be tied to the reference.
+
+
+Margin Setting Example
+
+The following example defines a macro that given a page size adjusts the page
+frame to fit font 1 on a page with resonable margins.
+
+.MACRO PAPER SIZE(X,Y)  MILLPAPERHEIGHT_Y; MILLPAPERWIDTH_X; 
+.
+.VARIABLE PAGEHEIGHT, PAGEWIDTH
+.
+.MACRO MARGINS (LEFT,RIGHT,TOP,BOTTOM)   BEGIN GROUP SELECT 1;
+.    IF MILLPAPERHEIGHT  0 THEN MILLPAPERHEIGHT_11000;  <<8.5" X 11" DEFAULT>>
+.    IF MILLPAPERWIDTH   0 THEN MILLPAPERWIDTH _ 8500;
+.
+.    BITRASTERWIDTH_(MILLPAPERWIDTH*HBPI)/1000;
+.    BITRASTERHEIGHT_(MILLPAPERHEIGHT*VBPI)/1000;
+.
+.    IF LEFT  0 THEN ODDLEFTBORDER_LEFT ELSE ODDLEFTBORDER_1500;
+.    IF RIGHT  0 THEN RIGHTBORDER_RIGHT ELSE RIGHTBORDER_1000;
+.    IF TOP  0 THEN TOPBORDER_TOP ELSE TOPBORDER_1000;
+.    IF BOTTOM  0 THEN BOTTOMBORDER_BOTTOM ELSE BOTTOMBORDER_500;
+.
+.    EVENLEFTBORDER_ODDLEFTBORDER; XGPVSP_(MILLSPACING*VBPI)/1000;
+.
+.    PAGEWIDTH_(BITRASTERWIDTH-(HBPI*(ODDLEFTBORDER+RIGHTBORDER))/1000)/CHARW
+.    PAGEHEIGHT_(BITRASTERHEIGHT-(VBPI*(TOPBORDER+BOTTOMBORDER))/1000)
+.      /(CHARH+XGPVSP);
+.
+.    PAGE FRAME PAGEWIDTH WIDE PAGEHEIGHT HIGH
+.    TITLE AREA HEADING LINES 1 TO 3
+.    AREA TEXT LINES 4 TO PAGEHEIGHT-2
+.    TITLE AREA FOOTING LINE PAGEHEIGHT
+.    PLACE TEXT
+.    END ;
+14			PUB REFERENCE SUMMARY
+
+Here is a summary of Pub features, with pointers to their descriptions.
+Ordinary page numbers refer to the original Pub Manual, while those beginning
+with "U" refer to page numbers in this update.
+
+                         Initial Conditions
+
+Here is a summary of Pub initial conditions.  For actual initialization
+declarations see PUBSTD.DFS [1,3].
+
+.BEGIN "!MANUSCRIPT"
+.PORTION !NONAME ;
+.FILL; ADJUST; RETAIN; APART;
+.PAGE FRAME 69 WIDE 53 HIGH;
+.AREA TEXT LINE 4 TO 51;
+.TITLE AREA HEADING LINES 1 TO 3
+.TITLE AREA FOOTING LINE 53
+.PLACE TEXT;
+.NOFILL PREFACE 0
+.FILL PREFACE 1
+.TURN ON ".!?-";  TURN OFF "#{\_^&%"
+.COUNT PAGE
+.YEAR _ <current year>; MONTH _ <current month>; DAY _ <current day>
+.TIME _ <current time>; DATE _ MONTH & " " & DAY & ", " & YEAR
+
+			    Device, Frame				Page
+
+.DEVICE LPT | TTY | XGP		output device selection ...............	53, U3
+.PAGE FRAME <e> HIGH <e> WIDE	defines page size			52, U11
+
+                              Portions					Page
+
+.PORTION <name>			starts new portion .................... 47
+.INSERT <portion name>		relocates portion here ................ 47
+.SEND <portion name> [;] <template>	sends text .................... 48
+.RECEIVE			receives text for portion ............. 49
+
+                               Areas					Page
+
+.[ TEXT | TITLE ] AREA <name> [ LINE[S] <e> [ TO <e> ]]
+.    [ CHAR[S] <e> [ TO <e> ]] [ IN <e> COLUMNS <e> WIDE | APART ]
+				declares an area .....................	37, U11
+.PLACE <area name>		begins output to area	...............	39, U11
+.EVERY | EVEN | ODD    HEADING | FOOTING (<text>,<text>,<text>)
+				standard heading/footing ..............	46, U11
+.SEND FOOT [;]  <template> 	sends footnote	....................... 63, U13
+
+15        Fonts, Counters, Vertical Position, Justification
+
+                               Fonts					Page
+
+.FONT <c> "<font file name>"	font declaration ...................... U3
+.SELECT <c> | %<c> | %*		font selection ........................ U3
+.XLENGTH "<string>"		bit length of string in current font .. U4
+
+                             Counters					Page
+
+.COUNT <name> [ INLINE ][ FROM <e> ][ TO <e> ][ BY <e> ]
+.     [ IN <counter name> ] [ PRINTING  <e> | <template> ] declare cntr 41,U11,U12
+.NEXT <counter name>		step counter .......................... 43
+
+                          Vertical Position				Page
+
+.[GROUP] SKIP <se> [<units>]	skip lines ............................ 51, U4
+.SKIP TO LINE <e>		skip to line .......................... 51
+.SKIP TO COLUMN <e>		skip to column ........................ 51
+.SINGLE | DOUBLE | TRIPLE  SPACE	interline spacing ............. 37
+.SPACING <e> [<units>]		alternate interline spacing ........... U4
+.PREFACE <e> [<units>]		interparagraph spacing ................ U4
+.GROUP .... APART		group lines on same page .............. 15, U13
+
+                            Justification				Page
+
+.VERBATIM | FILL | NOFILL | CENTER | FLUSH LEFT | FLUSH RIGHT |
+.    JUSTJUST | SUPERIMPOSE <e>	    select justification mode ......... 13-15
+.TURN ON | OFF "<string>"	turn control characters on/off ........ 20
+.TURN ON "<char>" FOR "<char>"	substitute one char. for another ...... 20, U10
+.TURN OFF			turn off the last things turned on .... 20
+
+When not in VERBATIM mode						17-19
+	  quote	\  tab		 underbar (in form ...)
+	  word break	  move		  one-word underbar
+	  print funny  _  center	  subscript
+	#  sneaky space   right flush	^  superscript
+	{  command	  repeat	&  align ......................	U6
+	%  font select	...............................................	U3
+.COMPACT  |  RETAIN		redundant space control ............... 15
+.BREAK	  |  CONTINUE		end of paragraph ...................... 52
+.TABBREAK |  TABSPACE		may break on initial tab .............. 14
+.CRBREAK  |  CRSPACE		may break on each line ................ 14
+.WIDEN	  |  NARROW <e> [, <e>] reset or set margins .................. 38
+.TABS <e> [, <e> .... ]		sets tab stops ........................ 35
+
+When in FILL, NOFILL, JUSTJUST, or SUPERIMPOSE modes:
+.INDENT <e> [, <e> [, <e>]]	select indentation .................... 35
+
+When in FILL mode:
+	.!?  end of sentance		-  hyphen ..................... 17
+.ADJUST   |  NOJUST		justify or not ........................ 13
+
+16  Macros, Responses, Labels, Control, Comments, Program Structure
+
+                               Macros					Page
+
+.[ RECURSIVE ] MACRO <name> [<formal parameters>] [;]  <template> ;   25
+    where <formal parameters>  ( []<identifier>, ...)
+.PROCEDURE <name> [<formal parameters>] [;]  <template> ;  .......... U8
+
+.<macro name> [(][ <param> [, <param>] ... [)] ]	macro call .... 25, U12
+    where <param>  "<string in one line with quotes doubled>"
+		   |<string in which no vertical bar appears>|
+		   <string on one line not starting with " or | and
+			containing no , or )>
+
+                              Responses					Page
+
+AT "<string>" [<parameter scan>]  <template>   	text response   60, U12
+    where <parameter scan>  <name> "<string>" <name> "<string>" ...
+AT <integer> | PAGEMARK | NULL  [;] <template>	text response ......... 60
+BEFORE | AFTER  <counter name> | <area name> [;] <template>
+					     transition response ...... 61
+
+                               Labels					Page
+
+.<label>: [NEXT] <counter id> 	labelled counter ...................... 57
+.<label>: <e> 			labelled expression ................... 57
+.<label>: ~ <text line>  	text label ............................ 57
+{ [<e>] <label id>~  |  {<counter id>[!] <label>~  |
+     { "<counter id>[!]" <label id> ~	cross-reference ............... 56
+
+                               Control					Page
+
+.COMMAND CHARACTER "<char>"	change command character .............. 12
+.......~			change to text mode ................... 20
+In commands, "$(" means "", ")$" means "", "]$" means "~" ........... U10
+.REQUIRE "<file name>" SOURCEFILE	insert file here .............. 51, U13
+.IF <e> THEN <s> [ ELSE <s> ]	conditional statement ................. 43
+.REPEAT  ... DONE ... 	iteration ............................. U8
+.WHILE(<pretest>,<action>);	iteration ............................. U8
+.UNTIL(<postest>,<action>);	iteration ............................. U8
+
+                               Comments					Pages
+
+.COMMENT <anything but semicolon> ;	comment ....................... 55
+.<<anything but 2 greater-thans in a row>>  another comment ........... 55
+
+                          Program Structure				Page
+
+.BEGIN [<name>] <s>; <s>; ... END [<name>]	block - modes are local	33
+.ONCE <s>; <s>; ...		one-paragraph block ................... 34
+.START [<name>] <s>; <s>; ... END [<name>]	clump - modes continue	33
+.<name> _ <e>			assignment statement .................. 43
+.{<e>~				computed text ......................... 21
+17               String Ops, Debugging, Expressions
+
+                          String Operations				Page
+
+.SCAN(<string>,<stoppers>[,<omits>[,<options>[,<brcvar>]]]);  scan str. U7
+.OCTAL "<string>";		return octal codes of characters ...... U7
+.BEWARE "'octal'values"		inverse of OCTAL ...................... U7
+.SNEAK "<string>"		sneak character into output ........... U6
+
+                              Debugging					Page
+
+.PUB!DEBUG			call debugging system ................. U9
+.BURP INPUT [VERBOSE]		show unparsed input ................... U9
+.BURP AREAS [VERBOSE]		show areas known to Pub ............... U9
+.DEBUG("<herald>")		call debugger with announcement ....... U9
+.BUGOFF				turn off DEBUG calls .................. U9
+.USERERR("<message>")		roll your own error message ........... U9
+
+                             Expressions				Page
+
+.DECLARATION(<identifier>);	returns Pub internal type code ........ U10
+.VARIABLE <name> [, <name> ... ]     local variable declaration ....... 28
+<constant>  "<string with quotes doubled>"				31
+	    <string of decimal digits>
+	    '<string of octal digits>
+Expressions are formed with the following operator precedence:		30
+	( )
+	[ ]
+unary	+ -   ABS  LENGTH  ^   (the ^ capitalizes its operand)
+	* /   DIV  MOD     &   (19 & 76 makes 1976)
+binary	+ -   EQV    XOR  
+	MAX   MIN
+	EVEN  ODD
+	> < = LEQ   GEQ   NEQ      (= and  compare strings)
+	  NOT
+	  AND
+	  OR
+<assignment expression>  <var. name> _ <e>		
+<conditional expression>  IF <e> THEN <se> ELSE <e>
+<substring expression>    <val>[<e> TO <e>]
+			  <val>[<e> FOR <e>]
+			  <val>[<e>]		(same as [<e> FOR 1])
+	     where <val>  <variable name>
+			  <constant>
+18                      Predeclared Variables
+
+                         Read-only Variables				Page
+
+CHAR		# of characters so far in output line ................. 29, 39
+CHARH		(XGP) bit height of selected font ..................... U5
+CHARS		# of character positions remaining on current line .... 29
+COLUMN		# of last column to which output went (0 if fresh page) 29
+COLUMNS 	# of unused columns on current page ................... 29
+FILLING		0 if not in FILL mode, 1 if in ADJUST, -1 if NOJUST ... 29
+FALSE		0 ..................................................... 29
+HBPI		horizontal resolution of device (bits/inch) ........... U5
+LINE		# of the last line output (0 at beginning of column) .. 29
+LINES		# of unused lines in current column ................... 29
+NULL		empty string .......................................... 29
+THISDEVICE	name of selected device ............................... U3
+THISFONT	(XGP) identifier of selected font ..................... U3
+THISLINE	(Debug) current output line formed so far ............. U9
+TOPLINE		line number that starts the current area .............. 29
+TRUE		-1 .................................................... 29
+XCRIBL		TRUE iff output is to XGP ............................. U3
+VBPI		vertical resolution of device (bits/inch) ............. U5
+
+
+                        Read-write Variables				Page
+
+BOTTOMBORDER	(XGP) bottom margin ................................... U5
+CHARW		(XGP) bit width of a space (initialized to 16) ........ U5
+DATE		initialized to date of compilation .................... 29
+DAY		initialized to day of month at compilation ............ 29
+DEBUGFLAG	DEBUG calls will happen iff TRUE ...................... U9
+EVENLEFTBORDER	(XGP) left border for even numbered pages ............. U5
+FILE		name of your first manuscript file .................... U18
+FOOTSEP		prints above the first footnote in each column ........ 30
+INDENT1, INDENT2, INDENT3	control paragraph indentation ......... 36
+LINEPREFACE	interparagraph spacing (line component) ............... U4
+LINESPACING	interline spacing (line component) .................... U4
+LMARG		left margin ........................................... 39
+MILLPREFACE	interparagraph spacing (mills component)............... U4
+MILLSPACING	interline spacing (mills component).................... U4
+MONTH		initialized to month of compilation ................... 29
+ODDLEFTBORDER	(XGP) left margin for odd numbered pages .............. U5
+PAGE		current page number (integer) ......................... 30,41,U11
+PAGE!		current page number (printed version).................. 41,44,U11
+RMARG		right margin .......................................... 39
+SPREAD  	(obsolete) interline spacing (=LINESPACING+1) ......... U4
+TIME		initialized to time of compilation .................... 29
+TOPBORDER	(XGP) top margin ...................................... U5
+XGENLINES	fudge factor to increase or decrease # of lines on page U6
+YEAR		initialized to year of compilation .................... 29
+!		(dangerous) last value assigned to P-counter .......... U11
+!XGPCOMMANDS	switches to be sent to XSPOOL ......................... U6
+!XGPINTRA	(obsolete) XGP intraline spacing ...................... U4
+!XGPLFTMAR	(obsolete) left margin in XGP pixels .................. U4
+   

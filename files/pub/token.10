@@ -1,0 +1,407 @@
+BEGOF("TOKEN")
+
+COMMENT
+
+Tokenization, symbol table lookup of identifiers,
+declaring and disdeclaring identifiers.
+
+PASS is the main routine.  It sets THISWD_THATWD
+and THATWD_ first token in INPUTSTR --- almost.  There
+are numerous exceptions to this general rule.  The
+main one is that if THISWD is a delimiter, THATWD is
+left empty.  If a macro name is encountered, the macro is
+expanded.
+
+Macros IPASS(integer) and SPASS(string) allow PASS to be
+called in an expression, returning its
+pseudo-argument as its pseudo-value.
+
+;
+
+PROCEDURES
+PUBLIC SIMPLE PROCEDURE TOKEN! ;$"#
+BEGIN "TOKEN!"
+SETSYM ;  XSYMNO _ SYMNO ; comment Initialize the symbol table;
+FOR J _ 0 THRU 127 DO
+	BEGIN DPB(MISCQ, FAMILY(J)) ; DPB(0, SPECIES(J)) END ;
+FAMILYHAS(LETTQ,	"ABCDEFGHIJKLMNOPQRSTUVWXYZ!") ;
+FAMILYHAS(LETTQ,	"abcdefghijklmnopqrstuvwxyz") ;
+FAMILYHAS(DIGQ,		"0123456789"	) ;
+FAMILYHAS(EMPTYQ,	'0 & ALTMODE & RUBOUT) ;
+FAMILYHAS(TERQ,		RCBRAK&";),]"	) ;
+FAMILYHAS(QUOTEQ,	"""'"		) ;
+FAMILYHAS(DOLLARQ,	"$"		) ;
+FAMILYHAS(BROKQ,	"["		) ;
+FAMILYHAS(MULQ,		"*/%&"		) ;
+FAMILYHAS(ADDQ,		"+-^"		) ;
+FAMILYHAS(RELQ,		"<>="	) ;
+FAMILYHAS(NOTQ,		""		) ;
+FAMILYHAS(ANDQ,		""		) ;
+FAMILYHAS(ORQ,		""		) ;
+FAMILYHAS(MISCQ,	" :_(@|"	) ;
+FOR S _ "AND", "OR", "NOT", "/DIV", "EQV", "XOR",
+	"ABS", "LENGTH", "LEQ", "GEQ", "NEQ" DO
+	BIND(DECLARE(SYMNUM(S[2 TO ]), INTERNTYPE), S+200) ;
+	COMMENT, equate with special character ;
+J _ RUBOUT ;
+FOR S _ ODDQ&0&"EVEN", ODDQ&1&"ODD",
+    BOUNDQ&0&"MAX", BOUNDQ&1&"MIN", MULQ&2&"MOD", ADDQ&5&"XLENGTH" DO
+	BEGIN
+	INTEGER TEMP ; COMMENT SAIL BUG -- THANKS RKJ ;
+	BIND(DECLARE(SYMNUM(S[3 TO ]), INTERNTYPE), (J_J+1)+200) ;
+	DPB(TEMP_S[1 FOR 1], FAMILY(J)) ;
+	DPB(TEMP_S[2 FOR 1], SPECIES(J)) ;
+	END ;
+DCLR!ID _ FALSE ;
+END "TOKEN!" ;
+COMMENT 
+ SYMSER.SAI package -- LOOKUP and ENTER procedures for hashed
+symbol tables -- STRINGS -- uses linear quotient hash conflict resolution.
+
+REQUIRED -- 
+ 1.  DEFINE SYMNO="1 less than some prime number big
+	enough to hold all entries".
+
+WHAT YOU GET ---
+ 1.  An array, SYM[0:SYMNO-1], to hold the (STRING) symbols
+     you enter.
+
+ 2.  A parallel array, NUMBER, to hold the (INTEGER) values which
+     get associated with each string, during ENTERSYM.  If you want
+     more complex symbol entries, use the NUMBER array to hold some
+     sort of descriptors t the more complex entries.
+
+ 3.  An integer variable, SYMBOL, which LOOKSYM (below) will set 
+     to the index of the found string, etc.
+
+ 4.  An integer variable, ERRFLAG, set to TRUE if errors occur in ENTERSYM.
+
+ 5.  A Procedure, FLAG_LOOKSYM("A") which returns:
+    TRUE if the string is already present in the SYM table, whence:
+	SYMBOL is the index of the found string/value in the arrays.
+	The form of TRUE returned is: XWD -1,symbol index.
+    FALSE if the symbol is not found, whence:
+	SYMBOL is -1 (table full), or is the index in the table
+	  which should be used to enter the string (see below).
+
+ 6.  A Procedure, ENTERSYM("SYM",VAL).
+     This should be called just after a LOOKSYM, called with the
+      same string.  ENTERSYM will use the value of SYMBOL produced by
+      LOOKSYM, so this is important (more efficient than doing it over).
+     Entersym checks for symbol full or duplicate symbol -- if either
+      error occurs, it types a message and sets ERRFLAG TRUE.
+     Entersym puts SYM and VAL into SYM/NUMBER arrays at SYMBOL index.
+
+ 7.  A Procedure, SETSYM, which initializes the table.  The indices
+      returned by LOOKSYM will range from 1 to SYMNO-1 -- 0 is not
+      used, for a reason which I do not remember.
+
+  Average symbol table lookup requires about two probes into the symbol
+  table, for tables which are kept less than about 80% full.  More
+  dense tables will not degrade this figure too much.
+;
+PUBLIC SIMPLE PROCEDURE BIND(INTEGER LOC, NEWIX) ;$"#
+BEGIN "BIND"
+IF LOC = SYMTEXT THEN IXTEXT _ NEWIX
+ELSE IF LOC = SYMPAGE THEN BEGIN IXPAGE _ NEWIX ; PATPAGE _ PATT!STRS(IXPAGE) END ;
+DPB(NEWIX, IXN(LOC)) ; IF LDB(TYPEN(LOC)) GEQ 11 THEN DPB(LOC, BIXNUM(NEWIX)) ;
+END "BIND" ;
+PUBLIC STRING SIMPLE PROCEDURE CAPITALIZE(STRING MIXEDCASE) ;$"#
+BEGIN "CAPITALIZE"
+INTEGER C ; STRING S ; S _ 0&MIXEDCASE ; LOPP(S) ; C _ LENGTH(MIXEDCASE) ; IF  NOT C THEN RETURN(NULL);
+START!CODE "CAPIT" LABEL NEXC ; MOVE 1, S ; MOVE 2, C ;
+NEXC: ILDB 3, 1 ; LDB 3, UPCAS3 ; DPB 3, 1 ; SOJG 2, NEXC ;
+END "CAPIT" ; RETURN(S) ;
+END "CAPITALIZE" ;
+PUBLIC INTEGER SIMPLE PROCEDURE DECLARE(INTEGER LOC, NEWTYPE) ;$"#
+IF ON THEN
+BEGIN "DECLARE"
+INTEGER NEWDEPTH, OLDDEPTH ;  LABEL PURGE ;
+BYTEWD _ NUMBER[LOC] ;
+NEWDEPTH _ CASE NEWTYPE OF (0,1,DEPTH,0,DEPTH,0,0,0,0,0,1,DEPTH,DEPTH,DEPTH,DEPTH) ;
+IF LOC = SYMTEXT AND NEWTYPE NEQ AREATYPE OR LOC = SYMPAGE AND NEWTYPE NEQ COUNTERTYPE THEN
+	BEGIN
+	WARN("=",SYM[LOC] & " may only be type " & (IF LOC=SYMTEXT THEN "AREA" ELSE "COUNTER")) ;
+	GO TO PURGE ;
+	END ;
+IF LDB(TYPEWD(BYTEWD)) THEN
+	IF (OLDDEPTH _ LDB(DEPTHWD(BYTEWD))) < 1 THEN
+		BEGIN
+		WARN("=","You may not redeclare reserved word " & SYM[LOC]) ;
+		PURGE:	LOC _ SYMNUM("(Purged)" & SYM[LOC]) ;
+		END
+	ELSE IF OLDDEPTH < NEWDEPTH THEN
+		BEGIN
+		PUSHI(NUMWDS, NUMTYPE) ;
+		OLD!NUMBER(IHED) _ BYTEWD ;
+		END
+	ELSE IF OLDDEPTH = 1 THEN
+		BEGIN
+		WARN("=",<"You may not redeclare" & SYM[LOC] & ", a global VARIABLE or PORTION">) ;
+		GO TO PURGE ;
+		END
+	ELSE IF OLDDEPTH=NEWDEPTH THEN
+		DISDECLARE(LOC, LDB(TYPEWD(BYTEWD)), LDB(IXWD(BYTEWD)))
+	ELSE WARN("=",<"Global " & SYM[LOC] & " redeclaring local">) ;
+NUMBER[LOC] _ (NEWDEPTH ROT -5) LOR (LOC LSH 18) LOR (NEWTYPE LSH 14) ;
+RETURN(LOC) ;
+END "DECLARE" ;
+PUBLIC SIMPLE PROCEDURE DISDECLARE(INTEGER SYMB, OLDTYPE, OLDIX) ;$"#
+IF ON THEN
+BEGIN "DISDECLARE"
+LABEL LOCAL;	RKJ: 1-8-74;
+CASE OLDTYPE OF
+BEGIN
+[LOCALTYPE] LOCAL:BEGIN SSTK[OLDIX]_NULL; IF IX=SHED THEN SHED_SHED-1 END ;
+[INTERNTYPE] WARN("=",SYM[SYMB]&" Redeclared") ;
+[AREATYPE] CLOSEAREA(OLDIX,TRUE);
+[COUNTERTYPE] CLOSECOUNTER(OLDIX,TRUE) ;
+[MACROTYPE] BEGIN OLDIX_BODY(OLDIX); GO TO LOCAL END   RKJ: Delete redeclared macros 1-8-74;
+END ;
+END "DISDECLARE";
+PRIVATE PROCEDURE ENTERSYM(STRING WORD; INTEGER VAL) ;$"#
+COMMENT ROUTINE TO ENTER A SYMBOL IN THE SYMBOL TABLE.
+	IT ENTERS THE PREVIOUS WORD SCANNED BY GETWORD.
+	"SYMBOL" IS THE POINTER INTO THE ARRAY WHERE THE
+	SYMBOL IS STORED.;
+BEGIN "ENTERSYM" 
+	IF LENGTH(SYM[SYMBOL]) OR SYMBOL<0 THEN
+	BEGIN
+	  ERRFLAG_1;
+	  IF SYMBOL GEQ 0 THEN OUTSTR( "DUPLICATE SYMBOL " & WORD & CRLF)
+		ELSE OUTSTR( "SYMBOL TABLE FULL" & CRLF)
+	END;
+	SYM[SYMBOL]_WORD;
+	NUMBER[SYMBOL]_VAL;
+END "ENTERSYM";
+PUBLIC SIMPLE PROCEDURE FAMILYHAS(INTEGER FAMNUM; STRING MEMBERS) ;$"#
+BEGIN "FAMILYHAS"
+INTEGER SPECIE, CHAR ;
+SPECIE _ -1 ;
+WHILE FULSTR(MEMBERS) DO
+	BEGIN
+	DPB(FAMNUM, FAMILY(CHAR _ LOP(MEMBERS))) ;
+	DPB(SPECIE _ SPECIE+1, SPECIES(CHAR)) ;
+	END ;
+END "FAMILYHAS" ;
+PRIVATE INTEGER PROCEDURE LOOKSYM(STRING A) ;$"#
+BEGIN "LOOKSYM"
+ INTEGER H,Q,R;
+
+ H_CVASC(A) +LENGTH(A) LSH 6;
+
+Comment Linear Quotient Hash Conflict Resolution method, see
+        CACM 13,11 (1970), page 675;
+
+ R_SYMBOL_(H_ABS(H(H LSH 2))) MOD (SYMNO+1);
+ IF EQU(SYM[SYMBOL],A) THEN RETURN((-1 LSH 18)+SYMBOL);
+ IF NULSTR(SYM[SYMBOL]) THEN  RETURN(0); 
+
+ Q_H%(SYMNO+1) MOD (SYMNO+1);
+ FOR H_1 STEP 1 UNTIL SYMNO DO BEGIN "LK1"
+     IF (SYMBOL_SYMBOL+H)>SYMNO THEN SYMBOL_SYMBOL-(SYMNO+1);
+     IF EQU(SYM[SYMBOL],A) THEN RETURN((-1 LSH 18)+SYMBOL);
+     IF NULSTR(SYM[SYMBOL]) THEN RETURN(0);
+ END "LK1";
+ SYMBOL_-1; RETURN(0);
+END "LOOKSYM";
+PUBLIC RECURSIVE STRING PROCEDURE PASS ;$"#
+    	comment Value is always NULL ;
+BEGIN COMMENT Load up THISWD,THISTYPE, THATWD,THATTYPE, SYMB, and IX
+   for the parser. Calls CHUNK recursively!  PASS will expand macro
+   calls, replace macro/response arguments with their actual values,
+   and skip over comments. ;
+PRELOAD!WITH 0, [3]3, 2, [4]3, 0, 1, 0, 4, [5]0, 5, 0, 0, 6, [7]0, 7, 0 ;
+OWN INTEGER ARRAY SCANTYPE[-15:15] ; comment, computes small case index ;
+BOOLEAN FINAL ;
+DO BEGIN "LOAD WD 0"
+IF  NOT THATISFULL THEN RDENTITY ;
+THISWD _ THATWD ;
+THISTYPE _ IF THATTYPE THEN THATTYPE comment, non-identifier ;
+		ELSE IF SYMLOOK(THATWD) THEN LDB(TYPEN(SYMBOL))
+		ELSE 0 ; comment, undeclared identifier ;
+IF THISTYPE NEQ -TERQ THEN RDENTITY ;
+IF THISISID THEN
+	BEGIN "IDENTIFIER"
+	SYMB _ SYMBOL ;
+	IF  NOT DCLR!ID AND THATISID AND SYMLOOK(THISWD & SP & THATWD) THEN
+		BEGIN comment, two-word macro name ;
+		THISWD _ SYM[SYMB_SYMBOL] ;  THISTYPE _ MACROTYPE ;
+		IX _ LDB(IXN(SYMBOL)) ;  RDENTITY ;
+		END
+	ELSE BEGIN SYMBOL_SYMB ; IF NULSTR(SYM[SYMB]) THEN ENTERSYM(THISWD,0) ; IX_LDB(IXN(SYMB)) ;END ;
+	END "IDENTIFIER" ;
+FINAL _ FALSE ;
+DO CASE SCANTYPE[THISTYPE] OF
+BEGIN COMMENT DETECT ;
+COMMENT 0 ... Nothing to do ;	BEGIN END ;
+COMMENT 1 ... $ ;	IF NEXTSCH(<(>) THEN
+	BEGIN EMPTYTHAT ; THISWD_"" ;
+	IX _ LDB(SPECIES(THISWD)) ; THISTYPE _ -TERQ ;
+	END 
+		ELSE IX_LDB(SPECIES(THISWD)) ;
+COMMENT 2 ... < Family ; IF ITSCH "[]"([<]) AND NEXTSCH "[]"([<]) THEN
+		BEGIN "<<COMMENT>>" SETBREAK(LOCAL!TABLE, ">"&RCBRAK&LF, NULL, "IS") ;
+		DO RD(LOCAL!TABLE) UNTIL BRC=">" AND INPUTSTR=">"  OR  BRC=RCBRAK AND INPUTSTR=VT ;
+		IF BRC=">" THEN RD(ONE!CHAR)
+			ELSE BEGIN WARN("=","Unterminated <<comment>>") ; INPUTSTR_BRC&INPUTSTR END ;
+		EMPTYTHIS ;  EMPTYTHAT ;
+		END "<<COMMENT>>"
+	ELSE IX _ LDB(SPECIES(THISWD)) ; COMMENT relational operator ;
+COMMENT 3 ... Expression Operators ; IX _ LDB(SPECIES(THISWD)) ;
+COMMENT 4 ... Terminal ;
+	BEGIN
+	IF ITSCH(<]>) AND INPUTSTR="$" THEN
+		BEGIN LOPP(INPUTSTR) ; THISWD _ RCBRAK END ;
+	EMPTYTHAT ; IX _ LDB(SPECIES(THISWD)) ;
+	END ; Comment NOTE!! ~),];
+COMMENT 5 ... internal variable ; IF  NOT DCLR!ID AND IX GEQ 200 THEN
+		BEGIN "OPERATOR"
+		IX _ IX-200 ; comment e.g., NOT  ;
+		THISTYPE _ -LDB(FAMILY(IX)) ;
+		IX _ LDB(SPECIES(IX)) ;
+		END "OPERATOR" ;
+COMMENT 6 ... reserved word ; IF IX=IXCOMMENT AND   NOT DCLR!ID THEN
+		BEGIN "COMMENT"
+		INPUTSTR _ LIT!ENTITY & INPUTSTR ;
+		DO RD(TO!SEMI!SKIP) UNTIL BRC=";" OR INPUTSTR=VT ;
+		IF BRC NEQ ";" THEN BEGIN WARN("=","Unterminated COMMENT;") ; INPUTSTR_BRC&INPUTSTR END ;
+		EMPTYTHIS ; EMPTYTHAT ; ;
+		END "COMMENT" ;
+COMMENT 7 ... macro name ;
+	IF  NOT DCLR!ID AND ODDMAC(IX)<2 THEN APPLYTOARGUMENTS(ON OR ODDMAC(IX), FALSE) ; TES 8/19/74 ;
+END COMMENT DETECT ; UNTIL (FINAL _  NOT FINAL) ;
+END "LOAD WD 0" UNTIL THISISFULL ;
+RETURN(NULL) ;
+END "PASS" ;
+PUBLIC SIMPLE PROCEDURE RDENTITY ;$"#
+BEGIN Comment Sets THATWD, THATTYPE, LIT!ENTITY, LIT!TRAIL ;
+STRING SEGMENT, SOURCE ;  BOOLEAN DUN, TEXTLN ; INTEGER CC, FAM ; LABEL RETRY ;
+TEXTLN _ FALSE ;	RETRY:	IF CHARTBL[INPUTSTR] LAND TWO(6) THEN RD(TO!VISIBLE) ;
+SOURCE _ INPUTSTR ;
+FAM _ LDB(FAMILY(SOURCE)) ;
+CASE FAM MIN QUOTEQ+1 OF
+BEGIN COMMENT BY FAMILY ;
+COMMENT 0 ... Letter ;
+	BEGIN "BUILD ID"
+	CC _ LENGTH(SEGMENT _ SCAN(SOURCE, ALPHA, BRC)) ;
+	THATWD _ CAPITALIZE(SEGMENT);
+	THATTYPE _ 0 ;
+	END "BUILD ID" ;
+COMMENT 1 ... Digit ;
+	BEGIN "BUILD INTEGER"
+	CC _ LENGTH(THATWD _ "0" & SCAN(SOURCE, DIGITA, BRC)) - 1 ;
+	THATTYPE _ -1 ;
+	END "BUILD INTEGER" ;
+COMMENT 2 ... EMPTYQ ;	IMPOSSIBLE("RDENTITY") ;
+COMMENT 3 ... Terminal ;
+	BEGIN "MAYBE TEXT"
+	IF LDB(SPECIES(THATWD _ LOP(SOURCE))) = 0 THEN TEXTLN _ TRUE ;
+	CC _ 1 ; THATTYPE _ -TERQ ;
+	END "MAYBE TEXT" ;
+COMMENT 4 ... Quote ;
+	IF SOURCE = """" THEN
+		BEGIN "STRING CONSTANT"
+		DUN _ FALSE ; THATWD _ "7" ; LOPP(SOURCE) ;  CC _ 1 ; COMMENT skip " ;
+		DO	BEGIN "TO NEXT QUOTE"
+			SEGMENT _ SCAN(SOURCE, TO!QUOTE!APPD, BRC) ;
+			CC _ CC + LENGTH(SEGMENT) ;
+			IF BRC NEQ """" THEN
+				BEGIN "QERROR"
+				THATWD _ THATWD & SEGMENT[1 TO -1] ;  DUN _ TRUE ;
+				WARN("=","Omitted Right Quote From: "&THATWD) ;
+				END "QERROR"
+			ELSE IF SOURCE = """" THEN
+				BEGIN "INTERNALQUOTE"
+				THATWD _ THATWD & SEGMENT ;
+				LOPP(SOURCE) ; CC _ CC + 1 ; COMMENT skip second " ;
+				END "INTERNALQUOTE"
+			ELSE
+				BEGIN "END STRING"
+				THATWD _ THATWD & SEGMENT[1 TO -1] ;
+				DUN _ TRUE ;
+				END "END STRING"
+			END "TO NEXT QUOTE"
+		UNTIL DUN ;
+		THATTYPE _ -1 ;
+		END "STRING CONSTANT"
+	ELSE
+		BEGIN "OCTAL CONSTANT"
+		LOPP(SOURCE) ; THATTYPE _ -1 ;
+		CC _ LENGTH(SEGMENT _ SCAN(SOURCE, DIGITA, BRC)) + 1 ;
+		THATWD _ "8" & (DUMMY_CVO(SEGMENT)) ; COMMENT a one-character string ;
+		IF NOT INPICHAR THEN  TES 12/6/73 ;
+		IF DUMMY='0 OR '11 LEQ DUMMY LEQ '15 OR DUMMY=ALTMODE OR DUMMY=RUBOUT THEN
+			BEGIN
+			WARN("ILL OCTAL",
+			  "Illegal octal constant (represents illegal character) "&CVOS(DUMMY)) ;
+			THATWD _ "7" ;
+			END ;
+		END "OCTAL CONSTANT" ;
+COMMENT 5 ... Other ;
+	BEGIN "SINGLE CHARACTER"
+	THATTYPE _ -FAM ;  CC _ 1 ;  THATWD _ LOP(SOURCE) ;
+	IF FAM = MISCQ THEN CASE LDB(SPECIES(THATWD)) OF
+		BEGIN
+		[4] COMMENT  ;	BEGIN THATTYPE _ 0 ; THATWD _ "!INF" END ;
+		[0]	BEGIN "ILL CHAR"
+			WARN("=","Extraneous '" & CVOS(THATWD) & " in command line") ;
+			LOPP(INPUTSTR) ; GO TO RETRY ;
+			END "ILL CHAR" ;
+		[MISCMAX]
+		END ;
+	END "SINGLE CHARACTER" ;
+END ; COMMENT BY FAMILY ;
+LIT!ENTITY _ INPUTSTR[1 TO CC] ;
+INPUTSTR _ SOURCE ;
+LIT!TRAIL _ IF TEXTLN THEN NULL ELSE IF CHARTBL[INPUTSTR] LAND TWO(6) THEN RD(TO!VISIBLE) ELSE NULL ;
+END "RDENTITY" ;
+PRIVATE PROCEDURE SETSYM ;$"#
+BEGIN
+ INTEGER I;
+ FOR I_-1 STEP 1 UNTIL SYMNO DO SYM[I]_NULL;
+ SYM[0]_"              ";
+ ERRFLAG_FALSE
+END "SETSYM";
+PUBLIC BOOLEAN SIMPLE PROCEDURE SIMLOOK(STRING NAME) ;$"#
+comment, SIMilar to SYMLOOK, but sets SYMTYPE and SYMIX ;
+IF SYMLOOK(NAME) THEN
+	BEGIN
+	BYTEWD _ NUMBER[SYMBOL] ;
+	SYMTYPE _ LDB(TYPEWD(BYTEWD)) ;  SYMIX _ LDB(IXWD(BYTEWD)) ;
+	RETURN(TRUE) ;
+	END
+ELSE RETURN(FALSE) ;
+PUBLIC INTEGER SIMPLE PROCEDURE SIMNUM(STRING NAME) ;$"#
+BEGIN "SIMNUM" comment, SIMilar to SYMNUM, but uses SIMLOOK instead of SYMLOOK ;
+IF  NOT SIMLOOK(NAME) THEN ENTERSYM(NAME, SYMTYPE_SYMIX_0) ;
+RETURN(SYMBOL) ;
+END "SIMNUM" ;
+PUBLIC BOOLEAN SIMPLE PROCEDURE SYMLOOK(STRING NAME) ;$"#
+BEGIN "SYMLOOK" comment same as LOOKSYM, but if hash table full, expands it and does linear search ;
+comment don't search if it's already here;
+IF  SYMBOL>0 AND EQU(SYM[SYMBOL],NAME) OR LOOKSYM(NAME)  THEN RETURN(TRUE) ;
+IF SYMBOL>0 THEN RETURN(FALSE) ; comment it's not there, and table's not full;
+FOR SYMBOL _ SYMNO STEP 1 WHILE SYMBOL LEQ XSYMNO AND FULSTR(SYM[SYMBOL]) AND  NOT EQU(SYM[SYMBOL],NAME) DO ;
+IF SYMBOL > XSYMNO THEN
+	BEGIN
+	SGROW(SYM, SYMIDA, XSYMNO, 1000, "Symbol Table Full") ; SMAKEBE(SYMIDA, SYM) ;
+	ZEROSTRINGS(1000, SYM[XSYMNO-999]) ;
+	GROW(NUMBER, NUMBIDA, DUMMY, 1000, NULL) ; MAKEBE(NUMBIDA, NUMBER) ;
+	ZEROWORDS(1000, NUMBER[XSYMNO-999]);  RKJ: 1-3-74;
+	IF XSYMNO GEQ TWO(13) THEN WARN(NULL,"Symbol Table Enormopotamus.  I give up.") ;
+  RKJ: SUPERFLUOUS 1-3-74   FOR SYMBOL _ XSYMNO-999 THRU XSYMNO DO SYM[SYMBOL] _ NULL ;
+	DUMMY_XSYMNO+1;  SYMBOL _ XSYMNO - 999 ;  RETURN(FALSE) ;
+	END
+ELSE RETURN(FULSTR(SYM[SYMBOL])) ;
+END "SYMLOOK" ;
+PUBLIC INTEGER SIMPLE PROCEDURE SYMNUM(STRING NAME) ;$"#
+BEGIN "SYMNUM" comment looks up a symbol, and if not there, enters it.  returns subscript;
+IF  NOT SYMLOOK(NAME) THEN ENTERSYM(NAME, 0) ;
+RETURN(SYMBOL) ;
+END "SYMNUM" ;
+
+FINISHED
+
+ENDOF("TOKEN")
+

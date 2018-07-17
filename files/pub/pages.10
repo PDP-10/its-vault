@@ -1,0 +1,294 @@
+BEGOF("PAGES")
+
+COMMENT
+
+All the output lines tentatively placed in the current frame are
+stored in intermediate files and referenced by sequential number from
+the integer array OWLS (OWtput LineS).  Its length is sufficient to
+hold every line of every column of every area in it.  The general
+form of a string referenced from OWLS is:
+
+	<chars><cr><chars><cr>...<lf>
+
+One of the <chars> (the last) may be a line that needs to be
+justified in Pass Two.  Each word break in such a substring is
+represented by a ALTMODE -- these mark the places that extra spaces
+may be added.  Pass Two also needs to know about FONT changes -- in
+the present version, this is limited to underlining, superscripts,
+and subscripts.  A FONT change is signalled by the character pair
+'177 <code>.  Finally, Pass Two will fill in forward references
+marked '13 (vertical tab).
+
+Other information must be known about each string in OWLS.  There
+must be an indication of how many spaces to add to a justify-line
+during Pass Two, and there must be mobility restrictions to assure
+that groups stay together and that section titles stay at tops of
+pages. This information is kept in integer arrays SHORT and MOLES
+(MObility of LinES) of the same size as OWLS.  MOLES[J] is the
+descriptor for OWLS[J].  To access these entries, the value J is
+stored in an "area array" associated with the area the line was
+placed in, at element [C,L] for the C'th column and L'th line.
+
+A Moles descriptor looks like this:
+
+ --------------------------------------------------
+|       |        |L|H|L|R|A|B|              |      |
+|       |        |O|O|E|I|B|E|              |      |
+|UN-USED|  FOOT  |C|R|F|G|O|L|    LABEL     | LEAD |
+|       |        |K|I|T|H|V|O|              |      |
+|       |        | |Z| |T|E|W|              |      |
+ --------------------------------------------------
+ 0.....6 7.....11-2-3-4-5-6-7-18..........31 32..35
+
+Another array parallel to SHORT and MOLES is MLEAD.  When an entry is
+zero, it means that the mill leading above the line is the normal
+value MILLVERTI (initiallized in OWLPLACE inside PASTE).  A nonzero
+value is added to MILLVERTI in pass 2 to compute the unusual mill
+leading of the line.
+
+;
+
+PROCEDURES
+PUBLIC SIMPLE PROCEDURE PAGES! ;$"#
+BEGIN "PAGES!"
+OLX _ -1 ; OLMAX _ 5 ;
+OWLSEQ _ MESGS _ 0 ;
+END "PAGES!" ;
+PUBLIC SIMPLE PROCEDURE FINIPAGES ;$"#
+BEGIN "FINIPAGES"
+COMMENT Finish Last Page File ;
+IF INTER GEQ 0 THEN
+	BEGIN
+	FOR DUMMY_1 THRU 5 DO WORDOUT(INTER,-20) ;
+	RELEASE(INTER) ;
+	RELEASE(SINTER) ;
+	END ;
+END "FINIPAGES" ;
+PUBLIC RECURSIVE PROCEDURE DBLANKPAGE ;$"#
+BEGIN COMMENT LEAVE N BLANK PAGES WITHOUT AFFECTING THE PAGE NUMBER ;
+INTEGER I, J, N ;
+PASS ; N _ CVD(E("1", NULL)) ;
+IF  NOT ON THEN RETURN ;
+DBREAK ;
+IF OLDPGIDA THEN NEXTPAGE ;
+IF INTER LEQ 0 THEN NOPORTION ;
+FOR I _ 1 THRU N DO
+	FOR J _ PHIGH, PWIDE, EVENLEFTBORDER, ODDLEFTBORDER, -10 DO
+		WORDOUT(INTER, J) ;
+END ;
+PUBLIC RECURSIVE PROCEDURE DFRAME(BOOLEAN BOXFRM) ;$"#
+BEGIN
+INTEGER L, I ;
+PRELOAD!WITH "HIGH", "WIDE" ; OWN STRING ARRAY POST[1:2];
+STRING ARRAY PAR[1:2] ;
+DAPART ; PASS ; PARAMS(2,NULLS,PAR,POST);
+IF ON THEN
+IF BOXFRM THEN BEGIN END
+ELSE
+BEGIN
+PHIGH_FHIGH_IF NULSTR(PAR[1]) THEN 1 ELSE CVD(PAR[1]) ;
+PWIDE_FWIDE_IF NULSTR(PAR[2]) THEN 1 ELSE CVD(PAR[2]) ;
+IF OLDPGIDA THEN NEXTPAGE ;
+L _ NULLAREAS ;
+WHILE L DO	BEGIN
+		I _ AREAIDA ; IDASSIGN(AREAIDA_L,THISAREA) ; L _ RH(INA) ;
+		OPEN!ACTIVE(DEFA) _ 0 ; GOAWAY(AREAIDA) ; IF (AREAIDA_I) THEN IDASSIGN(AREAIDA,THISAREA) ;
+		END ;
+NULLAREAS _ 0 ;
+END ;
+END "DFRAME" ;
+PUBLIC PROCEDURE FINPAGE ;$"#
+BEGIN "FINPAGE" COMMENT ***T EMPO RA RY  V ERS I ON -- No Boxes **** ;
+INTEGER A, CS, LS, C, L, X, LB, LBPAGE, LINK, LINENO, FOOTLINE1, F, OWLINE, ARIX ;
+INTEGER NULINE, NUPINE, NUINE, NLFOOT, NPFOOT, NFOOT, NAREA ; 
+IF EXNEXTPAGE THEN BEGIN WARN("=","Response to PAGE change called NEXT PAGE again.") ; RETURN END ;
+EXNEXTPAGE _ TRUE ;
+BEGIN "PAGEOUT"
+COMMENT PASS 1 OUTPUT FORMAT FOR EACH PAGE :
+	Height Width MillLeftMargin MillRightMargin
+	For each area:
+		UpperLine NumCols NumLines
+		For each column:
+			LeftChar
+			For each non-null line:
+				LineNo
+				How far short of being justified
+				Excess mill leading
+				Index of Intermediate Ascii File line
+			0
+	-10
+	;
+IF OLDPGIDA NEQ FRAMEIDA THEN BEGIN WARN("=","FRAME NEQ PAGE at end of page"); FIXFRAME(OLDPGIDA) END ;
+IF AREAIDA AND AREAIXM AND STATUS=1 THEN CLOSEAREA(AREAIXM, FALSE) ;
+IF (A _ ARF) THEN
+BEGIN "NONEMPTY"
+INTEGER ARRAY XTRALINES[1:HIGHF]; RKJ TO FIXUP "TOPLINES" OF AREAS;
+IF INTER LEQ 0 THEN NOPORTION ;
+LS_0;
+WHILE A DO BEGIN "COLLECTXGENS"
+	IDASSIGN(AREAIDA_A, THISAREA) ; A _ ARA ; IDASSIGN(AAA, AA) ;
+	IF STATA THEN LS _ LS + (XTRALINES[ULLA MAX 1] _ XGENA);
+	END "COLLECTXGENS";
+A_ARF;
+WORDOUT(INTER, HIGHF+LS) ; WORDOUT(INTER, WIDEF) ;
+L _ ODDLEFTBORDER ; F _ EVENLEFTBORDER ;
+IF NULSTR(S_CTR!VAL(PATPAGE)) OR CVD(S) MOD 2 THEN F SWAP L ;
+WORDOUT(INTER, F) ; WORDOUT(INTER, L) ; TES 8/29/74;
+WHILE A DO BEGIN "AFTER AREA RESPONSES"
+	IDASSIGN(AREAIDA_A, THISAREA) ; A _ ARA ; IDASSIGN(AAA, AA) ;
+	IF (X _ DEFA) AND STATA=1 AND FINDTRAN(LDB(BIXNUM(X)), 3) THEN RESPOND(LLTHIS) ;
+	END "AFTER AREA RESPONSES" ;
+A _ ARF ;
+WHILE A DO BEGIN "CLOSE ALL AREAS"
+	IDASSIGN(AREAIDA_A, THISAREA) ; A _ ARA ; IDASSIGN(AAA, AA) ;
+	IF STATA = 1 THEN CLOSEAREA(-DEFA, FALSE) ;
+	END "CLOSE ALL AREAS" ;
+A _ ARF ;
+WHILE A DO
+	BEGIN "AREAOUT"
+	IDASSIGN(AREAIDA_A, THISAREA) ; NAREA _ 0 ; IDASSIGN(AAA, AA) ;
+	IF STATA > 1 THEN
+		BEGIN "AREAUSED" TES CHANGED X TO ARIX 12/5/73 ;
+		IF GRPOLX AND (STATUS_STATA)=2 AND (ARIX _ DEFA) THEN
+			BEGIN COMMENT SET UP GROUP OVERFLOW INFO ;
+			FIXFRAME(NEWPGIDA) ; OPENAREA(ARIX) ; NAREA _ AREAIDA ;
+			IDASSIGN(AAA, NAA) ; NLFOOT_NPFOOT_NULINE_NUPINE_0 ;
+			FIXFRAME(OLDPGIDA) ; IDASSIGN(AREAIDA_A, THISAREA) ;
+			IDASSIGN(AAA, AA) ;
+			END ;
+		CS _ COLCA ;
+		LS _ ARRINFO(AA, 4) ; TES 11/6/74;
+		F_0; RKJ;
+		FOR C_1 THRU ULLA-1 DO F_F+XTRALINES[C];
+			RKJ SEE IF ANY AREAS ABOVE THIS ONE HAVE "XTRALINES";
+		WORDOUT(INTER, ULLA+F) ; RKJ ADDED F;
+		WORDOUT(INTER, CS) ; WORDOUT(INTER, LS) ;
+		FOR C _ 1 THRU CS DO
+			BEGIN "AREACOL"
+			WORDOUT(INTER, AA[C,0]) ;
+			FOOTLINE1 _ LINECA+XGENA - RH(AA[CS+C,0]) ; TES 11/6/74 ;
+			FOR F _ 0, CS DO FOR L _ 1 THRU LS DO IF (X _ AA[F+C, L]) THEN
+			IF GRPOLX = 0 OR X < GRPOLX OR X > GRPTOP THEN
+				BEGIN "AREALINE" LINENO _ IF F=0 THEN L ELSE FOOTLINE1 + L ;
+				IF (LB _ LDB(LABELM(X))) THEN
+					BEGIN "A PAGE LABEL"
+					LBPAGE _ 2 ROT -2 LOR PUTS(PAGEVAL&
+					   (IF XCRIBL THEN ALTMODE&CVS(XLENGTH(PAGEVAL)) ELSE NULL)) ;
+					WHILE LB NEQ -TWO(13) DO
+					IF (LINK _ LB) < 0 THEN
+						BEGIN
+						LB_NUMBER[-LINK] ;
+						NUMBER[-LINK] _ LBPAGE ;
+						END
+					ELSE BEGIN LB_ITBL[LINK] ; ITBL[LINK]_LBPAGE END ;
+					END "A PAGE LABEL" ;
+				IF OWLINE _ OWLS[X] THEN
+					BEGIN
+					WORDOUT(INTER, LINENO) ;
+					WORDOUT(INTER, SHORT[X]) ;
+					WORDOUT(INTER, MLEAD[X]) ;
+					WORDOUT(INTER, OWLINE) ;
+					END ;
+				END "AREALINE"
+			ELSE	BEGIN "GRP OVERFLOW"
+				IF F AND NUPINE=0 AND GRPOLX>AA[F+C,1] THEN TES 11/5,12/11/73 ;
+				 BEGIN "FOOTSP"
+				 FOR NUPINE_1 THRU FTGP DO
+				 	NAA[F+1,NUPINE] _
+					TES 1/16/74 NEWNEW: ;
+				 	NEWNEWBLANK(IF NUPINE=1 THEN BLW ELSE ABV!BLW) ;
+				 NAA[F+1,NUPINE]_NOLX_NOLX+1 ;
+				 NOWLS[NOLX] _ OWLSEQ _ OWLSEQ+1 ;
+				IF XCRIBL THEN
+				OUT(SINTER,CVSR(OWLSEQ)&ALTMODE&
+				   PICKFONT(FSFONT)&ENOUGH(FOOTSEP,COLWID(AREAIXM),FSFONT)&CRLF)
+				ELSE
+				 OUT(SINTER, CVSR(OWLSEQ) & ALTMODE &
+				 	FOOTSEP[1 TO COLWID(ARIX)] & CRLF) ;
+				 NMOLES[NOLX] _ IF FTGP=0 THEN BLW ELSE ABV!BLW ;
+				 FOR LB_NUPINE+1 THRU NUPINE+FTGP2 DO
+				 	NAA[F+1,LB] _ NEWNEWBLANK(ABV!BLW) ;
+				 NUPINE _ NUPINE + FTGP2 ;
+				 END "FOOTSP" ;
+				NUINE _ IF F THEN NUPINE _ NUPINE + 1 ELSE NULINE _ NULINE + 1 ;
+				NFOOT _ IF LDB(FOOTM(X)) = 0 THEN 0
+					ELSE IF F THEN NPFOOT_NPFOOT+1 ELSE NLFOOT_NLFOOT+1 ;
+				NAA[F+1, NUINE] _ NOLX _ NOLX + 1 ;  NOWLS[NOLX] _ OWLS[X] ;
+				IF NFOOT THEN DPB(NFOOT, FOOTM(X)) ;
+				NMOLES[NOLX] _ MOLES[X] ;
+				NSHORT[NOLX] _ SHORT[X] ;
+				NMLEAD[NOLX] _ MLEAD[X] ;
+				END "GRP OVERFLOW" ;
+			WORDOUT(INTER, 0) ;
+			END "AREACOL" ;
+		END "AREAUSED" ;
+	A _ ARA ;
+	GOAWAY(WHATIS(AA)) ; GOAWAY(AREAIDA) ;
+	IF NAREA THEN
+		BEGIN
+		NAA[1, 0] _ NULINE ; NAA[CS+1, 0] _ NUPINE ;
+		IDASSIGN(AREAIDA_NAREA, THISAREA) ; COLA _ 1 ; AREAIDA _ 0 ;
+		END ;
+	END "AREAOUT" ;
+WORDOUT(INTER, -10) ;
+END "NONEMPTY" ;
+GOAWAY(MOLESIDA) ; GOAWAY(SHORTIDA) ; GOAWAY(MLEADIDA) ;
+GOAWAY(-1 LSH 18 + OWLSIDA) ;
+MOLESIDA _ MLEADIDA _ SHORTIDA _ OWLSIDA _ GROUPM _ GLINEM _ 0 ;
+GOAWAY(FRAMEIDA) ; FRAMEIDA _ OLDPGIDA _ AREAIDA _ 0 ; STATUS _ -1 ;
+END "PAGEOUT" ;
+IF GRPOLX THEN GRPOLX _ 0 ;
+EXNEXTPAGE _ FALSE ;
+OVEREST _ 0; comment short font kludge ;
+END "FINPAGE" ;
+PUBLIC SIMPLE PROCEDURE FIXFRAME(INTEGER FRIDA) ;$"#
+BEGIN "FIXFRAME"
+IF AREAIDA AND STATUS=1 THEN PLACE(AREAIXM) ; COMMENT BE SURE LINE,PINE STORED IN AA ;
+IF MOLESIDA THEN MOLES[0] _ OLX ; TES 1/15/74 ADDED IF.. ;
+IDASSIGN(FRAMEIDA _ FRIDA, THISFRAME) ;
+IDASSIGN(OWLSIDA _ OWLSF, OWLS) ;
+IDASSIGN(MOLESIDA _ MOLESF, MOLES) ;
+IDASSIGN(SHORTIDA _ SHORTF, SHORT) ;
+IDASSIGN(MLEADIDA _ MLEADF, MLEAD) ;
+OLX _ MOLES[0] ; AREAIDA _ 0 ;
+END "FIXFRAME" ;
+PUBLIC SIMPLE PROCEDURE GROWOWLS(INTEGER EXTRA) ;$"#
+BEGIN "GROWOWLS"
+GROW(MOLES, MOLESIDA, OLXX, EXTRA, NULL) ; MAKEBE(MOLESIDA, MOLES) ;
+GROW(SHORT, SHORTIDA, DUMMY_0, EXTRA, NULL) ; MAKEBE(SHORTIDA, SHORT) ;
+GROW(MLEAD, MLEADIDA, DUMMY_0, EXTRA, NULL) ; MAKEBE(MLEADIDA, MLEAD) ;
+DUMMY _ 0 ; COMMENT OTHERWISE SPURIOUS MESSAGE FROM GROW 2/28/73 TES ;
+GROW(OWLS, OWLSIDA, DUMMY, EXTRA, NULL) ;
+MAKEBE(OWLSIDA, OWLS) ;
+OWLSF _ OWLSIDA ; MOLESF _ MOLESIDA ; SHORTF _ SHORTIDA ; MLEADF _ MLEADIDA ;
+END "GROWOWLS" ;
+PUBLIC SIMPLE PROCEDURE MAKEPAGE(INTEGER HIGH, WIDE) ;$"#
+BEGIN "MAKEPAGE"
+IDASSIGN(FRAMEIDA_CREATE(0,PFREC), THISFRAME) ;
+HIGHF _ HIGH; WIDEF _ WIDE;
+END "MAKEPAGE" ;
+PUBLIC SIMPLE PROCEDURE NEXTPAGE ;$"#
+	BEGIN
+	INTEGER SAVEAREA ;
+	SAVEAREA _ IF AREAIXM THEN LDB(BIXNUM(AREAIXM)) ELSE SYMTEXT ;
+	NEXTCOUNTER(SYMPAGE, IXPAGE) ;
+	PLACE(LDB(IXN(SAVEAREA))) ;
+	END ;
+PUBLIC SIMPLE PROCEDURE OPENFRAME ;$"#
+BEGIN "OPENFRAME"
+MAKEPAGE(FHIGH,FWIDE);
+OLXX _ OLMAX ; comment Total of all areas now declared ; OLX _ 0 ;
+IDASSIGN(OWLSF_OWLSIDA_CREATE(0,OLXX), OWLS);
+IDASSIGN(MOLESF_MOLESIDA_CREATE(0,OLXX), MOLES);
+IDASSIGN(SHORTF_SHORTIDA_CREATE(0,OLXX), SHORT);
+IDASSIGN(MLEADF_MLEADIDA_CREATE(0,OLXX), MLEAD);
+END "OPENFRAME" ;
+PUBLIC SIMPLE PROCEDURE OPENPAGE ;$"#
+     DO	BEGIN OPENFRAME ; IDASSIGN(OLDPGIDA _ FRAMEIDA, OLDPAGE) ;
+	PAGEVAL _ PATT!VAL(PATPAGE) ;
+	IF FINDTRAN(SYMPAGE, 4) THEN RESPOND(LLTHIS) ;
+	END UNTIL FRAMEIDA ;
+FINISHED
+
+ENDOF("PAGES")
+

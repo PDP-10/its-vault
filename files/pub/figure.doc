@@ -1,0 +1,131 @@
+This is a quick interim description of the figure macros in
+<PUB>FIGURE.DFS.  More facilities and a better description
+will follow.
+
+.TURN ON "{" ;
+.REQUIRE "<PUB>FIGURE.DFS" SOURCE!FILE
+
+then for each figure, use as one cross-reference:
+
+.. see {figref(LABEL, HEIGHT, caption whatever the name is)} ..
+
+where LABEL is a unique identifier to label the figure and use
+in all cross-references to it, and where HEIGHT is the
+number of lines needed by the figure (don't underestimate).
+For other cross-references to the same figure, use:
+
+.. see {figref(LABEL)} ..
+
+
+The macro will expand to something like:
+
+.. see Figure 4 ..
+
+and at the next opportunity, it will spew out
+HEIGHT-1 blank lines followed by:
+
+		Figure 4. whatever the name is
+
+An "opportunity" is defined as one of the following:
+
+(1) A blank input line in FILL mode wherein there are still
+at least HEIGHT lines left on the output page.  (FIGURE.DFS
+redefines AT NULL $(..)$ to do this.)  You can disable this
+opportunity by setting ATBLANK_FALSE.
+
+(2) A new page. (FIGURE.DFS redefines BEFORE PAGE to do this.)
+You can disable this opportunity by setting ATPAGE_FALSE.
+
+(3) An explicit call on the macro TRYNOW when there are
+at least HEIGHT lines left on the output page.
+TRYNOW is what is called by AT NULL and BEFORE PAGE.
+
+(4) An explicit call on DONOW whether or
+not there are HEIGHT lines left on the output page.  DONOW will
+go to a new page if necessary to make TRYNOW work.
+It is a good idea to modify your new-section macro if it
+always does a NEXT PAGE; precede the call on
+NEXT PAGE by a call on DONOW.  Also call DONOW at the end of
+the manuscript.
+
+What figref() does is queue up the figure definitions that
+are pending.  TRYNOW works down the queue invoking
+every definition for which there is room.  If the figure
+reaches to within FIGBORDER lines of the bottom of the
+page (initially FIGBORDER=8), it calls NEXT PAGE; this gives
+another opportunity to spew out pending figures.
+DONOW forces the queue to empty by calling NEXT PAGE when
+TRYNOW has left anything in the queue.  If HEIGHT is larger
+than the height of area TEXT, DONOW will complain to the
+terminal.
+
+Some common HEIGHT values are predefined as macros:
+
+FULL -- full page (height of area TEXT)
+HALF -- half page
+THIRD -- third page
+QUARTER -- quarter page
+
+You may also specify an integer.
+
+If the figure is to be more complex than HEIGHT-1 blank lines
+followed by a centered caption, then you may supply
+as the third argument of figref() the name of
+a macro to call instead of the "caption" macro.  Your
+macro should output no more than HEIGHT lines.  If it
+wishes to output a centered caption with the figure number
+just as the "caption" macro does, have it call:
+
+.figcaption whatever the name is
+
+or
+
+.figcaption |some (very complicated) parameter, the name|
+
+Example:
+
+.macro multable $(begin nofill indent 22;
+
+	1	2	3
+1	1	2	3
+2	2	4	6
+3	3	6	9
+.end ; skip 1 ;
+.figcaption A Table of Multiplication
+.)$
+	...
+.. see {figref(mult, quarter, multable)} for a multiplication ..
+
+ADDENDUM APRIL 10, 1974
+
+If you want to produce a table of figures, then after
+the REQUIRE, put:
+
+.FIGTABLE _ TRUE ;
+.FIGINSERT
+
+and at the end of the ms put after your DONOW:
+
+.FIGPORTION(i)
+
+where i is an optional printing pattern.
+The FIGPORTION does a DONOW just to be sure,
+and then if FIGTABLE is
+TRUE, it declares PORTION FIGURES and prints the
+table of figures, numbering the pages i, ii, iii, etc.
+Any printing-pattern may be used instead of i.  If no pattern
+is provided, page-numbering continues from where it left off.
+You may want to do a DOUBLE SPACE or otherwise set SPREAD
+before the FIGPORTION.
+
+If you do not like the format of the table of figures,
+then after the REQUIRE redeclare one or both of the
+macros FIGSEND(FIGNUM, FIGNAME)
+which does the SEND FIGURES, and FIGRECEIVE which does the
+heading and the RECEIVE for PORTION FIGURES.
+
+NOTE:
+If these macros are inadequate, please tell me so I can
+improve them, rather than making your own incompatible
+version!
+

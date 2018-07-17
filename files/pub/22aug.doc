@@ -1,0 +1,250 @@
+COMMENT    VALID 00007 PAGES
+C REC  PAGE   DESCRIPTION
+C00001 00001
+C00002 00002	September 8 PUB
+C00006 00003	                   *** REPEAT  ... DONE ...  ***
+C00009 00004	The read-eval-print loop  is terminated as soon  as an empty  line is
+C00012 00005	Most  SAIL and  PUB error  messages are  now handled  by a  new error
+C00015 00006	an (R,  A, or  S) and  an (I  or X)  varies the  behavior of  SCAN as
+C00018 00007	                 *** TABS PAST THE LAST TAB STOP ***
+C00020 ENDMK
+C;
+September 8 PUB
+
+
+
+                *** EVENLEFTBORDER, ODDLEFTBORDER ***
+
+
+These variables in XGP mode  specify the left border widths  in mills
+of even and  odd numbered pages.  They  both start out at  1500 mills
+(1.5 inches)  and the minimum  value possible on  our XGP is  0.  Any
+change you make will take effect on the next page that is closed.
+
+[Note: this is intended to replace the !XGPLFTMAR  feature.  However,
+at SAIL only,  the old effect of  !XGPLFTMAR is simulated  by setting
+both  EVENLEFTBORDER  and  ODDLEFTBORDER  to  five  times  the  value
+assigned  to !XGPLFTMAR  if the  latter is  used.  (The  fudge factor
+converts raster units to mills.)  In creating new documents,  the new
+variables should be used.]
+
+The  title  page  has special  considerations.   When  you  begin the
+manuscript,  PAGE=PAGE!=NULL,  signifying an  unnumbered  title page.
+Its border will be ODDLEFTBORDER to be consistent with the  way books
+are  made.   However, if  you  set PAGE_0  (but  leave  PAGE!=NULL to
+inhibit numbering) then the title page will get an even left border.
+
+If  you find  that  your page  images are  too  far to  the  right in
+documents that used to look OK, this may be because the  default left
+borders used to be 1 inch.  The  easiest fix is to put at the  top of
+the manuscript or in your own DFS file the statement  ODDLEFTBORDER _
+EVENLEFTBORDER _ 1000.
+
+
+     *** PROCEDURE name(args,...)  ... RETURN(value) ...  ***
+
+
+A procedure is a variety  of macro.  The advantage of a  procedure is
+that it may RETURN at any time, with or without a value.  The default
+RETURN is RETURN(NULL).
+
+Example:
+        .PROCEDURE DOUBLE(N)  N _ N+N; RETURN("OK") 
+        .X _ 5 ;
+        .TTY _ DOUBLE(X) ;
+This will set X to 10  and print OK on the terminal.  Good  news: the
+restriction  on recursive  macros which  sometimes requires  a double
+semicolon is not applicable to procedures.  Bad news:  procedures are
+as slow as macros, i.e., very slow.
+                   *** REPEAT  ... DONE ...  ***
+
+
+The command REPEAT followed by a template will execute  that template
+repeatedly until the statement DONE is executed.  Example:
+        .PROCEDURE FACTORIAL(N)
+        . <<  means N is a value parameter >>
+        .ANS _ I _ 1 ;
+        .REPEAT ANS_ANS*I ; I_I+1 ; IF I>N THEN DONE 
+        .RETURN(ANS)
+        .
+        .TTY_FACTORIAL(4)
+This will print 24 on the terminal.
+
+
+        *** WHILE(pretest,action), UNTIL(posttest,action) ***
+
+
+These macros will execute the <action> repeatedly while the <pretest>
+before each  repetition is  true or until  the <posttest>  after some
+repetition is true.  Their arguments usually are enclosed in vertical
+bars.
+
+
+                          *** PUB!DEBUG ***
+
+
+The PUB!DEBUG command provides an interactive debugging facility.  It
+allows   for  both examination  of  the state  of  a  compilation and
+keyboard entry of commands.
+
+PUB!DEBUG goes into a "read-eval-print" loop.
+
+It prompts with # and waits for you to type a line of text terminated
+by <cr> .
+
+PUB!DEBUG expects the line to be in one of the following forms:
+        <expression>
+        <expression> ; <commands>
+        ; <commands>
+The value of the <expression> is printed, and then the <commands> are
+executed.
+
+It is legal to include temporarily unmatched BEGINs, STARTs, and ENDs
+in the line,  but unmatched template brackets  will cause havoc  of a
+very unpleasant sort (for now anyway).
+The read-eval-print loop  is terminated as soon  as an empty  line is
+typed (i.e., just <cr>).
+
+
+                          *** THISLINE ***
+
+
+A useful variable  to examine while  debugging is THISLINE,  which is
+the current output line  formed so far by  PUB.  It is NULLed  out by
+every line break.   In it, word breaks  are represented by  <alt> and
+forward references by <vt> <number>.
+
+
+                         *** BURP INPUT ***
+
+
+To  discover your  context while  debugging, execute  the  BURP INPUT
+command.  It types out some of the yet unparsed input at  the current
+level and at  several previous levels  of macros and  requires.  BURP
+INPUT VERBOSE may type out more characters at each level,  and always
+proceeds to the outermost level.
+
+
+                         *** BURP AREAS ***
+
+
+If  you are  hopelessly fouled  up with  area declarations,  try BURP
+AREAS, which  types out  10-30 lines of  information about  all areas
+known by PUB, even those that are inaccessible in outer blocks.  BURP
+AREAS VERBOSE includes  a picture of each  area that has text  in it,
+with numbers  that reference  the numbers  found in  the intermediate
+".PUI" files.
+
+
+             *** DEBUG("herald"), DEBUGFLAG, BUGOFF ***
+
+
+A convenient way  to activate PUB!DEBUG is  by planting calls  on the
+macro DEBUG("herald") throughout the manuscript.  The herald (if any)
+is printed, and  then PUB!DEBUG is called.   However, the macro  is a
+no-op if the variable DEBUGFLAG is FALSE.  An easy way to turn it off
+is by calling the macro BUGOFF.
+
+
+                   *** ERROR MESSAGE RESPONSES ***
+Most  SAIL and  PUB error  messages are  now handled  by a  new error
+handler providing somewhat more useful information than before.
+
+In addition to  the usual responses (CR  to continue, LF  to continue
+automatically, X to exit, S to  restart), you can now type P  to call
+PUB!DEBUG.
+        --- At SU-AI and CMU, E<cr> does the right thing. ---
+               --- T<cr> might work at SU-AI too. ---
+
+A LF to continue automatically  sets the variable ERRLF to  TRUE.  It
+can be cancelled by the command ERRLF_FALSE either in  the manuscript
+or in a debug loop.
+
+
+                      *** USERERR "message" ***
+
+
+Thanks to  Rich Johnsson,  this command lets  you activate  the error
+machinery yourself.
+
+
+                      *** XLENGTH("string") ***
+
+
+If in XGP mode, XLENGTH returns the raster width of the string in the
+current font.  For other devices, it returns 0.
+
+
+                            *** SCAN ***
+
+
+Adopted from  SAIL by  request of  Lee Erman,  this function  scans a
+string in search of break characters and can divide the string into a
+pre-break and a post-break substring.  The various forms of  call, in
+order of increasing complexity, are:
+
+ANS_SCAN(STR,STOPPERS) scans the string  STR in search of any  of the
+break characters listed in STOPPERS.  If one is found, then  ANS_ the
+substring before the break character,  and if STR is a  variable then
+STR_ the substring that  remains, retaining the break  character.  If
+no break character is found,  then ANS_STR, and if STR is  a variable
+then STR_NULL.
+
+ANS_SCAN(STR,STOPPERS,OMITS) is similar but characters in  the string
+OMITS are dropped from ANS.
+
+ANS_SCAN(STR,STOPPERS,OMITS,OPTIONS) where  OPTIONS is a  string with
+an (R,  A, or  S) and  an (I  or X)  varies the  behavior of  SCAN as
+follows:
+        R       Retain break character in STR (Default)
+        A       Append break character to ANS instead
+        S       Skip break character -- neither STR nor ANS
+
+        I       "Inclusive": Break characters are
+                        those in STOPPERS (Default)
+        X       "eXclusive": Break characters are all ascii
+                        characters EXCEPT those in STOPPERS
+
+ANS_SCAN(STR,STOPPERS,OMITS,OPTIONS,BRCVAR)   where   BRCVAR   is   a
+variable name, sets BRCVAR  to a one-character string  containing the
+break  character  which  actually  stopped  the  scan.   If  no break
+character was found, then BRCVAR_NULL.
+
+The  effect  of  SAIL  break tables  can  be  had  (functionally, not
+speedily) by the use of a macro to supply the middle arguments of the
+function call.
+
+
+                       *** OCTAL("string") ***
+
+
+OCTAL  returns the  octal codes  of the  characters in  its argument,
+e.g., OCTAL("ABC")="'101'102'103".  If the value of OCTAL is  used in
+arithmetic, only the code of the first character is involved.
+
+
+                   *** BEWARE("'octal'values") ***
+
+
+For   generality,   the   inverse  of   OCTAL   is   provided,  i.e.,
+BEWARE("'101'102'103")="ABC".  The function is so named to remind you
+that the insertion of a  cr, lf, tab, vtab, altmode, rubout,  or null
+in a text line will hopelessly confuse PUB and forfeit your  right to
+aid or sympathy.
+
+
+                   *** DECLARATION(identifier) ***
+
+
+Borrowed from SAIL  by request of Lee  Erman, this function  takes an
+identifier as  an argument  and returns its  PUB internal  type code.
+The most useful value of DECLARATION(X) is 0 (FALSE)  which signifies
+that X is undeclared.
+                 *** TABS PAST THE LAST TAB STOP ***
+
+
+These used  to produce an  error message, but  by request of  Ed Taft
+they now quietly emit a single space.
+
+[This is going to be changed so they type a warning message also.]
+

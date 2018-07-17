@@ -1,0 +1,915 @@
+REQUIRE "[]<>" DELIMITERS ;
+REQUIRE "SITE" SOURCE!FILE;
+REQUIRE "COMMON" SOURCE!FILE ;
+DEFINE
+	PASSONE = [TRUE], PASSTWO = [FALSE],
+
+	INITSIZES = [ISIZE_1000; SSIZE_200; ITSIZE_200; STSIZE_300; SIZE_100],
+	REGULAR!SIZE = [1021], COMMENT Must be a prime ;
+	BIG!SIZE = [2999],
+	HUGE!SIZE = [8191], COMMENT can't exceed 2^13-1 ;
+
+COMMENT All the output lines tentatively placed in the current frame are
+        stored in .PUI files and referenced by  sequential  number  from
+        the integer array OWLS (OWtput LineS).  Its length is sufficient
+        to hold every line of every column of every area in  it.     The
+        general   form   of   a   string   referenced   from   OWLS  is:
+        {<chars><cr>~...<lf> .   One of the <chars> (the last) may be  a
+        line  that needs to be justified in Pass Two. Each word break in
+        such a substring is represented by a  '13  (vert-tab)  --  these
+        mark  the  places that extra spaces may be added.  Pass Two also
+        needs to know about FONT changes -- in the present version, this
+        is limited to underlining, superscripts, and subscripts.  A FONT
+        change is signalled by the character pair '177 <code>.  Finally,
+        Pass Two will fill in forward references marked ALTMODE.
+
+        Other information must be known about each string in OWLS. There
+        must  be  an  indication  of  how  many  spaces  to  add  to   a
+        justify-line  during  Pass  Two,  and  there  must  be  mobility
+        restrictions to  assure  that  groups  stay  together  and  that
+        section  titles stay at tops of pages.  This information is kept
+        in an integer array MOLES (MObility of LinES) of the  same  size
+        as  OWLS.   MOLES[J]  is  the descriptor for OWLS[J].  To access
+        these entries,  the  value  J  is  stored  in  an  "area  array"
+        associated  with  the  area  the  line was placed in, at element
+        [C,L] for the C'th column and L'th line.
+
+	A Moles descriptor looks like this:
+
+	 --------------------------------------------------
+	|       |        |L|H|L|R|A|B|              |      |
+	|       |        |O|O|E|I|B|E|              |      |
+	|       |  FOOT  |C|R|F|G|O|L|    LABEL     | LEAD |
+	|       |        |K|I|T|H|V|O|              |      |
+	|       |        | |Z| |T|E|W|              |      |
+	 --------------------------------------------------
+	 0.....6 7.....11-2-3-4-5-6-7-18..........31 32..35 ;
+COMMENT  To  avoid  calling  POINT  to  generate  byte  pointers, we use
+        Swinehart's BBPP and our own BP.  BBPP(N,GLOBAL,N) is like POINT
+        but usually   it  will  compile  constants  instead of procedure
+        calls.  BP is a macro which creates a byte pointer as the sum of
+        a  constant  and  two  variables  or  expressions.   Instead  of
+        POINT(6,ARR[J+4],35), say:  BP(6,ARRIDA,J,+4,35).    The  first,
+        fourth,  and  fifth  arguments  will  be  ROTed and LORed into a
+        constant at compile time, and the second and third will be added
+        to  it  at execution time.  Be sure that ARRIDA points to ARR[0]
+        at all times, and that the fourth argument either is  absent  or
+	is a signed integer. ;
+
+	BP(S,A0,J,SIGNED!CONSTANT,P) = [(((35-(P)) ROT 6 LOR S) ROT 24 SIGNED!CONSTANT) +
+	(A0) + (J)],
+
+	    H1(WD) = [POINT(18,WD,17)], COMMENT, POINT can make constant byte pointers;
+	    H2(WD) = [POINT(18,WD,35)],
+	    Q1(WD) = [POINT(9,WD,8)],
+	    Q2(WD) = [POINT(9,WD,17)],
+	    Q3(WD) = [POINT(9,WD,26)],
+	    Q4(WD) = [POINT(9,WD,35)],
+
+COMMENT  Fields of MOLES ;
+
+	FOOTM(J) = [BP(5, MOLESIDA,<J>,, 11)], COMMENT,
+            If  this  line has footnotes, then this field is nonzero and
+            matches the value in the corresponding  field  of  the  last
+            line of its last footnote (a value of 31 means that footnote
+            ends in a subsequent column);
+	LOCKM(J) = [BP(1,MOLESIDA,<J>,,12)], COMMENT, This line can not be moved;
+	HORIZM(J) = [BP(1,MOLESIDA,<J>,,13)], COMMENT, Only move to same line no. in another column;
+	LEFTM(J) = [BP(1,MOLESIDA,<J>,,14)], COMMENT, If moved, also move line on my left;
+	RIGHTM(J) = [BP(1,MOLESIDA,<J>,,15)], COMMENT, ... also line on my right;
+	ABOVEM(J) = [BP(1,MOLESIDA,<J>,,16)], COMMENT, ... also line above me;
+	BELOWM(J) = [BP(1,MOLESIDA,<J>,,17)], COMMENT, ... also line below me;
+		ABV = ['2000000], BLW= ['1000000], ABV!BLW= ['3000000],
+	LABELM(J) = [BP(14,MOLESIDA,<J>,,31)], COMMENT,
+	    Position in ITBL of head of L.L. of page labels of this line;
+        LEADM(J) = [BP(4,MOLESIDA,<J>,,35)], COMMENT, Number of lead lines to  assure  if
+            moved  --  this is necessary because blank lines that happen
+            to show up at the top of a column are deleted,  but  if  the
+            paragraph they lead is moved down, they must be restored;
+
+COMMENT The last subscript used in MOLES and OWLS is stored in MOLES[0];
+COMMENT The  symbol  table  method  is  hashed  strings  using quadratic
+        search. Swinehart's "SYMSER.SAI[1,DCS]"  has  been  used.   That
+        package  declares two arrays [-1:SYMNO], where SYMNO+1 is prime.
+        One array, SYM, holds the strings, and the other, NUMBER,  holds
+        their   descriptors.    The  procedure  SETSYM  initializes  the
+        package.  FLAG_LOOKSYM(STRING A) tells whether the string is  in
+        the table and sets SYMBOL to its index (or the index of where to
+        enter it if not there).  ENTERSYM(STRING A, INTEGER NUM)  enters
+        it  in  the table at SYMBOL and makes its descriptor be NUM (and
+        sets ERRFLAG to TRUE and prints a message if the table is full).
+
+        The compiler requires that all symbols be unique  at  any  block
+        level,  however,  labels  are  totally  global and although each
+        label must have a different name from every other label, it  may
+        have  the  same  name  as  another whatsit.  Therefore, before a
+        label is looked up or entered in the symbol table,  a  colon  is
+        appended to its name to guarantee its distinction.  Furthermore,
+        all lower case letters of every identifier are changed to  upper
+        case for symbol table purposes.
+
+	The fields of a descriptor D = NUMBER[SYMBOL] are:
+	 --------------------------------------------
+	| DEPTH |    SYMBOL    | TYPE |      IX      |
+	 --------------------------------------------
+	 0.....4 5...........17 18..21 22..........35 ;
+
+	DEPTHWD(DESC) = [POINT(5,DESC,4)], COMMENT, the block depth;
+	DEPTHN(S) = [BP(5,NUMBIDA,<S>,+1,4)],
+	SYMBOLWD(DESC) = [POINT(13,DESC,17)],
+	SYMBOLN(S) = [BP(13,NUMBIDA,<S>,+1,17)], COMMENT,  This field always equals
+            s, its subscript in NUMBER.   When a local  declaration  in  an
+            inner  block  forces  an  outer  definition to be stacked, this
+            field of the descriptor tells where to restore it;
+	TYPEWD(DESC) = [POINT(4,DESC,21)],
+	TYPEN(S) = [BP(4,NUMBIDA,<S>,+1,21)], COMMENT, The symbol type (listed below);
+	IXWD(DESC) = [POINT(14,DESC,35)], COMMENT, depending on TYPE, this may be a
+            case index or a 14-bit pointer to the definition in some array;
+	IXN(S) = [BP(14,NUMBIDA,<S>,+1,35)],
+
+COMMENT The descriptor of a label, however, is:
+	 ---------------------------------------
+	| PLIGHT | zeroes or ones |     IX      |
+	 ---------------------------------------
+	   0..1    2 ......... 21   22 ..... 35 ;
+
+	PLIGHTWD(DESC) = [POINT(2, DESC, 1)], COMMENT,
+		1: Referenced but not yet defined. IX is the NUMBER posn of the mentioned COUNTER (or 0).
+		2: Defined as the string in STBL[IX].
+		0|3: Defined as a page label, but the exact page is still uncertain--
+			DESC is a link to another label in the same plight:
+			>0--ITBL[DESC], <0--NUMBER[-DESC], =-(2^13)--end L.L. ;
+COMMENT  Symbol Type  IX array conversion ;
+
+		COMMENT			Type		IX points to
+					----		------------	;
+	GLOBALTYPE= [1],  COMMENT,   Global Variable	    STBL	;
+	LOCALTYPE= [2],   COMMENT,   Local Variable          SSTK	;
+	INTERNTYPE= [3],  COMMENT,   Internal Variable       none     (this is a case index);
+	CMDTYPE= [6],     COMMENT,   ALGOL Command Word	    none     (this is a case index);
+	PORTYPE= [10],    COMMENT,   Portion		    ITBL	;
+	PCOUNTERTYPE= [11],  COMMENT,   Print Value of COUNTER     ISTK (same IX as Counter Value) ;
+	AREATYPE= [12],   COMMENT,   Area		    ISTK	;
+	COUNTERTYPE= [13],   COMMENT,   COUNTER		    ISTK	;
+	MACROTYPE= [14],  COMMENT,   Macro		    ISTK	;
+
+COMMENT  Now the STKs, TBLs, and NESTs will be introduced.
+
+ISTK....
+
+	In ISTK are stored:
+		(a) Modes and Variable Values to be restored upon block exit.
+		(b) AREA, COUNTER, MACRO, and Response Declarations local to this block.
+		(c) Former margin positions in a NARROW/WIDEN nest.
+	To push an m-word entry of type T onto ISTK, increment IHED by (m+1),
+		check for stack  overflow, and put the following descriptor
+		at ISTK(IHED):
+
+		 ---------------------------------------
+		| T | SYM subscript | old value of IHED |
+		 ---------------------------------------
+		0..8 9............21 22...............35
+
+	Now store the entries at IHED-1 to IHED-m.  The header word at IHED is the
+	one that IX points to. Note that it is in a linked list which is scanned at
+	block exit to restore former conditions.
+
+	The types T are as follows:	;
+	COMMENT AREATYPE = [12], COMMENT, Local Area Declaration;
+	COMMENT COUNTERTYPE = [13], COMMENT, Local COUNTER Declaration;
+	COMMENT MACROTYPE = [14], COMMENT, Local Macro Declaration;
+		RESPTYPE = [15], COMMENT, Local Response Declaration;
+		MARGTYPE = [16], COMMENT, Former margin positions in a NARROW//WIDEN Nest;
+		TURNTYPE = [17], COMMENT, Former <chars><function> pair;
+		MODETYPE = [18], COMMENT, Mode Words before block entry;
+		NUMTYPE = [19], COMMENT, Former NUMBER descriptor;
+		TABTYPE = [20], COMMENT, tab stops ;
+		MIDTYPE = [21], COMMENT, saved paragraph params for BEFORE|AFTER|footnotes in mid-pgph ;
+		FONTYPE = [22], COMMENT, Former font settings TES 11/15/73;
+		PITYPE = [23], COMMENT, Former PiCHAR definitions TES 11/29/73 ;
+
+	IXTYPE(ANYIX) = [(ISTK[ANYIX] ROT 9 LAND '777)],
+	BIXNUM(NAMED) = [BP(13, ISTKIDA, <NAMED>, , 21)],
+	IXOLD(ANYIX) = [(ISTK[ANYIX] LAND '37777)],
+COMMENT Fields of Entries in ISTK ;
+
+	PIWDS = [2],
+	PIKEY(PI) = [ISTK[(PI)-1]], COMMENT the char after pi;
+	PIVAL(PI) = [ISTK[(PI)-2]], COMMENT the string in SSTK that it emits;
+
+	MARGWDS = [4],
+	LMARGX(MARG) = [ISTK[(MARG)-1]],
+	RMARGX(MARG) = [ISTK[(MARG)-2]],
+	OLD!MARGX(MARG) = [ISTK[(MARG)-3]],
+	AREAX(MARG) = [ISTK[(MARG)-4]], COMMENT, ISTK IX of AREA with these margins ;
+
+	FONTWDS = [4], COMMENT TES 11/15/73 ;
+	THISFONTX(FONT) = [ISTK[(FONT)-1]], COMMENT OF OUTER BLOCK ;
+	OLDFONTX(FONT) = [ISTK[(FONT)-2]],
+	OUTERX(FONT) = [ISTK[(FONT)-3]],
+	COMMENT TES same as for MARG:  AREAX(FONT) = [ISTK[(FONT)-4]];
+
+	TURNWDS = [1], COMMENT, CHR, FUN 7 bits each, to TURN back ON previous meaning;
+
+	NUMWDS = [1],
+	OLD!NUMBER(SYM) = [ISTK[(SYM)-1]],
+
+	AREAWDS = [19],
+	DISD(AREA!COUNTER) = [ISTK[(AREA!COUNTER)-1]], COMMENT, TRUE if disdeclared ;
+	FULHIGH(AREA) = [ISTK[(AREA)-2]], COMMENT, 1 iff no LINES clause ;
+	LINE1(AREA) = [ISTK[(AREA)-3]], COMMENT, Top line number used;
+	LINECT(AREA) = [ISTK[(AREA)-4]], COMMENT, Number of lines used;
+	FULWIDE(AREA) = [ISTK[(AREA)-5]], COMMENT, 1 iff no CHARS clause ;
+	CHAR1(AREA) = [ISTK[(AREA)-6]], COMMENT, Leftmost character position;
+	CHARCT(AREA) = [ISTK[(AREA)-7]], COMMENT, Width of whole area;
+	TEXTAR(AREA) = [ISTK[(AREA)-8]], COMMENT, 1=TEXT AREA, 0=TITLE AREA;
+	COLCT(AREA) = [ISTK[(AREA)-9]], COMMENT, Number of columns;
+	COLWID(AREA) = [ISTK[(AREA)-10]], COMMENT, Width of each column;
+	OLD!ACTIVE(AREA) = [ISTK[(AREA)-11]], COMMENT, If Open, array descriptor of active area in OLDPAGE;
+	NEW!ACTIVE(AREA) = [ISTK[(AREA)-12]], COMMENT, If Open, array descriptor of active area in NEWPAGE;
+		OPEN!ACTIVE(AREA) = [ISTK[(AREA)-
+			(IF FRAMEIDA = NEWPGIDA NEQ 0 THEN 12 ELSE 11)]],
+			COMMENT "NEQ 0" ABOVE ADDED APRIL 22, 1973 BY TES ;
+	FOOTSTR(AREA) = [ISTK[(AREA)-13]], COMMENT, SSTK subscript of SEND FOOT string ;
+	MARGINS(AREA) = [ISTK[(AREA)-14]], COMMENT, ISTK IX of MARGTYPE entry ;
+	FONTSIX(AREA) = [ISTK[(AREA)-15]], COMMENT TES 11/15/73 ISTK IX of FONTTYPE entry ;
+	TFONT(AREA) = [ISTK[(AREA)-16]], COMMENT TES 11/15/73 THISFONT;
+	OFONT(AREA) = [ISTK[(AREA)-17]], COMMENT TES 11/15/73 OLDFONT ;
+	MILLSKIP(AREA) = [ISTK[(AREA)-18]], COMMENT TES 11/7/74 SKIP N MILLS ;
+	MILLGSKIP(AREA) = [ISTK[(AREA)-19]], COMMENT TES 11/7/74 GROUP SKIP N MILLS ;
+
+	COUNTERWDS = [12],
+COMMENT DISD(AREA!COUNTER) = [ISTK[(AREA!COUNTER)-1]], COMMENT, see area def above;
+	CTR!INIT(COUNTER) = [ISTK[(COUNTER)-2]], COMMENT, FROM initial value + 2^14 ;
+	CTR!STEP(COUNTER) = [ISTK[(COUNTER)-3]], COMMENT, BY step-value + 2^6 ;
+	PATT!CHRS(COUNTER) = [ISTK[(COUNTER)-4]], COMMENT, estimate based on chars in patterned TO value;
+	CTR!CHRS(COUNTER) = [ISTK[(COUNTER)-5]], COMMENT, estimate based on unpatterned TO value;
+	PARENT(COUNTER) = [ISTK[(COUNTER)-6]], COMMENT, IX of parent COUNTER;
+	PATT!PARENT(COUNTER) = [ISTK[(COUNTER)-7]], COMMENT, whether ! occurs in pattern;
+	PATT!ALF(COUNTER) = [ISTK[(COUNTER)-8]], COMMENT, alphabet to convert CTR!VAL to:
+		PATT!ALF...	0	1	2	3	4	5
+		alphabet... template	1	i	I	a	A	;
+
+	PATT!STRS(COUNTER) = [ISTK[(COUNTER)-9]], COMMENT, pointer to strings in SSTK;
+	SON(COUNTER) = [ISTK[(COUNTER)-10]], COMMENT, IX of youngest son COUNTER ;
+	BROTHER(COUNTER) = [ISTK[(COUNTER)-11]], COMMENT, IX of brother COUNTER ;
+	IN!LINE(COUNTER) = [ISTK[(COUNTER)-12]], COMMENT, TRUE if INLINE option present ;
+	MACROWDS = [4], RESPWDS  = [7], SIGWDS = [9],
+	BODY(DEF) = [ISTK[(DEF)-1]], COMMENT, points to body string in SSTK;
+	NAMEPAR(MACRO) = [ISTK[(MACRO)-3]], COMMENT, LAND 2^(ARGS-n) says n'th arg is by name;
+	NUMARGS(DEF) = [ISTK[(DEF)-2]], COMMENT, no. of formal parameters;
+	ODDMAC(MACRO) = [ISTK[(MACRO)-4]], COMMENT, 1 for ODD MACRO, 0 for [EVEN] MACRO;
+	OLD!RESP(RESP) = [ISTK[(RESP)-3]], COMMENT, former response+200 or (<200) breaktable value;
+	DEPTH!RESP(RESP) = [ISTK[(RESP)-4]], COMMENT, block level (unimplemented) ;
+	NEXT!RESP(RESP) = [ISTK[(RESP)-5]], COMMENT, another resp. with similar recognizer;
+	CLUE(RESP) = [ISTK[(RESP)-6]], COMMENT, encoding of the recognizer;
+	VARIETY(RESP) = [ISTK[(RESP)-7]], COMMENT, see Table below ;
+	SIGNAL(RESP) = [ISTK[(RESP)-8]], COMMENT, ASCII of Signal;
+	RESP!SEP(RESP) = [ISTK[(RESP)-9]], COMMENT, ASCII of seps (up to 5), right byte=last sep;
+
+COMMENT NEXT!RESP and CLUE for each VARIETY of response declaration:
+
+	Declaration	VARIETY		CLUE		NEXT!RESP with
+	-----------	-------	----------------------	--------------
+	AT <e>		   0	Pointer to <e> in SSTK	Same 1st letter & 2d letter|non-letter-ness
+	AT <n>		   1		  n		Next larger n
+	AT <signal>	   2     Number of characters	Same first char
+	AFTER <area|counter>  3    Symb. no. of area|counter  (WAITRESP link only)
+	BEFORE ...	   4            "                      "
+
+ITBL....
+
+	Has (1) Labels generated by {PAGE~. The entry looks like a
+		NUMBER entry for a label, except PLIGHT is never 1.
+	    (2) Portion declarations--NOTE: no word may have left half = '400000;
+		PORCH(PORT) = [ITBL[PORT]], COMMENT, 0-15: channel SENDing to,
+			-1: FOOT, -2: declared but never SENT to, -3: sent to & declared but not RECEIVEd,
+			-4: already RECEIVEd, -5: only mentioned in INSERT, -6: RECEIVEd AND Alphabetized ;
+		PORSEQ(PORT) = [ITBL[(PORT)-1]], COMMENT, pointer to next PORTION in collating sequence ;
+		PORSTR(PORT) = [ITBL[(PORT)-2]], COMMENT, pointer to STBL ;
+	COMMENT
+SSTK....
+	Has (1) Values of Local Variables
+	    (2) Macro, Response, and Prepare Bodies
+	    (3) counter PATT!STRS;	PATT!VAL(PS) = [SSTK[PS]], COMMENT, current printing value;
+				CTR!VAL(PS) = [SSTK[(PS)-1]], COMMENT, current counter value ;
+				PREFIX(PS) = [SSTK[(PS)-2]], COMMENT, before ! OR template;
+				INFIX(PS) = [SSTK[(PS)-3]], COMMENT, between ! and alphabet;
+				SUFFIX(PS) = [SSTK[(PS)-4]], COMMENT, after alphabet .
+	    (4) SEND FOOT Strings for each declared AREA.
+	    (5) PICHAR Old values. (see PIVAL)
+
+STBL....
+	Has (1) Values of Global Variables
+	    (2) Values of Labels (set to '0&<last counter specified--SYMBOL no.>
+		if undefined, so ALGOL can check consistency of use)
+	    (3) Current file-block for every generated file getting sent to;
+		PORFIL(SPORT) = [STBL[(SPORT)]], COMMENT, generated file name ;
+		PORINT(SPORT) = [STBL[(SPORT)+1]], COMMENT, intermed. file name ;
+	COMMENT
+
+SNEST...
+	Has (1) Input strings to scan.  They nest due to macro calls,
+		responses, argument substitutions, RECEIVEs, and
+		REQUIREs.  This nesting is not synchronized with that
+		of blocks, because a macro or argument body or a source
+		file may have unmatched BEGINs, etc., so a separate
+		stack is required.
+	    (2) Saved line number for previous source:
+		The first six characters are the file name ;
+	STRSCAN(S) = [SNEST[(S)-1]], COMMENT, a string to scan (STRSCAN(LAST)
+		is the current one);
+	LINESCAN(S) = [SNEST[S]], COMMENT, MACLINE or SRCLINE ;
+
+	COMMENT
+
+INEST...
+	Has (1) Input channels to scan.  When reading from a file,
+		just  its channel number is kept instead of the whole
+		string of course.  However, a whole line at a time is
+		stripped and scanned as if it were an input string.
+	    (2) Saved SOS page number for previous input file;
+	CHANSCAN(S) = [INEST[(S)-1]], COMMENT, the channel number of a file to
+		scan (CHANSCAN(LAST) is the current one or -1 if none)
+		TECO files: channel no. stored here excess 100 ;
+	PAGESCAN(S) = [INEST[S]], COMMENT, LH=PAGEMARKS  RH=PAGEWAS   Negated by RECEIVE if GEN-file;
+
+COMMENT These are our DEVICE numbers;
+	LPT = [1],
+	TTY = [2],
+	MIC = [3],
+	XGP = [4],
+
+COMMENT These are definctions to compare strings;
+	NULSTR(S) = [(LENGTH(S) = 0)],
+	FULSTR(S) = [(LENGTH(S) NEQ 0)],
+	FALSTR(S) = [EQU(S, "0")],
+	TRUESTR(S) = [NOT EQU(S, "0")],
+COMMENT A record of each active frame and area is  kept  in  a  dynamically
+        created   array.    Swinehart's  ARRSER.SAI  package  creates  such
+        arrays.  The array may be  represented  by  an  integer  descriptor
+        (we'll  call it the array's IDA) which can be assigned to any array
+        of variable upper bound  (the  array's  ALIAS).    Frame  and  area
+        records  contain  IDAs of other records and of dynamic MOLES, OWLS,
+        and area-arrays.  All these  arrays  must  be  dynamically  created
+        because  their  existence is independent of block nests and even of
+        their declarations -- for example, a BOX and its areas may be  held
+        over for several pages before insertion.  THE FIRST ELEMENT OF EACH
+        SUCH STRING ARRAY IS NOT A STRING BUT A GARBAGE-COLLECT LINK!!!
+
+        Two pages may be open at once, due to group overflow or to  closing
+        of one text area while others are still open. ;
+
+COMMENT	Here are the Aliases of the dynamic arrays:
+
+	IDA		ALIAS		Represents
+	---		-----		--------------------------------------
+	OLDPGIDA	OLDPAGE		Partly completed open page.
+	NEWPGIDA	NEWPAGE		Overflow from OLDPAGE.
+	FRAMEIDA	THISFRAME	Record of Frame we're PLACing in (PAGE or BOX).
+	MOLESIDA	MOLES			Its MOLES array.
+	OWLSIDA		OWLS			Its OWLS array.
+	AREAIDA		THISAREA	Record of Area we're placing in.
+			AA			Its Area-Array.
+	WBOXIDA		WAITBOX		Head of L.L. of Boxes held over.
+
+	A Frame Record is an integer array symbolized THISFRAME[0:PFREC|BFREC]: ;
+	PFREC = [6], BFREC = [22],
+		ARF = [THISFRAME[0]], COMMENT, head of LL of its area records;
+		OWLSF = [THISFRAME[1]], COMMENT, IDA of its OWLS array;
+		MOLESF = [THISFRAME[2]], COMMENT, IDA of its MOLES array;
+		HIGHF = [THISFRAME[3]], COMMENT, n HIGH;
+		WIDEF = [THISFRAME[4]], COMMENT, v WIDE;
+		SHORTF = [THISFRAME[5]], COMMENT, how far line is short of right just;
+		MLEADF = [THISFRAME[6]], COMMENT TES 11/2/74 excess mill leading of line ;
+COMMENT The rest apply only to a BOX FRAME;
+		ULLB = [THISFRAME[7]], COMMENT, Upper Left Line covered in containing area INB;
+		ULCB = [THISFRAME[8]], COMMENT, Upper Left Char covered;
+		INB = [THISFRAME[9]], COMMENT, symbol no. of containing area;
+		NEXTB = [THISFRAME[10]], COMMENT, link to next BOX -- two cases:
+			If this box is held over  next such box in WAITBOX L.L.
+			Otherwise  next box in this area (BOXA L.L.)	;
+		comment, NEAR <where> encoded:  about 12 words ;
+COMMENT An Area Record is an integer array symbolized THISAREA[0:AREC] -- ;
+	AREC = [13],
+	AAA = [THISAREA[0]], COMMENT, IDA of Area-Array (a 2-D array);
+	ARA = [THISAREA[1]], COMMENT, IDA of next area record in this frame (ARF L.L.);
+	OLD!ACTA = [THISAREA[2]], COMMENT, IDA of area record in up-level frame ;
+	BOXA = [THISAREA[3]], COMMENT, IDA of first BOX in this area;
+	INA = [THISAREA[4]], COMMENT, IDA of containing frame;
+	STATA = [THISAREA[5]], COMMENT, Status:
+		Unopened=0  Open=1  Closed=2  Dis-Declared=3	;
+	DEFA = [THISAREA[6]], COMMENT, ptr to definition in ISTK (or 0 if none);
+	COMMENT If the area is open-- ;
+		NBOXA = [THISAREA[7]], COMMENT, number of BOXes in the BOXA L.L.;
+		COLA = [THISAREA[8]], COMMENT, column we're PLACing in;
+	COMMENT If the area is closed or dis-declared-- ;
+		LINECA = [THISAREA[9]], COMMENT, LINECT copied from ISTK ;
+		COLCA = [THISAREA[10]], COMMENT, COLCT copied from ISTK ;
+		ULLA = [THISAREA[11]], COMMENT, LINE1(AREA) copied from ISTK;
+		COMMENT and AA[i,0] tells upper left character posn of column i ;
+	XGENA= [THISAREA[12]], COMMENT, XGENLINES FOR AREA;COMMENT  RKJ;
+	OVERA= [THISAREA[13]], COMMENT TES 11/14/73 OVEREST for col-1 of area;
+
+COMMENT The Area-Array of a D-column M-line area is an integer array AA[1:2*D,0:M].
+
+	                  	   Column  1	     Column  2	       Column 3	   ...
+				 "Leg"     Foot	    Leg      Foot     Leg      Foot	  ...
+	lines already used *	AA[1,0] AA[D+1,0] AA[2,0] AA[D+2,0] AA[3,0] AA[D+3,0]	...
+	J'th line       	AA[1,J] AA[D+1,J] AA[2,J] AA[D+2,J] AA[3,J] AA[D+3,J]	...
+			(*): H2=last placed line, H1=lines beneath covered by BOXes;
+COMMENT These "mode words" are BLT'ed to ISTK upon block entry ;
+
+	MODEWDS = [23];
+
+TERNAL INTEGER	BREAKM ; comment Break Mode ; DEFINE
+	FILL= [(BREAKM=0)], NOFILL = [(BREAKM NEQ 0)], JUSTJUST= [(BREAKM=1)], FLUSHL= [(BREAKM=2)],
+	FLUSHR= [(BREAKM=3)], CENTER= [(BREAKM=4)], IMPOSE= [(BREAKM=5)], VERBATIM= [(BREAKM=6)],
+	REGNOFILL = [(BREAKM=7)];
+TERNAL INTEGER	JUSTM ; DEFINE ADJUST= [(JUSTM=1)], NOJUST= [(JUSTM=0)];
+TERNAL INTEGER	SPACEM ; DEFINE COMPACT= [(SPACEM=2 OR FILL AND SPACEM=1)], RETAIN= [(NOT COMPACT)];
+TERNAL INTEGER CRBM ; DEFINE CRBREAK= [(CRBM=1)], CRSPACE= [(CRBM=0)];
+TERNAL INTEGER	TWEENLFM, comment, N-1 from SUPERIMPOSE N;
+		SINCELFM, comment, count no-LF lines;
+		FIRSTIM, comment, f from INDENT f,r ;
+		RESTIM, comment, r from INDENT f,r ;
+		RIGHTIM, comment, g from INDENT f, r, g ;
+
+		GROUPM, comment, GROUP=1  APART=0;
+		GLINEM, comment, MOLES Posn of 1st output line in the group;
+		AREAIXM, comment, ISTK posn of Place Area;
+
+		TABTAB, comment either 0 or what TAB is TURNed ON as ;
+
+		LEADFM, comment, PREFACE in FILL mode ;
+		LEADNM, comment, PREFACE in NOFILL mode ;
+		SPREADM, comment, SPREAD=LINESPACING+1, e.g., SINGLE SPACE  1;
+		MLEADFM, comment extra mill PREFACE in FILL TES 11/2/74 ;
+		MLEADNM, comment extra mill PREFACE in NOFILL TES 11/2/74 ;
+		MSPREADM, comment extra mill spacing TES 11/2/74 ;
+
+		ENDCASE, comment, how this block began: BEGIN=1 ONCE=2 BEFORE|AFTER|FOOTNOTES=3 ;
+		STARTS, comment, clump depth in this block ;
+		SHED , comment, Top of SSTK ;
+		OLDIHED; COMMENT TES 11/15/73 OLD ISTK TOP ;
+
+	COMMENT TES 11/15/73 OLDFONT + THISFONT moved to last page ;
+COMMENT These are for scanners;
+DEFINE
+	LETTS = ["!QWERTYUIOPLKJHGFDSAZXCVBNMzxcvbnmlkjhgfdsaqwertyuiop"],
+	DIGS = ["0123456789"],
+	CR = ['15], LF = ['12], SP = ['40], TB = ['11], FF = ['14], CRLF = [(CR&LF)],
+	RUBOUT = "'177", VT = "'13", EOL = "'37",
+	BAR = IFCR ITSVER THENC "'137" ELSEC "'30" ENDC,
+	CTLA = 1, CTLQ = 17, CTLS = 19, CTLV = 22,
+	ALTMODE=IFCR TENEX THENC "'33" ELSEC
+		IFCR ITSVER THENC "'33" ELSEC
+		IFCR SAILVER THENC "'175" ELSEC "'176" ENDC ENDC
+		ENDC,
+	RCBRAK=IFCR SAILVER THENC "'176" ELSEC "'175" ENDC,
+	LCBRAK= ['174], COMMENT TES 8/14/74 ;
+
+COMMENT For the parser;
+	SPASS(X) = [((X&NULL)&PASS)],
+	IPASS(X) = [((X+0)+PASS)],
+	DPASS = [BEGIN DCLR!ID_TRUE ; PASS; DCLR!ID_FALSE END],
+	EMPTYTHIS = [BEGIN THISTYPE _ -EMPTYQ ; THISWD _ NULL END],
+	EMPTYTHAT = [BEGIN THATTYPE _ -EMPTYQ ; THATWD _ NULL END],
+	THISISFULL = [(THISTYPE NEQ -EMPTYQ)], THATISFULL = [(THATTYPE NEQ -EMPTYQ)],
+	THISISID = [(THISTYPE GEQ 0)], THATISID = [(THATTYPE GEQ 0)],
+	THISISCON = [(THISTYPE = -1)], THATISCON = [(THATTYPE = -1)],
+COMMENT ITS(IDENT), ITSCH($), ITSCH(<]>) ;
+	ITS(LIT) = [EQU(THISWD,"LIT")], ITSV(EX) = [EQU(THISWD,EX)],
+	NEXTS(LIT) = [EQU(THATWD,"LIT")], NEXTSV(EX) = [EQU(THATWD,EX)],
+	ITSCH(CHR) = [(THISWD = "CHR")], NEXTSCH(CHR) = [(THATWD = "CHR")],
+	ITSBRACK(CHR) = [(THISWD = CHR)], NEXTSBRACK(CHR) = [(THATWD = CHR)],
+
+COMMENT  The  character  Table  CHARTBL  categorizes  each of the 128 ASCII
+        characters for both the  Parser  and  the  Filler.    SPCODE  is  a
+        variable  field  set  by TURN ON (and reset by TURN OFF) to a value
+        fetched from the constant field SPCHAR.;
+
+	UPCASE(CH) = [BBPP(7, CHARTBL[0], 6) + (CH)],
+	FAMILY(CH) = [BBPP(5, CHARTBL[0], 11) + (CH)],
+	SPECIES(CH) = [BBPP(5, CHARTBL[0], 17) + (CH)],
+	SPCODE(CH) = [BBPP(6, CHARTBL[0], 35) + (CH)],
+	SPCHAR(CH) = [BBPP(6, CHARTBL[0], 26) + (CH)],
+	COMMENT and Bit 29 is set for Invisibles ;
+
+		COMMENT   Table of Character Families and Species
+
+				    S       P       E       C       I       E       S
+       F  A  M  I  L  Y		0	1	2	3	4	5	6 .....	26
+       ----------------	      -----  ------- ------- -------- -----   -----   -----    ----	;
+	LETTQ	= [ 0],COMMENT 	Aa	Bb	Cc	Dd	Ee	Ff	Gg ....	!	;
+	DIGQ	= [ 1],COMMENT 	0	1	2	3	4	5	6 ...  		;
+	EMPTYQ	= [ 2],
+	TERQ	= [ 3],COMMENT 	~      ; COMMENT )	,	]				;
+	QUOTEQ	= [ 4],COMMENT 	"	'							;
+	DOLLARQ	= [ 5],COMMENT 	$								;
+	BROKQ	= [ 6],COMMENT 	[								;
+	MULQ	= [ 7],COMMENT 	*    / DIV %   MOD	&					;
+	ADDQ	= [ 8],COMMENT 	+	-    EQVABS	^    XORLENGTH XLENGTH		;
+	BOUNDQ	= [ 9],COMMENT  MAX     MIN							;
+	ODDQ	= [10],COMMENT  EVEN    ODD							;
+	RELQ	= [11],COMMENT 	<	>	=      LEQ    GEQ    NEQ			;
+	NOTQ	= [12],COMMENT NOT								;
+	ANDQ	= [13],COMMENT AND								;
+	ORQ	= [14],COMMENT OR								;
+	MISCQ	= [15],COMMENT rest	:	_	(		@	|		;
+			MISCMAX = [7], COMMENT, Highest numbered species in MISCQ ;
+COMMENT Run-of-mill defines;
+	TWO(X) = [(1 LSH (X))],
+	TABLIMIT = [30],	COMMENT TES 8/26/74 ;
+	THRU = [STEP 1 UNTIL],
+	DOWN = [STEP -1 UNTIL],
+	FALSE = [0], TRUE = [-1],
+	LOPP(STR) = [DUMMY _ LOP(STR)],
+	COPY(STR) = [BEGIN STR _ 0&STR ; LOPP(STR) END],
+	LH(X) = [((X) LSH -18 LAND '777777)],
+	RH(X) = [((X) LAND '777777)],
+	LHRH(X,Y) = [((X) LSH 18 LOR (Y))],
+	WDBRK = [ALTMODE], FONTCHAR = ['177],
+	CVSR(N) = [CVS(N) & ALTMODE],
+
+COMMENT Break Tables;
+	TO!VT!SKIP = [15],
+	TO!COMMA!RPAR = [14],
+	TO!TERQ!CR = [13],
+	TO!SEMI!SKIP = [12], COMMENT, for COMMENT comments;
+	NO!CHARS = [11],
+	ONE!CHAR = [10], COMMENT, break on aything and append;
+	LOCAL!TABLE = [9], COMMENT, Do a SETBREAK before using this one;
+	TO!TB!FF!SKIP = [8], COMMENT, to scan a line number (ignores line feed);
+	TO!LF!TB!VT!SKIP = [7], COMMENT, to swallow a whole line;
+	TO!VISIBLE = [6],
+	ALPHA = [5],
+	DIGITA = [4],
+	TO!QUOTE!APPD = [3],
+	TO!NON!SP = [2],
+	TEXT!TBL = [1],
+	TO!CR!SKIP = [16], COMMENT for VERBATIM text lines ;
+	TO!VBAR!SKIP = [17],
+	DEFN!TABLE = [18],
+
+COMMENT Buggy Printout ;
+	DARN = [WARN],
+	 = [& "," &],
+	VS(SVAR) = [ " SVAR=" & SVAR ],
+	VI(IVAR) = [ " IVAR=" & CVS(IVAR) ],
+	MESSMAX = [3],
+
+	VIRGIN = [NULL]; COMMENT End DEFINE ;
+TERNAL THAFE INTEGER ARRAY
+	COMMENT PHRASED ARRAY REMOVED TES 11/15/73;
+	SIGNALD[0:127], COMMENT, detect last character of signal to trigger response search;
+	CHARTBL[0:150], COMMENT, current classification and mapping of characters;
+	INPG[0:10], COMMENT, 1 to 10 mTnP options;
+	TABSORT[1:TABLIMIT+1], COMMENT, tab stops in increasing order;
+	ETCIARRAYS[0:0];
+
+DEFINE MAXBLNMS = IFCR CMUVER THENC "180" ELSEC "40" ENDC ; TES 11/20/73 ;
+RKJ: 5-30-74 - Newcomer does much recursion with blocknames ;
+
+PRELOAD "MONTH TABLE", "January ", "February ", "March ", "April ",
+		"May ", "June ", "July ", "August ", "September ", "October ",
+		"November ", "December " ;
+TERNAL STRING ARRAY
+	MONTH[0:12], COMMENT MUST BE FIRST!! To compute DATE for macros to print ;
+	BLKNAMES[0:MAXBLNMS], COMMENT, clump and block names ;
+	PICHAR[0:127], COMMENT, Current meanings of PI CHARacters,
+		in the form: F N k B1 ... Bk		TES 11/29/73
+		where WIDTH = if F='177 then CW[N] else FN ;
+	MESGSARR[1:MESSMAX], COMMENT, Short error messages to print on document in D mode. ;
+	NULLS[0:10], COMMENT, always NULLs;
+	ETCSARRAYS[0:0] ;
+
+PRELOAD NULL, " ", "  ", "   ", "    ", "     ", "      ",
+	"       ", "        ", "         ", "          " ;
+TERNAL THAFE STRING ARRAY SPSARR[0:10] ;
+DEFINE IDASSIGN(EX,ALIAS)=[BEGIN DUMMY_EX; 
+	IF DUMMY LEQ 0 THEN WARN(NULL,<"NEGATIVE ALIAS FOR INTEGER ARRAY">) ELSE comment ************* ;
+	MAKEBE(DUMMY, ALIAS) END] ;
+
+DEFINE SMAKEBE(I, A) = [START!CODE HRRO TEMPO,I ; MOVEM TEMPO, A ; END],
+	SIDASSIGN(EX, ALIAS) = [BEGIN DUMMY_EX ; SMAKEBE(DUMMY, ALIAS) END] ;
+
+DEFINE ERRCOUNT = 1 ;
+DEFINE ERRNAME = [] ;
+DEFINE WARN(SH, LG) = [
+	BEGIN
+	REDEFINE ERRNAME = [ERR!] & CVS(ERRCOUNT);
+	REDEFINE ERRCOUNT = ERRCOUNT + 1 ;
+	OWN BOOLEAN ERRNAME ;
+	WARNN(ERRNAME, SH, LG) ;
+	END
+	] ;
+COMMENT ONLY USABLE AT STATEMENT LEVEL -- OTHERWISE CALL
+	WARNN(NAME!YOU!DECLARE!INTEGER, SH, LG) ;
+
+COMMENT Several linked list  scans  use  these  macros  to  generate  code.
+	LLHEAD symbolizes a variable pointing to the first element.
+	LLNEXT(x) would determine the successor to x. The global variables
+        LLPREV, LLTHIS, and LLPOST display the result of the scan. ;
+
+DEFINE	LLSCAN(LLHEAD, LLNEXT, LLSTOP) = [
+		BEGIN LLTHIS _ LLHEAD MAX 0 ; LLPREV _ -1 ;
+		WHILE LLTHIS AND NOT(LLSTOP) DO
+			BEGIN
+			LLPREV _ LLTHIS ; LLTHIS _ LLNEXT(<LLTHIS>) ;
+			END ;
+		LLPOST _ IF LLTHIS THEN LLNEXT(<LLTHIS>) ELSE 0 ;
+		END],
+	LLSKIP(LLHEAD, LLNEXT) = [
+		IF LLPREV LEQ -1 THEN LLHEAD _ LLPOST
+		ELSE LLNEXT(<LLPREV>) _ LLPOST ],
+	LLINS(LLHEAD, LLNEXT, LLNEW) = [
+		BEGIN
+		IF LLPREV LEQ -1 THEN LLHEAD _ LLNEW ELSE LLNEXT(<LLPREV>) _ LLNEW ;
+		LLNEXT(<LLNEW>) _ LLTHIS ;
+		END];
+TERNAL INTEGER
+	SYMNO, comment, size of hashed SYMBOL Table;
+	XSYMNO, comment, size of SYM and NUMBER--first SYMNO elemts hash-searched, rest linear- searched;
+	ISIZE, SSIZE, ITSIZE, STSIZE, SIZE, comment of ISTK,SSTK,ITBL,STBL,NESTs;
+	IHED,         IHIGH,  SHIGH,  LAST, comment last used (highest unavailable) subscript;
+	OLX,NOLX,GRPOLX,GRPTOP, OLXX, OLMAX, comment,
+		used words of OWLS, LENGTH(OWLS), total of all declared areas;
+	EOF, BRC, FLAG, comment, I/O control variables;
+	CONTENTS, DEBUG, DEVICE, comment, RPG-derived switches;
+	LMARG, RMARG, comment, margin settings in this area;
+	ODDLEFTBORDER, EVENLEFTBORDER, comment, TES 6/11/74 XGP side margins in mills ;
+	TOPBORDER, BOTTOMBORDER, comment TES 1/26/74 mills PARC ;
+	OAKS,POSN, BRKPT,BRKPOSN,BRKXPOSN,BRKFAKE,  BRKABX, BRKBLX,
+	BRKSPCS, JUSTIFY, LASTWDBRK,  BRKPLBL, TABI,RBOUND,
+	MAXIM,FMAXIM,NMAXIM, comment, Line-Filler (OWL) variables;
+	STANDARD, comment, ptr to def in ISTK of MACRO !STANDARD;
+	INSETS, comment, ptr to AT <n> of smallest n (ISTK ptr);
+	INPUTCHAN, TECOFILE, comment, current input channel ;
+	INPGS, INPGX,comment, last and current subscript in array INPG of mTnP options;
+	SWDBACK, comment, -1=just SWICHBACKed from a file, +1=just WARNed ;
+	PUBSTD, comment, whether compiling PUBSTD.DFS (suppress pgno display) ;
+	ONE, comment, 1 for variable upper bound of ALIAS arrays;
+	TAG, comment, STBL address of variable TAG;
+	SAIL!SKIP!, comment, !SKIP! value after execution of SAIL substring operation;
+	INF, comment,  value for current ALGOL substring spec;
+	I, J, K, L, M, N, DUMMY, comment, short-term loan currency ;
+	DEPTH, comment, block depth -- CMDNAMES are at 0, main program at 1;
+	ON, comment, FALSE if parsing false part of conditional or if defining a response body;
+	FHIGH, FWIDE, PHIGH, PWIDE, comment, Dimensions of the current Frame and Page Frame;
+	EPSCHAR, comment, char serving { function ;
+	PAGEMARKS, PAGEWAS, comment, no. of PM's on this page: passed, responded to ;
+	RESP!BODY, comment, TRUE if defining a response body;
+	DCLR!LET, comment, TRUE if scanning after = of `LET X=..';
+	DCLR!ID, comment, TRUE if in a declaration scanning an identifier that is to be declared;
+	DEFINING, comment TRUE if reading [definition] ;
+	WAITRESP, comment, head of LL of Responses to undeclared areas and counters;
+	LEADRESPS, comment, head of LL of "AT n" responses, in ascending order by n ;
+	!COMMAND!CHARACTER!, !TAB!CHARACTER!,
+	NPORTS, THISPORT, SEQPORT, PORTLL, comment, Portions: # of, last declared, last in seq, seq LL;
+	INTER, SINTER, INTERS, comment Intermediate output channel, no. of intermediate output files ;
+	STATUS, comment, Current place area UNOPENED (0), OPEN (1), CLOSED (2), GONE (3) ;
+	OLDPGIDA, NEWPGIDA, FRAMEIDA,
+	MOLESIDA, MLEADIDA, SHORTIDA, OWLSIDA,
+	AREAIDA, WBOXIDA,
+	SYMIDA, NUMBIDA, ISTKIDA, SSTKIDA, ITBLIDA, STBLIDA, INESTIDA, SNESTIDA,
+	BYTEWD, comment, lots of byte pointers point here ;
+	COLS, COL, PAL, LINES, LINE, PINE, COVERED, UNDEAD, comment, Current position in place area ;
+	NULLAREAS, comment, LL of Made but Unopened areas (Status=0) ;
+	PREFMODE, comment, n from nS option ;
+	BLNMS, comment, top of BLKNAMES stack ;
+	MYEND, comment flag for END routines (see TOEND in MAN.SAI) ;
+	FOOTTOP, comment TRUE iff expecting 1st line of 1st footnote belonging to a body line;
+	OWLSEQ, comment, counts total output lines red'd by OWLS arrays ;
+	WISTK, WITBL, WINEST, WSSTK, WSTBL, WSNEST, WSYM, WNUMBER,
+		WOLDPAGE, WNEWPAGE, WTHISFRAME, WMOLES, WNMOLES,
+		WOWLS, WNOWLS, WTHISAREA, WWAITBOX, WAVAILREC,
+		WAA, WNAA, WSHORT, WNSHORT, WMLEAD, WNMLEAD, comment, WHATIS(dummy arrays) ;
+	SWFLG, comment, used only in SWICHF TES 12/3/73 ;
+	INPICHAR, comment for DPICHAR and RDENTITY/OCTAL TES 12/6/73 ;
+	INCHAN, COMMENT CHANNEL INFILE OPENED ON ;
+	AGENFILE, COMMENT BOOLEAN FOR SWICHFILE ;
+	AUTOCRLF, COMMENT RKJ 6-FEB-75 BOOLEAN CONTROLS CRLF ON VARIABLE TTY ;
+	DEEPREPEATS, COMMENT DEPTH OF REPEAT NEST -- MAINLY CARE IF 0 ;
+	DEEPPROCEDURES, COMMENT DEPTH OF PROCEDURE NEST -- MAINLY CARE IF 0 ;
+	MAXTEMPLATE, COMMENT LONGEST ALLOWABLE TEMPLATE (NCHARS) ;
+	ERRLF, COMMENT BOOLEAN FOR LF RESPONSE TO ERROR WARNING ;
+	GENREXT, COMMENT BOOLEAN FOR DOC EXTENSION ;
+	DEBUGFLAG, COMMENT WHETHER DEBUG("HERALD") IS ARMED ;
+	MINCHARW, COMMENT SMALLEST LEGAL WIDTH IN FONT ;
+	MILLVERTI, COMMENT "NORMAL" VALUE OF INTER-LINE SPACING, INIT. IN OWLPLACE();
+	NEEDMILLVERTI, COMMENT TRUE IFF ANY SPACING IS NON-MILLVERTI ;
+	LOCATIONOFERROR, COMMENT CIRCUMVENT SAIL FIXUP BUG ;
+	FTGP2, comment 11/2/74 TES ;
+	FTGP, comment 11/30/73 TES ;
+	FSFONT, comment 11/30/73 TES ;
+	SNUCK, COMMENT 11/17/74 TES SNEAK IN THIS PGPH ;
+	UPCAS3, UPCAS5, UPCAS6, comment, byte pointers for CAPITALIZE,STRLSS;
+	SYMTYPE, SYMIX, comment, fields of a descr. looked up by SIMLOOK or SIMNUM;
+	LONG, comment, TRUE in a LONG etc. command;
+	SYMPAGE, IXPAGE, PATPAGE, comment, SYM subscript, IX field, counter subscript for PAGE;
+	IXCOMMENT, IXEND, IXFOOT, IXTAG, comment, IX fields for reserved words;
+	SYMTEXT, IXTEXT,
+	LLPREV, LLTHIS, LLPOST, comment, results of LLSCAN (a macro) ;
+	AMSAND, LBRACK, UARROW, DARROW, UNDERBAR, LCURLY, DOLLAR,
+		comment SPCHAR codes of & [ ^   { $ ;
+	EXNEXTPAGE, comment TRUE while executing NEXT PAGE (prevents recursion) ;
+	MESGS, comment, how many messages in MESGSARR[] ;
+	LDEFN!BRC, comment, initial LENGTH(DEFN!BRC) ;
+	GENSYM ;
+
+TERNAL STRING
+	C!, !, comment C and P-values of incremented counter after NEXT statement;
+	INPUTSTR, comment, current input string;
+	LIT!ENTITY, LIT!TRAIL, comment,
+		for the entity in THATWD: its literal input form & trailing spaces;
+	TEXT!BRC, comment, break characters (always including CR LF SP ALTMODE RUBOUT -.?! );
+	DEFN!BRC, comment, break characters (char serving as {, also ~, LF, [, ], , letters) ;
+	SIG!BRC, comment, break characters for Signals (first char of each signal) ;
+	PAGEVAL, comment, the P-value of this PAGE when it was opened ;
+	SRCPAGE, SRCLINE, MACLINE,  comment, input file line nos.;
+	INFILE, OUTFILE, TMPFILE, comment, RPG-determined file names;
+	FULLFILE, comment, includes extension and directory in name ;
+	IFILENAME, comment first name of INFILE for TENEX ;
+	MAINFILE, comment first name of INFILE, filled out with colons to 6 chars ;
+	THISFILE, comment, the first name of the file being read now, colon-filled ;
+	LIBPPN, comment usually [1,TES], but [2,TES] if logged in as [2,TES] ;
+	OWL, LBF, OLBF, comment, Line-Filler variables ;
+	DUMMYSTR, S, comment, just strings to throw around;
+	THISWD,THATWD, comment, this (ITS) and sometimes next entity from scanner;
+	CHARSP, comment, SPCHAR to character convert table ;
+	FOOTSEP, comment, line to draw above footnotes ;
+	STR1, STR2, STR3, comment temporaries ;
+	DELINT, comment, Delete Intermediate Files Option Y/N/A ;
+	JOBNO, CONDIR, comment, job number & connected dir (TENEX only--else NULL) TES 10/25/73;
+	VUNDERLINE, COMMENT TES 10/22/73 The UNDERLINE character ;
+	PROCVALUE, TES 8/19/74 RETURN VALUE OF PROCEDURE ;
+	SPSSTR, COMMENT TES 9/30/74 FOR FASTER SPS(N) ;
+	ETCS;
+
+IFC TENEX THENC STRING ELSEC INTEGER ENDC  TES 10/20/74 ;
+	INPPN; COMMENT DIRECTORY INFILE IS ON ;
+
+EXTERNAL INTEGER RPGSW, !SKIP! ;
+
+TERNAL INTEGER
+	comment, BEGINBLOCK BLT's these to ISTK (keep them together):  ;
+	THISTYPE,THATTYPE, comment, THATTYPE is parser type of THATWD:
+		-2=EMPTYQ  GEQ 0=IDENTIFIER(exact value is no. of trailing spaces)
+		    THISTYPE is parser type of THISWD:
+		1..15=TYPEN(ID symbol)  0=Undeclared ID
+		-1=CONSTANT  -2=EMPTYQ  LEQ -3=SP.CHAR.(-FAMILY no.);
+	SYMB, comment, the SYM subscript of THISWD, if THISISID;
+	IX, comment, the IX field of NUMBER for THISWD, if THISISID;
+	STARPOSN, RIPTPOSNS, AMPPOSN, TEXTMODE,
+	PLBL,FIRST,NOPGPH,SPCS,ABOVEX,BELOWX,HEIGHT,SUPERSUB,
+	UNDERLINING,FAKE,MIDWORD,PUNC,INDENT,LBP,XLBP,LBO,LBK,ILBF,
+	LBFAKE,OLBFAKE, RKJ: 6-FEB-75;
+	BRKFONT, BRKUNDER ; TES 11/20/73, 12/28/73 ;
+DEFINE SOMEWDS= [4],MIDWDS= [30]; comment, how many variables in above list ;
+TERNAL INTEGER
+		OLDFONT , comment last XGP font ;
+		THISFONT,  comment current XGP font ;
+		KSETCON, COMMENT KSET OFFSET IN CW;
+		XGENLINES, COMMENT NUMBER OF LINES GENERATED BY LDX MACROS;
+		XPOSN, COMMENT LDX EQUIV OF POSN;
+		XCMDCHR, COMMENT SPCHAR CODE FOR ;
+		XNJB, COMMENT SPCHAR CODE FOR #;
+		KSETSWAP, COMMENT SPCHAR CODE FOR %;
+		FSHORT; COMMENT FAKE SHORT FOR XCRIBL MODE SPACES;
+
+
+DEFINE XMAXIM= [(MAXIM*CHARW)];	RKJ: 1-5-74;
+TERNAL INTEGER OVEREST; COMMENT SHORT FONT KLUDGE! ;
+
+TERNAL STRING XGPCMD , comment XGP commands to go on next line ;
+	CMDFILE; COMMENT TEXT OF XGP COMMAND FILE ;
+
+DEFINE CHARTORAST(VAL)= [IF XCRIBL THEN CHARW*(VAL) ELSE VAL];
+
+COMMENT  INSTALLATION DEPENDENT DEFAULTS ;
+
+TES 8/24/74 FOR XLOOKUP ;
+
+DEFINE
+	REQEXT = IFCR TENEX  THENC [".DFS"]   ELSEC CVSIX("DFS") ENDC ,
+	PUBEXT = IFCR TENEX  THENC [".PUB"]   ELSEC
+		 IFCR ITSVER THENC CVSIX(">") ELSEC CVSIX("PUB") ENDC ENDC ;
+
+TES AND FOR ENTER ;
+
+PJ 5/28/74 ; DEFINE
+	EXTSEP = IFCR ITSVER THENC [" "]    ELSEC ["."]    ENDC;
+      IFCR CMUVER THENC
+	TERNAL STRING PUIEXT, PUGEXT, PUZEXT ;
+      ELSEC
+	DEFINE
+	PUIEXT = IFCR ITSVER THENC [" PUI"] ELSEC [".PUI"] ENDC,
+	PUZEXT = IFCR ITSVER THENC [" PUZ"] ELSEC [".PUZ"] ENDC,
+	PUGEXT = IFCR ITSVER THENC [" PUG"] ELSEC [".PUG"] ENDC;
+      ENDC RKJ: 6-FEB-75 PU-EXT ARE VARIABLE AT CMU ;
+	DEFINE
+	DFSEXT = IFCR ITSVER THENC [" DFS"] ELSEC [".DFS"] ENDC,
+	DOCEXT = IFCR ITSVER THENC [" DOC"] ELSEC [".DOC"] ENDC,
+	OCTEXT = IFCR ITSVER THENC [" OCT"] ELSEC [".OCT"] ENDC,
+	RPGEXT = IFCR ITSVER THENC [" RPG"] ELSEC [".RPG"] ENDC,
+	TXTEXT = IFCR ITSVER THENC [" ASC"] ELSEC [".ASC"] ENDC;
+
+IFCR ITSVER THENC
+	DEFINE
+		MILLVERTIDEFAULT = [30],
+		ODDLEFTBORDERDEFAULT = [1300],
+		EVENLEFTBORDERDEFAULT = [1300],
+		TOPBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		BOTTOMBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		VBPIMIC = [0], HBPIMIC = [0],
+		VBPIXGP = [200], HBPIXGP = [200],
+		MICMINLFTMAR = [0], XGPMINLFTMAR = [0],
+		FONTEXT = ['536364000000], COMMENT KST ;
+		FONTPPN= ['465756646300], COMMENT FONTS ;
+		REQPPN = [0];
+ENDC
+IFCR SAILVER THENC
+	DEFINE	FONTPPN = ['704760637163], COMMENT [XGP,SYS];
+		REQPPN = [0],
+		MILLVERTIDEFAULT = [15],
+		ODDLEFTBORDERDEFAULT = [1300],
+		EVENLEFTBORDERDEFAULT = [1300],
+		TOPBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		BOTTOMBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		VBPIMIC = [0], HBPIMIC = [0],
+		VBPIXGP = [200], HBPIXGP = [200],
+		MICMINLFTMAR = [0], XGPMINLFTMAR = [0],
+		FONTEXT = ['465664000000]; COMMENT FNT ;
+ENDC
+IFCR CMUVER THENC
+	DEFINE	FONTPPN = ['001343303360], COMMENT [A730KS00] ;
+		REQPPN = [0],
+		MILLVERTIDEFAULT = [38], COMMENT RKJ 6-FEB-75;
+		ODDLEFTBORDERDEFAULT = [0],
+		EVENLEFTBORDERDEFAULT = [0],
+		TOPBORDERDEFAULT = [700],  comment RKJ 6-Feb-75 (next one too);
+		BOTTOMBORDERDEFAULT = [700],
+		VBPIMIC = [0], HBPIMIC = [0],
+		VBPIXGP = [183], HBPIXGP = [183],
+		MICMINLFTMAR = [0], XGPMINLFTMAR = [0],
+		FONTEXT = ['536364000000]; COMMENT KST ;
+	DEFINE	LIBDEV = ["DSK"];
+ENDC
+IFCR PARCVER THENC
+	DEFINE
+		MILLVERTIDEFAULT = [15],
+		ODDLEFTBORDERDEFAULT = [1300],
+		EVENLEFTBORDERDEFAULT = [1300],
+		TOPBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		BOTTOMBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		VBPIMIC = [500], HBPIMIC = [500],
+		VBPIXGP = [198], HBPIXGP = [188],
+		MICMINLFTMAR = [0], XGPMINLFTMAR = [94],
+		FONTPPN=["<FONTS>"],
+		REQPPN = ["<PARCPUB>"],
+		FONTEXT=[(IF ABS(DEVICE)=MIC THEN ".EP" ELSE ".XH")],
+		GENEXT= [".GEN"],
+		ALFEXT= [".ALF"];
+ENDC
+
+IFCR ISIVER THENC
+	DEFINE
+		FONTPPN = ["<XGP>"],
+		REQPPN = ["<PUB>"],
+		MILLVERTIDEFAULT = [35],
+		ODDLEFTBORDERDEFAULT = [0],
+		EVENLEFTBORDERDEFAULT = [0],
+		TOPBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		BOTTOMBORDERDEFAULT = [1000], COMMENT TES 1/26/74;
+		VBPIMIC = [0], HBPIMIC = [0],
+		VBPIXGP = [183], HBPIXGP = [183],
+		MICMINLFTMAR = [0], XGPMINLFTMAR = [0],
+		FONTEXT = [".KST"],
+		ALFEXT = [".ALF"],
+		GENEXT = [".GEN"],
+		LIBDEV = ["DSK"];
+ENDC
+ONE _ 1 ;
+
+BEGIN "VARIAB"
+
+TERNAL INTEGER ARRAY ISTK[0:ONE], ITBL[0:ONE], INEST[0:ONE] ;
+TERNAL STRING ARRAY  SSTK[0:ONE], STBL[0:ONE], SNEST[0:ONE] ;
+
+TERNAL SAFE INTEGER ARRAY CW[0:ONE];
+
+TERNAL INTEGER ARRAY	COMMENT "ALIASES" for Dynamic Arrays ;
+	OLDPAGE, NEWPAGE, THISFRAME,
+		MOLES,NMOLES, SHORT,NSHORT, MLEAD,NMLEAD, OWLS,NOWLS,
+		THISAREA, WAITBOX, AVAILREC[0:ONE],
+	AA,NAA[0:ONE, 0:ONE] ;
+
+TERNAL INTEGER SYMBOL,ERRFLAG;
+
+TERNAL STRING ARRAY SYM[-1:ONE];
+TERNAL INTEGER ARRAY NUMBER[-1:ONE];
+
+COMMENT AVAILREC AND WAITBOX ARE FOR UNIMPLEMENTED
+	BOX FRAMES ;
+
