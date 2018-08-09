@@ -1,0 +1,106 @@
+;-*-MIDAS-*-
+
+	TITLE DMNSTR - DAEMON STARTER (XGP, SYSCON)
+
+;This is NOT NOT NOT NOT what goes in ATSIGN TARAKA!!!!!
+;The binary is called RAKASH DMNSTR.
+
+XGPTTY==24 ;Number of the terminal used by the XGP this week.
+
+T1061S:	-2,,[SIXBIT/T36/	;Lines with T1061's on them, need to set the tabs.
+	     SIXBIT/T37/]
+
+PATCHL==40
+LPDL==40
+
+A=1
+B=2
+T=3
+P=17
+
+STYOC=7
+STYIC=10
+RAYCH=11
+
+DEFINE CONC A,B
+A!B!TERMIN
+
+DEFINE SIOT STR/
+	MOVEI A,.LENGTH\STR\
+	MOVE B,[440700,,[ASCIZ\STR\]]
+	.CALL [ SETZ
+		SIXBIT/SIOT/
+		MOVEI STYOC
+		MOVE B
+		SETZ A ]
+	 JSR DIE
+TERMIN
+
+GO:	MOVE P,[-LPDL,,PDL-1]
+	MOVE A,T1061S			;SET TABS ON TELERAYS
+RAY1:	.CALL [SETZ ? SIXBIT/OPEN/ ? [%TJSIO+.BIO,,RAYCH] ? SETZ (A)]
+	 JRST RAY2
+	MOVE B,[-95./5,,[ASCII/jG        F        F        F        F        F        F        F        F        Fî/]]
+	.IOT RAYCH,B	;For documentation see CRTSTY
+	.CLOSE RAYCH,
+RAY2:	AOBJN A,RAY1
+	MOVE A,[SQUOZE 0,SYSDBG]	;Wait until system not being debugged
+	.EVAL A,
+	 .LOSE
+	MOVEM A,SYSDBG
+SYSDBW:	HRLZ B,SYSDBG
+	HRRI B,B
+	.GETLOC B,
+	JUMPGE B,SYSUP
+	MOVEI B,30.
+	.SLEEP B,
+	JRST SYSDBW
+
+SYSUP:	.OPEN STYOC,[.UIO,,'STY]
+	 JSR DIE
+	.OPEN STYIC,[.UII,,'STY]
+	 JSR DIE
+	CONC [SIOT C ]\XGPTTY, E
+YY01:	PUSHJ P,DIGEST
+	.CALL [ SETZ
+		'TTYGET
+		MOVEI 400000+XGPTTY
+		MOVEM A
+		MOVEM A
+		SETZM B]
+	 JSR DIE
+	JUMPL B,YY01		;JOB HASN'T HAD ENOUGH TIME YET
+
+YY02:	SIOT XGPUN
+	.CLOSE STYIC,
+	.CLOSE STYOC,
+	JSR DIE
+
+DIE:	0
+	.LOGOUT
+	.VALUE
+	JRST DIE+1
+
+;Wait for the repercussions of our last STY input to go away.
+DIGEST:	.RESET STYOC,		;Sink any output or echo waiting in the STY.
+	.RESET STYIC,
+;Also, if system has started being debugged, go away so consoles will get unlinked
+	HRLZ T,SYSDBG
+	HRRI T,T
+	.GETLOC T,
+	SKIPGE T
+	 .LOGOUT 1,
+	MOVEI T,10.
+	.SLEEP T,
+	.STATUS STYIC,T		;If there is more output, sink it too.
+	TRNN T,2000
+	 JRST DIGEST
+	POPJ P,
+
+PDL:	BLOCK LPDL+10
+SYSDBG:	0
+
+PATCH:	BLOCK PATCHL
+PATCHE:	-1
+
+END GO
