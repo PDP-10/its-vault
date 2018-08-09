@@ -1,0 +1,111 @@
+/*
+         Routine for downloading the GT40 console on the
+                      Minirobot PDP-11/45.
+
+Written by Brian Schunck 7/26/80.
+
+The routine accepts one argument, which is a pointer to the filename
+of the program to be downloaded and returns YES if the download was
+successful, and NO otherwise.
+
+The program to be downloaded must be in absolute loader format.
+In other words, it must have been linked with the /LDA switch.
+The load file, viewed as a stream of 8 bit bytes, is recoded into a
+stream of ASCII characters with no character code lower than 40 (octal).
+(cf. GT40 Users's Guide, section 5.1 ROM Bootstrap)
+
+Before outputting the binary program, a standard preface string is sent
+to the GT40.  This string begins with character 37 (octal) which should
+cause the scroller that is currently loaded to branch to the bootstrap
+code at location 166000.  The @ characters in the preface are padding.
+The }R}L sequence resets the bootstrap and starts the loader.
+
+Note that for any program to successfully output binary data to the
+console, the command SET TT NOCRLF must have been issued to suppress
+the CR-LF sequence that by default is automatically inserted into the
+output stream by the TT driver to break long lines.
+
+*/
+
+#include <STD.H>
+
+
+LOCAL FIO inputbuffer = 0,
+		*input = &inputbuffer;
+
+LOCAL FIO gt40buffer = 0,
+		*gt40 = &gt40buffer;
+
+
+LOCAL char preface[] = "\037@@@@@@@@@@@@@@@@}R}L@@@@@@@@";
+
+
+LOCAL putbyte(byte)
+register char byte;
+{
+	byte =& 077;			/* make it a sixbit char */
+	if(byte < 040) byte =| 0100;	/* make it a printing char */
+
+	putc(gt40, byte);
+}
+
+
+EXPORT gtld(filename)
+char *filename;
+{
+	register int newchar,		/* must by type int to avoid */
+		     lastchar;		/*  sign extension on PDP-11 */
+	register int phase;		/* byte recoding phase */
+	FILE gt40fd,			/* used to initialize GT40 */
+	     inputfd;			/* used to open input file */
+	int length = lenstr(preface);
+
+
+	if((inputfd = open(filename, READ, BINARY)) < 0) return(NO);
+	if((gt40fd = open("TT:GT40.OUT", WRITE, BINARY)) < 0)
+	{
+		close(inputfd);
+		return(NO);
+	}
+	finit(input, inputfd, READ);	/* initialize input buffer */
+	finit(gt40, gt40fd, BWRITE);	/* initialize output buffer */
+
+	if(putl(gt40, preface, length) != length)
+	{
+		fclose(gt40);
+		fclose(input);
+		return(NO);
+	}
+
+	phase = 0;
+	while((newchar = getc(input)) != EOF)
+	{
+		newchar =& BYTEMASK;
+
+		switch(phase)
+		{
+
+		case 0:	putbyte(newchar >> 2);
+			lastchar = newchar;
+			break;
+
+		case 1:	putbyte((lastchar << 4) | (newchar >> 4));
+			lastchar = newchar;
+			break;
+
+		case 2:	putbyte((lastchar << 2) | (newchar >> 6));
+			putbyte(newchar);
+			break;
+		}
+
+		if(++phase >= 3) phase = 0;
+	}
+
+	if(phase != 0)			/* output remaining bytes */
+		if(phase == 1) putbyte(lastchar << 4);
+		else putbyte(lastchar << 2);
+
+	fclose(gt40);
+	fclose(input);
+	return(YES);
+}

@@ -1,0 +1,420 @@
+;GT40 System Macros
+
+	.sbttl Trap Vectors and Registers
+
+;these traps are not connected to the priority interrupt system
+
+err.v = 4	;error traps
+ili.v = 10	;illegal and reserved instructions
+bpt.v = 14	;bpt instruction
+iot.v = 20	;iot instruction
+pwr.v = 24	;power-fail trap
+emt.v = 30	;emt instruction
+trp.v = 34	;trap instruction
+
+;processor registers
+
+.psw = 177776   ;program status
+.csw = 177570   ;console switches
+
+.sbot = 1000	;bottom of stack for all but 11/45
+
+.errpsw = 340	;priority level for errors
+
+
+	.sbttl Clocks and Teletype
+
+;kw11-l line-frequency clock
+
+lfk.p = 6			;priority 6
+lfk.v = 100			;interrupt vector
+lfk.k = 177546	 		;control register
+	lfk.fg = 200		;clock flag
+	lfk.en = 100		;interrupt enable
+
+;console keyboard/printer
+
+tti.p = 4		 	;priority 4
+tti.v = 60			;keyboard interrupt
+tti.k = 177560	   		;keyboard control and status
+	tti.bf = 4000		;busy flag
+	tti.fg = 200		;done flag
+	tti.en = 100		;interrupt enable
+	tti.go = 1		;start reading
+tti.b = 177562	 		;keyboard buffer
+
+tto.p = 4			;priority 4
+tto.v = 64			;printer interrupt
+tto.k = 177564			;printer control and status
+	tto.fg = 200		;ready flag
+	tto.en = 100		;interrupt enable
+	tto.mm = 4		;maintenance mode
+tto.b = 177566			;printer buffer
+
+
+	.sbttl Joysticks
+
+joystick = 0			;enable/disable joystick code assembly
+
+.if gt joystick
+
+joy.xb = 175772			;transmit buffer
+	joy.vert = 1		;request y coordinate
+	joy.hor = 0		;request x coordinate
+	joy.0 = 0		;joystick 0
+	joy.1 = 2		;   "     1
+	joy.2 = 4		;   "     2
+	joy.3 = 6		;   "     3
+
+joy.rb = 175774			;receive buffer
+	joy.mag = 1777		;x or y magnitude
+	joy.ts0 = 2000		;toggle switch 0
+	joy.ts1 = 4000		;toggle switch 1
+	joy.ts2 = 10000		;toggle switch 2
+	joy.pb0 = 20000		;push button 0
+	joy.pb1 = 40000		;push button 1
+	joy.pb2 = 100000	;push button 2
+	joy.bits = 176000	;all the switch/pb bits
+	joy.pbs = 160000	;all the push-button bits
+
+joy.cb = 175770			;control buffer
+	joy.en = 40		;enable interrupt at end of conversion --not used.
+	joy.eoc = 100000	;goes high at end of conversion
+.endc
+
+
+	.sbttl DL11 Communications Interface
+
+rcv.p =  5			;priority 5
+rcv.v =  300			;receiver interrupt
+rcv.k =  175610			;receiver command and status
+	rcv.in = 100000		;interrupt
+	rcv.rg = 40000		;ring
+	rcv.cs = 20000		;clear to send
+	rcv.cd = 10000		;carrier detect
+	rcv.ra = 4000		;receiver active (busy)
+	rcv.sr = 2000		;secondary request
+	rcv.fg = 200		;done flag
+	rcv.en = 100		;receiver interrupt enable
+	ecv.dn = 40		;data set interrupt enable
+	rcv.st = 10		;secondary transmit
+	rcv.rq = 4		;request to send
+	rcv.tr = 2		;data terminal ready
+	rcv.go = 1		;enable receiver
+rcv.b =  175612			;receiver buffer
+	rcv.er = 100000		;error
+	rcv.or = 40000		;overrun
+	rcv.fe = 20000		;framing error
+	rcv.pe = 10000		;parity error
+
+xmt.p =  5			;priority 5
+xmt.v =  304			;transmitter interrupt
+xmt.k =  175614			;transmitter command and status
+	xmt.fg = 200		;ready flag
+	xmt.en = 100		;interrupt enable
+	xmt.mm = 4		;maintenance mode
+	xmt.bk = 1		;break
+xmt.b =  175616			;transmitter buffer
+
+
+	.sbttl GT40 Display Hardware Definitions
+
+dpy.p =  4			;priority 4
+dhlt.v = 320			;stop interrupt
+dltp.v = 324			;light pen interrupt
+dtso.v = 330			;time out/shift out interrupt
+
+d.pc =  172000			;display program counter
+d.sr =  172002			;status register
+	d.stop = 100000		;stop flag
+	;bits 14:11 mode from last set mode instruction
+	;bits 10:8  intensity from last set mode
+	d.lpf =  200		;light pen flag
+	d.sof =  100		;shift out
+	d.edge = 40		;edge indicator
+	d.ital = 20		;italics
+	d.blin = 10		;blink
+	;bits 1:0 vector type (solid, dash, etc)
+
+d.xr =  172004			;x register
+	;bits 15:10 graphplot increment
+	;bits 9:0 x position
+
+d.yr =  172006			;y register
+	;bits 15:10 character register
+	;bits 9:0 y position
+
+	.sbttl Display Instruction Set Opcodes
+
+d.jmp =  160000			;jump opcode
+d.nop =  164000			;no-op opcode
+
+.macro djmp loc			;jump instruction
+	.word d.jmp,loc
+.endm
+
+.macro dnop			;no-op instruction
+	.word d.nop
+.endm
+
+;mode-setting opcodes
+
+d.chr = 100000			;char mode
+d.svec = 104000			;short relative vector mode
+d.lvec = 110000			;long relative vector mode
+d.pnt = 114000			;absolute point mode
+d.gx = 120000			;graphplot x mode
+d.gy = 124000			;graphplot y mode
+d.rpnt = 130000			;relative point mode
+
+;mode bits for the above opcodes
+
+	.int0 = 2000		;intensity 0
+	.int1 = 2200
+	.int2 = 2400
+	.int3 = 2600
+	.int4 = 3000
+	.int5 = 3200
+	.int6 = 3400
+	.int7 = 3600		;intensity 7
+
+	.lpen = 140		;enable light pen interrupt
+	.lpdis = 100		;disable light pen interrupt
+
+	.blink = 30		;turn blink on
+	.noblink =20		;turn blink off
+
+	.solid = 4		;solid vectors
+	.dash = 5		;dashed vectors
+	.sdash = 6		;short dashed vectors
+	.ddash = 7		;dot-dash vectors
+
+d.ginc = 174100			;set graphplot increment opcode
+
+.macro dginc val		;set gp inc instruction
+	  .word d.ginc+<val&77>
+.endm
+
+
+	.sbttl Instruction Set Opcodes and Macros
+
+d.sets = 170000			;load status register opcode
+
+	.stop = 2000		;stop the display
+	.stpen = 1400		;enable interrupt on stop
+	.stpdis = 1000
+
+	.lpbrt = 300		;brighten point of light pen hit
+	.lpdim = 200
+
+	.ital = 60		;italicize characters
+	.noital = 40
+
+	.synch = 4		;halt and synchronize
+
+.macro dsets bits		;set status
+	.word d.sets+<bits>
+.endm
+
+.macro dchr bits			;set char mode
+	.word d.chr+<bits>
+.endm
+
+.macro dsvec bits		;short relative vectors
+	.word d.svec+<bits>
+.endm
+
+.macro dlvec bits		;long relative vectors
+	.word d.lvec+<bits>
+.endm
+
+.macro dpnt bits			;absolute points
+	.word d.pnt+<bits>
+.endm	
+
+.macro dgx bits			;graphplot x
+	.word d.gx+<bits>
+.endm
+
+.macro dgy bits			;graphplot y
+	.word d.gy+<bits>
+.endm
+
+.macro drpnt bits		;relative points
+	.word d.rpnt+<bits>
+.endm
+
+
+	.sbttl Vector Definition Macros
+
+.macro d.sdis sym,val		;short displacement
+	sym = val
+	.if lt sym
+	sym = -sym&77!100
+	.iff
+	sym=sym&77
+	.endc
+.endm
+
+.macro d.ldis sym,val		;long displacement
+	sym=val
+	.if lt sym
+	sym=-sym&1777!20000
+	.iff
+	sym=sym&1777
+	.endc
+.endm
+
+.macro d.abs sym,val		;absolute location
+	sym=<val>&1777
+.endm
+
+.vis = 1
+.invis = 0
+
+;visible/invisible bit (default visible)
+.macro d.brt sym,val,dum
+	.if b,val
+	sym=40000
+	.iff
+	  .if nz,val
+	    sym=40000
+	  .iff
+	    sym=0
+	  .endc
+	.endc
+.endm
+
+.macro svec dx,dy,brt,dum	;make a short vector word
+	d.sdis d.x,dx
+	d.sdis d.y,dy
+	d.brt d.b,brt,foo
+	.word d.x*200!d.y!d.b
+.endm
+
+.macro rpnt dx,dy,brt		;relative point
+	svec dx,dy,brt,foo
+.endm
+
+
+	.sbttl More Vector Macros and Screen Size Definitions
+
+.macro lvec dx,dy,brt		;make a long relative vector
+	d.ldis d.x,dx
+	d.ldis d.y,dy
+	d.brt d.b,brt,foo
+	.word d.b!d.x,d.y
+.endm
+
+.macro point x,y,brt		;make an absolute point
+	d.abs d.x,x
+	d.abs d.y,y
+	d.brt d.b,brt,foo
+	.word d.b!d.x,d.y
+.endm
+
+.macro plot y			;make a graphplot word
+	d.abs d.y,y
+	.word d.y
+.endm
+
+.macro dloc x,y			;move to an absolute location
+	d.pnt
+	point x,y,.invis
+.endm
+
+;screen size, found out at the cost of much pain by bo.
+
+;lower limit for both graphic and characters is x=0,y=0.
+
+.gxul = 1777			;x upper limit for graphics
+.gyul = 1777			;y upper limit for graphics
+.cxul = 1761			;x upper limit for characters
+.cyul = 1777			;y upper limit for characters
+
+;(characters can print above the top of the screen!)
+.cxspc = 14			;x spacing for characters
+.cyspc = 30			;y spacing for characters
+.cxoff = 7			;x offset to center of an asterisk
+.cyoff = 15			;y offset to center of an asterisk
+.cxwid = 11			;width of a character
+.cyhgt = 17			;height of a character
+.cydsc = 5			;descenders go down this much.
+
+.macro .beep			;yes, that's exactly what it is.
+	clr d.sr
+.endm
+
+
+	.sbttl Miscellaneous Handy PDP-11 Macros
+
+.macro push v			;push onto the stack
+	mov v,-(sp)
+.endm
+
+.macro pop v			;pop off the stack
+	mov (sp)+,v
+.endm
+
+.macro tvar			;push a zero
+	clr -(sp)
+.endm
+
+.macro zap			;get rid of one temp cell
+	tst (sp)+
+.endm
+
+.macro zaps n			;get rid of several temp cells
+	.rept n
+	   tst (sp)+
+	.endr
+.endm
+
+.macro pushj subr		;standard subroutine call
+	jsr pc,subr
+.endm
+
+.macro popj			;standard return
+	rts pc
+.endm
+
+.macro pswd pri,mode,reg,dum	;define a ps word
+	p.s=pri*40
+	.if nb mode
+	    p.s=p.s!<mode*40000>
+	.endc
+	.if nb reg
+	    p.s=p.s!<reg*20000>
+	.endc
+	.word p.s
+.endm
+
+.kernel = 0			;processor modes
+.super = 1
+.user = 3
+
+.macro intvec routine,pri,mode,reg	;define an interrupt vector
+	.word routine
+	pswd pri,mode,reg,foo
+.endm
+
+
+	.sbttl More Handy Macros
+
+.macro pushacs			;save the whole world
+	mov r0,-(sp)
+	mov r1,-(sp)
+	mov r2,-(sp)
+	mov r3,-(sp)
+	mov r4,-(sp)
+	mov r5,-(sp)
+.endm
+
+.macro popacs			;restore the saved world
+	mov (sp)+,r5
+	mov (sp)+,r4
+	mov (sp)+,r3
+	mov (sp)+,r2
+	mov (sp)+,r1
+	mov (sp)+,r0
+.endm
