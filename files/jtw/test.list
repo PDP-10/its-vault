@@ -1,0 +1,1137 @@
+                         	TITLE standalone TCP buffering code
+        000000 000001   .MLLIT==1
+        000000 000001   a=:1
+        000000 000002   b=:2
+        000000 000003   c=:3
+        000000 000004   d=:4
+        000000 000005   e=:5
+        000000 000006   t=:6
+        000000 000007   tt=:7
+        000000 000010   x=:10
+        000000 000011   y=:11
+        000000 000012   z=:12
+        000000 000016   q=:16
+        000000 000017   p=:17
+        000000 000001   $$STND==:1	
+                         .INSRT	STTCP
+                         COMMENT |
+                         Notes on TCP input and output buffers
+                         Ideally the TCP segment queues should be logically separate from the IP
+                         datagram queues, but for efficiency it should be possible to have them
+                         both together.
+                         Input buffers are expected to be lists of datagrams/segments.
+                         This is reasonably simple, since pointers (in known places) can just be
+                         set up to the data (whereever it is in the datagram/segment).
+                         There is a problem with allocation/windows in this scheme, since it
+                         is possible to run out of datagram buffers before running out of window,
+                         if the remote site becomes cretinous about it and sends only a few
+                         bytes per dgram very fast.  But in that case re-transmission can just
+                         force it to buffer up its output, so that future dgrams will be somewhat
+                         more filled, so it is probably OK.  If this does become a screw, can
+                         add code to do compaction at clock level.
+                         Output buffers are a little more uncertain.  Could have simple
+                         circular buffer, with appropriate pointers set up so that IMP output
+                         message is read directly from the buffer (same as NCP).  Alternatively
+                         could have queue of segments/datagrams all ready to go.  Guess I'd
+                         like to try doing the latter, to keep things "simple" by minimizing
+                         the number of kinds of things floating around.
+                         Problem with putting output datagram together: can't always predict
+                         ahead of time how big the leaders are going to be!  Especially true
+                         for IP level, which TCP is not supposed to know too much about.  Thus
+                         if not careful, it could happen that output is put into a segment too
+                         close to the start of the buffer, so that there is not enough room for
+                         the TCP and IP headers to fit in.  Have to look at this; may need to
+                         give up notion of keeping all the packet internals nicely contiguous.
+                         Maximum IP header length is set at 60 bytes (15 words).  The maximum
+                         TCP header length is also 15 words.
+                         Looking at the currently defined options, it seems unlikely that ITS
+                         will use any of them, and if so, they can be predicted fairly easily on
+                         a per-connection basis, so things should work out okay.  Note that
+                         the IP level can always simply fragment stuff if it really wants to be
+                         that complex.
+                         It would be nice to be able to keep track of stuff which is on the
+                         device (IMP) output queue but hasn't yet gone out, in order to add
+                         last-minute bits (like ACK) or even some more data.  Idea: output "queue"
+                         is just a list of TCP connections that need attention, so can always
+                         go in and mung stuff (even change mind about outputting) just by playing
+                         with connection flags/lists.  This is basically how NCP does it.
+                         Re packet buffer design:
+                         	Somewhat more hypothetical is the notion of keeping a "usage
+                         count" for each buffer, so that pointers from the packet table entries
+                         can point to several different buffers and not just one.  When a usage
+                         count hits zero, put the buffer on the freelist.  Actually this is not
+                         really needed for the case of a table entry pointing to more than one
+                         buffer, but it IS needed for the case of more than one table entry
+                         pointing to the same buffer.  This might happen, for example, if 
+                         an internet bypass were set up so that datagrams going to ourselves
+                         were simply vectored directly to the input queues.  But for the
+                         time being, it probably isn't too outrageous to simply re-copy the
+                         datagram in question.  (Also better emulates a fake network device).
+                         Suggest that lists point directly to themselves rather than
+                         to start of entry; this allows low-level list routines to be used
+                         on all lists.  The higher-level routines of course have to know what
+                         offsets to use for a specific list.  Alternatively provide different routines
+                         for each offset needed, and equate references to the appropriate routine
+                         for each use.  (This is what I'm trying at the moment, hence the IRPS)
+                         May want to use format <head>,,<list ptr> where <head> is the addr
+                         of the initial pointer (not initial node).  This allows backtracking
+                         to figure out what TCP connection or IP queue a packet belongs to.
+                         Brute force approach is to simply have another word for the TCB index, etc.
+                         If this stuff is general enough it could be used for CHAOS packets also.
+                         |
+										Page 2
+                         COMMENT |
+                         Buffers are all 512 (1000 octal) words long, and 2 of them fit on one
+                         ITS page.  This size was chosen because the maximum length of an
+                         ethernet message is 1500 bytes, plus a header of 14 bytes and maybe a
+                         CRC of four bytes depending on the interface. But we needed a power of
+                         two for the current code to work.
+                         It would be a big help to go to a linked-list scheme, or at least
+                         allow different sizes of buffers, but no.
+                         KLH says:
+                         Rather than shoe-horn some clever stuff into each buffer header, I am
+                         opting to maintain "Packet Entries" in a "Packet Table" separate from
+                         the "Packet Buffers" themselves.  All messages/datagrams/segments/
+                         packets are identified by a pointer into the table. (Could use index,
+                         as for sockets/TCBs, but this is awkward for lists).  The entry
+                         identified by the pointer will contain the actual pointers into the
+                         buffer associated with that packet.  [NOTE: may want to have these
+                         pointers point into various places, not necessarily all the same
+                         buffer.  Must think about this.]
+                         Free buffers are linked by a freelist pointer in their first word,
+                         with an identifier in the second word to help GC.  The only design
+                         issue for the buffers themselves is how to set things up so that it is
+                         easy to GC a large freelist, i.e.  identify pages that have nothing
+                         but free buffers in them and thus can be removed from the system's
+                         address space.  Currently I have simply adopted the strategem used for
+                         CHAOS buffers (at CHCLN) to have the core job snuffle over the freelist.
+                         Note that the low-level routines for manipulating lists are actually
+                         referenced via macros which are given an offset as argument.  This
+                         offset refers to the offset between the node pointer and the location
+                         of the "next" pointer in the node; the macro will assemble into a
+                         call to the right routine for that offset.  Currently only offsets
+                         up to 2 are supported; any lists that the packet is put on must
+                         be threaded through the first 3 words of the node, and the macros check
+                         for this.
+                         |
+										Page 3
+                         	SUBTTL Debugging Code
+                         IFNDEF $$STND,$$STND==:0	; Nonzero compiles for standalone
+                         IFN $$STND,[
+                         IF1,.ERR Standalone IP Buffer Management Code
+        260740 000000   CALL==:<PUSHJ P,>
+        263740 000000   RET==:<POPJ P,>
+        254000 000000   CALRET==:<JRST>
+                         DEFINE EBLK
+                         TERMIN
+                         DEFINE BBLK
+                         TERMIN
+                         DEFINE BUG FLAVOR,ARGS/
+                         	JRST 4,.
+                         TERMIN
+                         DEFINE CONC A,B
+                         A!B!TERMIN
+        000000 000004   PI==4				; PI device
+        000000 000400   PIOFF==400			; Turn off PI system
+        000000 000200   PION==200			; Turn on PI system
+        000000 001200   PICOFF==1200			; Turn off PI channel
+        000000 002200   PICON==2200			; Turn on PI channel
+        000000 004200   PICIRQ==4200			; Request interrupt on PI channel
+        000000 002201   CLKON==2201			; ITS Clock channel
+        000000 001201   CLKOFF==1201
+        000000 000002   NETCHN==2			; Net Interface hardware channel
+        000000 000002   UTCCHN==2			; Ugh
+        000000 002277   UTCON==CLKON\<400_-UTCCHN-1>
+        000000 001277   UTCOFF==CLKOFF\<400_-UTCCHN-1>
+                         ]
+                         IFNDEF PKTTRC,PKTTRC==:0 	; Nonzero turns tracing code on
+                         IF1,IFN PKTTRC,.ERR IP packet tracing code included.
+                         COMMENT |
+                         This code can be used to keep a history of what happens to a packet.
+                         The history is stored in the packet buffer as a series of indexes
+                         into a table of named events.
+                         To trace a particular event use the TRCPKT macro.
+                         	TRCPKT(REG,"String")
+                         REG is the register which currently contains an index to the packet
+                         buffer table. The code is more efficient if the register is R. String
+                         is the description of the event.
+                         To generate the event table, you must call the TRCCOD macro somewhere
+                         after the last call to TRCPKT.
+                         |
+        000000 000077   %NTRCE==:77	; Allow this many trace events. Value must be a bit mask (all
+                         		; ones) to work right. If you make it bigger than 77
+                         		; you have to change the "TRC%" in the macros to something
+                         		; shorter, too.
+        000000 000001   %%%TRC==1
+                         ; TRCCOD generates TRCTBL, which holds <code address,,address of event string>
+                         ; for each trace event.
+                         DEFINE TRCCOD
+                         IFN PKTTRC,[
+                         TRC%0==:<0,,[ASCIZ /Null event/]>
+                         TRCTBL: REPEAT %%%TRC,CONC TRC%,\.RPCNT
+                         IF2,	REPEAT %%%TRC,CONC EXPUNGE TRC%,\.RPCNT
+                         ]
+                         TERMIN
+                         DEFINE TRCPKT REG,&(EVENT)
+                         IFN PKTTRC,[
+                         IFG %%%TRC-%NTRCE,.ERR Too many packet trace events!
+                         CONC TRC%,\%%%TRC,==:<.,,[ASCIZ EVENT]>
+                          IFN REG-R,[
+                         	PUSH P,R
+                         	MOVE R,REG
+                          ]
+                         	PUSH P,TT
+                         	MOVEI TT,%%%TRC
+                         	PUSHJ P,PKTPTS
+                         	POP P,TT
+                          IFN REG-R,[
+                         	POP P,R
+                          ]
+                         %%%TRC==%%%TRC+1
+                         ]
+                         TERMIN
+                         IFN PKTTRC,[
+                         ; Store information in the packet history data buffer
+                         ;  "Information" is a 6-bit quantity which indexes into a table
+                         ;  of strings.
+                         ;   TT/ Reason index
+                         ;   R/ Pkt Buffer index
+                         PKTPTS:	CONO PI,PIOFF		; Freeze machine
+                         	DPB TT,PK.HSP(R)	; Store trace info
+                         	IBP PK.HSP(R)		; Bump BP
+                         	HRRZ TT,PK.HSP(R)	; Pick up history byte ref (address only)
+                         	CAIL TT,PK.HSP(R)	; If we've gotten to the bottom,
+                         	 JRST [	MOVEI TT,PK.HST(R) ;Wrap around
+                         		HRLI TT,(<.BP %NTRCE_30.>) ; BP to left 6 bits
+                         		MOVEM TT,PK.HSP(R) ;Reset it to top
+                         		JRST .+1 ]
+                         	CONO PI,PION
+                         	POPJ P,
+                         ]
+										Page 4
+                         ;;; Packet Table Entries
+                         EBLKî
+                         IFNDEF PKBSIZ,PKBSIZ==1000	; 512. words per packet buffer (2048 byte MTU)
+                         IFNDEF NPKPGS,NPKPGS==40.	; # pages OK to use for packet buffers
+        000000 000120   NPKB==:<NPKPGS*<2000/PKBSIZ>>	; # packet buffers available
+        000000 000120   NPKE==:NPKB			; # packet entry nodes.
+                         IFE $$STND,IFN NPKB-NPKE,.ERR You must fix the UFLS at PKTGF.
+                         PKETBL:	OFFSET -.
+                         	; General (device driver, etc)
+000100  000001 000110   PK.FLG:: 1,,PKETBL+PK.L	; General - <flags>,,<PE freelist or dev driver list>
+        400000 000000   	%PKPIL==:<SETZ>	; Packet locked at PI level, being output
+        001000 000000   	%PKODN==:<1000,,> ; Packet has been output (else not yet)
+                         ;;;	%PKNOF==:<2000,,> ; Packet should not be freed when output done.
+        004000 000000   	%PKFLS==:<4000,,> ; Flush pkt if seen on output queue (ie dont output)
+        010000 000000   	%PKRTR==:<10000,,> ; Packet is being re-transmitted by TCP
+        020000 000000   	%PKNRF==:<20000,,> ; Already HW format, don't reformat to send.
+                         	.SEE %PQFLX		; Low bits of LH used for on-list flags.
+000101  000000 000000   PK.IP::	0	; IP Datagram - <IP Header ptr>,,<IP Datagram list>
+                         		;	May be strung on Internet Queue, IP output queue
+000102  000000 000000   PK.TCP:: 0	; TCP Segment - <TCP Header pointer>,,<TCP Segment list>
+                         		;	May be strung on TCB input Q, output retransmit Q
+000103  000000 000000   PK.TCI:: 0	; TCP Segment - <# bytes data><# bytes offset><TCB index>
+        777700 000000   	PK%TDL==:<777700,,0>	  ; # octets of data in TCP segment
+        000077 770000   	PK%TDO==:<    77,,770000> ; # octets data is offset from TCP header
+        000000 007777   	PK%TCB==:<      ,,007777> ; TCB connection index 
+        301400 000003   	PK$TDL==:<.BP PK%TDL,PK.TCI>
+        141400 000003   	PK$TDO==:<.BP PK%TDO,PK.TCI>
+        001400 000003   	PK$TCB==:<.BP PK%TCB,PK.TCI>
+000104  000000 000000   PK.BUF:: 0	; General - <# wds>,,<addr of buffer>
+000105  000000 000000   PK.TIM:: 0	; General - Time sent or received, int level (Sys time)
+000106  000000 000000   PK.DST:: 0	; Immediate destination address if on output queue
+000107  000000 000000   PK.HWI:: 0	; Hardware Information - currently KS Unibus address
+                         IFN PKTTRC,[
+                         PK.HST:: BLOCK 3 ; Packet trace history buffer
+                         PK.HSP:: 0	; Packet trace history pointer
+                         ]
+                         PK.L::	OFFSET 0 ; Length of a Packet-Entry (PE) node
+                         	REPEAT <NPKE-1>,[
+                         		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	]
+000110  000001 000120   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000120  000001 000130   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000130  000001 000140   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000140  000001 000150   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000150  000001 000160   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000160  000001 000170   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000170  000001 000200   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000200  000001 000210   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000210  000001 000220   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000220  000001 000230   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000230  000001 000240   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000240  000001 000250   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000250  000001 000260   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000260  000001 000270   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000270  000001 000300   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000300  000001 000310   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000310  000001 000320   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000320  000001 000330   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000330  000001 000340   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000340  000001 000350   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000350  000001 000360   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000360  000001 000370   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000370  000001 000400   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000400  000001 000410   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000410  000001 000420   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000420  000001 000430   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000430  000001 000440   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000440  000001 000450   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000450  000001 000460   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000460  000001 000470   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000470  000001 000500   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000500  000001 000510   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000510  000001 000520   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000520  000001 000530   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000530  000001 000540   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000540  000001 000550   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000550  000001 000560   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000560  000001 000570   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000570  000001 000600   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000600  000001 000610   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000610  000001 000620   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000620  000001 000630   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000630  000001 000640   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000640  000001 000650   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000650  000001 000660   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000660  000001 000670   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000670  000001 000700   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000700  000001 000710   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000710  000001 000720   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000720  000001 000730   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000730  000001 000740   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000740  000001 000750   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000750  000001 000760   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000760  000001 000770   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+000770  000001 001000   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001000  000001 001010   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001010  000001 001020   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001020  000001 001030   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001030  000001 001040   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001040  000001 001050   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001050  000001 001060   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001060  000001 001070   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001070  000001 001100   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001100  000001 001110   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001110  000001 001120   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001120  000001 001130   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001130  000001 001140   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001140  000001 001150   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001150  000001 001160   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001160  000001 001170   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001170  000001 001200   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001200  000001 001210   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001210  000001 001220   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001220  000001 001230   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001230  000001 001240   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001240  000001 001250   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001250  000001 001260   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+001260  000001 001270   		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+                         		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+                         		IFN .RPCNT-<NPKE-2>, 1,,.+PK.L	; Build initial freelist
+001270  000001 000000   		.ELSE 1,,0
+                         		BLOCK PK.L-1
+                         	
+        000000 001270   PKETBE==:.-PK.L	; Last legal PE pointer value
+001300  001270 000100   PKEQHF:	PKETBE,,PKETBL	; Header for Packet-Entry node freelist
+                         BBLKî
+										Page 5
+                         ; A "queue" is a list of nodes pointed to by a "queue header" word
+                         ; of format <last node>,,<first node>.  Each node pointer points to
+                         ; the next node pointer (or zero if no more).
+                         ; There is a set of flags in the LH of a certain word, at offset
+                         ; PQ.FLG, that indicate which lists a node is currently on.
+        000000 000000   PQ.FLG==:PK.FLG		; Offset of word list-flags are in.
+        000000 000000   %PQFLX==0		; Initial val
+                         IFNDEF %%%QOF,%%%QOF==0	; This gets set to highest offset supported
+                         IRPS PKQGF,,[PKQGF0:PKQGF1:PKQGF2:]PKQPL,,[PKQPL0:PKQPL1:PKQPL2:]PKQPF,,[PKQPF0:PKQPF1:PKQPF2:]%PQFL,,[%PQFL0:%PQFL1:%PQFL2:]
+                         IFG .IRPCNT-%%%QOF,%%%QOF==.IRPCNT
+                         	%PQFL==:<1_.IRPCNT,,>	; Def a flag in LH at offset PQ.FLG
+                         	%PQFLX==%PQFLX\%PQFL	; Mask of all list-flags def'd.
+                         ; PKQGF - Get first node from queue
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node (zero if none)
+                         PKQGF:	CONO PI,PIOFF		; Work at all levels
+                         	HRRZ A,(Q)		; Get 1st from queue header word
+                         	JUMPE A,PIONJ		; None, so return zero.
+                         	MOVSI T,(%PQFL)		;   Now clear appropriate flag for list
+                         	XORB T,PQ.FLG(A)	;   to indicate it's not on it any more.
+                         	TLNE T,(%PQFL)		;   Paranoia plus
+                         	 BUG HALT,[PK: GF node wasnt on list]
+                         	HRRZ T,.IRPCNT(A)	; Get 2nd
+                         	HRRM T,(Q)		; Make it 1st
+                         	CAIN T,			; If all's well, done.
+                         	 SETZM (Q)		; Else must clear whole header
+                         IFNDEF PIONJ,PIONJ:
+                         	CONO PI,PION
+                         IFNDEF CPOPJ,CPOPJ:
+                         	POPJ P,
+                         ; PKQPL - Put node on queue as last thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+                         PKQPL:	TRNN A,-1		; More paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+                         	HLLZS .IRPCNT(A)	; Say this node is last one
+                         	CONO PI,PIOFF		; Work at all levels
+                         	MOVSI T,(%PQFL)		; Paranoia: Set appropriate flag for list
+                         	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+                         	TLNN T,(%PQFL)		;    plus check...
+                         	 BUG HALT,[PK: node already on list]
+                         	HLRZ T,(Q)		; Get last node
+                         	HRLM A,(Q)		; Point to new last node
+                         	JUMPN T,[HRRM A,.IRPCNT(T)	; Make prev last node point to new last
+                         		JRST .+2]		; Skip over next instr!!
+                         	 HRRM A,(Q)		; Queue was empty, make this the new first too
+                         	CONO PI,PION
+                         	POPJ P,
+                         ; PKQPF - Put node on queue as first thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+                         PKQPF:	TRNN A,-1		; Yes more paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+                         	CONO PI,PIOFF
+                         	MOVSI T,(%PQFL)		; Paranoia: Set appropriate flag for list
+                         	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+                         	TLNN T,(%PQFL)		;    check...
+                         	 BUG HALT,[PK: node already on list]
+                         	HRRZ T,(Q)		; Get first thing
+                         	CAIN A,(T)		; paranoia, avoid loops to self
+                         	 BUG
+                         	HRRM T,.IRPCNT(A)	; Make it second thing
+                         	HRRM A,(Q)		; Make new first thing
+                         	CAIN T,
+                         	 HRLM A,(Q)		; Was empty, also make it last thing.
+                         	CONO PI,PION
+                         	POPJ P,
+                         TERMIN
+                         IFG .IRPCNT-%%%QOF,%%%QOF==.IRPCNT
+        000001 000000   	%PQFL0==:<1_.IRPCNT,,>	; Def a flag in LH at offset PQ.FLG
+        000001 000000   	%PQFLX==%PQFLX\%PQFL0	; Mask of all list-flags def'd.
+                         ; PKQGF0 - Get first node from queue
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node (zero if none)
+001301  700600 000400   PKQGF0:	CONO PI,PIOFF		; Work at all levels
+001302  550056 000000   	HRRZ A,(Q)		; Get 1st from queue header word
+001303  322040 001314   	JUMPE A,PIONJ		; None, so return zero.
+001304  205300 000001   	MOVSI T,(%PQFL0)		;   Now clear appropriate flag for list
+001305  433301 000000   	XORB T,PQ.FLG(A)	;   to indicate it's not on it any more.
+001306  603300 000001   	TLNE T,(%PQFL0)		;   Paranoia plus
+                         	 BUG HALT,[PK: GF node wasnt on list]
+001307  254200 001307   	JRST 4,.
+001310  550301 000000   	HRRZ T,.IRPCNT(A)	; Get 2nd
+001311  542316 000000   	HRRM T,(Q)		; Make it 1st
+001312  306300 000000   	CAIN T,			; If all's well, done.
+001313  402016 000000   	 SETZM (Q)		; Else must clear whole header
+                         IFNDEF PIONJ,PIONJ:
+001314  700600 000200   	CONO PI,PION
+                         IFNDEF CPOPJ,CPOPJ:
+001315  263740 000000   	POPJ P,
+                         ; PKQPL0 - Put node on queue as last thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+001316  606040 777777   PKQPL0:	TRNN A,-1		; More paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+001317  254200 001317   	JRST 4,.
+001320  513001 000000   	HLLZS .IRPCNT(A)	; Say this node is last one
+001321  700600 000400   	CONO PI,PIOFF		; Work at all levels
+001322  205300 000001   	MOVSI T,(%PQFL0)		; Paranoia: Set appropriate flag for list
+001323  433301 000000   	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+001324  607300 000001   	TLNN T,(%PQFL0)		;    plus check...
+                         	 BUG HALT,[PK: node already on list]
+001325  254200 001325   	JRST 4,.
+001326  554316 000000   	HLRZ T,(Q)		; Get last node
+001327  506056 000000   	HRLM A,(Q)		; Point to new last node
+                         	JUMPN T,[HRRM A,.IRPCNT(T)	; Make prev last node point to new last
+001330  326300 123651   		JRST .+2]		; Skip over next instr!!
+001331  542056 000000   	 HRRM A,(Q)		; Queue was empty, make this the new first too
+001332  700600 000200   	CONO PI,PION
+001333  263740 000000   	POPJ P,
+                         ; PKQPF0 - Put node on queue as first thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+001334  606040 777777   PKQPF0:	TRNN A,-1		; Yes more paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+001335  254200 001335   	JRST 4,.
+001336  700600 000400   	CONO PI,PIOFF
+001337  205300 000001   	MOVSI T,(%PQFL0)		; Paranoia: Set appropriate flag for list
+001340  433301 000000   	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+001341  607300 000001   	TLNN T,(%PQFL0)		;    check...
+                         	 BUG HALT,[PK: node already on list]
+001342  254200 001342   	JRST 4,.
+001343  550316 000000   	HRRZ T,(Q)		; Get first thing
+001344  306046 000000   	CAIN A,(T)		; paranoia, avoid loops to self
+                         	 BUG
+001345  254200 001345   	JRST 4,.
+001346  542301 000000   	HRRM T,.IRPCNT(A)	; Make it second thing
+001347  542056 000000   	HRRM A,(Q)		; Make new first thing
+001350  306300 000000   	CAIN T,
+001351  506056 000000   	 HRLM A,(Q)		; Was empty, also make it last thing.
+001352  700600 000200   	CONO PI,PION
+001353  263740 000000   	POPJ P,
+                         IFG .IRPCNT-%%%QOF,%%%QOF==.IRPCNT
+        000002 000000   	%PQFL1==:<1_.IRPCNT,,>	; Def a flag in LH at offset PQ.FLG
+        000003 000000   	%PQFLX==%PQFLX\%PQFL1	; Mask of all list-flags def'd.
+                         ; PKQGF1 - Get first node from queue
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node (zero if none)
+001354  700600 000400   PKQGF1:	CONO PI,PIOFF		; Work at all levels
+001355  550056 000000   	HRRZ A,(Q)		; Get 1st from queue header word
+001356  322040 001314   	JUMPE A,PIONJ		; None, so return zero.
+001357  205300 000002   	MOVSI T,(%PQFL1)		;   Now clear appropriate flag for list
+001360  433301 000000   	XORB T,PQ.FLG(A)	;   to indicate it's not on it any more.
+001361  603300 000002   	TLNE T,(%PQFL1)		;   Paranoia plus
+                         	 BUG HALT,[PK: GF node wasnt on list]
+001362  254200 001362   	JRST 4,.
+001363  550301 000001   	HRRZ T,.IRPCNT(A)	; Get 2nd
+001364  542316 000000   	HRRM T,(Q)		; Make it 1st
+001365  306300 000000   	CAIN T,			; If all's well, done.
+001366  402016 000000   	 SETZM (Q)		; Else must clear whole header
+                         IFNDEF PIONJ,PIONJ:
+001367  700600 000200   	CONO PI,PION
+                         IFNDEF CPOPJ,CPOPJ:
+001370  263740 000000   	POPJ P,
+                         ; PKQPL1 - Put node on queue as last thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+001371  606040 777777   PKQPL1:	TRNN A,-1		; More paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+001372  254200 001372   	JRST 4,.
+001373  513001 000001   	HLLZS .IRPCNT(A)	; Say this node is last one
+001374  700600 000400   	CONO PI,PIOFF		; Work at all levels
+001375  205300 000002   	MOVSI T,(%PQFL1)		; Paranoia: Set appropriate flag for list
+001376  433301 000000   	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+001377  607300 000002   	TLNN T,(%PQFL1)		;    plus check...
+                         	 BUG HALT,[PK: node already on list]
+001400  254200 001400   	JRST 4,.
+001401  554316 000000   	HLRZ T,(Q)		; Get last node
+001402  506056 000000   	HRLM A,(Q)		; Point to new last node
+                         	JUMPN T,[HRRM A,.IRPCNT(T)	; Make prev last node point to new last
+001403  326300 123653   		JRST .+2]		; Skip over next instr!!
+001404  542056 000000   	 HRRM A,(Q)		; Queue was empty, make this the new first too
+001405  700600 000200   	CONO PI,PION
+001406  263740 000000   	POPJ P,
+                         ; PKQPF1 - Put node on queue as first thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+001407  606040 777777   PKQPF1:	TRNN A,-1		; Yes more paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+001410  254200 001410   	JRST 4,.
+001411  700600 000400   	CONO PI,PIOFF
+001412  205300 000002   	MOVSI T,(%PQFL1)		; Paranoia: Set appropriate flag for list
+001413  433301 000000   	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+001414  607300 000002   	TLNN T,(%PQFL1)		;    check...
+                         	 BUG HALT,[PK: node already on list]
+001415  254200 001415   	JRST 4,.
+001416  550316 000000   	HRRZ T,(Q)		; Get first thing
+001417  306046 000000   	CAIN A,(T)		; paranoia, avoid loops to self
+                         	 BUG
+001420  254200 001420   	JRST 4,.
+001421  542301 000001   	HRRM T,.IRPCNT(A)	; Make it second thing
+001422  542056 000000   	HRRM A,(Q)		; Make new first thing
+001423  306300 000000   	CAIN T,
+001424  506056 000000   	 HRLM A,(Q)		; Was empty, also make it last thing.
+001425  700600 000200   	CONO PI,PION
+001426  263740 000000   	POPJ P,
+                         IFG .IRPCNT-%%%QOF,%%%QOF==.IRPCNT
+        000004 000000   	%PQFL2==:<1_.IRPCNT,,>	; Def a flag in LH at offset PQ.FLG
+        000007 000000   	%PQFLX==%PQFLX\%PQFL2	; Mask of all list-flags def'd.
+                         ; PKQGF2 - Get first node from queue
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node (zero if none)
+001427  700600 000400   PKQGF2:	CONO PI,PIOFF		; Work at all levels
+001430  550056 000000   	HRRZ A,(Q)		; Get 1st from queue header word
+001431  322040 001314   	JUMPE A,PIONJ		; None, so return zero.
+001432  205300 000004   	MOVSI T,(%PQFL2)		;   Now clear appropriate flag for list
+001433  433301 000000   	XORB T,PQ.FLG(A)	;   to indicate it's not on it any more.
+001434  603300 000004   	TLNE T,(%PQFL2)		;   Paranoia plus
+                         	 BUG HALT,[PK: GF node wasnt on list]
+001435  254200 001435   	JRST 4,.
+001436  550301 000002   	HRRZ T,.IRPCNT(A)	; Get 2nd
+001437  542316 000000   	HRRM T,(Q)		; Make it 1st
+001440  306300 000000   	CAIN T,			; If all's well, done.
+001441  402016 000000   	 SETZM (Q)		; Else must clear whole header
+                         IFNDEF PIONJ,PIONJ:
+001442  700600 000200   	CONO PI,PION
+                         IFNDEF CPOPJ,CPOPJ:
+001443  263740 000000   	POPJ P,
+                         ; PKQPL2 - Put node on queue as last thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+001444  606040 777777   PKQPL2:	TRNN A,-1		; More paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+001445  254200 001445   	JRST 4,.
+001446  513001 000002   	HLLZS .IRPCNT(A)	; Say this node is last one
+001447  700600 000400   	CONO PI,PIOFF		; Work at all levels
+001450  205300 000004   	MOVSI T,(%PQFL2)		; Paranoia: Set appropriate flag for list
+001451  433301 000000   	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+001452  607300 000004   	TLNN T,(%PQFL2)		;    plus check...
+                         	 BUG HALT,[PK: node already on list]
+001453  254200 001453   	JRST 4,.
+001454  554316 000000   	HLRZ T,(Q)		; Get last node
+001455  506056 000000   	HRLM A,(Q)		; Point to new last node
+                         	JUMPN T,[HRRM A,.IRPCNT(T)	; Make prev last node point to new last
+001456  326300 123655   		JRST .+2]		; Skip over next instr!!
+001457  542056 000000   	 HRRM A,(Q)		; Queue was empty, make this the new first too
+001460  700600 000200   	CONO PI,PION
+001461  263740 000000   	POPJ P,
+                         ; PKQPF2 - Put node on queue as first thing.
+                         ;	Q/ addr of queue header
+                         ;	A/ addr of node
+001462  606040 777777   PKQPF2:	TRNN A,-1		; Yes more paranoia
+                         	 BUG HALT,[PK: zero node ptr]
+001463  254200 001463   	JRST 4,.
+001464  700600 000400   	CONO PI,PIOFF
+001465  205300 000004   	MOVSI T,(%PQFL2)		; Paranoia: Set appropriate flag for list
+001466  433301 000000   	XORB T,PQ.FLG(A)	;    to indicate it's on it now.
+001467  607300 000004   	TLNN T,(%PQFL2)		;    check...
+                         	 BUG HALT,[PK: node already on list]
+001470  254200 001470   	JRST 4,.
+001471  550316 000000   	HRRZ T,(Q)		; Get first thing
+001472  306046 000000   	CAIN A,(T)		; paranoia, avoid loops to self
+                         	 BUG
+001473  254200 001473   	JRST 4,.
+001474  542301 000002   	HRRM T,.IRPCNT(A)	; Make it second thing
+001475  542056 000000   	HRRM A,(Q)		; Make new first thing
+001476  306300 000000   	CAIN T,
+001477  506056 000000   	 HRLM A,(Q)		; Was empty, also make it last thing.
+001500  700600 000200   	CONO PI,PION
+001501  263740 000000   	POPJ P,
+                         ; Define PKQGF, etc so that they actually reference PKQGF0, etc as
+                         ; appropriate for the given offset.
+                         IRP RTN,,[PKQGF,PKQPF,PKQPL]
+                         DEFINE RTN ?OFFST=0,
+                         CONC RTN,\OFFST
+                         IFG OFFST-%%%QOF,.ERR RTN used with bad offset
+                         TERMIN
+                         TERMIN
+                         DEFINE PKQGF ?OFFST=0,
+                         CONC PKQGF,\OFFST
+                         IFG OFFST-%%%QOF,.ERR PKQGF used with bad offset
+                         TERMIN
+                         DEFINE PKQPF ?OFFST=0,
+                         CONC PKQPF,\OFFST
+                         IFG OFFST-%%%QOF,.ERR PKQPF used with bad offset
+                         TERMIN
+                         DEFINE PKQPL ?OFFST=0,
+                         CONC PKQPL,\OFFST
+                         IFG OFFST-%%%QOF,.ERR PKQPL used with bad offset
+                         TERMIN
+										Page 6
+                         ; PKEGF - Get a free Packet-Entry node
+                         ;	Clears node contents.
+                         ;	Clobbers Q,T
+                         ; Returns A/ PE ptr (0 if none)
+001502  201700 001300   PKEGF:	MOVEI Q,PKEQHF
+                         IFE PKTTRC,[
+                         	CALRET, PKQGF		CONC PKQGF,\0PKQGF0î
+001503  254000 001301   
+                         IFG 0-%%%QOF,.ERR PKQGF used with bad offset
+                         ;
+                         ; Get a node
+                         ]
+                         IFN PKTTRC,[
+                         	CALL PKQGF
+                         	JUMPE A,CPOPJ		; No packet
+                         	SETZM PK.HST(A)
+                         	SETZM PK.HST+1(A)
+                         	SETZM PK.HST+2(A)
+                         	MOVEI Q,PK.HST(A)	; Build byte ref to history trail
+                         	HRLI Q,(<.BP %NTRCE_30.>) ; (dpb ref)
+                         	MOVEM Q,PK.HSP(A)	; save ref
+                         	POPJ P,
+                         ]
+                         ; PKERT - Return a Packet-Entry node to freelist
+                         ;	A/ PE ptr to node
+                         ;	Clobbers Q,T
+001504  201700 001300   PKERT:	MOVEI Q,PKEQHF	; Use Packet-Entry freelist
+                         	CALRET PKQPF	CONC PKQPF,\0PKQPF0î
+001505  254000 001334   
+                         IFG 0-%%%QOF,.ERR PKQPF used with bad offset
+                         ;
+                         ; Put back on start of list.
+										Page 7
+                         ; Note that all MP calls to the routines below which allocate or free
+                         ; entries/buffers must be sure not to block (page fault or UFLS)
+                         ; while any "loose" entries/buffers exist (not pointed to by any list)
+                         ; unless there something on the PCLSR locked-switch list which will return the
+                         ; currently "loose" entry/buffer to its freelist -- otherwise
+                         ; it is possible for "loose" stuff to slowly accumulate.
+                         ; PKTGF - Get a free Packet-Entry node and Packet Buffer.  Hangs until
+                         ;	it wins.  Note that it depends on fact there is one PE node
+                         ;	for every packet buffer, and vice versa!  If this becomes untrue
+                         ;	then the way it UFLSes should be fixed up.
+                         ; PKTGFI - version that skips if wins, doesn't hang.
+                         ; Returns A/ PE ptr	Clobbers Q,T
+001506  336000 001300   PKTGF:	SKIPN PKEQHF	; Fast check, see if any packet entries/buffers free
+                         IFE $$STND,[
+                         	 CALL UFLS	;  Nope, hang until something turns up.
+                         ]
+                         IFN $$STND,[	
+                         	;; You are probably in trouble here. But we will hang anyway,
+                         	;; in case interrupt code decides to free a packet
+001507  254000 001506   	JRST PKTGF
+                         ]
+001510  260740 001513   	CALL PKTGFI	; Get a entry/buffer!
+001511  254000 001506   	 JRST PKTGF	; None?  Sigh, go hang.
+001512  263740 000000   	RET
+001513  260740 001502   PKTGFI:	CALL PKEGF	; Get a free node
+001514  322040 001315   	JUMPE A,CPOPJ
+001515  261740 000001   	PUSH P,A	; Save pointer to it
+001516  260740 001572   PKTGF1:	CALL PKBGF	; Get a free buffer
+001517  326040 001525   	JUMPN A,PKTGF8	; Jump if found one right away!
+001520  260740 001614   	CALL PKBAL	; None left on freelist, try to allocate more.
+001521  304000 000000   	 CAIA		;  Sigh, failed.
+001522  254000 001516   	  JRST PKTGF1	; Won, go pluck a buffer from freelist.
+                         	; Lost, can't get any more buffers.
+001523  262740 000001   	POP P,A		; None available, take non-skip return
+001524  254000 001504   	CALRET PKERT	; Put PE node back on its freelist.
+                         	
+                         	; Won, store buffer pointer in PE.
+001525  200300 000001   PKTGF8:	MOVE T,A
+001526  262740 000001   	POP P,A		; Restore PE ptr
+001527  202301 000004   	MOVEM T,PK.BUF(A)
+001530  200301 000000   	MOVE T,PQ.FLG(A)	; Paranoia dept, verify not on any lists.
+001531  603300 000007   	TLNE T,(%PQFLX)
+                         	 BUG HALT,[PK: Freelist node not free!]
+001532  254200 001532   	JRST 4,.
+001533  402001 000000   	SETZM PK.FLG(A)	; Zap all other entries in packet node.
+001534  402001 000001   	SETZM PK.IP(A)
+001535  402001 000002   	SETZM PK.TCP(A)
+001536  402001 000003   	SETZM PK.TCI(A)
+001537  402001 000005   	SETZM PK.TIM(A)
+001540  350017 000000   	AOS (P)		; Win, skip on return!
+001541  263740 000000   	RET
+                         ; PKTRT - Return both a Packet-Entry and its associated buffer to freelist
+                         ;	only if check shows that it doesn't belong to any lists.
+                         ; PKTRTA - Always return to freelist.  If check shows that it is still
+                         ;	on some list, bad error!
+                         ;	Clobbers A,Q,T
+                         ;	A/ PE ptr (must be off all lists)
+001542  301040 000100   PKTRTA:	CAIL A,PKETBL		; Paranoia check for legal pointers
+001543  303040 001270   	 CAILE A,PKETBE
+                         	  BUG HALT,[PK: Bad PE pointer]
+001544  254200 001544   	JRST 4,.
+001545  200301 000000   	MOVE T,PQ.FLG(A)
+001546  603300 400007   	TLNE T,(%PQFLX\%PKPIL)	; On list or locked at I/O PI level?
+                         	 BUG HALT,[PK: Freeing packet still in use!]
+001547  254200 001547   	JRST 4,.
+001550  254000 001557   	JRST PKTRTX		; Nope, can proceed to put on freelist.
+                         	
+001551  301040 000100   PKTRT:	CAIL A,PKETBL		; Paranoia check for legal pointers
+001552  303040 001270   	 CAILE A,PKETBE
+                         	  BUG HALT,[PK: Bad PE pointer]
+001553  254200 001553   	JRST 4,.
+001554  200301 000000   	MOVE T,PQ.FLG(A)
+001555  603300 400007   	TLNE T,(%PQFLX\%PKPIL)	; On a list or locked by interface PI level?
+001556  263740 000000   	 RET			; Yes, don't return to freelist yet.
+001557  261740 000001   PKTRTX:	PUSH P,A		; Save PE ptr
+001560  332041 000004   	SKIPE A,PK.BUF(A)	; Get buffer pointer associated with PE
+001561  260740 001600   	 CALL PKBRT		; Return the buffer
+001562  262740 000001   	POP P,A
+001563  402001 000004   	SETZM PK.BUF(A)		; Ensure buffer pointer zapped.
+001564  254000 001504   	CALRET PKERT		; Then return the packet entry
+                         ; PKTPCL - Return a packet entry/buffer while PCLSR'ing.
+                         ;	This is the standard LOSSET routine to use.
+                         ;	A must hold the PE ptr at time of the block (which we are backing
+                         ;	out of).
+                         ;	Must only clobber A and T!!
+                         IFE $$STND,[
+                         PKTPCL:	MOVE A,AC0S+A(U)	; Get ac A at time of the block
+                         	PUSH P,Q		; Mustn't clobber Q
+                         	CALL PKTRT		; Return the entry/buffer (clobbers Q,T)
+                         	JRST POPQJ
+                         ]
+										Page 8
+                         EBLKî
+001565  000000 000000   PKBNF:	0	; # free Packet Buffers
+001566  000000 000000   PKBNT:	0	; # total Packet Buffers
+001567  000000 000000   PKBCTM:	0	; Time of last no-more-core complaint
+001570  000000 000000   PKBQHF:	0	; Queue Header for buffer freelist
+001571  000000 000000   PKBQHC:	0	; Queue Header for core job cleanup
+                         BBLKî
+                         ; PKBGF - Get a free Packet Buffer
+                         ;	Clobbers Q,T
+                         ; Returns A/ PB ptr (0 if none)
+001572  201700 001570   PKBGF:	MOVEI Q,PKBQHF	; Point to buffer freelist
+                         	CALL PKQGF	CONC PKQGF,\0PKQGF0î
+001573  260740 001301   
+                         IFG 0-%%%QOF,.ERR PKQGF used with bad offset
+                         ;
+                         ; Get first thing off it
+001574  322040 001315   	JUMPE A,CPOPJ	; If got nothing, just return.
+001575  402001 000001   	SETZM 1(A)	; Aha, got it!  Flush free-buffer identifier.
+001576  370000 001565   	SOS PKBNF	; Decrement # free packet buffers.
+001577  263740 000000   	RET
+                         ; PKBRT - Return a Packet Buffer to freelist.  Puts back at END of freelist,
+                         ;	as PKBCLN clean-up depends on this.
+                         ;	Clobbers Q,T
+001600  402001 000000   PKBRT:	SETZM (A)	; Paranoia aid - clear "flags" in LH of 1st wd.
+                         			; Otherwise PKQ routines complain.
+001601  200300 123657   	MOVE T,[SIXBIT /BRUNCH/]
+001602  202301 000001   	MOVEM T,1(A)	; Set up free-buffer identifier
+001603  350000 001565   	AOS PKBNF	; Increment # free packet buffers.
+001604  201700 001570   	MOVEI Q,PKBQHF	; Point to buffer freelist
+                         	CALRET PKQPL	CONC PKQPL,\0PKQPL0î
+001605  254000 001316   
+                         IFG 0-%%%QOF,.ERR PKQPL used with bad offset
+                         ;
+                         ; Put it back on, at end.
+                         ; PKBRTL - Return a list of Packet Buffers to freelist
+                         ;	Q/ ptr to queue header of list
+                         ;	Clobbers A,T
+                         PKBRTL:	CALL PKQGF	CONC PKQGF,\0PKQGF0î
+001606  260740 001301   
+                         IFG 0-%%%QOF,.ERR PKQGF used with bad offset
+                         ;
+                         ; Get first thing off list
+001607  322040 001315   	JUMPE A,CPOPJ
+001610  261740 000016   	PUSH P,Q
+001611  260740 001600   	CALL PKBRT	; Return it to buffer freelist
+001612  262740 000016   	POP P,Q
+001613  254000 001606   	JRST PKBRTL
+                         ; PKBAL - Allocate more Packet Buffers
+                         ;	Clobbers A,Q,T
+                         ; Returns .+1 if lost
+                         ;	.+2 if won (must still call PKBGF to get a buffer from list)
+001614  261740 000002   PKBAL:	PUSH P,B
+001615  700640 000016   	CONI PI,Q		; Save PI channel-on status
+001616  405700 000177   	ANDI Q,177
+001617  700600 001277   	CONO PI,UTCOFF		; Make the world safe for IOMQ
+001620  200100 001566   	MOVE B,PKBNT		; Check total # of buffers so far
+001621  301100 000120   	CAIL B,NPKB		; Make sure we're not already using max allowed
+001622  254000 001640   	 JRST PKBAL4		;  Ugh, already at max!  Go complain.
+001623  260740 001643   	PUSHJ P,IOMQ		; Get 1K of memory
+001624  254000 001640   	 JRST PKBAL3		; Mem not available, fail
+001625  700616 002200   	CONO PI,PICON(Q)	; Won, restore PI status
+                         IFE $$STND,[
+                         	MOVEI B,MUPKT		; Set page type = packet
+                         	DPB B,[MUR,,MEMBLT(A)]
+                         ]
+001626  242040 000012   	LSH A,10.		; Turn allocated page # into mem address
+001627  505040 777776   	HRLI A,-<2000/PKBSIZ>	; Make AOBJN into page (# buffers per page)
+001630  260740 001600   PKBAL2:	PUSHJ P,PKBRT		; Put them all on free list
+001631  271040 000777   	ADDI A,PKBSIZ-1
+001632  253040 001630   	AOBJN A,PKBAL2
+001633  201100 000002   	MOVEI B,<2000/PKBSIZ>	; This many more buffers have been created
+001634  272100 001566   	ADDM B,PKBNT		; Increase total (PKBNF bumped by PKBRT)
+001635  262740 000002   	POP P,B
+001636  350017 000000   	AOS (P)			; Take win return.
+001637  263740 000000   	RET
+                         	; Here if packet stuff trying to use up too much core
+                         PKBAL4:
+                         IFE $$STND,[
+                         	MOVE B,PKBCTM	; Don't complain too often
+                         	ADDI B,60.*30.	; Just once a minute
+                         	CAMLE B,TIME
+                         	 JRST PKBAL3
+                         	BUG CHECK,[PACKET NET ATTEMPTING TO USE TOO MUCH CORE]
+                         	MOVE B,TIME
+                         	MOVEM B,PKBCTM
+                         ]
+001640  700616 002200   PKBAL3:	CONO PI,PICON(Q)	; Lost, restore PI status
+001641  262740 000002   	POP P,B
+001642  263740 000000   	POPJ P,			; and take error return.
+                         IFN $$STND,[
+                         ;;; Standalone substitute for IOMQ just hands out page-size chunks of
+                         ;;; memory from a pool. There is no way to return it.
+001643  200040 123650   IOMQ:	MOVE A,IOMQPT
+001644  271040 002000   	ADDI A,2000
+001645  202040 123650   	MOVEM A,IOMQPT
+001646  275040 002000   	SUBI A,2000
+001647  263740 000000   	RET
+                         IOMQPL:	BLOCK <NPKPGS+1>*2000
+123650  000000 002000   IOMQPT:	<IOMQPL+777>&777000
+                         ]
+                         ; PKBCLN - Called only by core job, to clean up packet buffers.  
+                         ;	Smashes all ACs.
+                         IFE $$STND,[
+                         PKBCLN:	SKIPE A,PKBNT		; See if 2/3 or more of buffers free
+                         	 SKIPN B,PKBNF
+                         	  POPJ P,		; No buffers or none free, nothing to do
+                         	SUBM A,B
+                         	IDIV A,B		; Get ratio of total to used
+                         	CAIGE A,3		; Note if B is zero, A is unchanged
+                         	 POPJ P,		;  and at least 32.
+                         IFL TSYSM-256.,	MOVEI D,TSYSM-1	; Scan memory for packet buffer pages
+                         .ELSE	MOVEI D,255.
+                         PKBCL0:	LDB A,[MUR,,MEMBLT(D)]
+                         	CAIE A,MUPKT
+                         PKBCL4:	 SOJGE D,PKBCL0
+                         	JUMPL D,CPOPJ
+                         	MOVE A,D		; Quickly determine if any non-free buffers
+                         	LSH A,10.		;  on this page
+                         	HRLI A,-<2000/PKBSIZ>
+                         	MOVE T,[SIXBIT/BRUNCH/]
+                         PKBCL5:	CAME T,1(A)
+                         	 JRST PKBCL4		; Not free, don't bother with slow stuff
+                         	ADDI A,PKBSIZ-1
+                         	AOBJN A,PKBCL5
+                         	SETZB C,PKBQHC		; Collect all free buffers on this page
+                         	MOVE E,PKBNF	; Loop about as many times as there are free buffers
+                         PKBCL1:	PUSHJ P,PKBGF		; Get next free buffer
+                         	JUMPE A,PKBCL2
+                         	LDB B,[121000,,A]
+                         	CAMN B,D
+                         	 JRST [ MOVEI Q,PKBQHC	; This one's on the page, save it
+                         		PUSHJ P,PKQPL
+                         		AOJA C,.+2 ]	; Count them
+                         	  PUSHJ P,PKBRT		; Not on the page, put back. This depends on
+                         				; the fact PKBRT puts back at END of list!
+                         	SOJG E,PKBCL1
+                         PKBCL2:	CAIE C,<2000/PKBSIZ>	; Did we get the whole page?
+                         	 JRST [	MOVEI Q,PKBQHC	; No, must punt this one, and
+                         		PUSHJ P,PKBRTL	; return all the buffers we saved up.
+                         		JRST PKBCL4]
+                         	MOVNS C			; Yes, get rid of these buffers
+                         	ADDM C,PKBNT		; Decrement total # of buffers in use
+                         	MOVE A,D
+                         	PUSHJ P,MEMR		; Flush the page from addr space
+                         	JRST PKBCLN		; Back to flush more, until quota done.
+                         ]
+123651  542046 000000   
+123652  254000 001332   
+123653  542046 000001   
+123654  254000 001405   
+123655  542046 000002   
+123656  254000 001460   
+123657  426265 564350   
+        000000 000000   	END
+Constants area inclusive
+From	To
+123651	123657
+î

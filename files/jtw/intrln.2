@@ -1,0 +1,269 @@
+;;; -*- Mode: Midas -*-
+
+;Maximally stupid Interlan Ethernet driver JTW 5/86
+
+; ToDo:
+
+; Find out if buffer chaining can be used to avoid having to DMA
+; received data into a full-size temporary buffer and copy it later.
+; Better (assuming hardware data reformatting), to queue a single
+; 16-byte buffer to get the length and protocol type, and DMA the rest
+; of the bits into a protocol-specific place.
+
+; Support more than one interface
+
+; Don't use insert-source-address mode? Berkeley people say it is faster
+; not to...
+
+	SUBTTL Storage
+
+EBLK
+
+ILNACS:	BLOCK 20		;This is really stupid, there are about a
+ILNPDL:	-60,,.			;zillion sets of ACs for the same interrupt
+	BLOCK 60		;level. Someone should combine them all...
+
+ILNRBF:	BLOCK 1			;Address of receive IO buffer
+ILNTBF:	BLOCK 1			;Address of transmit buffer
+
+ILNHDA:	BLOCK 2			;Hardware ethernet address
+
+ILNNSC==12.			;Number of stats counters the board reports
+ILNFSC:	BLOCK ILNNSC		;Hardware statistics counters
+
+ILNUP:	0			;Interface is running
+ILNCWT:	-1			;.GE. 0 == Cmd in progress, waiting for done
+ILNSWT:	0			;-1 == waiting for stats command to finish
+ILNNRB:	0			;Need to post a receive buffer
+ILNNSO:	0			;Stats command needed
+
+ILNOAP:				;Pointer to active output packet, or 0
+ILNOAR:				;Routine to call when finished sending ILNOAP
+				;Called with A/packet from ILNOAP
+BBLK
+
+
+;ILNINI - Initialise interface. Reset, run onboard diags, get
+; hardware address from board and start initial read. Called
+; from SYSJOB on system startup. 
+;
+ILNINI:	SETZM ILNUP		;Not running
+	XCTRI [IORDI T,%ILCSR]	;Check that board is present
+	 CAIA
+	  JRST [BUG INF,[Ethernet interface not responding]
+		RET ]
+	MOVEI T,%ILRST
+	IOWRI T,%ILCSR		;Reset board
+ILNIN1:	IORDI T,%ILCSR
+	TRNN T,%ILCD
+	 JRST ILNIN1		;Wait till reset done
+	TRNE T,%ILSTS		;Board says it's OK?
+	 JRST ILNINE		;No.
+	SETZM ILNFSC		;Reset statistics counters
+	MOVE T,[ILNFSC,,ILNFSC+1]
+	BLT T,ILNFSC+ILNNSC-1
+	CONO PI,UTCOFF
+	CALL IOMQ		;Get a page of memory for IO buffer
+	 JRST [ CONO PI,UTCON	;Really?
+		RET ]
+	.ERR ILN device buffer shouldn't be cached
+	MOVEI B,MUDVB		;Set page type (static device IO buffer)
+	DPB B,[MUR,,MEMBLT(A)]
+	LSH A,10.		;Turn allocated page # into mem address
+	MOVE A,ILNRBF
+	ADDI A,512.		;Use second half for xmit buffer
+	MOVE A,ILNTBF
+	MOVE T,ILNRBF		;Get DEC page # of ILNRBF
+	LSH T,-9.
+	IORI T,%UQ16B\%UQVAL	;Map 1 DEC page (512 wrds) at ILNRBF
+	IOWRI T,UBAPAG+<ILRBUA_-11.>	; to unibus address ILRBUA
+	ADDI T,1		;Map second DEC page (at ILNTBF)
+	IOWRI T,UBAPAG+<ILTBUA_-11.>	; to unibus address ILTBUA
+	MOVEI T,ILTBUA
+	IOWRI T,%ILBAR		;Write stats to xmit bfr (keep rb free)
+	MOVEI T,66.		;Length of stats field in bytes
+	IOWRI T,%ILBCR
+	MOVEI T,%ILRRS
+	IOWRI T,%ILCSR		;Get stats and stuff from board
+ILNIN2:	IORDI T,%ILCSR
+	TRNN T,%ILCD		;Wait till command done
+	 JRST ILNIN2
+	TRNE T,%ILSTS		;Any problems?
+	 JRST ILNINE		;Failed to get stats
+	MOVE A,ILNTBF		;Get address of stats/data packet
+	CALL ILNGHA		;Get and store hardware address
+	MOVE A,ILNTBF		;Get address again
+	CALL ILNGSC		;Get and accumulate hardware stats counters
+	MOVEI T,%ILONL		;Put the board online
+	IOWRI T,%ILCSR
+ILNIN3:	IORDI T,%ILCSR
+	TRNN T,%ILCD
+	 JRST ILNIN3
+	MOVEI T,ILRBUA+2	;Post a receive buffer to start the show
+	IOWRI T,%ILBAR		; +2 puts next-level pkt at -10 word boundary
+	MOVEI T,<512.*4>-1	;Buffer length. -1 avoids any possibility of
+				;"buffer chaining", is totally unnecessary.
+	IOWRI T,%ILBCR
+	CONO PI,ILNOFF		;Interlock ILNCWT
+	AOS ILNCWT		;We are waiting for a command done
+	MOVEI T,%ILRCV\%ILRIE\%ILCIE ;Post buffer, enable interrupts
+	IOWRI T,%ILCSR		;Start listening
+	SETOM ILNUP		;And say we are running
+	CONO PI,ILNON
+	RET
+
+ILNINE: ANDI T,%ILSTS		;Get only status bits
+	BUG INFO,[Ethernet Interface problem during initialization],DEC,T
+	RET
+
+
+;Get hardware address from stats pkt and store in ILNHDA
+; This will change when hardware formats data right
+; A/ Address of stat packet buffer
+;
+ILNGHA:	LDB T,[221000+A,,1]	;Think of it as magic
+	DPB T,[301000,,ILNHDA]
+	LDB T,[321000+A,,1]
+	DPB T,[201000,,ILNHDA]
+	LDB T,[01000+A,,1]
+	DPB T,[101000,,ILNHDA]
+	LDB T,[101000+A,,1]
+	DPB T,[001000,,ILNHDA]
+	LDB T,[221000+A,,2]
+	DPB T,[101000,,ILNHDA+1]
+	LDB T,[321000+A,,2]
+	DPB T,[001000,,ILNHDA+1]
+	RET
+
+;Get hardware statistics from stats packet and keep running totals
+; This will change when hardware formats data right
+; A/ Address of stat packet buffer
+;
+ILNGSC:	PUSH P,B		;Save B
+	MOVE TT,[222200+A,,2]	;BP to middle of 3(A)
+	MOVE B,[-ILNNSC,,ILNFSC];-number_of_ctrs,,addr_of_first
+ILNGS1:	ILDB T,TT		;Get next counter
+	ANDI T,177777		;16 bits only
+	ADDM T,(B)		;Add current value to counter
+	AOBJN B,ILNGS1
+	POP P,B
+	RET
+
+
+;Convert one word from -11 to -10 format
+; T/ pointer to word.
+; puts word back. trashes nothing
+11TO10:	PUSH P,A
+	PUSH P,B
+	PUSH P,C
+	MOVE A,(T)		;Get data word from message
+	LDB B,[321000,,A]	;Get Byte 2
+	LDB C,[101000,,A]	;Get Byte 4
+	LSH A,10.		;Shift so Byte 1 is correct
+	DPB B,[241000,,A]	;Put Byte 2
+	LDB B,[121000,,A]	;Get Byte 3
+	DPB B,[141000,,A]	;Put Byte 3
+	DPB C,[041000,,A]	;Put Byte 4
+	MOVEM A,(T)		;Store reformatted word back in buffer
+	POP P,C
+	POP P,B
+	POP P,A
+	RET
+
+;Receive done interrupt - JSR ILNRBK from vectored interrupt table
+; Check received packet for various errors
+; See if it is for a protocol we are handling
+;  If so, get a protocol buffer and copy/reformat data into it,
+;  then call into protocol code with NETOFF.
+;
+	EBLK
+ILNRBK:	0
+	BBLK
+	MOVEM 17,ILNACS+17
+	MOVEI 17,ILNACS
+	BLT 17,ILNACS+16
+	MOVE P,ILNPDL
+	MOVE T,ILNRBF		;Address of received packet (starts in RH!)
+	HLRZ A,1(T)		;Hardware frame length
+	HRRZ B,4(T)		;Next-level protocol type
+	MOVEI C,5(T)		;Start of next-level packet data
+	CAIN B,%EPCHA		;Crufty protocol dispatch. Chaos?
+	 JRST ILNRCH
+IFN 0,[
+	CAIN B,%EPIP		;IP
+	 JRST ILNRIP
+]
+	CAIN B,%EPARP		;ARP?
+	 JRST ILNRAR
+
+;Here to maybe post new listen, then dismiss interrupt
+ILNRBD:	AOSE ILNCWT		;Waiting for command done? (will be, if not..)
+	 JRST [ SETOM ILNNRB	;Yes, can't post. Just note new buffer needed
+		JRST ILNRBD ]	; and go dismiss interrupt
+ILNPRB:	MOVEI T,ILRBUA+2	;Post new receive buffer...
+	IOWRI T,%ILBAR		; +2 puts next-level pkt at -10 word boundary
+	MOVEI T,<512.*4>-1	;Buffer length.
+	IOWRI T,%ILBCR
+	MOVEI T,%ILRCV\%ILRIE\%ILCIE ;Post buffer, enable interrupts
+	IOWRI T,%ILCSR		;Start listening
+ILNBKD:	MOVSI 17,ILNACS		;Dismiss interrupt
+	BLT 17,17
+	JRST 12,@ILNRBK
+
+;Command done interrupt
+; If last command was a transmit, call protocol back w/transmit-done info
+;  Else, if last was stats command, collect returned stats
+; Decide what to do next based on flags:
+;  If need to post a receive buffer, do that
+;   Else, if need to start output, do that
+;    Else, if need a stat collection, do that.
+
+	EBLK
+ILNCBK:	0
+	BBLK
+	MOVEM 17,ILNACS+17
+	MOVEI 17,ILNACS
+	BLT 17,ILNACS+16
+	MOVE P,ILNPDL
+	SKIPN A,ILNOAP		;Have an output active packet?
+	 JRST ILNCB0		;Nope, last command wasn't XMIT
+	SKIPE T,ILNOAR		;Protocol want to be notified about packet?
+	 CALL (T)		;Yes, so do it
+	SETZM ILNOAP		;No more active output packet
+	SETZM ILNOAR		;No more protocol call-back
+	JRST ILNCB1
+
+ILNCB0:	SKIPN ILNSWT		;Expecting statistics?
+	 JRST ILNCB1
+	SETZM ILNSWT
+	MOVE A,ILNTBF		;Address where statistics were written
+	CALL ILNGSC		;Collect and add to running totals
+
+;Here after finished processing completed command
+ILNCB1:	SKIPN ILNNRB		;Need to post a receive buffer?
+	 JRST ILNCB2		;Nope, try next thing
+	SETZM ILNNRB		;Not any more..
+	JRST ILNPRB		;Go post and dismiss
+
+ILNCB2:	CALL ILNGPO		;Any more output?
+	 JRST ILNCB3		;No, on to next thing
+	...
+	Packet in ILNTBF, ILNOAP and ILNOAR set up.
+	Start output
+	...
+
+ILNCB3:	SKIPN ILNNSO		;Need to collect statistics?
+	 JRST ILNCB4
+	SETOM ILNSWT		;Waiting for statistics
+	MOVEI T,ILTBUA
+	IOWRI T,%ILBAR		;Write stats to xmit bfr (keep rb free)
+	MOVEI T,66.		;Length of stats field in bytes
+	IOWRI T,%ILBCR
+	MOVEI T,%ILRRS\%ILRIE\%ILCIE ;Get stats, enable interrupts
+	IOWRI T,%ILCSR
+	JRST ILNBKD		;Done, dismiss
+
+;Nothing left to do but smile, smile, smile!
+ILNCB4:	SETOM ILNCWT		;Note not waiting for a command
+	JRST ILNBKD		; and go dismiss interrupt
+

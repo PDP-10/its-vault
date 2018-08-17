@@ -1,0 +1,540 @@
+;;; -*- Mode: LISP; Syntax: Common-lisp; Package: USER; Base: 10 -*-
+
+;;; s4887 machine description for simulator.
+
+;;; The machine description is split into two parts; a set of definitions of registers,
+;;; buses, data fields, and whatnot, and a bunch of code which implements the operations
+;;; of the machine. Here are the definitions. (These definitions don't necessarily
+;;; correspond with the actual machine; this is a behavioral simulator, not a functional
+;;; one. Thank you for your concern.)
+
+;;; Machine registers
+
+(defregister IR)				;Microcode Program counter
+
+(defregister MARHI)				;High byte of MAR
+(defregister MARMD)				;Middle byte of MAR
+(defregister MARLO)				;Low byte of MAR
+
+(defregister MEMD)				;Memory data register (output)
+
+(defregister AC-A)				;Accumulator 1
+(defregister AC-B)				;Accumulator 2
+
+(defregister CARRY)				;Carry bit
+(defregister ONES)				;All-ones bit
+
+(defregister RF 256)				;Register File of 256 bytes
+
+(defregister BS)				;Interface to memory-I/O controller
+(defregister TS0)
+(defregister TS1)
+(defregister TRESET)
+
+;;; Main bus, and subfields thereof
+
+(defbus main-bus :check-data t)
+
+(deffield mb-low-byte main-bus 0 8)
+
+;;; Output from microcode PROM and instruction register, and data fields thereof.
+
+(defbus ucode-bus :check-data t)
+
+(deffield uc-address ucode-bus 0 12)		;Next ucode address
+(deffield uc-cjmplo-address ucode-bus 8 3)	;Fuckup
+(deffield uc-rf-index ucode-bus 0 8)		;Index into register file
+(deffield uc-constant ucode-bus 0 8)		;Constant data
+(deffield uc-alu-op ucode-bus 3 5)		;ALU operation select
+(deffield uc-sh-rot ucode-bus 6 1)		;Shifter rotates if true, else shifts
+(deffield uc-sh-left ucode-bus 7 1)		;Shifter goes left if true, else right
+(deffield uc-shift-op ucode-bus 6 2)		;Another way of looking at things
+(deffield uc-co-spec ucode-bus 8 3)		;Condition code setting specifier
+(deffield uc-source ucode-bus 8 3)		;Data source specifier
+(deffield uc-dest ucode-bus 8 3)		;Data destination specifier
+(deffield uc-cj-flag ucode-bus 15 1)		;True if conditional jump instr
+(deffield uc-cj-cond ucode-bus 12 3)		;Condition for conditional jump
+(deffield uc-opcode ucode-bus 11 5)		;Opcode
+(deffield uc-low-byte ucode-bus 0 8)		;General low byte
+
+;;; Machine constants for fields of the microword. Really ought to be a check for
+;;; duplicated names. Funky plist stuff just for pretty-printing.
+
+(defmacro defmc (name type value)
+  `(progn (defconstant ,name ,value) (push (cons ,value ',name)
+					   (get ',type 's4887-constant))))
+
+(defmacro get-mc-name (type value)
+  `(cdr (assoc ,value (get ',type 's4887-constant))))
+
+;;; Opcodes.
+;;; Conditional jumps are filtered off before these are ever used by checking for 1
+;;; in the MSB.
+
+(defmc CJMPLO opcode 0)
+(defmc RTS opcode 1)
+(defmc JSR0 opcode 2)
+(defmc JSR1 opcode 3)
+(defmc CLRCOND opcode 4)
+(defmc SETCOND opcode 5)
+(defmc STOREA opcode 6)
+(defmc STOREI opcode 7)
+(defmc RETRA opcode 8)
+(defmc RETRI opcode 9)
+(defmc SHIFTER opcode 10)
+(defmc ALU opcode 11)
+(defmc MOVA opcode 12)
+(defmc MOVB opcode 13)
+(defmc MOVM opcode 14)
+(defmc MOVI opcode 15)
+
+;;; Data sources (uc-source field)
+
+(defmc S-INSTLO source 0)
+(defmc S-REGS source 1)
+(defmc S-SHIFTER source 2)
+(defmc S-MEM source 3)
+(defmc S-ALU-OP source 4)
+(defmc S-ALU-A source 5)
+(defmc S-ALU-B source 6)
+
+;;; Data destinations (uc-dest field)
+
+(defmc D-INSTLO dest 0)
+(defmc D-MEMD dest 1)
+(defmc D-REGS dest 2)
+(defmc D-MARHI dest 3)
+(defmc D-MARMD dest 4)
+(defmc D-MARLO dest 5)
+(defmc D-ACA dest 6)
+(defmc D-ACB dest 7)
+
+;;; Conditions Out (uc-co-spec field)
+
+(defmc CO-C cc-out 0)
+(defmc CO-O cc-out 1)
+(defmc CO-BS cc-out 2)
+(defmc CO-TS1 cc-out 3)
+(defmc CO-TS0 cc-out 4)
+(defmc CO-TRESET cc-out 5)
+
+;;; Conditions In (uc-cj-cond field)
+
+(defmc CI-NOT-DONE cc-in 0)
+(defmc CI-NOT-CHAR cc-in 1)
+(defmc CI-C cc-in 2)
+(defmc CI-NOT-C cc-in 3)
+(defmc CI-O cc-in 4)
+(defmc CI-NOT-O cc-in 5)
+(defmc CI-TRUE cc-in 6)
+(defmc CI-FALSE cc-in 7)
+
+;;; ALU operations (uc-alu-op field)
+
+(defmc NOT-A alu-op #x10)
+(defmc NOR alu-op #x11)
+(defmc ANDCA alu-op #x12)
+(defmc CLR alu-op #x13)
+(defmc NAND alu-op #x14)
+(defmc NOT-B alu-op #x15)
+(defmc XOR alu-op #x16)
+(defmc ANDCB alu-op #x17)
+(defmc ORCA alu-op #x18)
+(defmc EQV alu-op #x19)
+(defmc PASS-B alu-op #x1A)
+(defmc AND alu-op #x1B)
+(defmc SET alu-op #x1C)
+(defmc ORCB alu-op #x1D)
+(defmc OR alu-op #x1E)
+(defmc PASS-A alu-op #x1F)
+
+(defmc ADDC alu-op #x09)
+(defmc SUBC alu-op #x06)
+(defmc INCAC alu-op #x0)
+(defmc DECANC alu-op #xF)
+
+;;; Shifter ops
+
+(defmc SHIFT-RIGHT shift-op 0)
+(defmc ROTATE-RIGHT shift-op 1)
+(defmc SHIFT-LEFT shift-op 2)
+(defmc ROTATE-LEFT shift-op 3)
+
+;;; Code
+
+;;; Initialization. For now, just clear the buses and start the PC at the starting
+;;; address. May need to reset other registers too? Probably not, they get set to 0
+;;; when created.
+
+;;; Main loop. 
+
+;;; This whole thing is much simpler because all microinstructions are one word long
+;;; and take one clock cycle.
+
+(defvar *pc* 0 "PC of currently executing microinstruction, for debugging")
+
+(defun reset ()
+  (reset-registers)
+  (setq *pc* (sequence :reset))
+  (set-register 'ir (fetch-microinstruction *pc*)))
+
+(defun run-machine ()
+  (do () (())
+    (clock)
+    (clock-mio)
+    (check-breakpoints)				;Break before anything actually happens
+    (set-bus-value 'ucode-bus (get-register 'IR))
+    (execute-instruction)
+    (setq *pc* (compute-next-address))
+    (set-register 'ir (fetch-microinstruction *pc*))
+    (check-stepping)))
+
+;;; Decode and execute data operation portion of instruction.
+;;; Get instruction from opcode bus, decode it, source data onto main
+;;; bus, write data from main bus to destination. The only reason to set the main
+;;; bus up is to help debugging; else we could just do the instruction and set up
+;;; the answer. Therefore, main bus is not set up when instructions use it only
+;;; peripherally. It may be better to fix this to allow low-level microcode debugging. 
+
+;;; Set main bus from a source of data. If the source is NIL, it is obtained from
+;;; the current microword. In this case the source specifier is checked to verify
+;;; that it makes sense in the context of a "source-class" instruction. S-ALU-A and
+;;; S-ALU-B are implemented by going through the ALU in order to set the flags correctly.
+
+(defun get-source-value (source &optional register-address)
+  (let ((value) (flag nil))
+    (unless source (setq source (get-field 'uc-source)) flag 't)
+    (cond
+      ((= source S-MEM) (setq value (read-mio-port 'mdo)))
+      ((= source S-ALU-A) (setq value (alu PASS-A
+					(get-register 'ac-a )
+					(get-register 'ac-b)
+					(get-register 'carry))))
+      ((= source S-ALU-B) (setq value (alu PASS-B
+					(get-register 'ac-a )
+					(get-register 'ac-b)
+					(get-register 'carry))))
+      (t (when flag
+	   (cerror "Continue, fetching value anyway"
+		   "Source-class instruction specified bad source ~A"
+		   (get-mc-name source source)))
+	 (cond 
+	   ((= source S-INSTLO) (setq value (get-field 'uc-low-byte)))
+	   ((= source S-REGS) (setq value (get-register 'rf register-address)))
+	   ((= source S-SHIFTER) (setq value (shifter (get-field 'uc-shift-op)
+						      (get-register 'ac-b))))
+	   ((= source S-ALU-OP) (setq value (alu (get-field 'uc-alu-op)
+						 (get-register 'ac-a)
+						 (get-register 'ac-b)
+						 (get-register 'carry))))
+	   (t (cerror "Continue, using 0 for value"
+		      "Undefined main bus source field ~X in microword" source)
+	      (setq value 0)))))
+    (set-bus-value 'main-bus value)))
+
+;;; Set some destination from value on the main bus. If the destination spec is NIL,
+;;; it is obtained from the current microword. In this case the spec obtained is checked to
+;;; verify that it makes some sense in a destination-class instruction.
+
+(defun set-destination-value (dest &optional register-address)
+  (let ((value (get-bus-value 'main-bus)) (flag 'nil))
+    (unless dest (setq dest (get-field 'uc-dest) flag 't))
+    (cond
+      ((= dest D-INSTLO)
+       ;; I think we don't have to do anything here because this is used only for next
+       ;; address calculation, which is done somewhere else in the simulation.
+       (if flag
+       	   (cerror "Continue, setting no destination"
+		   "Destination-class instruction specified bad dest ~A"
+		   (get-mc-name dest dest))))
+      ((= dest D-MEMD) (set-register 'memd value))
+      ((= dest D-REGS)
+       (if flag
+	   (cerror "Continue, setting no destination"
+		   "Destination-class instruction specified bad dest ~A"
+		   (get-mc-name dest dest)))
+       (set-register 'rf register-address value))
+      ((= dest D-MARHI) (set-register 'marhi value))
+      ((= dest D-MARMD) (set-register 'marmd value))
+      ((= dest D-MARLO) (set-register 'marlo value))
+      ((= dest D-ACA) (set-register 'ac-a value))
+      ((= dest D-ACB) (set-register 'ac-b value))
+      (t (cerror "Continue, setting no registers"
+		 "Undefined main bus destination field ~X in microword" dest)))))
+
+;;; Obtain the current value of the condition specified by the CI field of the
+;;; current microword.
+(defun get-condition-register ()
+  (let ((cc (get-field 'uc-cj-cond)))
+    (cond 
+      ((= cc CI-NOT-DONE) (read-mio-port '-DONE))
+      ((= cc CI-NOT-CHAR) (read-mio-port '-CHAR))
+      ((= cc CI-C) (get-register 'carry))
+      ((= cc CI-NOT-C) (logxor (logand (get-register 'carry) 1) 1))
+      ((= cc CI-O) (get-register 'ones))
+      ((= cc CI-NOT-O) (logxor (logand (get-register 'ones) 1) 1))
+      ((= cc CI-TRUE) 1)
+      ((= cc CI-FALSE) 0))))
+
+;;; Set condition specified by current uword to value.
+;;; Should be called only from instructions with a CO field.
+(defun set-condition-register (value)
+  (let ((cc (get-field 'uc-co-spec)))
+    (cond
+      ((= cc CO-C) (set-register 'carry value))
+      ((= cc CO-O) (set-register 'ones value))
+      ((= cc CO-BS) (set-register 'bs value))
+      ((= cc CO-TS1) (set-register 'ts1 value))
+      ((= cc CO-TS0) (set-register 'ts0 value))
+      ((= cc CO-TRESET) (set-register 'treset value))
+      (t (error "Unexpected condition specifier ~X" cc)))))
+
+(defun execute-instruction ()
+  (let ((opcode (get-field 'uc-opcode)))
+    (cond
+      ;; Instrs which do only flow-of-control are not looked at here
+      ((or (>= opcode #x10)			;Conditional jump
+	   (= opcode CJMPLO)			;Computed j to (i10...i8)*256+(B)
+	   (= opcode RTS)
+	   (= opcode JSR0) (= opcode JSR1)))
+      ((= opcode CLRCOND)
+       (set-condition-register 0))
+      ((= opcode SETCOND)
+       (set-condition-register 1))
+      ((= opcode STOREA)
+       (get-source-value nil)
+       (set-destination-value D-REGS (get-register 'ac-a)))
+      ((= opcode STOREI)
+       (get-source-value nil)
+       (set-destination-value D-REGS (get-field 'uc-constant)))
+      ((= opcode RETRA)				
+       (get-source-value S-REGS (get-register 'ac-a))
+       (set-destination-value nil))
+      ((= opcode RETRI)				
+       (get-source-value S-REGS (get-field 'uc-constant))
+       (set-destination-value nil))
+      ((= opcode SHIFTER)				
+       (get-source-value S-SHIFTER)
+       (set-destination-value nil))
+      ((= opcode ALU)				
+       (get-source-value S-ALU-OP)
+       (set-destination-value nil))
+      ((= opcode MOVA)
+       (get-source-value S-ALU-A)
+       (set-destination-value nil))
+      ((= opcode MOVB)
+       (get-source-value S-ALU-B)
+       (set-destination-value nil))
+      ((= opcode MOVM)
+       (get-source-value S-MEM)
+       (set-destination-value nil))
+      ((= opcode MOVI)
+       (get-source-value S-INSTLO)
+       (set-destination-value nil)))))
+
+;;; This is a shifter. Takes an input value and an opcode drawn from the 'shift-op
+;;; machine constants defined above, and returns the modified value. Apparently this
+;;; thing is an eight-bit frob, with no provision for chaining results to do 16 or 32
+;;; bit operations.
+
+(defun shifter (op value)
+  (cond
+    ((= op SHIFT-RIGHT)
+     (logand (lsh value -1) #xFF))
+    ((= op SHIFT-LEFT)
+     (logand (lsh value 1) #xFF))
+    ((= op ROTATE-RIGHT)
+     (let ((flag (logand value 1)))
+       (logand (dpb flag (byte 1 7) (lsh value -1)) #xFF)))
+     ((= op ROTATE-LEFT)
+      (let ((flag (ldb (byte 1 7) value)))
+	(logand (dpb flag (byte 1 0) (lsh value 1)) #xFF)))
+     (t
+      (error "Unknown shifter function ~S" op))))
+
+;;; This is an ALU. Takes two operands, a carry bit, and an operator, and returns
+;;; the result, simultaneously setting the registers CARRY and ONES, which had
+;;; better exist.
+
+(defmacro ALU-op (form)
+  `(let ((value ,form))
+     (set-register 'CARRY (ldb (byte 1 8) ,form))
+     (setq value (logand value #xFF))
+     (set-register 'ONES (if (= value #xFF) 1 0))
+     value))
+
+(defun ALU (op A B &optional (carry 0))
+  (cond
+    ((= op NOT-A)
+     (alu-op (boole boole-c1 a b)))
+    ((= op NOR)
+     (alu-op (boole boole-nor a b)))
+    ((= op ANDCA)
+     (alu-op (boole boole-andc1 a b)))  
+    ((= op CLR)
+     (alu-op (boole boole-clr a b)))
+    ((= op NAND)
+     (alu-op (boole boole-nand a b)))
+    ((= op NOT-B)
+     (alu-op (boole boole-c2 a b)))
+    ((= op XOR)
+     (alu-op (boole boole-xor a b)))
+    ((= op ANDCB)
+     (alu-op (boole boole-andc2 a b)))
+    ((= op ORCA)
+     (alu-op (boole boole-orc1 a b)))
+    ((= op EQV)
+     (alu-op (boole boole-eqv a b)))
+    ((= op PASS-B)
+     (alu-op (boole boole-2 a b)))
+    ((= op AND)
+     (alu-op (boole boole-and a b)))
+    ((= op SET) 
+     (alu-op (boole boole-set a b)))
+    ((= op ORCB)
+     (alu-op (boole boole-orc2 a b)))
+    ((= op OR)
+     (alu-op (boole boole-ior a b)))
+    ((= op PASS-A)
+     (alu-op (boole boole-1 a b)))
+    ((= op ADDC)
+     (alu-op (+ a b (logand carry 1))))
+    ((= op SUBC)
+     (alu-op (- a b (logxor (logand carry 1) 1))))
+    ((= op INCAC)
+     (alu-op (+ a (logand carry 1))))
+    ((= op DECANC)
+     (alu-op (- a (logxor (logand carry 1) 1))))
+    (t
+     (error "Unknown ALU op ~S" op))))
+
+;;; Compute and return the next microcode address, based on the current instruction.
+
+(defun compute-next-address ()
+  (let ((opcode (get-field 'uc-opcode)))
+    (cond ((>= opcode #x10)
+	   (if (= (get-condition-register) 1)
+	       (sequence :jump (get-field 'uc-address))
+	       (sequence :increment)))
+	   ((= opcode CJMPLO)
+	    (sequence :jump (+ (* (get-field 'uc-cjmplo-address) 256)
+			       (get-register 'ac-b))))
+
+	   ((= opcode RTS)
+	    (sequence :rts))
+	   ((or (= opcode JSR0) (= opcode JSR1))
+	    (sequence :jsr (get-field 'uc-address)))
+	   (t
+	    (sequence :increment)))))
+
+;;; This is a microcode sequencer. It computes the next micro-pc to execute based
+;;; on the value of a command input and some data. There are five commands:
+;;;
+;;;   :reset		- 0 -> PC
+;;;   :increment	- Increment current PC by one.
+;;;   :jump		- Jump to PC given by DATA.
+;;;   :jsr		- Jump to Subroutine given by data, storing return.
+;;;   :rts		- Return from subroutine.
+
+(defconstant *microsequencer-sp-size* 4 "Microsequencer stack size")
+
+(defvar *microsequencer-pc* 0 "Current micro-pc")
+
+(defvar *microsequencer-sp* nil "Microsequencer Stack Pointer")
+
+(defvar *microsequencer-stack* nil  "Microsequencer call stack")
+
+(defun sequence (function &optional data)
+  (case function
+    (:reset
+      (setq *microsequencer-pc* 0
+	    *microsequencer-sp* -1
+	    *microsequencer-stack* (make-array *microsequencer-sp-size*)))
+    (:increment
+      (incf *microsequencer-pc*))
+    (:jump
+      (if data (setq *microsequencer-pc* data)
+	  (error "Sequencer JUMP without address specified")))
+    (:jsr
+      (unless data
+	(error "Sequencer JSR without address specified"))
+      (when (>= (incf *microsequencer-sp*) *microsequencer-sp-size*)
+	(error "Microsequencer stack overflow"))
+      (setf (aref *microsequencer-stack* *microsequencer-sp*) (1+ *microsequencer-pc*))
+      (setq *microsequencer-pc* data))
+    (:rts
+      (setf *microsequencer-pc* (aref *microsequencer-stack* *microsequencer-sp*))
+      (decf *microsequencer-sp*))
+    (t
+      (error "Unknown command ~S given to microsequencer")))
+  *microsequencer-pc*)
+
+;;; Get a word of data from the microcode memory
+(defun fetch-microinstruction (address)
+  (aref *current-microcode-array* address))
+
+;;; Pretty-print microwords. Used by microcode dumper and trace facility.
+(defun display-microword (pc word &optional (stream t))
+  (let ((opcode (get-field-from-value 'uc-opcode word)))
+    (if (>= opcode #x10)
+	(format stream "~%~X:~10TCJMP ~A,~X" pc
+		(get-mc-name cc-in (get-field-from-value 'uc-cj-cond word))
+		(get-field-from-value 'uc-address word))
+	(format stream "~%~X:~10T~A " pc (get-mc-name opcode opcode))
+	(cond
+	  ((= opcode CJMPLO)
+	    (format stream "~X00+(B)" (get-field-from-value 'uc-cjmplo-address word)))
+	  ((or (= opcode JSR0) (= opcode JSR1))
+	   (format stream "~X" (get-field-from-value 'uc-address word)))
+	  ((or (= opcode CLRCOND) (= opcode SETCOND))
+	    (format stream "~A" (get-mc-name cc-out
+					     (get-field-from-value 'uc-co-spec word))))
+	  ((= opcode STOREA)
+	    (format stream "~A" (get-mc-name source
+					     (get-field-from-value 'uc-source word))))
+	  ((= opcode STOREI)
+	    (format stream "RF(~X),~A"
+		    (get-field-from-value 'uc-rf-index word)
+		    (get-mc-name source (get-field-from-value 'uc-source word))))
+
+	  ((= opcode RETRA)
+	    (format stream "~A" (get-mc-name dest
+					     (get-field-from-value 'uc-dest word))))
+	  ((= opcode RETRI)
+	    (format stream "RF(~X),~A"
+		    (get-field-from-value 'uc-rf-index word)
+		    (get-mc-name dest (get-field-from-value 'uc-dest word))))
+	  ((= opcode SHIFTER)
+	    (format stream "~A ~A"
+		    (get-mc-name shift-op (get-field-from-value 'uc-shift-op word))
+		    (get-mc-name dest (get-field-from-value 'uc-dest word))))
+	  ((= opcode ALU)
+	    (format stream "~A ~A"
+		    (get-mc-name alu-op (get-field-from-value 'uc-alu-op word))
+		    (get-mc-name dest (get-field-from-value 'uc-dest word))))	    
+	  ((or (= opcode MOVA) (= opcode MOVB) (= opcode MOVM))
+	    (format stream "~A" (get-mc-name dest
+					     (get-field-from-value 'uc-dest word))))
+	  ((= opcode MOVI)
+	    (format stream "~A,~X"
+		    (get-mc-name dest (get-field-from-value 'uc-dest word))
+		    (get-field-from-value 'uc-constant word)))))))
+
+;;; This is a slightly higher-level bp thing which defines a breakpoint that does
+;;; the standard thing of firing when a particular register has a particular value.
+;;; Currently there's no way to specify an index for the register, but since it's
+;;; usually the PC it shouldn't matter much.
+;;; Value had better evaluate to a number
+;;; Function must be a function name or lambda expression, and is not evaluated
+(defmacro reg-bp (name reg value &optional function)
+  `(insert-breakpoint ',name
+		      #'(lambda () (= (get-register ',reg) ,value))
+		      ,@(if function `(#',function) '(nil))))
+
+;;; Standard bp that breaks when the PC reaches a particular value
+(defmacro bp (name pc-value &optional function)
+  `(insert-breakpoint ',name
+		      #'(lambda () (= *pc* ,pc-value))
+		      ,@(if function `(#',function) '(nil))))
+
+

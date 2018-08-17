@@ -1,0 +1,55 @@
+General network interface buffer design.
+
+On a KS, you are stuck copying data between the net code and the
+interface anyway, because of reformatting. Also, it is desirable to
+get packets out of the interfaces as fast as possible, so that one has
+some hope of receiving back-to-back packets. All current network code
+runs at UTC interrupt level, which is absurd; there is no particularly
+good reason that TCP input processing should lock out the ethernet,
+let alone the disks!
+
+Fix this by having a pool of network interface buffers which can be
+used as DMA sources and destinations for the interface hardware.
+For receive, filled buffers can be queued, and their data reformatted
+and copied to the required network buffers at a lower priority level.
+This also has the advantage that the size of the data is known, so the
+network buffer can be sized correctly, if you want.
+
+A network transmits by grabbing a interface buffer from the free
+queue, copying/reformatting data into it, and queing it for the
+interface. This can mostly be done at a lower priority than the
+interfaces run at.
+
+Each allocated interface buffer is allocated a slot in the unibus map,
+and so appears in unibus space. This puts a limit on the number of
+interface buffers you can have at once. If this got to be a problem,
+one could dynamically assign and deassign slots in the UBA map, but it
+doesn't seem worth it at present - there are 64 DEC-page slots, which
+is more interface buffers than we have room for anyway.
+
+Besides the memory itself, each interface buffer has associated with
+it a link word for chaining, a bunch of UBA mapping information,
+and some indication of the status of the memory.
+
+Is it worth returning buffer memory to the system when it's not in
+use? How much memory do we have left anyway?
+
+Sizes:
+	IP/IMP		252 words
+	IP/Ethernet	375 words
+	Chaos/Ethernet	128 words
+	IP/Proteon	512 words
+
+Which means that if we ever want to support ProNet with this scheme we
+have to keep a separate array of buffer descriptors, as the IP code
+does. This is attractive from a simplicity standpoint anyway; one can
+preallocate all the descriptors and associate then with UBA slots, and
+just allocate chunks of memory when required. Um, perhaps this should
+be merged with the IP buffer code?? If nothing else, would certainly
+be a win if we ever got a piece of hardware that -didn't- need
+reformatting.
+
+The other choice is to keep the buffer-specific information in the
+header of the buffer, in the usual way. Would be a little cleaner, but
+I don't want to write off ProNet quite yet; it's got some advantages
+on a slow machine like this KS. Mumble.

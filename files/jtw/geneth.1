@@ -1,0 +1,400 @@
+;-*- Mode: Midas -*-
+
+a==1
+b==2
+c==3
+p==17
+
+
+;
+	SUBTTL Generic Ethernet definitions and code
+
+;Ethernet and generic protocol constants
+; Protocol types (TYPE field of 10Mb net pkt)
+%NEPUP==:1000			;PUP - conflicts with IEEE802.3 lossage..
+%NEPAT==:1001			;PUP Address Translation
+%NEXNS==:3000			;XNS IDP
+%NEIP==:4000			;DoD IP
+%NEX75==:4001			;X.75 Internet
+%NEISO==:4002			;NBS/ISO Internet (I think)
+%NECHA==:4004			;Chaosnet
+%NEX25==:4005			;X.25 level 3
+%NEARP==:4006			;Address Resolution Protocol
+%NERAR==:100065			;Reverse ARP
+
+	SUBTTL ARP
+
+;ARP Parameters
+; Opcodes
+%NEARQ==:1			;REQUEST
+%NEARA==:2			;REPLY
+; Hardware types
+%NEAEN==:1			;10Mb Ethernet
+%NEAEE==:2			;Old 3Mb Experimental Ethernet
+%NEAAP==:3			;Amateur Packet Radio X.25-net
+%NEAPR==:4			;Proteon Ringnet
+%NEACH==:5			;Chaosnet (really!)
+; Protocol types
+; - are the same as the hardware protocol types above
+
+;ARP packets look like:
+;
+; 4.9-3.3 hardware type (Ethernet == %NEAEN )
+; 3.2-1.5 protocol type
+;
+; 4.9-4.2 Byte length of hardware address (== N)
+; 4.1-3.3 Byte length of protocol address (== M)
+; 3.2-1.5 opcode
+;
+; N bytes of hardware source address
+; M bytes of protocol source address
+; N bytes of hardware destination address
+; M bytes of protocol destination address
+;
+;Bytepointers to fixed part of ARP packet
+;
+$ARHRD==242000,,0		;Hardware type
+$ARPRO==042000,,0		;Protocol type
+$ARHLN==341000,,1		;Hardware address length
+$ARPLN==241000,,1		;Protocol address length
+$AROPC==042000,,1		;Opcode
+
+;Kludge, assumes %NEAEN hardware type
+$ARSHH==044000,,2		;High 4 bytes of ethernet address
+$ARSHL==242000,,3		;Low two bytes of ethernet address
+
+
+;Get field FLD of packet in PKT to AC DEST. (DEST and DEST+1 if field is
+; SHA or DHA). Field is one of:
+;  SHA - source hardware address
+;  SPA - Source protocol address
+;  DHA - Destination Hardware address
+;  DPA - Destination Protocol address
+
+;This macro could be a whole lot smarter/faster/etc.
+;
+DEFINE GETFLD DEST,FIELD,PKT,TEMP=TT,\FOO1,FOO2
+...TSF==0
+IFSE FIELD,SHA,[
+	...TSF==-1
+	LDB DEST,[$ARSHH(PKT)]
+	LDB DEST+1,[$ARSHL(PKT)]
+	]
+IFSE FIELD,SPA,[
+	...TSF==-1
+	LDB TEMP,[$ARPLN(PKT)]
+	CAIE TEMP,2
+	 JRST FOO1
+	LDB DEST,[<042000,,3>(PKT)]
+	JRST FOO2
+FOO1:	CAIE TEMP,4
+	 JSP A,ARPBPS
+	LDB DEST,[<042000,,3>(PKT)]
+	LSH DEST,16.
+	HLRZ TEMP,4(PKT)
+	LSH TEMP,-2
+	IOR DEST,TEMP
+FOO2:
+	]
+IFSE FIELD,DHA,[
+	...TSF==-1
+	LDB TEMP,[$ARPLN(PKT)]
+	CAIE TEMP,2
+	 JRST FOO1
+	MOVE DEST,4(PKT)
+	LSH DEST,-4
+	HLRZ DEST+1,5(PKT)
+	LSH DEST+1,-2.
+	JRST FOO2
+FOO1:	CAIE TEMP,4
+	 JSP A,ARPBPS
+	MOVE TEMP,5(PKT)
+	LSH TEMP,-4
+	HRRZ DEST+1,TEMP
+	HLRZ DEST,TEMP
+	LDB TEMP,[<042000,,4>(PKT)]
+	DPB TEMP,[202000,,DEST]
+FOO2:
+	]
+IFSE FIELD,DPA,[
+	...TSF==-1
+	LDB TEMP,[$ARPLN(PKT)]
+	CAIE TEMP,2
+	 JRST FOO1
+	LDB DEST,[<042000,,5>(PKT)]
+	JRST FOO2
+FOO1:	CAIE TEMP,4
+	 JSP A,ARPBPS
+	LDB DEST,[<044000,,6>(PKT)]
+FOO2:
+	]
+  IFE ...TSF,.ERR Invalid ARP field name FIELD given in GETFLD macro
+TERMIN
+
+;Set field FLD of packet in PKT from AC SRC. (SRC and SRC+1 if field is
+; SHA or DHA). 
+
+;This macro could be a whole lot smarter/faster/etc, too
+;
+DEFINE SETFLD SRC,FIELD,PKT,TEMP=TT,\FOO1,FOO2
+...TSF==0
+IFSE FIELD,SHA,[
+	...TSF==-1
+	DPB SRC,[$ARSHH(PKT)]
+	DPB SRC+1,[$ARSHL(PKT)]
+	]
+IFSE FIELD,SPA,[
+	...TSF==-1
+	LDB TEMP,[$ARPLN(PKT)]
+	CAIE TEMP,2
+	 JRST FOO1
+	DPB SRC,[<042000,,3>(PKT)]
+	JRST FOO2
+FOO1:	CAIE TEMP,4
+	 JSP A,ARPBPS
+	DPB SRC,[<242000,,4>(PKT)]
+	LSH SRC,16.
+	DPB SRC,[<042000,,3>(PKT)]
+FOO2:
+	]
+IFSE FIELD,DHA,[
+	...TSF==-1
+	LDB TEMP,[$ARPLN(PKT)]
+	CAIE TEMP,2
+	 JRST FOO1
+	LSH SRC,4
+	MOVEM SRC,4(PKT)
+	DPB SRC+1,[<242000,,5>(PKT)]
+	JRST FOO2
+FOO1:	CAIE TEMP,4
+	 JSP A,ARPBPS
+	LDB TEMP,[202000,,SRC]
+	DPB TEMP,[<042000,,4>(PKT)]
+	ANDI SRC,177777
+	LSH SRC,16.
+	ANDI SRC+1,177777
+	IOR SRC,SRC+1
+	LSH SRC,4
+	MOVEM SRC,5(PKT)
+FOO2:
+	]
+IFSE FIELD,DPA,[
+	...TSF==-1
+	LDB TEMP,[$ARPLN(PKT)]
+	CAIE TEMP,2
+	 JRST FOO1
+	DPB SRC,[<042000,,5>(PKT)]
+	JRST FOO2
+FOO1:	CAIE TEMP,4
+	 JSP A,ARPBPS
+	DPB SRC,[<044000,,6>(PKT)]
+FOO2:
+	]
+  IFE ...TSF,.ERR Invalid ARP field name FIELD given in SETFLD macro
+TERMIN
+
+
+;EBLK
+ARPFSS==:.			;First address used by ARP free storage
+
+NARPHB==29.			;Number of hash table buckets
+NARPHE==3*NARPHB		;Max number of protocol-hardware pairs
+NARPPK==10.			;Number of network packets (for requests, etc)
+
+ARPTAB:	BLOCK NARPHB		;The hash table
+
+;Hash entries and packets assume that the maximum size protocol address is
+; less than 36 bits. 
+
+;A hash table entry looks like:
+ARE.LK==0			; back_link,,forward_link
+ARE.TM==1			; time_last_used
+ARE.HA==2			; High_hardware_address
+				; Low_hardware_address
+ARE.PT==4			; Protocol_type
+ARE.PA==5			; Protocol_address
+NARPEW==6			;Number of words in a hash table entry
+
+ARPHEB:	BLOCK NARPHE*NARPEW	;Space for allocating hash table entries
+
+;An ARP data packet looks like this:
+; list_link
+; up to 7 words of data in PDP10 format (see RFC826)
+NARPPW==8.
+
+ARPPKB:	BLOCK NARPPK*NARPPW	;Buffer space for ARP packets
+
+ARPNEF:	0			;Number of free table entries
+ARPEFL:	0			;Table entry freelist header
+ARPNPF:	0			;Number of free packets
+ARPPFL:	0			;Packet freelist header
+
+ARPFSE==:.-1			;Last address used by ARP free storage
+;BBLK
+
+
+;Initialize ARP
+ARPINI:	SETZM ARPFSS
+	MOVE A,[ARPFSS,,ARPFSS+1]
+	BLT A,ARPFSE
+	MOVE A,[-<NARPHE-1>,,ARPHEB]	;Initialize freelist of table entries
+	HRRZM A,ARPEFL
+	MOVEI B,NARPHE
+	MOVEM B,ARPNEF
+ARPIN1:	MOVEI B,NARPEW(A)
+	HRRM B,(A)
+	ADDI A,NARPEW-1
+	AOBJN A,ARPIN1
+	MOVE A,[-<NARPPK-1>,,ARPPKB]	;Initialize freelist of packets
+	HRRZM A,ARPPFL
+	MOVEI B,NARPPK
+	MOVEM B,ARPNPF
+ARPIN2:	MOVEI B,NARPPW(A)
+	HRRM B,(A)
+	ADDI A,NARPPW-1
+	AOBJN A,ARPIN2
+	POPJ P,
+
+;Allocate a table entry
+; Returns +2, T/table entry, +1/ lost
+ARPATE:	CONO PI,PIOFF
+	SKIPN T,ARPEFL
+	 JRST ARPAT1
+	HRRZ TT,ARE.LK(T)
+	MOVEM TT,ARPEFL
+	AOS (P)
+ARPAT1:	CONO PI,PION
+	POPJ P,
+
+;Free a table entry 
+; T/ Entry to free
+ARPFTE:	CONO PI,PIOFF
+	MOVE TT,ARPEFL
+	HRRZM TT,ARE.LK(T)
+	HRRZM T,ARPEFL
+	CONO PI,PION
+	POPJ P,
+
+;Allocate a packet
+; Returns +2, T/ packet (DATA PORTION), +1, lost
+ARPAPK:	CONO PI,PIOFF
+	SKIPN T,ARPPFL
+	 JRST ARPAP1
+	HRRZ TT,(T)
+	MOVEM TT,ARPPFL
+	AOS (P)
+ARPAP1:	CONO PI,PION
+	ADDI T,1
+	POPJ P,
+
+;Free a packet
+; T/ Entry to free
+ARPFTE:	SUBI T,1
+	CONO PI,PIOFF
+	MOVE TT,ARPPFL
+	HRRZM TT,(T)
+	HRRZM T,ARPPFL
+	CONO PI,PION
+	POPJ P,
+
+;Lookup protocol-address translation in the table
+; B/ Protocol
+; C/ Protocol Address
+;Returns +1, not found
+;	 +2, A/entry block, if you want it
+;	     B,C/ Unchanged
+;	     D,E/Hardware address, standard format
+;
+ARPLUK:	CALL ARPHSH		;Hash into the table
+	MOVE A,ARPTAB(A)	;Get pointer to correct entry
+ARPLU1:	JUMPE A,CPOPJ		;Not found
+	CAME B,ARE.PT(A)	;Same protocol type?
+	 JRST ARPLU2
+	CAME C,ARE.PA(A)	;Same protocol address?
+	 JRST ARPLU2
+;;;	MOVE D,2(A)		;Found it!
+;;;	MOVE E,3(A)
+	DMOVE D,ARE.HA(A)
+	JRST POPJ1
+
+ARPLU2:	HRRZ A,ARE.LK(A)
+	JRST ARPLU1
+
+;Add an entry to the table
+; B/ Protocol
+; C/ Protocol address
+; D,E Hardware address, standard format
+;
+ARPADD:	CALL ARPHSH
+	CALL ARPATE		;Get a new table entry block
+	 JRST [	BUG INFO,[ARP, Ran out of table space]
+		POPJ P, ]
+;;;	MOVEM B,ARE.PT(T)
+;;;	MOVEM C,ARE.PA(T)
+	DMOVEM B,RE.PT(T)
+	DMOVEM D,ARE.HA(T)
+	MOVE TT,TIME
+	MOVEM TT,ARE.TM(T)
+	MOVEI TT,ARPTAB(A)	;Address of this index slot
+	CONO PI,PIOFF		;Barf.
+	SKIPE A,ARPTAB(A)	;Get possible existing entry
+	 JRST ARPAD1
+	HRLZM TT,ARE.LK(T)	;Add entry as only thing in this slot
+	HRRZM T,ARPTAB(A)
+	JRST ARPAD2
+
+ARPAD1:	HRLM T,ARE.LK(A)	;Add entry as first in this slot.
+	HRRZM A,ARE.LK(T)
+	HRLM TT,ARE.LK(T)
+	HRRZM T,ARPTAB(A)
+ARPAD2:	CONO PI,PION
+	POPJ P,
+
+
+
+;ARPIN - Process incoming ARP packet
+; Bashes most everything. Assumes NETOFF, at least
+; Call:	I/ Address of interface data structure pkt received on
+;	Q/ Address of packet (first word of data)
+; Return +1, always
+;
+ARPIN:	LDB T,[$ARHRD(Q)]
+	CAIE T,%NEAEN		;Ethernet hardware type?
+	 RET
+	LDB B,[$ARPRO(Q)]
+	GETFLD C,SPA,Q
+	CALL ARPLUK		;Do we know about this guy already?
+	 JRST ARPIN1
+	GETFLD D,SHA,Q		;D,E current hardware address
+	DMOVEM D,ARE.HA(A)	;Update table with current address
+	GETFLD C,TPA,Q
+	PUSHJ P,1OFUS?		;B/prot, C/adr, I/ interface. 
+	 RET			;Not us, done
+	JRST ARPIN2
+
+;Remote entry not in table. One we asked for?
+ARPIN1:	GETFLD C,TPA,Q		;Get target protocol address to C
+	PUSHJ P,1OFUS
+	 RET			;Not for us.
+	GETFLD D,SHA,Q
+	PUSHJ P,ARPADD		;Add to table. B/prot, C/addr, DE/ hdw addr
+
+;Packet was specifically for us. Need to answer?
+ARPIN2:	LDB T,[$AROP(Q)]
+	CAIE T,%NEARQ		;REQUEST packet?
+	 RET
+	CALL ARPAPK		;Yes, get space for an answer
+	 RET
+	MOVEI A,%NEARA		;Answer.
+	DPB A,$AROP(T)
+	GETFLD D,SPA,Q
+	SETFLD D,TPA,T
+	GETFLD D,SHA,Q
+	SETFLD D,THA,T
+	CALL GETIPA		;B/ protocol, I/ interface
+	SETFLD C,SPA,T
+	CALL GETIHA		;I/ interface
+	SETFLD D,SHA,T
+	:send packet in T on interface I
+
+	RET

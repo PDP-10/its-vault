@@ -1,0 +1,71 @@
+; These routines manipulate doubly-linked queues of objects
+; Currently they are used by various parts of the IP and 
+; hardware interface code.
+
+; A queue link word is prev,,next. The link word should be the
+; first thing in any object which is linked by these routines.
+;
+; Generally the address of the queue header is in Q. Generally
+; the address of the other object is given or returned in A.
+; Generally T gets bashed.
+
+; Initialize a queue header
+; Q/ queue hdr
+IPQUIN:	HRRZM Q,(Q)
+	HRLM Q,(Q)
+	POPJ P,
+
+; Add object A just past object Q (probably the queue
+; header). If Q is the header, this makes A the first
+; thing on the list.
+
+IPQUIF:	CONO PI,PIOFF
+	HRRZ T,(Q)		;T/ Next
+	HRRZM T,(A)		;New.next = Next
+	HRLM A,(T)		;Next.prev = New
+	HRLM Q,(A)		;New.prev = This
+	HRRM A,(Q)		;This.next = New
+	JRST PIONJ
+
+; Delete the first object from the list in Q, and
+; return it in A, or 0 if list was empty.
+IPQUDF:	CONO PI,PIOFF
+	HRRZ A,(Q)		;A/ Object
+	CAIN A,(Q)		;Empty list?
+	 JRST [ SETZ A, ? JRST PIONJ ]
+	PUSH P,A
+	HLRZ T,(A)		;Get Prev
+	HRRZ A,(A)		;Get Next
+	HRRM A,(T)		;Prev.next = Next
+	HRLM T,(A)		;Next.prev = Prev
+	POP P,A
+	JRST PIONJ
+
+; Delete object A from list it is on
+; Worth it to always clear link word?
+IPQUDL:	CONO PI,PIOFF
+	PUSH P,A
+	HLRZ T,(A)		;Get Prev
+	HRRZ A,(A)		;Get Next
+	HRRM A,(T)		;Prev.next = Next
+	HRLM T,(A)		;Next.prev = Prev
+	POP P,A
+	JRST PIONJ
+
+; Map function in A over queue in Q. Function is called once for
+; each object in the queue, with A pointing to the object.
+; You can call IPQUDL to delete the object in A from the queue.
+; You had better lock things if you care.
+
+; B,C,D,E carefully preserved so that you can pass args through
+; this function to your mapped function.
+IPQUMP:	PUSH P,TT
+	MOVE TT,A
+	HRRZ A,(Q)
+IPQUM1:	HRRZ T,(A)		;Remember next in case A is deleted
+	PUSHJ P,(TT)		;Call function
+	MOVE A,T		;Move to next object
+	CAIE A,(Q)		;Back to start?
+	 JRST IPQUM1
+	POP P,TT
+	POPJ P,

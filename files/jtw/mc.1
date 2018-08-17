@@ -1,0 +1,198 @@
+;;; -*- Mode: LISP; Syntax: Common-lisp; Package: USER; Base: 10 -*-
+
+;;; Memory-I/O controller for s4887.
+
+;;; Input Signals - read from registers in the ebox side when necessary.
+;;;
+;;;  TS1, TS0	- Function select
+;;;
+;;;	   00	- Read memory
+;;;	   01	- Write memory
+;;;	   10	- Get character
+;;;	   11	- Put character
+;;;
+;;;  TRESET	- Reset the memory controller
+;;;
+;;;  BS		- Block Select, which is really GO
+;;;
+;;;  MARHI, MARMD, MARLO - Memory address register bytes
+;;;
+;;;  MEMD	- Memory data register
+;;;
+;;; Output signals - read from pseudo-registers in the memory controller by the
+;;; ebox when needed. Use the READ-MIO-PORT function.
+;;;
+;;;  MDO	- Memory data out from controller
+;;;
+;;;  -CHAR	- Low when character ready to be read from interface
+;;;
+;;;  -DONE	- Low when interface cycle complete.
+;;;
+;;; Timing:
+;;;  The interface is controlled by an asyncronous handshake between the BS line from
+;;;  the ebox and the -DONE line from the controller. To request an operation from the
+;;;  controller, the ebox sets up TS0 and TS1, and MARLO, MARMD, MARHI and MEMD if
+;;;  required. The ebox then raises BS, and waits. 
+;;;
+;;;  When the operation is complete, the controller lowers -DONE. At this point, the
+;;;  ebox reads data from the MDO port if required, and lowers BS. Removal of BS notifies
+;;;  the controller that the ebox is finished. The controller responds by raising -DONE,
+;;;  signifying the end of the cycle.
+;;;
+;;;  The controller notifies the ebox that it wishes to transfer an input character
+;;;  by lowering the -CHAR line. The ebox should respond with a GET CHARACTER cycle.
+
+;;; The memory controller simulator is implemented as a simple FSM. In order to keep it
+;;; going, you should call MEM-CLOCK every now and again, probably once per microcycle
+;;; at some auspicious point.
+
+;;; Address space. The memory controller manages *MIO-RAM-ADDRESS-SIZE* bytes of RAM 
+;;; strting at zero, and *MIO-PROM-ADDRESS-SIZE of PROM starting at *MIO-PROM-ADDRESS-START*.
+;;; The top 512 bytes of RAM space are unusable due to being used (in the hardware) by
+;;; the IO buffers. The simulation traps accesses to these bytes and writes to PROM space
+;;; and reports an error.
+
+(defconstant *mio-ram-address-size* (* 256 1024) "Size of RAM address space")
+
+(defconstant *mio-prom-address-size* (* 128 1024) "Size of PROM address space")
+
+(defconstant *mio-prom-address-start* (* 256 1024) "Start of PROM space")
+
+(defvar *mio-io* *terminal-io*)
+
+(defvar *mio-ram-array* nil "RAM data array")
+
+(defvar *mio-PROM-array* nil "Macrocode PROM array")
+
+(defvar *mio-data* nil "Holds MIO data; non-nil if available")
+
+(defvar *mio-done* nil "Internal DONE signal")
+
+(defvar *mio-char-available* nil "Internal character available signal")
+
+(defvar *mio-state* :uninitialized "State of MIO FSM")
+
+(defvar *mio-opcode* nil "Current function")
+
+;;; Communication with the ebox.
+;;; (READ-MIO-PORT 'portname)
+;;; Portname is one of 'MDO, '-CHAR, or '-DONE
+
+(defun read-mio-port (name)
+  (case name
+    (mdo (if *mio-data* *mio-data*
+	      (warn "Reading MIO Data Register at illegal time, will return 0")
+	      0))
+    (-done (if *mio-done* 0 1))
+    (-char (if *mio-char-available* 0 1))
+    (t (cerror "Return 0" "Bad port specifier ~A" name) 0)))
+
+;;; Function to call when you have finished an operation and want to tell the ebox
+;;; to continue ahead.
+
+(defun complete-operation ()
+  (setq *mio-state* :data-hold)
+  (setq *mio-done* 't))
+
+;;; MIO State machine. 
+
+(defun mio-fsm ()
+  (let ((treset (get-register 'treset))
+	(bs (get-register 'bs)))
+    (case *mio-state*
+      (:uninitialized
+	(when (/= treset 0)
+	  (setq *mio-ram-array* (make-array *mio-ram-address-size*))
+	  (unless *mio-prom-array*
+	    (warn "PROM data array not initialized at TRESET"))
+	  (setq *mio-state* :idle)))
+      (:idle
+	(when (/= bs 0)
+	  (setq *mio-state* :active)
+	  (setq *mio-opcode* (logior (lsh (logand (get-register 'ts1) 1) 1)
+				     (logand (get-register 'ts0) 1)))
+	  (perform-mio-operation)))
+      (:active
+	;; Exit only when complete-operation resets state.
+	(perform-mio-operation))
+      (:data-hold
+	(when (= 0 bs)
+	  (setq *mio-data* nil)
+	  (setq *mio-done* nil)
+	  (setq *mio-state* :idle)))
+      (t
+	(error "Illegal MIO state ~A" *mio-state*)))))
+
+;;; Read value currently in three MAR bytes
+(defun mio-read-mar ()
+  (logior (lsh (logand (get-register 'MARHI) #xFF) 16)
+	  (lsh (logand (get-register 'MARMD) #xFF) 8)
+	  (logand (get-register 'MARLO) #xFF)))
+
+;;; Decode and perform MIO operation. Note that all operations which don't complete
+;;; on the first runthrough -must- be restartable.
+(defun perform-mio-operation ()
+  (case *mio-opcode*
+    (0						;Read Memory
+      (let ((address (mio-read-mar)))
+	(cond
+	  ((and (<= 0 address) (< address (- *mio-ram-address-size* 512)))
+	   (setf *mio-data* (aref *mio-ram-array* address))
+	   (complete-operation))
+	  ((and (<= *mio-prom-address-start* address)
+		(< address (+ *mio-prom-address-size* *mio-prom-address-start*)))
+	   (setf *mio-data* (aref *mio-prom-array* (- address *mio-prom-address-start*)))
+	   (complete-operation))
+	  (t (cerror "Return zero as value" "Illegal memory READ: ~X" address)
+	     (complete-operation)
+	     0))))
+    (1						;Write Memory
+      (let ((address (mio-read-mar)))
+	(cond
+	  ((and (<= 0 address) (< address (- *mio-ram-address-size* 512)))
+	   (setf (aref *mio-ram-array* address) (get-register 'memd))
+	   (complete-operation))
+	  (t (cerror "Leave memory unchanged" "Illegal WRITE: ~X" address)
+	     (complete-operation)))))
+    (2						;Get character
+      (when (listen *mio-io*)			;Should always be true, actually
+	(setq *mio-data* (char-code (read-char *mio-io*)))
+	(setq *mio-char-available* nil)
+	(complete-operation)))
+
+    (3						;Put char in MEMD to TTY
+      (write-char (code-char (get-register 'memd)) *mio-io*)
+      (complete-operation))
+    (t
+      (error "Illegal MIO opcode"))))
+
+;;; MIO Clock function. Things that should be run periodically.
+(defun clock-mio ()
+  (if (listen *mio-io*) (setq *mio-char-available* t))
+  (mio-fsm))
+
+;;; Load MIO PROM file. Also initializes if necessary.
+;;; Uses sharp-space-reader and *current-input-pc* from generic simulator code
+
+(defun load-mio-prom-file (filename)
+  (unless *mio-prom-array*
+      (setq *mio-prom-array* (make-array *mio-prom-address-size*))
+  (setq *current-input-pc* nil)
+  (with-open-file (stream filename)
+    (let ((*read-base* #x10)
+	  #+symbolics (si:*read-extended-ibase-unsigned-number* t)
+	  (*readtable* (copy-readtable nil)))
+      (set-dispatch-macro-character #\# #\space #'sharp-space-reader *readtable*)
+      (do ((token (read stream nil 'eof) (read stream nil 'eof)))
+	  ((not (numberp token))
+	   (if (eq token 'eof)
+	       (format t "~%File ~A loaded" filename)
+	       (format t "~%Error loading file, last token read was ~S" token)
+	       (return nil))
+	   t)
+	(when (not (numberp *current-input-pc*))
+	  (warn "Load address not initialized before data seen, aborting")
+	  (return nil))
+	(setf (aref *mio-prom-array* *current-input-pc*) token)
+	(incf *current-input-pc*))))))
+

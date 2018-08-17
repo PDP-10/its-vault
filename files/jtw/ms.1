@@ -1,0 +1,365 @@
+;;; -*- Mode: LISP; Syntax: Common-lisp; Package: USER; Base: 10 -*-
+
+;;; World's Stupidest Machine Simulator, John Wroclawski, Dec 7, 1987
+
+;;; This crock implements a simulator for more or less any machine which can be described
+;;; as a collection of registers and functional units connected together by busses and
+;;; controlled by a single single-phase clock (i.e. all clocked objects are clocked on
+;;; the same edge of the same clock. (Actually, now that I think about it, it would be
+;;; trivial to extend this to other clocking schemes...)
+
+;;; Define machine registers with the DEFREGISTER macro. This defines an object with
+;;; the given name, defines accessor and setter functions for the register, and arranges
+;;; for the CLOCK function to clock the newly setup value into the register.
+
+;;; Define buses with the DEFBUS macro. This does some random thing or the other.
+
+;;; Fields are portions of buses. They are used to easily specify the input to operations
+;;; that get their data from a bus. Define them with DEFFIELD. Reference them
+;;; with GET-FIELD. Fields get their values from their associated buses, so if you
+;;; have error-trapping on for the bus you will get it for the field too. You can
+;;; have overlapping fields, to make it possible to write clear machine descriptions
+;;; for multifunction signals.
+;;;
+;;; Bit numbering is from 0 (LSB) to N-1 (MSB).
+
+;;; Step and breakpoints let you look at both current and pending values for registers.
+;;; Data on the busses is dependent on when you look, since the propagation of "values"
+;;; through "combinational logic" is performed by user-supplied code.
+
+;;; Breakpoint blocks specify a Name, a Condition, and a Function. When breakpoints are
+;;; checked, the system runs the condition function for each breakpoint. If the
+;;; condition returns true the breakpoint fires, identifying itself with its name and
+;;; executing its function. Typically the function displays the values of things at
+;;; that point. 
+
+;;; There are two ways one could specify a machine. The first is to specify the static
+;;; connectivity of the thing including enable lines, etc, and have CLOCK figure out
+;;; what to do. Alternatively, one can write code which implements each of the
+;;; possible operations of the machine, and dispatch to the correct code to change only
+;;; what would change on any given cycle. In this case CLOCK becomes very straightforward
+;;; (assuming you have not build any races into the hardware...) This stuff works the
+;;; second way.
+
+;;; Registers. Due to special dispensation registers may also be register files, and
+;;; take an index specifying which element to set. 
+
+(defvar *registers* () "List of machine registers clocked by CLOCK")
+
+(defstruct register
+  index						;NIL or size
+  current-value
+  next-value
+  name)
+
+(defmacro defregister (name &optional index)
+  `(push (if ,index
+	     (make-register :name ',name
+			    :current-value (make-array ,index :initial-element 0)
+			    :next-value (make-array ,index :initial-element 0)
+			    :index ,index)
+	     (make-register :name ',name :current-value 0 :next-value 0 :index nil))
+	 *registers*))
+
+(defun find-register (name)
+  (dolist (register *registers* (error "~% Unknown register ~S" name))
+    (when (eq name (register-name register))
+      (return register))))
+
+;;; Sets value which will appear after clocking. Last set wins.
+;;; (set-register name index value) or (set-register name value)
+(defun set-register (name value-or-index &optional arg2)
+  (let ((r (find-register name))
+	(index value-or-index)
+	(value arg2))
+    (if (null value)
+	(setq value index index nil))
+    (do () (r)
+      (cerror "Specify new register name" "Unknown register ~S" name)
+      (setq name (read)
+	    r (find-register name)))
+    (cond ((register-index r)
+	   (if (null index) (warn "Register ~S requires an index, SET ignored" name)
+	       (if (or (minusp index) (>= index (register-index r)))
+		   (warn "Index ~D out of range for register ~S" index name)
+		   (setf (aref (register-next-value r) index) value))))
+	  (t
+	   (if index (warn "Index specified for single register ~S, SET ignored" name)
+	       (setf (register-next-value r) value))))))
+
+
+;;; Obtain current value of register.
+(defun get-register (name &optional index)
+  (let ((r (find-register name)))
+    (do () (r)
+      (cerror "Specify new register name" "Unknown register ~S" name)
+      (setq name (read)
+	    r (find-register name)))
+    (cond ((register-index r)
+	   (if (null index)
+	       (progn (warn "No index specified for access to register file ~S, returning 0"
+			    name)
+		      0)
+	       (if (or (minusp index) (>= index (register-index r)))
+		   (warn "Index ~D out of range for access to register file ~S" index name)
+		   (aref (register-current-value r) index))))
+	  (t
+	   (if (null index) (register-current-value r)
+	       (warn "Index specified for access to single register ~S, returning 0" name)
+	       0)))))
+
+(defun clock-registers ()
+  (dolist (register *registers* nil)
+    (if (register-index register)
+	(let ((c (register-current-value register))
+	      (n (register-next-value register)))
+	  (dotimes (i (register-index register))
+	    (setf (aref c i) (aref n i))))
+	(setf (register-current-value register) (register-next-value register)))))
+
+;;; Reset all registers to 0
+(defun reset-registers ()
+  (dolist (register *registers* nil)
+    (if (not (register-index register))
+	(setf (register-current-value register) 0
+	      (register-next-value register) 0)
+	(setf (register-current-value register) (make-array (register-index register)
+							    :initial-element 0))
+	(setf (register-next-value register) (copy-seq (register-current-value register))))))
+
+;;; Buses. Buses just kinda sit there, except that they can provide you some error checking
+;;; by knowing how wide they are and squawking if you feed them too many bits. Also if
+;;; you want they will tell you if you forgot to set them since the last clock tick.
+;;; Actually, you'd have to specify whether a bus is carrying signed or unsigned data
+;;; to do this right, so I only checked positive numbers, and assumed unsigned.
+
+(defvar *buses* () "List of data busi")
+
+(defstruct bus
+  name
+  value
+  width
+  data-present?
+  check-data?
+  )
+
+;;; Define a bus. :width foo specifies width and causes it to be checked on assignment.
+;;; :check-data t causes bitching if you don't set the data before you look at it
+;;; after a clock tick.
+
+(defmacro defbus (name &key width check-data)
+  `(push (make-bus :name ',name :width ,width :check-data? ',check-data :data-present? nil)
+	 *buses*))
+
+(defun find-bus (name)
+  (dolist (bus *buses* nil)
+    (when (eq name (bus-name bus))
+      (return bus))))
+
+(defun set-bus-value (name value)
+  (let ((b (find-bus name)))
+    (do () (b)
+      (cerror "Specify new bus name" "Unknown bus ~S" name)
+      (setq b (read)))
+    (when (bus-width b)
+      (if (and (plusp value) (> (integer-length value) (bus-width b)))
+	  (warn "Positive value ~D exceeds width of bus ~S" value name)))
+    (setf (bus-value b) value (bus-data-present? b) 't)))
+
+(defun get-bus-value (name)
+  (let ((b (find-bus name)))
+    (do () (b)
+      (cerror "Specify new bus name" "Unknown bus ~S" name)
+      (setq b (read)))
+    (when (bus-check-data? b)
+      (unless (bus-data-present? b)
+	(warn "Reading uninitialized data from bus ~S" name)))
+    (bus-value b)))
+
+(defun clock-buses ()
+  (dolist (bus *buses*) (setf (bus-data-present? bus) nil)))
+
+;;; Fields
+
+(defvar *fields* () "List of data field descriptors")
+
+(defstruct field
+  name
+  bus
+  byte-spec)
+
+(defun find-field (name)
+  (dolist (field *fields* nil)
+    (when (eq name (field-name field))
+      (return field))))
+
+;;; Define a field.
+;;;  NAME - field name
+;;;  BUS - name of associated bus, where data comes from
+;;;  LOW - bit number of lowest order bit in the field
+;;;  SIZE - size of the field.
+
+(defmacro deffield (name bus-name low size)
+  `(let ((bus (find-bus ',bus-name)))
+     (unless bus
+       (error "Bus ~A is not defined" ',bus-name))
+     (when (find-field ',name)
+       (error "Field ~A is already defined" ',name))
+     (push (make-field :name ',name :bus bus :byte-spec ,(byte size low)) *fields*)))
+
+(defun get-field (name)
+  (let ((f (find-field name)))
+    (do () (f)
+      (cerror "Specify new field name" "Unknown field ~S" name)
+      (setq f (read)))
+    (ldb (field-byte-spec f) (bus-value (field-bus f)))))
+
+;;; This is useful for extracting a field from something other than the bus on which
+;;; it is defined.
+(defun get-field-from-value (name value)
+  (let ((f (find-field name)))
+    (do () (f)
+      (cerror "Specify new field name" "Unknown field ~S" name)
+      (setq f (read)))
+    (ldb (field-byte-spec f) value)))
+
+;;; Breakpoints
+
+(defvar *breakpoints* () "List of active breakpoints")
+
+(defstruct breakpoint
+  name
+  condition
+  function)
+
+(defun find-breakpoint (name)
+  (dolist (bp *breakpoints* nil)
+    (when (eq name (breakpoint-name bp))
+      (return bp))))
+
+(defun insert-breakpoint (name condition function)
+  (let ((bp (find-breakpoint name)))
+    (if bp
+      (cerror "Replace ~S with new breakpoint" "Breakpoint ~S already exists" name)
+      (push (setq bp (make-breakpoint :name name)) *breakpoints*))
+    (setf (breakpoint-condition bp) condition
+	  (breakpoint-function bp) function)
+    nil))
+  
+(defun delete-breakpoint (name)
+  (let ((bp (find-breakpoint name)))
+    (if bp
+	(setq *breakpoints* (delete bp *breakpoints*))
+	(warn "Breakpoint ~S not found" name))
+    nil))
+
+(defun check-breakpoints ()
+  (dolist (bp *breakpoints*)
+    (when (funcall (breakpoint-condition bp))
+      (break "Breakpoint ~S, RESUME to execute break function and continue"
+	     (breakpoint-name bp))
+      (if (breakpoint-function bp) (funcall (breakpoint-function bp))))))
+
+;;; Stepping
+;;; Just cause a break if the step counter runs out. If *step-hook* is there, run it.
+
+(defvar *stepping* nil "T if stepping")
+
+(defvar *step-counter* 0 "Iterations left before step break")
+
+(defvar *step-hook* nil "Function called when step break occurs")
+
+(defun check-stepping ()
+  (if *stepping*
+      (when (<= (decf *step-counter*) 0)
+	(if *step-hook* (funcall *step-hook*))
+	(break "Step Break, RESUME to proceed. Be sure to unstep if you mean to."))))
+
+(defun stop-stepping ()
+  (setq *stepping* nil))
+
+(defun start-stepping (&optional count)
+  (if count (setq *step-counter* count) (setq *step-counter* 1))
+  (setq *stepping* 't))
+
+
+;;; Read microcode assembler output files and load them into memory
+;;; Files are simply 16-bit hex numbers interspersed with directives.
+;;; Directives begin with #<space>; there appear to be two of them.
+;;;
+;;;   # SET_ADDRESS = <value>	; Set both program and load address to <value>
+;;;
+;;;   # LOAD_ADDRESS = <value>	; Set load address only to value.
+;;;
+;;;   So it appears that both operations can be handled the same way?
+;;;   In any event for the moment LOAD_ADDRESS is not handled.
+;;;   
+
+(defvar *current-input-pc* nil "Location in microcode memory being loaded")
+
+(defvar *current-microcode-array* nil "Array holding currently loaded microcode")
+
+(defvar *current-microcode-array-size* 0 "Size of data loaded into ucode array")
+
+;;; Remember *read-base* is likely to be bound to #x10 when this is called.
+(defun sharp-space-reader (stream ignore ignore)
+  (let ((token (read stream t nil t)))
+    (cond ((eq token 'SET_ADDRESS)
+	   (unless (eq '= (read stream t nil t))
+	     (error "Misformed SET_ADDRESS command: missing ="))
+	   (setq token (read stream t nil t))
+	   (if (numberp token) (setq *current-input-pc* token)
+	       (error "Misformed SET_ADDRESS command: expecting number")))
+	  ((eq token 'LOAD_ADDRESS)
+	   (warn "LOAD_ADDRESS Command not supported, skipping")
+	   (read-line stream t nil t)) ;Maybe skip if format is OK
+	  (t
+	   (warn "Unknown Sharpsign command ~S" token)
+	   (read-line stream t nil t))))
+  (values))
+
+;;; Load microcode file. If microcode-array is given it becomes the current one.
+(defun load-microcode-file (filename &optional microcode-array)
+  (if microcode-array
+      (setq *current-microcode-array* microcode-array))
+  (unless *current-microcode-array*
+    (setq *current-microcode-array* (make-array 4096)))
+  (setq *current-input-pc* nil *current-microcode-array-size* 0)
+  (with-open-file (stream filename)
+    (let ((*read-base* #x10)
+	  #+symbolics (si:*read-extended-ibase-unsigned-number* t)
+	  (*readtable* (copy-readtable nil)))
+      (set-dispatch-macro-character #\# #\space #'sharp-space-reader *readtable*)
+      (do ((token (read stream nil 'eof) (read stream nil 'eof)))
+	  ((not (numberp token))
+	   (if (eq token 'eof)
+	       (format t "~%File ~A loaded" filename)
+	       (format t "~%Error loading file, last token read was ~S" token)
+	       (return nil))
+	   t)
+	(when (not (numberp *current-input-pc*))
+	  (warn "Load address not initialized before data seen, aborting")
+	  (return nil))
+	(setf (aref *current-microcode-array* *current-input-pc*) token)
+	(incf *current-input-pc*)
+	(if (< *current-microcode-array-size* *current-input-pc*)
+	    (setq *current-microcode-array-size* *current-input-pc*))))))
+
+;;; Display-microword is supposed to be replaced with something that decodes stuff
+(defun display-microcode (&optional (array *current-microcode-array*))
+  (format t "~%Microcode array of size ~D 16 bit words:~%"
+	  *current-microcode-array-size*)
+  (dotimes (i (1- *current-microcode-array-size*))
+    (display-microword i (aref array i))))
+
+;;(defun display-microword (pc word &optional (stream t))
+;;  (format stream "~%~X: ~X" pc word))
+
+;;; Glue functions, random artwork, and so on.
+
+;;; Do all non-machine-specific clock operations
+(defun clock ()
+  (clock-registers)
+  (clock-buses))
+
+

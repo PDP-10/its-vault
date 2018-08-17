@@ -1,0 +1,347 @@
+;-*- Mode: Midas -*-
+
+; AC usage in this code
+; A,B,C,D - scratch, args, etc
+; TT - temp
+; I - Interface descriptor block
+; J - ARP hash table index
+; Q - ARP table entry
+; R - Packet descriptor
+; W - Start of ARP portion of packet
+
+;;; ARP packets come in in IP packets. The ethernet leader is still in the
+;;; packet, starting at a wierd place (two bytes into the first word), so that
+;;; the data portion of the packet is on a word boundary.
+
+;;; I suppose you could point PK.IP at the ARP portion, but it is probably
+;;; easier to just not bother. It is pretty stupid to be using a 2K packet
+;;; for an 44 word datagram, too, but hey, this is ITS.
+
+;
+	SUBTTL Generic Ethernet definitions and code
+
+;Ethernet and generic protocol constants
+; Protocol types (TYPE field of 10Mb net pkt)
+%NEPUP==:1000			;PUP - conflicts with IEEE802.3 lossage..
+%NEPAT==:1001			;PUP Address Translation
+%NEXNS==:3000			;XNS IDP
+%NEIP==:4000			;DoD IP
+%NEX75==:4001			;X.75 Internet
+%NEISO==:4002			;NBS/ISO Internet (I think)
+%NECHA==:4004			;Chaosnet
+%NEX25==:4005			;X.25 level 3
+%NEARP==:4006			;Address Resolution Protocol
+%NERAR==:100065			;Reverse ARP
+
+	SUBTTL ARP
+
+;ARP Parameters
+; Opcodes
+%NEARQ==:1			;REQUEST
+%NEARA==:2			;REPLY
+; Hardware types
+%NEAEN==:1			;10Mb Ethernet
+%NEAEE==:2			;Old 3Mb Experimental Ethernet
+%NEAAP==:3			;Amateur Packet Radio X.25-net
+%NEAPR==:4			;Proteon Ringnet
+%NEACH==:5			;Chaosnet (really!)
+; Protocol types
+; - are the same as the hardware protocol types above
+
+;IP ARP packets look like:
+;Word 0
+; 4.9-3.3 hardware type (Ethernet == %NEAEN )
+; 3.2-1.5 protocol type (IP == %NEIP)
+;Word 1
+; 4.9-4.2 Byte length of hardware address (== 6)
+; 4.1-3.3 Byte length of protocol address (== 4)
+; 3.2-1.5 opcode (%NEARQ or %NEARA)
+;Word 2
+; 4.9 - 1.5 - high four bytes of hardware source address
+;Word 3
+; 4.9 - 3.3 - low four bytes of hardware source address
+; 3.2 - 1.5 - high two butes of protocol source address
+;Word 4
+; 4.9 - 3.3 - low two bytes of protocol source address
+; 3.2 - 1.5 - high two bytes of hardware destination address
+;Word 5
+; 4.9 - 1.5 - low four bytes of hardware destination address
+;Word 6
+; 4.9 - 1.5 - all four bytes of protocol destination address
+
+;Bytepointers to fixed part of ARP packet
+;
+$ARHRD==242000,,0		;Hardware type
+$ARPRO==042000,,0		;Protocol type
+$ARHLN==341000,,1		;Hardware address length
+$ARPLN==241000,,1		;Protocol address length
+$AROPC==042000,,1		;Opcode
+
+;Kludge, assumes %NEAEN hardware type, %NEIP protocol type
+$ARSHH==044000,,2		;High 4 bytes of ethernet source address
+$ARSHL==242000,,3		;Low two bytes of ethernet source address
+$ARSPH==042000,,3		;High two bytes of IP source address
+$ARSPL==242000,,4		;Low two bytes of IP source address
+$ARDHH==042000,,4		;High two bytes of ethernet destination addr
+$ARDHM==242000,,5		;Middle two bytes of ethernet destination addr
+$ARDHL==042000,,5		;Low four bytes of ethernet destination addr
+$ARDPA==044000,,6		;IP destination address
+
+
+;Get field FLD of packet in PKT to AC DEST. (DEST and DEST+1 if field is
+; SHA or DHA). Field is one of:
+;  SHA - source hardware address
+;  SPA - Source protocol address
+;  DHA - Destination Hardware address
+;  DPA - Destination Protocol address
+
+;This macro could be a whole lot smarter/faster/etc.
+;
+DEFINE GETFLD DEST,FIELD,PKT,TEMP=TT
+...TSF==0
+IFSE FIELD,SHA,[
+	...TSF==-1
+	LDB DEST,[$ARSHH(PKT)]
+	LDB DEST+1,[$ARSHL(PKT)]
+	]
+IFSE FIELD,SPA,[
+	...TSF==-1
+	LDB DEST,[$ARSPL(PKT)]
+	LDB TEMP,[$ARSPH(PKT)]
+	DPB TEMP,[202000,,DEST]
+	]
+IFSE FIELD,DHA,[
+	...TSF==-1
+	LDB DEST,[$ARDHM(PKT)]
+	LDB TEMP,[$ARDHH(PKT)]
+	DPB TEMP,[202000,,DEST]
+	LDB DEST+1,[$ARDHL(PKT)]
+	]
+IFSE FIELD,DPA,[
+	...TSF==-1
+	LDB DEST,[$ARDPA(PKT)]
+	]
+  IFE ...TSF,.ERR Invalid ARP field name FIELD given in GETFLD macro
+TERMIN
+
+;Set field FLD of packet in PKT from AC SRC. (SRC and SRC+1 if field is
+; SHA or DHA). 
+
+;
+DEFINE SETFLD SRC,FIELD,PKT,TEMP=TT
+...TSF==0
+IFSE FIELD,SHA,[
+	...TSF==-1
+	DPB SRC,[$ARSHH(PKT)]
+	DPB SRC+1,[$ARSHL(PKT)]
+	]
+IFSE FIELD,SPA,[
+	...TSF==-1
+	DPB SRC,[$ARSPL(PKT)]
+	LDB TEMP,[202000,,SRC]
+	DPB TEMP,[$ARSPH(PKT)]
+	]
+IFSE FIELD,DHA,[
+	...TSF==-1
+	DPB SRC,[$ARDHM(PKT)]
+	LDB TEMP,[202000,,SRC]
+	DPB TEMP,[$ARDHH(PKT)]
+	DPB SRC+1,[$ARDHL(PKT)]
+	]
+IFSE FIELD,DPA,[
+	...TSF==-1
+	DPB SRC,[$ARDPA(PKT)]
+	]
+  IFE ...TSF,.ERR Invalid ARP field name FIELD given in SETFLD macro
+TERMIN
+
+
+;EBLK
+ARPFSS==:.			;First address used by ARP free storage
+
+NARPHB==29.			;Number of hash table buckets
+NARPHE==3*NARPHB		;Max number of protocol-hardware pairs
+NARPPK==10.			;Number of network packets (for requests, etc)
+
+ARPTAB:	BLOCK NARPHB		;The hash table
+
+;Hash entries and packets assume that the maximum size protocol address is
+; less than 36 bits. 
+
+;A hash table entry looks like:
+ARE.LK==0			; back_link,,forward_link
+ARE.TM==1			; time_last_used
+ARE.HA==2			; High_hardware_address
+;	3			; Low_hardware_address
+ARE.PA==4			; Protocol_address
+NARPEW==5			;Number of words in a hash table entry
+
+ARPHEB:	BLOCK NARPHE*NARPEW	;Space for allocating hash table entries
+
+ARPNEF:	0			;Number of free table entries
+ARPEFL:	0			;Table entry freelist header
+
+ARPFSE==:.-1			;Last address used by ARP free storage
+
+;BBLK
+
+
+;Add a table entry to a list
+; Q/Entry
+; A/Existing entry on list, usually header
+;Returns +1
+ARPENQ:	HRRZ T,ARE.LK(A)	;Get next
+	HRRZM T,ARE.LK(Q)	;new.f -> next
+	HRLM Q,ARE.LK(T)	;next.back -> new
+	HRRM Q,ARE.LK(A)	;old.f -> new
+	HRLM A,ARE.LK(Q)	;new.back -> old
+	POPJ P,
+
+;Delete table entry from the list it is on
+; Q/Entry
+;Returns +1
+ARPDEQ:	HRRZ TT,ARE.LK(Q)	;TT/ Forward link
+	HLRZ T,ARE.LK(Q)	;T/ back link
+	HRLZM T,ARE.LK(TT)
+	HRRZM TT,ARE.LK(T)
+	POPJ P,
+
+;Free a table entry (add to freelist)
+; Q/ Entry to free
+ARPFTE:	CONO PI,PIOFF
+	MOVEI A,ARPEFL
+	PUSHJ P,ARPENQ
+	CONO PI,PION
+	POPJ P,
+
+;Initialize ARP
+ARPINI:	SETZM ARPFSS
+	MOVE A,[ARPFSS,,ARPFSS+1]
+	BLT A,ARPFSE
+	MOVE A,[-NARPHB,,ARPTAB] ;Create empty hash table
+ARPIN1:	MOVEI B,(A)
+	HRLS B
+	MOVEM B,(A)
+	AOBJN A,ARPIN1
+	MOVE A,[ARPEFL,,ARPEFL]	;Init freelist
+	MOVEM A,ARPEFL
+	MOVEI A,NARPHE
+	MOVEM A,ARPNEF
+	MOVE Q,[-NARPHE,,ARPHEB]
+	MOVEI A,ARPEFL
+ARPIN2:	PUSHJ P,ARPENQ
+	ADDI Q,NARPEW-1
+	AOBJN Q,ARPIN2
+	POPJ P,
+
+
+;Hash IP address into table bucket.
+; A/ IP address
+;Return +1, J/ offset into table
+ARPHSH:	PUSH P,J-1
+	MOVE J-1,A
+	IDIVI J-1,NARPHB
+	POP P,J-1
+	POPJ P,
+
+;Lookup protocol-address translation in the table
+; A/ IP address
+;Returns +1, not found
+;	     J/ Table index where entry should go
+;	 +2, Q/ Entry block, if you want it
+;	     J/ Table index
+;	     B/ Unchanged
+;	     C,D /Hardware address, standard format
+;
+ARPLUK:	PUSHJ P, ARPHSH		;Hash into the table
+	HRRZ Q,ARPTAB(J)	;Get pointer to correct entry
+ARPLU1:	CAIN Q,ARPTAB(J)	;Back to header?
+	 POPJ P,		;Yep, done
+	CAME A,ARE.PA(Q)	;Same protocol address?
+	 JRST [	HRRZ Q,ARE.LK(Q)
+		JRST ARPLU1 ]
+	DMOVE C,ARE.HA(Q)
+	MOVE T,TIME
+	MOVEM T,ARE.TM(Q)
+	JRST POPJ1
+
+
+
+;ARPINP - Process incoming ARP packet
+; Bashes most everything. Assumes NETOFF, at least
+;	A/ Pointer to datagram structure
+;	B/ # words read in datagram
+;	C/ # wds offset to start of IP header
+;	I/ Interface descriptor block
+; Return +1, always
+; Can clobber all ACs except P
+; Sets up
+;	R/ addr of packet entry
+;	W/ addr of ARP data
+;	Q/ related ARP table entry
+;
+ARPINP:	MOVEI R,(A)		; Set up packet entry ptr in canonical place
+	CAIGE B,7(C)		; Make sure it's big enough
+	 JRST ARPIN9	
+	HRLM B,PK.BUF(R)	; Store # words read
+	ADD C,PK.BUF(R)		; Compute start of ARP packet
+	HRLZM C,PK.IP(R)	; and set it.
+	MOVEI W,(C)
+
+	LDB A,[$ARHRD(W)]
+	LDB B,[$ARPRO(W)]
+	CAIN A,%NEAEN		;Ethernet hardware type?
+	 CAIE B,%NEIP		;IP protocol
+	  JRST ARPINX		;No, toss packet
+	
+	GETFLD A,SPA,W
+	CALL ARPLUK		;Do we know about this guy already?
+	 SKIPA
+	  JRST ARPIN1		;Yes...
+
+; No table entry for sender of this packet. If we are target of
+; the packet, create a table entry for sender, else drop packet.
+
+	GETFLD A,TPA,W
+	CAME A,NETADR(I)	;Packet sent to our address this interface?
+	 JRST ARPINX		;Not us, done
+	MOVE Q,ARPEFL
+	CAMN Q,[ARPEFL,,ARPEFL]
+	 JRST [	BUG INFO,[ARP, Ran out of table space]
+		JRST ARPINX ]
+	PUSHJ P,ARPDEQ		;Q/ first free. Remove from freelist...
+	MOVEI A,ARPTAB(J)	;J set by failing call to ARPLUK!
+	PUSHJ P,ARPENQ		; ... add to table
+	MOVE T,TIME
+	MOVEM T,ARE.TM(Q)
+	GETFLD A,SPA,W
+	MOVEM A,ARE.PA(Q)
+
+; Update HW address info for this (new or old) entry.
+ARPIN1:	GETFLD C,SHA,W		;C,D current hardware address
+	DMOVEM C,ARE.HA(Q)
+
+
+;Packet was specifically for us. If it was a request, send answer back
+; in the same packet.
+ARPIN2:	LDB T,[$AROP(W)]
+	CAIE T,%NEARQ		;REQUEST packet?
+	 JRST ARPINX
+	MOVEI A,%NEARA		;Answer.
+	DPB A,$AROP(W)
+	GETFLD A,SPA,W
+	SETFLD A,TPA,W
+	MOVE A,NETADR(I)
+	SETFLD A,SPA,W
+	GETFLD C,SHA,W
+	SETFLD C,THA,W
+	DMOVE C,NETHWA(I)
+	SETFLD C,SPA,W
+	:send packet in T on interface I
+
+ARPINX:	Free IP packet in R
+	POPJ P,
+
+;ARPRES - start address resolution by sending ARP packet.
+; Bashes many AC's
+;	A/ IP address to resolve

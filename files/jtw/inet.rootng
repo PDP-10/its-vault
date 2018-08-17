@@ -1,0 +1,79 @@
+New IP routing:
+
+Routing is a two-level affair.  There is a cache of active routes,
+maintained as a hash table keyed on the destination host address. Each
+entry contains the final address, the gateway IP address, the
+link-level (HW) gateway address, and the interface to use. Flags
+indicate the validity of each of these, and also whether this is a
+broadcast route (see below). There is a timestamp. It is set whenever
+a route is -freed-.
+
+TCP conns maintain pointers to entries in the route table. The
+entries, therefore, maintain reference counts. Entries may be thrown
+away only if the reference count is zero.
+
+Sometimes entries will need to be updated. This may happen when an
+ICMP redirect comes in, or when a route is believed to not be working
+by the TCP. Redirects cause any route for the referenced host
+(-only-, even it it's a network redirect) to be changed to the given
+gateway. TCP timeouts cause the route to be set back to a default
+gateway if it wasn't one, or to another default gateway if it was
+already going through one.
+
+(Aside on dead GW detection: I don't do any. There is also the
+question of whether it's better to round-robin through the default
+list, or to stick with one GW until it is shown not to work. In any
+event the first pass is to just have one default GW anyway, so we will
+do that.)
+
+Broadcast addresses are a little different. Transmitting a packet is
+identical, because the routes are set up so that the "gateway" address
+is the subnet broadcast addr, and the "interface physical address" is
+the HW broadcast addr. The route computation stuff described below has
+to think, tho.
+
+When someone requests a route to a host which is not yet in the cache,
+the second-level algorithm is called to compute the route. The
+algorithm is basically:
+
+IF <address is illegal> 
+	RETURN FAILURE
+
+; Check for system broadcast, convert to subnet bdcst.
+IF <address == INADDR_BDCST>
+	address.subnet_part = primary_interface.subnet_part
+
+; Check for direct connection or subnet broadcast
+FOR <each interface>
+	IF <(address & interface.subnet_mask) ==
+	    (interface.address & interface.subnet_mask)>
+		IF <(address & ~interface.subnet_mask) ==
+		    (-1 & ~interface.subnet_mask)>
+			route.interface = interface
+			route.gw_addr = interface.broadcast_addr
+			route.phys_addr = interface.hw_bdcst_addr
+		ELSE
+			route.interface = interface
+			route.gw_addr = address
+			IF <can_resolve_phys_addr(address, interface)>
+				route.phys_addr = phys_addr(address, interface)
+			ELSE
+				route.phys_addr = NULL ;get it later
+
+
+;Non-direct connection. Select a good gateway, and run the algorithm
+; again to get a route to that gateway. Gateways can be selected on
+; the basis of network number, or by picking from a list of defaults if
+; that doesn't work
+
+
+Routing table entry:
+Kept as a linked-list chain for easy deletion
+Flags are: interface_valid, gw_valid, phys_addr_valid, from_redirect
+
+Word 0:	b_link,,f_link
+Word 1:	dest_address
+Word 2:	flags(4), GW_address(32)
+Word 3: phys_addr (high 4 bytes. low two next word)
+Word 4: phys_addr,,interface
+Word 5: timestamp
