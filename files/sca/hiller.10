@@ -1,0 +1,75 @@
+;-*-stl-*-
+;***********************************************************************
+;******** Random Algebraic Stuff for Howard Hiller [HILLER@MC] *********
+;****** (c) copyright 1977 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;***unfinished
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((dsk stl) base)))
+
+(global-open ((sca) hiller))
+
+(global-read ((sca) algebr))
+
+(stlchar)
+
+(declare (mapex t) (genprefix scahil))
+
+(defmode lambda-algebra
+	;Actually LIST not SORT, but want the < predicate:
+	 (mode sort (elt *fixnum* list seq rlist rseq))
+	 (mode set (elt seq set lamb rset ramb))
+	 (tdeclare (*fixnum* n k i j) (lamb l l1 l2) (seq s s1 s2) (ramb rl)
+		   (rseq rs1))
+
+
+ (defun bin2 (n k) *boolean*		;BINOMIAL mod 2, N & K >= 0
+	[0? :*fixnum*~(boole 2. n k)])
+
+ (defun simp (l) lamb
+	(do ((l1 [empty]) (s))		;L1 holds only admissible sequences
+	    ([empty? l] l1)
+	    (_ s (pop l))
+	    (if [elt-of? s l1] (_ l1 [del s l1])
+		(bind ((l2 <- [simp s]))
+		      (if (and [not [empty? l2]]
+			       [empty? [rest l2]]
+			       [= [first l2] s])
+			  (_ l1 [insert s l1])	;S can't be in L1 already
+			  (_ l [symmdifference l2 l]))))))
+
+ (defun simp (s) lamb
+	(do ((rs1 [empty] [ttf [first s2] rs1])
+	     (s2 s [rest s2]))
+	    ([empty? s2] [single s])
+	    (cond ((and [not [empty? rs1]]
+			[> [first s2] [* 2 [first rs1]]])
+		   (return (mmap (s l [expand2 (pop rs1) (pop s2)])
+				 ((rl [empty]
+				      [ttf [repend rs1 [nconc s s2]] rl]))
+				 [nreverse rl]))))))
+
+ (defun expand2 (i j) lamb		;J > 2 * I
+	(tdeclare (*fixnum* a b))
+	(bind ((n <- [- j [1+ [* 2 i]]]))
+	      (do ((l [empty]
+		      (if [bin2 i j]
+			  [ttf [double a b] l]
+			  l))
+		   (i [1- n] [1- i])
+		   (j [0] [1+ j])
+		   (a [+ i n] [1- a])
+		   (b [1+ [* 2 i]] [1+ b]))
+		  ([> j i] l)))))
+
+(mode *lambda-algebra* lambda-algebra)
+
+
+(stlunchar)
+
+(global-close)

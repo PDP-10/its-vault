@@ -1,0 +1,244 @@
+;-*-lisp-*-
+;***********************************************************************
+;*************** Run-Time Stuff for the New Mode Package ***************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This file contains functions needed at run-time by the new mode package
+;[NMODE].
+
+
+(declare (eval (read)) (eval (read)))
+(or (memq 'mode (status features)) (load '((dsk sca) nmode)))
+(setq *hard-assed* nil)
+
+(sstatus feature mfcns)
+
+(scachar)
+
+(declare (mapex t)
+	 (genprefix scamfs))
+
+
+(comment Syntax Macro Functions)
+
+
+(defun erlist1 (l) (cond ((atom l) (princ l)) (t (prinl l))) (err))
+
+(defun prinl (l) (do x l (cdr x) (null x) (princ (car x)) (princ '/ )))
+
+
+(comment Mode Initialization)
+
+
+(or (boundp '*modes*) (setq *modes* nil))
+
+(comment FUNARG Macro Stuff)
+
+
+(defun lsubr-funarg nargs
+       (declare (fixnum nargs))
+       (apply (car (arg nargs))			;(ARG NARGS) may be a SUBR
+	      (do ((*args (listify (1- nargs)))
+		   (args (cxr 2 (arg nargs)) (cdr args))
+		   (rout nil
+			 (cons (if (null (car args)) (lpop *args) (caar args))
+			       rout)))
+		  ((null args)
+		   (nreconc rout (append *args (ncons (cdr (arg nargs)))))))))
+
+(defun funarg0 (x netw) (scall (cdr netw) x))
+(defun funarg1 (netw) (scall (cdr netw) (cxr 1 netw)))
+(defun funarg00 (x y netw) (scall (cdr netw) x y))
+(defun funarg01 (x netw) (scall (cdr netw) x (cxr 1 netw)))
+(defun funarg10 (x netw) (scall (cdr netw) (cxr 1 netw) x))
+(defun funarg11 (netw) (scall (cdr netw) (cxr 1 netw) (cxr 2 netw)))
+(defun funarg000 (x y z netw) (scall (cdr netw) x y z))
+(defun funarg001 (x y netw) (scall (cdr netw) x y (cxr 1 netw)))
+(defun funarg010 (x y netw) (scall (cdr netw) x (cxr 1 netw) y))
+(defun funarg011 (x netw) (scall (cdr netw) x (cxr 1 netw) (cxr 2 netw)))
+(defun funarg100 (x y netw) (scall (cdr netw) (cxr 1 netw) x y))
+(defun funarg101 (x netw) (scall (cdr netw) (cxr 1 netw) x (cxr 2 netw)))
+(defun funarg110 (x netw) (scall (cdr netw) (cxr 1 netw) (cxr 2 netw) x))
+(defun funarg111 (netw)
+       (scall (cdr netw) (cxr 1 netw) (cxr 2 netw) (cxr 3 netw)))
+(defun funarg0000 (x y z w netw) (scall (cdr netw) x y z w))
+(defun funarg0001 (x y z netw) (scall (cdr netw) x y z (cxr 1 netw)))
+(defun funarg0010 (x y z netw) (scall (cdr netw) x y (cxr 1 netw) z))
+(defun funarg0011 (x y netw) (scall (cdr netw) x y (cxr 1 netw) (cxr 2 netw)))
+(defun funarg0100 (x y z netw) (scall (cdr netw) x (cxr 1 netw) y z))
+(defun funarg0101 (x y netw) (scall (cdr netw) x (cxr 1 netw) y (cxr 2 netw)))
+(defun funarg0110 (x y netw) (scall (cdr netw) x (cxr 1 netw) (cxr 2 netw) y))
+(defun funarg0111 (x netw)
+       (scall (cdr netw) x (cxr 1 netw) (cxr 2 netw) (cxr 3 netw)))
+(defun funarg1000 (x y z netw) (scall (cdr netw) (cxr 1 netw) x y z))
+(defun funarg1001 (x y netw) (scall (cdr netw) (cxr 1 netw) x y (cxr 2 netw)))
+(defun funarg1010 (x y netw) (scall (cdr netw) (cxr 1 netw) x (cxr 2 netw) y))
+(defun funarg1011 (x netw)
+       (scall (cdr netw) (cxr 1 netw) x (cxr 2 netw) (cxr 3 netw)))
+(defun funarg1100 (x y netw) (scall (cdr netw) (cxr 1 netw) (cxr 2 netw) x y))
+(defun funarg1101 (x netw)
+       (scall (cdr netw) (cxr 1 netw) (cxr 2 netw) x (cxr 3 netw)))
+(defun funarg1110 (x netw)
+       (scall (cdr netw) (cxr 1 netw) (cxr 2 netw) (cxr 3 netw) x))
+(defun funarg1111 (netw)
+       (scall (cdr netw) (cxr 1 netw) (cxr 2 netw) (cxr 3 netw) (cxr 4 netw)))
+
+(comment Mode Macro Functions)
+
+
+;CREATE-MODE may sometimes be spurious:
+(defun create-mode (mode-name)
+       (bind ((ret-mode <- (get mode-name 'ret-mode)) out)
+	     (setq out (makhunk (cxr 4 ret-mode)))
+	     (mapc (fn (bfcn)
+		       (and (null (cdr (cxr 5 bfcn)))
+			    (_ (cxr (car (cxr 5 bfcn)) out)
+			       (make-slot bfcn out))))
+		   (cxr 2 ret-mode))
+	     (mapc (fn (mode-inst)
+		       (_ (cxr (cxr 4 mode-inst) out)
+			  (create-mode (cxr 1 mode-inst))))
+		   (cxr 0 ret-mode))
+	     out))
+
+(defun make-slot (bfcn hunk)
+       (bind ((kind <- (cond ((eq (cxr 1 bfcn) 'constant) 'subr)
+			     ((> (length (cxr 2 bfcn)) 4) 'lsubr)
+			     (t (cxr 1 bfcn))))
+	      (fcn <- (cxr 7 bfcn)) ptr debug-fcn)
+	     (setq debug-fcn
+
+  (implode (append (and (eq kind 'lsubr) '(l))
+		   '(n f c n -)
+		   (if (eq (cxr 6 bfcn) 'alias) '(a l i a s) '(d e b u g))
+		   (and (not (eq kind 'lsubr))
+			(exploden (length (cxr 2 bfcn)))))))
+
+	     (cond ((and (eq (cxr 1 bfcn) 'constant) (eq (cxr 6 bfcn) 'macro)) 
+		    (cons nil (eval (cadr (cxr 0 bfcn)))))
+		   ((symbolp fcn)
+		    (_ ptr (get fcn kind))
+		    (cond ((and (not *rset) ptr)	;***don't check *RSET?
+			   (_ (cxr 7 bfcn) ptr)
+			   (cons ptr hunk))
+			  (t (cons (get debug-fcn kind) (cons fcn hunk)))))
+		   (t (cons fcn hunk)))))
+
+
+(defun lnfcn-debug nargs
+       (apply (car (arg nargs))
+	      (append (listify (1- nargs)) (list (cdr (arg nargs))))))
+
+(defun nfcn-debug0 (netw) (funcall (car netw) (cdr netw)))
+(defun nfcn-debug1 (x netw) (funcall (car netw) x (cdr netw)))
+(defun nfcn-debug2 (x y netw) (funcall (car netw) x y (cdr netw)))
+(defun nfcn-debug3 (x y z netw) (funcall (car netw) x y z (cdr netw)))
+(defun nfcn-debug4 (x y z w netw) (funcall (car netw) x y z w (cdr netw)))
+
+(defun nfcn-alias0 (netw) (funcall (car netw)))
+(defun nfcn-alias1 (x netw) (funcall (car netw) x))
+(defun nfcn-alias2 (x y netw) (funcall (car netw) x y))
+(defun nfcn-alias3 (x y z netw) (funcall (car netw) x y z))
+(defun nfcn-alias4 (x y z w netw) (funcall (car netw) x y z w))
+
+(defun ccall (constant)
+       (if (null (car constant)) (cdr constant)
+	   (cdr (rplaca (rplacd constant (scall constant)) nil))))
+
+(defun ncxr (h n) (declare (fixnum n)) (cxr n h))
+
+
+(defun fill-mode (mode-netw mode-inst)
+       (bind ((args <- (mapcar (fn (frob) (get-arg frob mode-netw))
+			       (cxr 0 mode-inst)))
+	      (hunk <- (if (symbolp (cxr 4 mode-inst)) mode-netw
+			   (cxr (cxr 4 mode-inst) mode-netw)))
+	      (ret-mode <- (get (cxr 1 mode-inst) 'ret-mode)))
+	     (or (do ((l (get (cxr 1 mode-inst) 'mode-hunks) (cdr l)))
+		     ((null l) nil)
+		     (cond ((do ((args args (cdr args))
+				 (frobs (cxr 3 ret-mode) (cdr frobs)))
+				((null args) t)
+				(or (eq (car args) (cxr (cdar frobs) (car l)))
+				    (eq (caar args) (get 'mfa-err 'subr))
+				    (return nil)))
+			    (setq hunk (car l))
+			    (return t))))
+		 (progn
+		  (mapc (fn (bfcn)
+			    (and (cdr (cxr 5 bfcn))
+				 (clobber-funarg (cxrs (cxr 5 bfcn) hunk)
+						 (make-slot bfcn hunk))))
+			(cxr 2 ret-mode))
+		  (mapc (fn (cxn arg) (_ (cxr (cdr cxn) hunk) arg))
+			(cxr 3 ret-mode) args)
+		  (mapc (fn (mode-inst) (fill-mode hunk mode-inst))
+			(cxr 0 ret-mode))
+		  (putprop (cxr 1 mode-inst)
+			   (cons hunk (get (cxr 1 mode-inst) 'mode-hunks))
+			   'mode-hunks)))
+	     (if (symbolp (cxr 4 mode-inst))
+		 (set (cxr 4 mode-inst) hunk)
+		 (_ (cxr (cxr 4 mode-inst) mode-netw) hunk))))
+
+(defun get-arg (frob mode-netw)
+       (cond ((null frob) (ncons (get 'mfa-err 'subr)))
+	     (t
+	      (if (cxr 1 frob) (setq mode-netw (symeval (cxr 1 frob))))
+	      (cxrs (cxr 2 frob) mode-netw))))
+
+(defun cxrs (l x)
+       (declare (fixnum n))
+       (mapc (fn (n) (setq x (cxr n x))) l)
+       x)
+
+(defun clobber-funarg (funarg1 funarg2)
+       (_ (car funarg1) (car funarg2) (cdr funarg1) (cdr funarg2)))
+
+(defun inst-mode (mode-inst-name)
+       (bind ((mode-inst <- (get mode-inst-name '*mode-inst*)))
+	     (or mode-inst (int-err))
+	     (set (cxr 4 mode-inst) (create-mode (cxr 1 mode-inst)))
+	     (fill-mode (symeval (cxr 4 mode-inst)) mode-inst)
+	     t))
+
+(or (memq 'genpr (status features))
+    (progn (load '((sca) genpr)) (load '((sca) genpr1))))
+
+(declare (special *in-specs* *modes-file* *in-file*))
+
+(defun mload (file-specs)
+       (if (boundp '*in-file*) (open *in-file*)
+	   (setq *in-file* (open '((sca) modes >) 'fixnum)))
+       (or (boundp '*in-specs*) (setq *in-specs* '((dsk sca) modes >)))
+       (setq file-specs (subst '* '@ (defaultf file-specs)))
+       (bind ((*modes-file* <- (and (boundp '*modes-file*) *modes-file*))
+	      (fn1 <- (cadr file-specs))
+	      (ms <- (mergef '((dsk sca) * modes) file-specs))
+	      (fasl? <- (and (or (null (cddr file-specs))	;can't happen?
+				 (memq (caddr file-specs) '(* fasl)))
+			     (probef (mergef file-specs '(* fasl))))))
+	     (if fasl? (eval `(global-read ,ms)))
+	;unfortunately, throws to MODE-ERR never make it this far:
+	     (or (catch (progn (load file-specs) t) mode-err)
+		 (cond ((not fasl?)
+			(eval `(sstatus nofeature ,fn1))
+			(if (probef ms) (deletef ms)))))
+	     (and (memq fn1 (status features)) t)))
+
+
+(comment Error Messages)
+
+
+(defun mfa-err ()
+       (terpri)
+       (princ '|Missing functional argument to a mode.|)
+       (terpri) (error))
+
+;INT-ERR defined in NMODE.
+
+(scaunchar)

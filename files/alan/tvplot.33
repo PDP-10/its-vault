@@ -1,0 +1,183 @@
+;;; -*-LISP-*-
+
+;For info on  ARDS graphic protocol see ".info.;ards info"
+
+(declare (load 'alan/;lspenv/ init))
+
+(declare (special graphic-output graphic-output-stream graphic-output-file
+		  whole-screen-output))
+
+(defmacro graphic-commands (&body body)
+  (cons 'progn
+	(loop for form in body
+	      collecting `(+tyo ,form graphic-output))))
+
+(defmacro in-erase-mode (&body body)
+  `(progn (graphic-commands #o227)
+	  ,@body
+	  (graphic-commands #o230)))
+
+(defun print-text (x y text)
+  (declare (fixnum x y))
+  (set-position (1+ x) (1+ y))
+  (graphic-commands #o234)
+  (princ text graphic-output))
+
+(defun print-text-relative (text)
+  (graphic-commands #o234)
+  (princ text graphic-output))
+
+(defun set-position (x y)
+  (declare (fixnum x y))
+  (let ((ax (abs x))
+	(ay (abs y)))
+    (declare (fixnum ax ay))
+    (graphic-commands #o235
+		      (+ (lsh (logand ax #o17) 2)
+			 (cond ((minusp x) #o101) (t #o100)))
+		      (+ (logand (lsh ax -4) #o37)
+			 #o100)
+		      (+ (lsh (logand ay #o17) 2)
+			 (cond ((minusp y) #o101) (t #o100)))
+		      (+ (logand (lsh ay -4) #o37)
+			 #o100))))
+
+(defun draw-vector (x y)
+  (declare (fixnum x y))
+  (let ((ax (abs x))
+	(ay (abs y)))
+    (declare (fixnum ax ay))
+    (graphic-commands #o236
+		      (+ (lsh (logand ax #o17) 2)
+			 (cond ((minusp x) #o101) (t #o100)))
+		      (+ (logand (lsh ax -4) #o37)
+			 #o100)
+		      (+ (lsh (logand ay #o17) 2)
+			 (cond ((minusp y) #o101) (t #o100)))
+		      (+ (logand (lsh ay -4) #o37)
+			 #o100))))
+
+(defun shift (x y)
+  (declare (fixnum x y))
+  (let ((ax (abs x))
+	(ay (abs y)))
+    (declare (fixnum ax ay))
+    (graphic-commands #o236
+		      (+ (lsh (logand ax #o17) 2)
+			 (cond ((minusp x) #o101) (t #o100)))
+		      (+ (logand (lsh ax -4) #o37)
+			 #o140)		;The "invisible" bit.
+		      (+ (lsh (logand ay #o17) 2)
+			 (cond ((minusp y) #o101) (t #o100)))
+		      (+ (logand (lsh ay -4) #o37)
+			 #o100))))
+
+(defun draw-line (1x 1y  2x 2y)
+  (declare (fixnum 1x 1y 2x 2y))
+  (set-position 1x 1y)
+  (draw-vector (- 2x 1x) (- 2y 1y)))
+
+(defun draw-line-cliped (x1 y1 x2 y2 xmin xmax ymin ymax)
+  (declare (fixnum x1 y1 x2 y2 xmin xmax ymin ymax))
+  (prog (vis-1 vis-2)
+        (declare (fixnum vis-1 vis-2))
+        (setq vis-1 (logior (cond ((< x1 xmin) 1)
+				  ((> x1 xmax) 2)
+				  (t 0))
+			    (cond ((< y1 ymin) 4)
+				  ((> y1 ymax) 8)
+				  (t 0)))
+	      vis-2 (logior (cond ((< x2 xmin) 1)
+				  ((> x2 xmax) 2)
+				  (t 0))
+			    (cond ((< y2 ymin) 4)
+				  ((> y2 ymax) 8)
+				  (t 0))))
+        ;;if all off the screen, dont draw anything
+        (or (zerop (logand vis-1 vis-2)) (return nil))
+        ;;exchange points to try to make #2 point visible
+        (or (zerop vis-1) (go L))
+      W ;;Come here when #1 is known visible
+        (cond ((zerop vis-2)	;if both visible then we are done!
+	       (set-position x1 y1)
+	       (draw-vector (- x2 x1) (- y2 y1))
+	       (return t)))
+        (let ((xt x1)
+	      (yt y1))
+	  (setq x1 x2 x2 xt)
+	  (setq y1 y2 y2 yt)
+	  (setq vis-1 vis-2 vis-2 0))
+      L ;;Come here if #1 is known not visible
+        (cond ((< x1 xmin)	;push toward left edge
+	       (setq y1 (+ y1 (// (* (- y2 y1) (- xmin x1)) (- x2 x1)))
+		     x1 xmin)
+	       (cond ((< y1 ymin) (go A))
+		     ((> y1 ymax) (go B))
+		     (t (go W))))
+	      ((> x1 xmax)	;push toward right edge
+	       (setq y1 (+ y1 (// (* (- y2 y1) (- xmax x1)) (- x2 x1)))
+		     x1 xmax)
+	       (cond ((< y1 ymin) (go A))
+		     ((> y1 ymax) (go B))
+		     (t (go W))))
+	      ((< y1 ymin) (go A))
+	      ((> y1 ymax) (go B))
+	      (t (error "The &&%!!%&# clipper died. (call ALAN)" nil)))
+        ;;push toward top
+        ;;If y1=y2 then we are about to divide by zero, but if
+        ;;so then x1=x2 (approx?) and there is nothing to display.
+      A (and (= y1 y2) (return nil))
+        (setq x1 (+ x1 (// (* (- x2 x1) (- ymin y1)) (- y2 y1)))
+	      y1 ymin)
+        (and (or (< x1 xmin) (> x1 xmax)) (return nil))
+        (go W)
+        ;;push toward bottom
+        ;;same comment as above:
+      B (and (= y1 y2) (return nil))
+        (setq x1 (+ x1 (// (* (- x2 x1) (- ymax y1)) (- y2 y1)))
+	      y1 ymax)
+        (and (or (< x1 xmin) (> x1 xmax)) (return nil))
+        (go W)))
+
+(defun draw-box (x y w h)
+  (declare (fixnum x y w h))
+  (set-position x y)
+  (draw-vector w 0)
+  (draw-vector 0 h)
+  (draw-vector (- w) 0)
+  (draw-vector 0 (- h)))
+
+(defun echoarea (size)
+  (open tyo '(tty out echo))
+  (sstatus ttycons tyo tyi)
+  (syscall 0 'scml tyi size)
+  (clear-screen)
+  t)
+
+(defun clear-screen ()
+  (cursorpos 'c whole-screen-output)
+  t)
+
+(defun setup-graphics ()
+  (setq whole-screen-output (open "tty:" '(out tty)))
+  (setq graphic-output-stream (open "tty:" '(out image tty)))
+  (setq graphic-output-file nil)
+  (setq graphic-output graphic-output-stream)
+  t)
+
+(defun fo-graphics (name)
+  (or (null graphic-output-file)
+      (close graphic-output-file))
+  (setq graphic-output-file (open name 'out))
+  (setq graphic-output graphic-output-file)
+  (namestring graphic-output-file))
+
+(defun ro-graphics ()
+  (prog1 (namestring graphic-output-file)
+	 (setq graphic-output graphic-output-stream)
+	 (or (null graphic-output-file)
+	     (close graphic-output-file))
+	 (setq graphic-output-file nil)))
+
+(or (boundp 'graphic-output)
+    (setup-graphics))

@@ -1,0 +1,246 @@
+;;; GT40 Simulator (used with the DEC simulator on I.T.S. for running SUDS)
+
+;;; This crock maintains a display list for writing, erasing, and moving display objects
+;;; consisting of characters, vectors, and points.  This protocol is not documented
+;;; anywhere except in the code for DECUUO.
+
+(DECLARE (SPECIAL GT40-DISPATCH GT40-CURRENT-ITEM-NUMBER GT40-BLINKER))
+
+;; %TDMTN is a crock for simulating GT-40's, used by DECUUO on ITS for Imlacs...
+
+(DEFUN SUPDUP-GT40 (PC-PPR &AUX (BYTE (- (SUPDUP-NETI) 100)))
+    (OR (< BYTE 0)
+	(FUNCALL (AREF GT40-DISPATCH (LOGAND 17 BYTE)) PC-PPR)))
+
+;; Dispatch table for the GT40 simulator.  These functions take one argument, the pc-ppr.
+(SETQ GT40-DISPATCH (MAKE-ARRAY NIL 'ART-Q 17))
+(FILLARRAY GT40-DISPATCH
+	   '(GT40-INSERT-OR-DELETE
+	     GT40-INSERT
+	     GT40-DELETE
+;	     GT40-RESET
+;	     GT40-TURN-ON
+;	     GT40-TURN-OFF
+;	     GT40-COPY
+;	     GT40-MOVE
+;	     GT40-MODE
+;	     GT40-APPEND
+;	     GT40-SUBROUTINIZE
+;	     GT40-UNSUBROUTINIZE
+	     SUPDUP-NOTHING))			;most are not used by DECUUO
+
+;;; Macros used below to pack characters into words, decode vector formats, etc.
+
+;;; Make a 16-bit "word" from 3 chars in 6-4-6 format
+(DEFMACRO GT40-WORD ()
+   '(DPB (SUPDUP-NETI) 0006
+	 (DPB (SUPDUP-NETI) 0604
+	      (DPB (SUPDUP-NETI) 1206 0))))
+
+;;; Get a word count
+(DEFMACRO GT40-COUNT () '(LSH (- (GT40-WORD) 5) -1))
+
+;;; Used in constructing display objects - used only in GT40-INSERT.
+(DEFMACRO APUSH (DOB ITEM) `(ARRAY-PUSH-EXTEND ,DOB ,ITEM 500.))
+
+;;; Compute the index of the last thing pushed
+(DEFMACRO GT40-LAST-INDEX (DOB) `(1- (ARRAY-ACTIVE-LENGTH ,DOB)))
+
+;;; Get the last item pushed onto a display object
+(DEFMACRO GT40-LAST-ITEM (DOB) `(AREF ,DOB (GT40-LAST-INDEX ,DOB)))
+
+;;; Short vector format
+(DEFMACRO GT40-SHORT (DOB WORD)
+   `(PROGN
+      (APUSH ,DOB (* (LDB 0706 ,WORD) (IF (BIT-TEST 20000 ,WORD) -1 1)))
+      (APUSH ,DOB (* (LDB 0006 ,WORD) (IF (BIT-TEST 100 ,WORD) -1 1)))
+      (APUSH ,DOB (BIT-TEST 40000 ,WORD))))
+
+;;; Long vector format
+(DEFMACRO GT40-LONG (DOB WORD1 WORD2)
+    `(LET ((WORD2 ,WORD2))
+       (APUSH ,DOB (* (LOGAND 1777 ,WORD1) (IF (BIT-TEST 20000 ,WORD1) -1 1)))
+       (APUSH ,DOB (* (LOGAND 1777 WORD2) (IF (BIT-TEST 20000 WORD2) -1 1)))
+       (APUSH ,DOB (BIT-TEST 40000 ,WORD1))))
+
+;;; Coordinate scaling macro
+(DEFMACRO GT40-COORD (X) `(MAX 0 (// (* 7 ,X) 10.)))
+
+;;; Save TTY parameters while drawing.  Note end of line hackery.
+(DEFMACRO GT40-BIND-TTY-PARAMS (PC-PPR &REST FORMS)
+  `(LET ((CUR-X (PC-PPR-CURRENT-X ,PC-PPR))
+	 (CUR-Y (PC-PPR-CURRENT-Y ,PC-PPR))
+	 (CUR-ALU (PC-PPR-CHAR-ALUF ,PC-PPR))
+	 (CUR-EOL-FCN (PC-PPR-END-LINE-FCN ,PC-PPR)))
+     (UNWIND-PROTECT
+      (PROGN
+       (SETF (PC-PPR-CHAR-ALUF ,PC-PPR) TV-ALU-XOR)
+       (SETF (PC-PPR-END-LINE-FCN ,PC-PPR)
+	     #'(LAMBDA (IGNORE) (*THROW 'EOL-CATCH NIL)))
+       . ,FORMS)
+      (SETF (PC-PPR-CHAR-ALUF ,PC-PPR) CUR-ALU)
+      (SETF (PC-PPR-END-LINE-FCN ,PC-PPR) CUR-EOL-FCN)
+      (TV-SET-CURSORPOS ,PC-PPR CUR-X CUR-Y))))
+
+
+;;; Draw a string.  Note special end of line hackery.  XPOS and YPOS must be symbols.
+(DEFMACRO GT40-DRAW-STRING (STRING XPOS YPOS PC-PPR)
+    `(LET ((MAX-Y 750.))
+      (TV-SET-CURSORPOS ,PC-PPR
+			 (GT40-COORD ,XPOS)
+			 (- MAX-Y (GT40-COORD ,YPOS) 11.))
+      (*CATCH 'EOL-CATCH (TV-STRING-OUT ,PC-PPR ,STRING))))
+
+;;; Draw a vector.  XPOS and YPOS must be symbols
+(DEFMACRO GT40-DRAW-VECTOR (XPOS YPOS X Y FLAG PC-PPR)
+    `(LET ((MAX-Y 750.) (OXPOS ,XPOS) (OYPOS ,YPOS))
+	  (SETQ ,XPOS (+ ,XPOS ,X) ,YPOS (+ ,YPOS ,Y))
+	  (IF ,FLAG
+	       (TV-DRAW-LINE (GT40-COORD OXPOS)
+			     (- MAX-Y (GT40-COORD OYPOS))
+			     (GT40-COORD ,XPOS)
+			     (- MAX-Y (GT40-COORD ,YPOS))
+			     TV-ALU-XOR
+			     (PC-PPR-SCREEN ,PC-PPR)))))
+
+;;; Read a vector out of the display list and draw it
+(DEFMACRO GT40-VECTOR (DOB XPOS YPOS PC-PPR)
+    `(LET ((I (GT40-LAST-INDEX ,DOB)))
+	  (GT40-DRAW-VECTOR
+	   ,XPOS ,YPOS
+	   (AREF ,DOB (- I 2)) (AREF ,DOB (- I 1))	;new x y
+	   (AREF ,DOB I) ,PC-PPR)))			;visibility flag
+
+;;; Display list format:  The display list is an ART-Q array of display objects, each of
+;;; which is, in turn, an ART-Q array.  The format of display objects is a sequence of
+;;; display items.  A display item is either a single string of characters or an in-line
+;;; subsequence consisting of a symbol describing the item-type followed by 2 numbers (x,y)
+;;; and a visibility flag.  Numbers and flags are repeated until a new symbol is encountered
+;;; indicating a type change.
+
+;;; Display list array.
+(SETQ GT40-DISPLAY-LIST (MAKE-ARRAY NIL 'ART-Q-LIST 10.) GT40-BLINKER NIL)
+
+;;; GT40 Command 0 - Insert or delete display items
+(DEFUN GT40-INSERT-OR-DELETE (PC-PPR)
+    (SELECTQ (LOGAND 3 (GT40-WORD))		;only 1 and 2 are recognized for now
+             (1 (GT40-INSERT PC-PPR))	;insert a new display item
+	     (2 (GT40-DELETE PC-PPR (1+ (GT40-COUNT))))))	;delete n items
+
+;;; GT40 Command 1 - Insert a display item into the display list.
+(DEFUN GT40-INSERT (PC-PPR &AUX (WORD-COUNT (GT40-COUNT)))
+    (GT40-BIND-TTY-PARAMS PC-PPR
+      (GT40-DELETE PC-PPR 1 NIL)		;Delete the item we are about to insert
+      (DO ((I 0 (1+ I))			;Loop over words, contructing a display list
+	   (WORD)(MODE -1)		;Mode is initially undefined.
+	   (XPOS 0) (YPOS 0) (BLINK-THIS)
+	   (DOB				;Display OBject
+	    (OR (AREF GT40-DISPLAY-LIST GT40-CURRENT-ITEM-NUMBER)	;Already an array or
+		(ASET (MAKE-ARRAY NIL ART-Q 200. NIL '(NIL 0))	;cons an array with leader
+		      GT40-DISPLAY-LIST GT40-CURRENT-ITEM-NUMBER))))	;and install it
+	  (( I WORD-COUNT)
+	   (IF (= 0 MODE)		; was char mode, display the string
+	       (GT40-DRAW-STRING (GT40-LAST-ITEM DOB) XPOS YPOS PC-PPR))
+	   (IF BLINK-THIS (STORE-ARRAY-LEADER 'ON DOB 1)))
+	(SETQ WORD (GT40-WORD))
+	(COND ((BIT-TEST 100000 WORD)		;If command, only look at blink bit and mode
+	       (IF (NOT (BIT-TEST 40000 WORD))	;ignore words with the 40000 bit on
+		   (LET ((NMODE (LDB 1303 WORD))
+			 (BLINK-FLAG (AND (BIT-TEST 20 WORD) (BIT-TEST 10 WORD))))
+			(COND ((NOT (= MODE NMODE))		;get the new datatype mode
+			       (IF (= 0 MODE)		; was char mode, display the string
+				   (GT40-DRAW-STRING (GT40-LAST-ITEM DOB) XPOS YPOS PC-PPR))
+			       (SETQ MODE NMODE)
+			       (APUSH DOB
+				      (SELECTQ
+				       MODE	;initializings
+					(0 (MAKE-ARRAY NIL 'ART-STRING 10. NIL '(0)))
+					(1 'VECTOR)
+					(2 'VECTOR)
+					(3 'POINT)
+					(6 'RPOINT)
+					((4 5 7) 'UNKNOWN)))))
+			(COND (BLINK-FLAG
+				(OR (MEMQ GT40-BLINKER (PC-PPR-BLINKER-LIST PC-PPR))
+				    (SETQ GT40-BLINKER
+					  (TV-DEFINE-BLINKER PC-PPR 'FUNCTION
+							     'GT40-BLINKER-FUNCTION)))
+				(SETQ BLINK-THIS T))))))
+	      (T (SELECTQ MODE
+		   (0 (DO ((CHAR (LDB 0007 WORD) (LDB 1007 WORD))	;character mode
+			   (STRING (GT40-LAST-ITEM DOB))
+			   (I 0 (1+ I)))
+			  ((= I 2))
+			(OR (= 0 CHAR) (= 17 CHAR) (ARRAY-PUSH-EXTEND STRING CHAR))))
+		   (1 (GT40-SHORT DOB WORD)	;short vector
+		      (GT40-VECTOR DOB XPOS YPOS PC-PPR))
+		   (2 (SETQ I (1+ I))	;long vector
+		      (GT40-LONG DOB WORD (GT40-WORD))
+		      (GT40-VECTOR DOB XPOS YPOS PC-PPR))
+		   (3 (SETQ I (1+ I))	;point data
+		      (GT40-LONG DOB WORD (GT40-WORD))
+		      (LET ((I (GT40-LAST-INDEX DOB)))
+			(SETQ XPOS (AREF DOB (- I 2))
+			      YPOS (AREF DOB (- I 1)))
+			(GT40-DRAW-VECTOR XPOS YPOS 0 0 (AREF DOB I) PC-PPR)))
+		   (4)			;graphplot x data (not used)
+		   (5)			;graphplot y data (not used)
+		   (6 (GT40-SHORT DOB WORD)	;relative point data
+		      (LET ((I (GT40-LAST-INDEX DOB)))
+			(SETQ XPOS (+ XPOS (AREF DOB (- I 2)))
+			      YPOS (+ YPOS (AREF DOB (- I 1))))
+			(GT40-DRAW-VECTOR XPOS YPOS 0 0 (AREF DOB I) PC-PPR)))
+		   (7)))))			;not used
+    (GT40-WORD)))				;gobble the checksum
+
+;;; GT40 Command 2 - Delete a display item from the display list
+(DEFUN GT40-DELETE (PC-PPR &OPTIONAL (NITEMS 1) (CHECKSUM-FLAG T))
+    (DO ((I 0 (1+ I)) (DOB) (ITEM-NUMBER))
+	(( I NITEMS))
+      (SETQ ITEM-NUMBER (GT40-WORD)
+	    GT40-CURRENT-ITEM-NUMBER ITEM-NUMBER	;record item # being hacked
+	    DOB (AREF GT40-DISPLAY-LIST ITEM-NUMBER))
+      (IF DOB (PROGN (OR (EQ 'OFF (ARRAY-LEADER DOB 1))	;don't erase if its already off
+			 (GT40-DISPLAY-ITEM DOB PC-PPR))
+		     (FILLARRAY DOB '(NIL))
+		     (STORE-ARRAY-LEADER 0 DOB 0)	;zero the fill pointer
+		     (STORE-ARRAY-LEADER NIL DOB 1))))	;blinking is off
+    (IF CHECKSUM-FLAG (GT40-WORD)))		;gobble the checksum
+
+;;; Display a display item.
+(DEFUN GT40-DISPLAY-ITEM (DOB PC-PPR)
+    (GT40-BIND-TTY-PARAMS PC-PPR
+      (DO ((I 0 (1+ I)) (END (ARRAY-ACTIVE-LENGTH DOB))
+	   (ITEM) (X) (Y) (FLAG) (XPOS 0) (YPOS 0))
+	  ((>= I END))
+	(SETQ ITEM (AREF DOB I))
+	(COND ((STRINGP ITEM) (GT40-DRAW-STRING ITEM XPOS YPOS PC-PPR))
+	      ((EQ 'UNKNOWN ITEM))		;ignore
+	      (T (DO NIL
+		     ((OR (<= (- END I) 3)
+			  (SYMBOLP (AREF DOB (1+ I)))
+			  (STRINGP (AREF DOB (1+ I)))))
+		   (SETQ I (+ 3 I)
+			 X    (AREF DOB (- I 2))
+			 Y    (AREF DOB (- I 1))
+			 FLAG (AREF DOB I))
+		   (SELECTQ ITEM
+		     (VECTOR (GT40-DRAW-VECTOR XPOS YPOS X Y FLAG PC-PPR))
+		     (POINT (SETQ XPOS X YPOS Y)
+			    (GT40-DRAW-VECTOR XPOS YPOS 0 0 FLAG PC-PPR))
+		     (RPOINT (SETQ XPOS (+ XPOS X) YPOS (+ YPOS Y))
+			     (GT40-DRAW-VECTOR XPOS YPOS 0 0 FLAG PC-PPR)))))))))
+
+;;; Blink a display item
+(DEFUN GT40-BLINKER-FUNCTION (BLINKER OPCODE &REST IGNORE)
+    (DO ((ITEM (G-L-P GT40-DISPLAY-LIST) (CDR ITEM))
+	 (PC-PPR (TV-BLINKER-PC-PPR BLINKER))
+	 (BLINK-FLAG NIL NIL) (DITEM))
+	((NULL ITEM))
+      (SETQ DITEM (CAR ITEM))
+      (IF DITEM (SETQ BLINK-FLAG (ARRAY-LEADER DITEM 1)))
+      (IF (AND (MEMQ BLINK-FLAG '(ON OFF))
+	       (OR (EQ ':BLINK OPCODE) (AND (EQ T OPCODE) (EQ 'OFF BLINK-FLAG))
+		   (AND (NULL OPCODE) (EQ 'ON BLINK-FLAG))))
+	  (PROGN (GT40-DISPLAY-ITEM DITEM PC-PPR)
+		 (STORE-ARRAY-LEADER (SELECTQ BLINK-FLAG (ON 'OFF) (OFF 'ON)) DITEM 1)))))

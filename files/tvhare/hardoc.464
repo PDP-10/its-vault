@@ -1,0 +1,1489 @@
+
+****************************************************************
+		DOCUMENTATION FOR TVHARE
+****************************************************************
+
+	This is file Tvhare;Hardoc >, a (minimal)
+documentation of the TVHARE package.  This document is
+basically a glossary of functions and variables (there are
+no user macros), stating their definitions  (tersely).
+Someday a primer (or at least a less cryptic document) will
+appear.
+
+	TVHARE is a package of lisp functions similar in
+overall purpose to LLOGO;TVRTLE.  It is not intended to be
+strictly compatible however.  It is smaller, faster, and
+more flexible, but has fewer (or at least different)
+features (e.g., no builtin shading patterns, no color-tv
+primitives).  On the plus side, TVHARE includes a
+vector-based font which is scalable and rotatable, and a
+display-list (and refreshing) capability.  (Further
+comparisons are provided below).
+
+
+		*** VERSION INFO ***
+
+	The current version of TVHARE is found in
+Ai:Tvhare;Tvhare Fasl.  This version of the document
+describes the fasl whose source version was: 631.
+	{The source version used to create a Tvhare Fasl
+file can be determined by fasloading it into a lisp and then
+doing: (GET '*VERSION* 'TVHARE).}
+	Tvhare;Tvhare Declar (an INCLUDE-able file of
+declarations useful when compiling code which uses TVHARE)
+contains a comment at the top of the first page indicating
+which source version the declarations were obtained from;
+the DECLAR file and FASL file should match.
+
+
+			CREDITS:
+
+	Mostly, Mark Miller implemented TVHARE by glue-ing
+together ideas and chunks of code written by various members
+of the MIT AI Lab at various times.  TVHARE evolved out of
+minor frustrations with TVRTLE; but TVHARE could not have
+been written without it.  The design was partly based on a
+careful reading of Henry Lieberman's current lisp
+implementation of tvrtle.  More specifically, several
+crucial low-level routines coded by Henry originally were
+borrowed more or less intact.  Chuck Rich, besides providing
+some chunks of code, provided much valuable interaction and
+many suggestions which markedly improved the design.  Bob
+Woodham helped several times when the LAP routines caused
+difficulties.  Ideas were also borrowed from Chuck Reiger's
+WINDOW package and Tomas' display-slave simulator.  Alice
+Miller designed the characters for tvhare's vector-based
+font.
+
+
+			CONTENTS
+
+Part 0.  INTRODUCTORY REMARKS
+	Comparison to TVRTLE
+	Very Important Meta-Comments
+	Examples
+
+Part I.  VECTORS, POINTS, AND MISCELLANEOUS GRAPHICS
+	Creating and Destroying Hares
+	Screen & Display Boundarys
+	Clearing the TV Screen
+	Turning the Display On and Off
+	Interrupt Characters
+	Hare Cursor
+	Scale Factors
+	HOME, and Coordinates
+	Hare Boundaries
+	Visibility
+	Complementing Territory
+	Penstate
+	Ink
+	Out of Bounds Handlers
+	Heading
+	Current Position
+	Movement Commands
+	Manipulating Individual Points
+	Shading, & Drawing Boxes
+	Background Screencolor
+	Clearing, Erasing, & Refreshing
+	CS-ing
+	Suspending Your Lisp
+
+Part II.  DISPLAYING CHARACTERS
+	Hare-font & Drawc
+	Text-oriented Cursor Positioning
+	Obtaining Input From a Particular Hare
+
+Part III.  MISCELLANEOUS
+	Display-list Editing {*** Important & Useful ***}
+	Arithmetic
+	Some Low Level Things
+	Other Files Used
+	Suggestions
+
+Part 0.  Introductory Remarks
+
+	TVHARE & TVRTLE -- Some Comparisons:
+
+	The TVHARE package is intended for use by
+lisp programmers to improve the graphics capability of their
+AI demos.  Hence its goals differ from TVRTLE's, which must
+consider various pedagogical issues as well.  Example: most
+numerical functions {e.g., (HDG?)} come in two flavors, one
+of which is a guaranteed flonum, and the other of which is a
+guaranteed fixnum.  The following is a short table
+illustrating the differing design goals:
+
+LLOGO;TVRTLE:			TVHARE:
+================================================================
+
+For beginners			For lisp programmers
+
+MARK(text)			Sexy text graphics which depends
+	uses princ.		on current pen state.  Font has
+	turtle position		128 scalable, rotatable graphics.
+	is not affected.	hare pos. optionally updated.
+
+Multiple turtles,		Each turtle has its own "window,"
+	but 1 window.		which can be CS'ed, read from,
+				complemented, outlined, etc.
+
+Snaps				Display-lists w. incremental erase & refresh.
+				Display-items can be individually "forgotten",
+				"remembered", and passed around.  Only the
+				changes are seen; the rest of the display
+				remains intact.
+
+Color Display Primitives	None.  Use tvrtle.
+
+Shading Patterns		Minimal: (a) all points in a rectangular
+				region may be toggled; (b) a
+				point-drawing primitive leaves
+				open the possibility for crude
+				user-defined shading patterns.
+
+General Arithmetic,		Fixnum only & flonum only arithmetic.
+	High accuracy.		Avoid number consing (esp. flonums)!
+	(Much GC-ing).		The internal representation uses
+				fixnums scaled to xgp accuracy,
+				and centered (so most fixnums
+				fall in "unique-ized" range).
+				{Garbage-collections are far
+				less frequent; refreshing is
+				almost instantaneous.}
+
+	TVHARE's internal representation corresponds to
+xgp-quality resolution (about 4 times that of tv's).  Hence
+the possibility exists for creating superior xgp-scan-file
+output; however a translator to scrimp format has not been
+written at the present time.  Meanwhile, use <esc>Q
+(tektronics) or :bkph;zap 3 to obtain hardcopy directly from
+the tv screen.
+
+	The long-form names (like FORWARD) are not provided.
+If you like them, use putprop to create synonyms.
+
+****************************************************************
+		VERY IMPORTANT META-COMMENTS
+****************************************************************
+[A].
+	Most TVHARE routines come in 4 flavors.  The basic
+routine -- say FOO -- is a lexpr with, say, 0 or 1 args.
+FOO will typically perform some error checking, and return a
+flonum value.  The final, optional, argument is which hare
+to use.  When a hare is NOT supplied, the current default
+hare (kept in HARE) is used.
+
+	Usually there will also be an expr/subr routine
+called HFOO, with (say) exactly 1 arg.  Its function will be
+identical to that of FOO except that: (1) the error checking
+is not performed; and (2) the final, hare, argument is
+required.
+
+	Usually there will be a fixnum-only version of FOO,
+called IFOO, which will return the same value as FOO, but
+rounded to the nearest fixnum.
+
+	There will also be a routine called HIFOO which is
+the I (fixnum only) version of the H version of FOO.  This
+is the lowest level, most efficient, least foolproof way to
+achieve (to the nearest fixnum) whatever FOO achieves.
+
+	In describing the routines below, the FOO version
+only will be explained.  The other 3 versions will simply be
+stated to exist, where appropriate.
+
+****************************************************************
+
+[B]. 
+	Many functions, like FD, return a "DISPLAY-ITEM".
+This is either NIL (meaning nothing was actually drawn --
+perhaps the pen was up), or a mysterious-looking object.
+This object is of interest to the user ONLY in that it may
+be passed as an argument to FORGET or REMEMBER (cf).  A
+typical display-item is a "vector" {which happens to be a
+hunk4 of internal coordinates}.  If the user chooses to play
+around with a display-item -- a completely illegal and
+immoral act -- the penalty is that the display will become
+messed up after the next refresh.  Unless you plan to do
+some FORGETting (cf.), just ignore these items so that they
+can be garbage collected after the next CS.
+
+****************************************************************
+
+		*** EXAMPLES ***
+
+	The primitives used in the examples are explained
+below.  This is just to give you the idea.  {Assume you are
+logged into MIT AI's ITS timesharing system.}  You type:
+
+:LISP	  ;;; tvhare requires winning newio.
+Alloc? N  ;;; answer the alloc question in your usual way
+*
+(fasload tvhare fasl dsk tvhare) ;;; gets you a tvhare
+
+[Example 1a]	To draw a triangle, one might do the
+following:
+
+(prog (hare) ;;; spec-bind, since HARE is special var
+      (setq hare (create-hare))
+      (vis:= t)
+      (cs)
+      (do ((i 1 (1+ i))) ((> i 3)) (fd 100) (rt 120))
+      (return hare))
+
+[Example 1b]	If the spec-bind upsets you because of
+efficiency, you can do the following instead:
+
+(prog (har)
+      (setq har (create-hare))
+      (vis:= t har)
+      (cs har)
+      (do ((i 1 (1+ i))) ((> i 3)) (fd 100 har) (rt 120 har))
+      (return har))
+
+[Example 1c]	If excessive error checking upsets you
+because of efficiency, you can do the following instead:
+
+(prog (har)
+      (setq har (create-hare))
+      (hvis:= t har)
+      (hcs har)
+      (do ((i 1 (1+ i))) ((> i 3)) (hfd 100 har) (hrt 120 har))
+      (return har))
+
+However, you are advised not to make ANY mistakes in this
+last version!  {Also, the relationship to a normal Logo
+program is getting a bit obscure.}
+
+[Example 2]	Suppose you are creating a scene (no pun
+intended) by driving the hare around with top level commands.
+If you make a mistake, you need not start over.  So if you do:
+		(FD 100),
+but you forgot that pen was down, you can fix things (and
+not lose your scene) by then doing:
+		(FORGET *). ;;; {In MACLISP, * is the value of
+			    ;;;  the previous form.}
+This leaves the hare where it now is, but deletes the
+vector just drawn.
+
+[Example 3]	Finally, suppose you have just done:
+		(cs) (rt 90).
+
+(HDG?)		outputs:	90.0
+(HHDG? hare)	outputs:	90.0
+(IHDG?)		outputs:	90.
+(HIHDG? hare)	outputs:	90.
+
+[Example 4]	The cover & figures in the hardcopy of this
+document were created by trivial tvhare programs which were
+written in a total of less than 30 person-minutes.
+
+			GLOSSARY
+
+Part I.  Vectors, Points, and Miscellaneous Graphics.
+	(For character-display routines, see part II, below).
+
+
+		CREATING AND DESTROYING HARES
+
+HARE	Variable.  Contains the current hare.
+	User is free to setq or lambda-bind this
+	to any object of type hare.
+
+HARES	Variable.	READ-ONLY.
+	The current list of all hares known to the system.
+
+HAREP	Expr/subr.	1 arg.  Outputs T or NIL.
+	Returns T if its arg seems to be a hare, else nil.
+	Not a foolproof test, but normally sufficient.
+
+CREATE-HARE	expr/subr.  no args.  returns a hare.
+		CREATE-HARE creates a new hare and assigns it
+	the default initial values for all parameters.  A
+	"hare" is an UNINTERNED gensym atom with a NODETYPE
+	property whose value is HARE, and various other props
+	defining its current state.  Every property of a hare
+	may be examined or changed by an appropriate access function.
+	CAVEATS: (1) It is up to the user to hang on to the hare,
+	setq some variable to it, or choose to INTERN its
+	atomic name; (altho its available on HARES).
+	(2) Hares are invisible when first created.  This is
+	a feature: you can change things (e.g., coordinates, bounds)
+	before making the hare appear {by (vis:= T)}.  (3) Exception:
+	if (CS) is performed when there are NO HARES at all,
+	a default hare is created and then made visible.
+	This for convenience & compatibility with std. logo.
+
+DESTROY-HARE	lexpr/lsubr.	0 or 1 args.	returns T.
+	Stop displaying hare, and release its storage for
+	recovery by subsequent gc.
+	Optional arg is which hare to destroy.
+HDESTROY-HARE also exists.
+
+DESTROY-ALL-HARES expr/subr.	0 args.  returns T.
+	more efficient than (mapc 'destroy-hare hares).
+
+		SCREEN DIMENSIONS
+
+	The following functions return the hare-coordinates
+of the outer edges of the tv screen.  While you are allowed
+to "draw" things which are off-screen (using the out-of-bounds
+handling capabilities described elsewhere in this document),
+it is often desirable to remain on-screen.  A typical use of
+the screen-dimension functions would be to adjust a
+hare's boundary to be the same as the corresponding screen
+boundary.  {Contrast the display-boundary functions below.}
+
+SCREEN-XMAX?	lexpr/lsubr.	0 or 1 arg.
+	Optional first arg is which hare's coordinate system
+	to use; if absent, use current HARE.
+	Returns maximum x coordinate on the screen as a flonum.
+
+HSCREEN-XMAX?	expr/subr.	1 arg.
+	Same as SCREEN-XMAX? but explicit-hare version.
+	(No error checking).
+
+ISCREEN-XMAX?	Integer (fixnum-only) version.
+HISCREEN-XMAX?	H+I version.
+
+SCREEN-XMIN?	lexpr/lsubr.  0 or 1 args.
+	X-coord of left edge of screen, in hare coords.
+
+HSCREEN-XMIN?, ISCREEN-XMIN?, and HISCREEN-XMIN? exist.
+
+SCREEN-YMAX?	analogous to SCREEN-XMAX?, but for TOP of
+	screen.
+
+HSCREEN-YMAX?, ISCREEN-YMAX? and HISCREEN-YMAX? exist.
+
+SCREEN-YMIN?	analogous to SCREEN-XMIN?, but for BOTTOM
+	of screen.
+
+HSCREEN-YMIN?, ISCREEN-YMIN?, and HISCREEN-YMIN? exist.
+
+		BOUNDARIES OF DISPLAY AREA.
+
+	The "display area" is the smallest rectangle
+enclosing the UNION of the territories occupied by all
+VISIBLE (see below) hares.  This is typically a subregion of
+the entire screen (contrast the screen-dimension functions
+above).  With 1 hare, the display-boundaries are the same as
+the territory boundaries of that hare.
+
+  {Minor exception: The display-ymin is adjusted downward
+  from the bottom-most hare's ymin by anywhere from 0 to 11
+  raster lines.  This leaves the bottom line of the display
+  area directly adjacent to the top line of the echo-area.}
+
+In general, the display-bounds are some subset of the top
+portion of the screen.
+
+	These functions return the display-bounds in the
+hare coordinates of their hare input (or that of the default
+hare where optional).  CF: Screen Boundaries, Hare
+Boundaries.
+
+DISPLAY-XMIN?	lexpr/lsubr.  0 or 1 args.
+	Returns (flonum) x-coordinate of the left edge of
+	the display area, in hare coordinates.  Optional arg
+	is which hare.
+
+HDISPLAY-XMIN?, IDISPLAY-XMIN?, HIDISPLAY-XMIN? exist.
+
+	The following routines are analogous:
+
+DISPLAY-YMIN?
+HDISPLAY-YMIN?
+IDISPLAY-YMIN?
+HIDISPLAY-YMIN?
+
+DISPLAY-XMAX?
+HDISPLAY-XMAX?
+IDISPLAY-XMAX?
+HIDISPLAY-XMAX?
+
+DISPLAY-YMAX?
+HDISPLAY-YMAX?
+IDISPLAY-YMAX?
+HIDISPLAY-YMAX?
+
+		CLEAR-ing the TV SCREEN
+
+		Not to be confused with CS!
+
+CLEAR-DISPLAY	expr/subr.  no args.  returns T.
+	Turns the top (display) portion of the screen
+	into grey space.
+
+CLEAR-ECHO	expr/subr.  no args.  returns T.
+	Turns the bottom (echo) portion of the screen
+	into grey space.  CAVEAT: DO NOT USE (CURSORPOS 'C)
+	TO DO THIS.  {REASON: When mixing graphics with
+	stuff on the ascii channel, {like (cursorpos 'c)},
+	one must sleep after using the ascii channel or
+	SUBSEQUENT graphics may be clobbered!}
+
+HARE-WAIT-TIME	Variable.  flonum.  read/write.
+	Default value: 0.1.
+	How long to sleep after using ascii channel.
+	This must be a user-adjustable parameter since
+	the optimal value is affected by things like the
+	system load average!
+
+CLEAR-ENTIRE-SCREEN	expr/subr.  no args.  returns T.
+	clears the entire screen completely.
+	Contrast: CS-ALL-HARES.
+
+	TOGGLING the USE of the TOP-TTY for DISPLAY
+
+DISPLAY?	expr/subr.	no args.  returns T or NIL.
+	returns T iff the top portion of the tv screen is
+	reserved for graphics, else NIL.
+
+DISPLAY:=	expr/subr.	1 arg (t or nil).
+	Returns previous value.
+	(DISPLAY:= T) says the top portion of the screen
+		should be reserved for graphics (echo-ing
+		on bottom portion only).
+		Also does a refresh.  CF: ^K, ^N.
+		OK to do twice in a row.
+	(DISPLAY:= NIL) says to use the full screen for echoing.
+		Also clears the screen.
+		Hare display-lists remain intact and can be
+		re-displayed by (display:= t) or ^N.
+		Ok to do twice in a row.
+		CF: ^O.
+
+		HARE INTERRUPT CHARS
+
+	Three tvhare operations are so frequently useful
+that it is worth attaching them to single-character
+interrupts: CS-ALL-HARES, (DISPLAY:= T), and (DISPLAY:= NIL).  
+The following function allows the enabling and disabling of
+the linkup between these operations and three control characters.
+
+
+HARE-INTERRUPTS		lexpr/lsubr.  1 or 3 args.  returns 6list.
+			(hare-interrupts T) enables the following
+			default selection of control characters:
+
+			^K:	CS-ALL-HARES.
+			^N:	(display:= T), which also refreshes.
+			^O:	(display:= NIL), also clears screen.
+
+			(hare-interrupts n1 n2 n3), where n1, n2, and n3
+			are integers corresponding to ascii characters,
+			assigns (ascii n1) instead of ^K, (ascii n2)
+			instead of ^N, and (ascii n3) instead of ^O.
+
+			The return value is a 6list indicating what
+			previous interrupt settings were affected.
+
+			(hare-interrupts nil) uses the above 6list
+			to restore the previous meanings of the
+			hare characters currently in effect.
+
+^O (or (ascii n3))	is useful to resume fullscreen mode while
+			working on non-display aspects of your lisp.
+			Two or more consecutive uses act like
+			LISP's builtin ^L.
+
+^N (or (ascii n2))	returns you to splitscreen displaying mode,
+			and refreshes your picture (nothing is lost).
+			May be done repeatedly (eg., after returning
+			from TECO).
+
+^K (or (ascii n1))	also returns you to displaying mode (if not
+			already) but also CS-es all hares.  May
+			be done repeatedly.
+
+			HARE CURSOR:
+
+	The system supplies a CURSOR indicating the current
+position & heading of each hare (unless SHOW:= nil).  This
+is considered to be a debugging aid.  The tvhare system
+draws its simple cursor very efficiently by calling the
+internal vector primitives directly.
+	On screen-terminals other than tv's three characters
+are tyo'ed at appropriate cursorpositions to indicate the
+approximate location and heading of each hare.
+
+	{It is not currently possible for the user to supply
+her/his own cursor-drawing procedure, a feature provided by
+tvrtle.
+	In building tvhare, the cost of supporting this
+feature seemed to outweigh its utility.  User-cursor-drawing
+requires assurance that the user routine does not use a hare
+which is showing (=> infinite recursion), as well as not
+creating vectors on the display-list to represent the
+cursor, as well as ensuring that the routine is state-
+transparent.  Potential use of other-than-xor mode to draw
+the hare-cursor presents additional problems.  The
+user procedure would also have to provide for showing the
+cursor on non-tv's.
+	Nevertheless, if many users express a desire for a
+user-drawn cursor capability, it will probably be added.
+Hopefully, techniques for reducing its overhead can be
+developed (perhaps by supplying a special-purpose
+system-hare).}
+
+
+		WHETHER TO SHOW THE HARE CURSOR 
+
+SHOW?	lexpr/lsubr.  0 or 1 arg.  returns T or NIL.
+	T iff hare shows its cursor.  default is T.
+	optional arg is which hare.
+HSHOW?	exists.
+
+SHOW:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	(show:= T <optional hare>) says hare should
+	show its cursor.
+HSHOW:=	exists.
+
+	The following are provided as a concession to
+compatibility.  The names are an anomoly.
+
+ST	lexpr/lsubr.  0 or 1 arg.  returns T.
+	"Show Turtle" (SH could be confused with SETHEADING).
+	same as (SHOW:= T <optional hare>).
+
+HT	lexpr/lsubr.  0 or 1 arg.  returns T.
+	"Hide Turtle" (SHOW:= NIL).
+
+			SCALE FACTORS
+
+	Each hare has its own scale factor.  The scale
+factor defines the distance metric for that hare's
+coordinate system; it gives the ratio of tv raster dots to
+hare steps.  With scale=2, FD 1 moves 2 dots; equivalently,
+2 dots from the origin is 1 unit in the revised coordinate
+system.  The minimum noticeable scale factor is 0.25.  The
+default scale factor is 1.  With scl of 0.25, FD x, where x
+is less than 1, loses.  Changing the scale factor just
+changes how things are numbered -- NOT where they are.
+
+SCL?	lexpr/lsubr.	0 or 1 arg.  returns flonum.
+	optional 1st arg is a hare; default is current hare.
+	returns that hare's current scale factor as flonum.
+
+HSCL?, ISCL?, and HISCL? also exist.
+
+SCL:=	lexpr/lsubr.	1 or 2 args.  returns T or nil.
+	1st arg is positive fixnum or flonum to use for
+	hare's scale.  optional 2nd arg is which hare.
+
+HSCL:= also exists.
+
+		The HARE's HOME, and COORDINATES
+
+	The HARE's HOME is the ORIGIN of its coordinate
+system (contrast TVRTLE definition).  By definition, the
+HARE's HOME is always at (0, 0) in hare coordinates.
+{Hence, no XHOME? or YHOME? functions are provided!}
+CHANGING THE HARE'S HOME DOES NOT MOVE THE HARE.  {To do
+that, do: (xhome:= newx) (yhome:= newy) (pu) (home)}.
+Changing the hare's HOME to (X, Y) DOES redefine the HARE'S
+NEW coordinate system to have its origin at the point which
+was specified as (X, Y) in the OLD one!  Example: If the
+hare is at HOME, (XCOR?) returns 0.  After you do (XHOME:=
+10), (XCOR?) returns -10.  NB: this is NOT how it works in
+TVRTLE!  {This IS how I WISHED TVRTLE worked!}
+	The initial coordinate system for hares is with scl
+of 1 (1 tv dot per hare step) and with home at the dot
+nearest the center of the screen.  Initially, a top-tty of
+22 lines is reserved for display, leaving an echo-area of 15
+lines on a tv (3 on a datapoint).  [This implies that
+initially there is much less display area for negative Y
+values than positive.]
+	TV's are 576 dots wide, 455 dots high, and std.
+tv-font chars are 12 high.  A graph of the hare's current
+coordinate system, illustrating the boundary values, may be
+obtained by calling the function, SHOW-COORDS.  The effect
+of SHOW-COORDS for the default coordinate system is
+illustrated in a figure on the next page.
+
+
+XHOME:=	lexpr/lsubr.	1 or 2 args.  returns T.
+	1st arg is fixnum or flonum specifying desired
+	new xhome in current hare coordinates.  Notice that
+	the current (old) xhome will correspond to -<new xhome>
+	in terms of the revised coordinates which result.
+	optional second arg is which hare.
+HXHOME:=	also exists.
+
+YHOME:= lexpr/lsubr.	1 or 2 args.  returns T.
+	analogous to XHOME:=, but for Yhome.
+HYHOME:=	also exists.
+
+
+THERE DO *NOT* exist functions XHOME?, YHOME? etc.
+THESE WOULD BE POINTLESS.
+
+
+
+SHOW-COORDS	lexprLsubr.  0 or 1 args.
+	optional arg is which hare.  Draws a graph of the hare's
+	current coordinate system, for the user's debugging pleasure.
+	Returns the LIST of DISPLAY-ITEMs created, so that
+	(MAPC 'FORGET <return-value>) will leave the previous
+	display intact.
+HSHOW-COORDS	also exists.
+
+			HARE BOUNDARIES
+
+	These functions access/modify the boundary of a
+hare's territory.  The boundary specifies where the hare is
+expected to show up.  {A hare may appear outside of its
+boundary as explained elsewhere in this document -- cf
+Out-of-bounds Handlers.}  Also see the function, show-coords.
+
+XMIN?	lexpr/lsubr. 0 or 1 args.  returns flonum.
+	return value is left boundary for hare, in
+	hare coordinates.
+HXMIN?, IXMIN?, and HIXMIN? also exist.
+
+XMIN:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	changes left boundary for hare to 1st arg,
+	which should be fixnum or flonum, and NOT
+	to the RIGHT of XMAX.  If off screen, a
+	warning is printed, but no errors are generated.
+HXMIN:=	also exists.
+
+	The following are analogous.  Note that YMIN? refers
+to the BOTTOM boundary of the hare's display territory.
+
+YMIN?
+HYMIN?
+IYMIN?
+HIYMIN?
+YMIN:=
+HYMIN:=
+
+XMAX?
+HXMAX?
+IXMAX?
+HIXMAX?
+XMAX:=
+HXMAX:=
+
+YMAX?
+HYMAX?
+IYMAX?
+HIYMAX?
+YMAX:=
+HYMAX:=
+
+			VISIBILITY
+
+	Hares may be INVISIBLE (that's how they are born).
+An invisible hare "draws on the tv screen", but its ink is
+invisible.  NOTE: This is NOT the same as its penstate.
+Moving visibly with the pen up does not draw vectors; moving
+invisibly with the pen down creates & remembers vectors on
+the display list, which are "really" drawn whenever the hare
+becomes visible.  The cursor & outline are also hidden when
+the hare is invisible.  Of course, the "actual" visibility
+of all hares also depends on whether (DISPLAY:= NIL) or not.
+
+VIS?	lexpr/lsubr.  0 or 1 args.  returns T or NIL.
+	T iff hare is visible.
+	optional arg is which hare.
+HVIS?	also exists.
+
+VIS:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	If 1st arg is T, hare is made visible.
+	If 1st arg is NIL, hare is made invisible.
+	optional 2nd arg is which hare.
+	when born, hares are invisible.  (but see
+	CS for 1 exception to this).
+HVIS:=	also exists.
+
+		WHETHER TO COMPLEMENT TERRITORY
+
+	Hares may specify that their entire territory should
+be complemented (eg, grey vectors on light green background,
+rather than the usual, which is the reverse of this).  When
+born, hares do NOT do this.  CAREFUL: If two hares have
+overlapping territories, their attempts to COMPLEMENT
+(obviously) interact.  The SHADE function (below) may be
+helpful in this situation.
+
+COMPLEMENT?	lexpr/lsubr.  0 or 1 arg.  returns T or NIL.
+	returns T if hare complements its territory.
+	optional arg is which hare.
+HCOMPLEMENT?	also exists.
+
+COMPLEMENT:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	(complement:= T <optional hare>) specifies that
+	<hare> is to complement its territory.  1st arg
+	may be T or NIL.
+HCOMPLEMENT:=	exists.
+
+
+	{A flaw in the current tvhare system is that when:
+(a) you are on a real tv, (b) you are in a complemented
+region (ie, not the same as the overall screen background),
+and (c) HARE-FONT (cf.) is NIL; then: (d) characters created
+by DRAWC (i.e., actually by CURSORPOS + TYO in this
+situation) will not be visible.  This is due to ITS's
+implementation of TYO, which amounts to using IOR ink
+relative to the background screen color, rather than taking
+into account the local color of the region.  A fix is
+possible, but it was judged to be too much trouble to
+implement.  Moral: use the hare-font!  Alternatively, don't
+complement regions where non-hare-font text will occur.}
+
+			PENSTATE
+
+	{Whether movements leave hare-tracks}
+
+PEN?	lexpr/lsubr.  0 or 1 arg.  returns T or NIL.
+	optional arg is which hare.
+HPEN?	exists.
+
+PEN:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	sets the penstate to arg 1 (T or NIL).
+HPEN:=	exists.
+
+	The following are provided as a concession to
+compatibility.
+
+PD	lexpr/lsubr.  0 or 1 args.  returns T.
+	"Pen Down" = (pen:= t <optional hare>)
+	optional arg is which hare.
+
+PU	lexpr/lsubr.  0 or 1 arg.  returns T.
+	"Pen Up".
+
+
+	WHETHER TO DRAW THE HARE'S OUTLINE
+
+OUTLINE?	lexpr/lsubr.  0 or 1 arg.  returns T or NIL.
+	optional arg is which hare.
+	initially, outline is T (yes, draw it).
+HOUTLINE?	exists.
+
+OUTLINE:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	arg 1 is T or NIL (draw it or don't).
+	optional arg 2 is which hare.
+HOUTLINE:=	exists.
+
+		INK (or DRAWMODE)
+
+	These functions access/modify the hare's ink -- ie,
+which TK-TV drawing mode to use for this hare.  The default
+is XOR, which has the expected meaning of xor-ing new points
+with old.  To simulate standard Logo retracing (when done
+with pen down), use (INK:= 'IOR) instead.  To draw on a
+complemented region in this style, use (INK:= 'ANDC).  {Also
+useable for erasing, although the display-list editing
+feature described in part III should be used to accomplish
+erasures.}  Other drawmodes exist for various obscure
+purposes, but no other INK's are legal for hares.  Note that
+different hares may have different inks.  NOTE ALSO that
+when the screen is refreshed, each hare's display-list is
+done with that hare's current ink, regardless of what ink
+was in force when the vector was first created.
+
+INK?	lexpr/lsubr.  0 or 1 arg.  returns symbol.
+	Returns one of {IOR XOR ANDC}.
+	optional arg is which hare.
+HINK?	exists.
+
+INK:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	arg 1 is one of {IOR XOR ANDC}.
+	XOR, the default, means that points turned on
+	by an even number of crossings will be off.
+	IOR means that points turned on at all will be on.
+	ANDC is like IOR, but for off, not on.
+HINK:=	exists.
+
+
+		OUT-OF-BOUNDS HANDLERS
+
+	One of the ways in which TVHARE provides flexibility
+is in its provision for handling out-of-bounds hare
+movements.  The default action is to cause an error break,
+pretty much as in TVRTLE.  Optionally, out-of-bounds can be
+ignored entirely (also possible in tvrtle).  However, a
+third option is provided which is highly flexible.  A user
+function may be specified as the out-of-bounds handler for a
+hare.
+	The user oob-handler function takes 2 arguments: the
+out-of-bounds attempted finishing location, in hare
+coordinates, and the responsible hare.  If the user function
+chooses to return, it should return a hare coordinate (which
+may in fact also be out-of-bounds): this value is
+substituted for the original out-of-bounds value, and
+execution proceeds as if nothing unusual had happened (the
+overhead is minimal).  A trivial example would be to provide
+"clipping" action by substituting boundary values for
+out-of-bounds values.
+	A separate handler is provided for each of X and Y
+dimensions.  One could choose to ignore out-of-bounds on Y
+but cause an error on X, for example, if very long xgp paper
+was to be the final output.
+
+OOBX?	lexpr/lsubr.  0 or 1 arg.
+	optional arg is which hare.
+	returns T	(cause an error break if X out)
+	        NIL	(ignore & proceed anyway if X out)
+	or	<symbol> (call user function named <symbol> --
+			 of 2 args (<xval>, <hare>) if x out);
+			 use returned value instead of <xval>.
+HOOBX?	exists.
+
+OOBY?	analgous for Y dimension.
+HOOBY?	exists.
+
+OOBX:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	arg 1 is T, NIL, or <symbol> (as in OOBX?).
+	optional arg 2 is which hare.
+	The initial OOB for both X and Y is T.
+HOOBX:=	exists.
+
+OOBY:=	analogous for Y dimension.
+HOOBY:=	exists.
+
+			Hare HEADING
+
+HDG?	lexpr/lsubr.  0 or 1 args.  returns flonum.
+	returns flonum value for this hare's current
+	heading, in degrees.
+	optional arg 2 is which hare.
+HHDG?, IHDG?, HIHDG? exist.
+
+HDG:=	lexpr/lsubr.  1 or 2 args.  returns T.
+	set hare's absolute heading to arg 1, which
+	should be a fixnum or flonum.
+	optional arg 2 is which hare.
+HHDG:=	exists.
+
+RT	lexpr/lsubr.  1 or 2 arg.  returns T.
+	turn right (arg 1) degrees.
+	{No record of "multiple windings" is kept.
+	(HDG?) returns a value in [-179, +180]}.
+HRT	exists.
+
+LT	same as (RT -X <optional hare>).
+HLT	exists.
+
+		EXAMINING HARE'S CURRENT POSITION
+
+XCOR?	lexpr/lsubr.  0 or 1 args.  Returns flonum.
+	return value is hare's current x coordinate
+	(in hare units).  opt. arg is which hare.
+HXCOR?, IXCOR?, HIXCOR?	exist.
+
+YCOR?	analogous to XCOR?
+HYCOR?, IYCOR?, HIYCOR? exist.
+
+HERE	lexpr/lsubr.  0 or 1 args.  Returns "state-vector."
+	optional arg is which hare.
+	Output is an INTERNALLY-MEANINGFUL data object
+	which has NO meaning to USER -- unlike in LLOGO.
+	{If you want (LIST (XCOR?) (YCOR?) (HDG?)), do that!}
+	THIS frob is interesting ONLY as an input to
+	certain other TVHARE routines: eg., SETHARE, SHADE, BOX.
+	INTUITIVELY, the datafrob represents the current
+	position and heading of the hare.  Because the
+	use of HERE -- e.g., in conjunction with SETHARE --
+	is very EFFICIENT, one need not fear using it.
+HHERE?	exists.
+
+
+	Global Movement: DIRECTLY MODIFYING THE HARE'S POSITION
+
+SETXY	lexpr/lsubr.  2 or 3 args. returns <display-item>.
+	arg 1 is new hare xcoord.
+	arg 2 is new hare ycoord.
+	optional arg 3 is which hare.
+	If pendown, a line is drawn.
+HSETXY	exists.
+
+SETX	lexpr/lsubr.  1 or 2 args.  returns <display-item>.
+	arg 1 is new hare xcoord.
+	optional arg 2 is which hare.
+	If pendown, a line is drawn.
+HSETX	exists.
+
+SETY, HSETY are analogous.
+
+SETHARE	lexpr/lsubr.  1 or 2 args.  returns <display-item>.
+	arg 1 is a "state-vector" created by HERE or HHERE.
+	Moves hare to that position & heading on the screen.
+	If pendown, a line is drawn.
+	optional arg 2 is which hare.
+	NB: Changing the coordinate system by modifying scl or
+	or home does not affect the position of previous HERE.
+	Note that, since HERE vectors represent screen positions --
+	independent of coordinate system -- a HERE vector created
+	by one hare may be used to SETHARE a different hare.
+	[However, out-of-bounds errors will not be detected,
+	at least in the current implementation, until the next
+	movement (and only then if it remains out of bounds).]
+HSETHARE	exists.
+
+HOME	lexpr/lsubr.  0 or 1 args.  returns <display-item>.
+	moves hare to home position w. heading of 0 (north).
+	If pendown, a line is drawn.
+	optional arg is which hare.
+HHOME	exists.
+
+		Local Movement: FORWARD and BACK
+
+FD	lexpr/lsubr.  1 or 2 args.  returns <display-item>.
+	arg 1 is how far to move in direction of current heading.
+	units of arg 1 are "hare steps", which depend on
+	hare's current scale.
+	if pendown, a line is drawn.
+	optional arg 2 is which hare.
+HFD	exists.
+
+BK	same as (FD -X <optional hare>).
+HBK	exists.
+
+
+		MANIPULATING INDIVIDUAL POINTS
+
+PT	lexpr/lsubr.  0 or 1 args.  returns <display-item>.
+	"Turns on" the point at the current location,
+	modulo the current penstate, ink etc.
+	optional arg is which hare.
+	{Pretty silly with penup, one might suppose.}
+	If INK happens to be XOR, point will be turned
+	OFF, actually, if its already on; etc.
+	PT is useful, e.g., for fixing up intersection
+	points in xor mode where the number of intersections
+	is not the same parity as the desired final state.
+HPT	exists.
+
+	SHADING ALL POINTS IN A RECTANGULAR REGION
+
+SHADE	lexpr/lsubr.  1 or 2 args.  returns <display-item>.
+	arg 1 is a "state vector" (created by HERE or HHERE).
+	This is the "MARK".  {optional arg 2 is which hare}.
+	The MARK and the CURRENT LOCATION (which, ideally,
+	are distinct points) are considered to be opposite corners
+	of a RECTANGLE.  That rectangle is "shaded" --
+	or, at least, all its points are twiddled modulo
+	the hare's current penstate and ink.  {SHADE is not very
+	interesting with the pen up!}  With XOR ink, complements
+	the rectangular region -- probably the most useful
+	operation.
+		Example: Using SHADE to toggle the rectangle
+	defined by [100 100] and home:
+			(ink:= 'xor)
+			(pu)
+			(setxy 100 100)
+			(setq foo (here))
+			(home)
+			(pd)
+			(shade foo)
+	The hare's current location is not changed by SHADE.
+HSHADE	exists.
+
+
+			DRAWING BOXES
+
+	Box drawing is easy using FD and RT commands, so
+these functions are not strictly necessary.  However,
+box-drawing is such a commonly useful operation that it is
+worth providing additional primitives to draw them
+efficiently (conceptually, storage-wise, and speed-wise).
+BOX, like SHADE (above), takes a HERE state-vector as its 1st
+input and uses it as a MARK.  The MARK and the CURRENT
+LOCATION are taken as opposite corners of the box, whose
+outline is drawn according to the current penstate and ink.
+The current location is not changed.
+
+BOX	lexpr/lsubr.  1 or 2 args.  returns <display-item>.
+	arg 1 is a MARK.
+	optional arg 2 is which hare.
+HBOX	exists.
+
+	PROGRAMMABLE BACKGROUND SCREEN COLOR
+
+	These are provided just for fun.
+
+SCREENCOLOR?	expr/subr.  0 args.  returns T or NIL.
+	T means the overall screen color is light green.
+	NIL means it is grey.
+	This is affected by <esc C> as well as by the
+	next function.
+
+SCREENCOLOR:=	expr/subr.  1 arg.  returns T.
+	arg must be one of {IOR XOR ANDC}.
+	XOR = Programmable <esc C>.
+	IOR makes the overall background light green.
+	ANDC makes it grey.
+
+		CLEARING, ERASING & REFRESHING
+
+CLEAR	lexpr/lsubr.  0 or 1 args.  returns T.
+	optional arg is which hare.
+	CLEARs all the points in hare's territory.
+		If background screencolor is grey, then:
+		   if hare complements its territory (cf),
+		     then "clear" -> "make green"
+		   else "clear" -> "make grey"
+		else: ;;; ie if background screencolor is green
+		   if hare complements, "clear" -> "make grey"
+		   else "clear" -> "make green".
+	NOTE: This is NOT the same as ERASE
+	which runs thru the display list w. negative ink!
+	Differences:
+		(a) this hare may have drawn OUTSIDE
+		its territory; CLEAR ignores this.
+		(b) CLEAR gets rid of the outline & cursor.
+		(c) SOME OTHER hare may have drawn in
+		this territory -- it's still cleared completely.
+	NB: This is run even if (display:= NIL).
+HCLEAR	exists.
+
+ERASE	like CLEAR, but:
+	runs thru display-list using "negative ink".
+	{If the display was messed up (say by ledit)
+	use REFRESH (which uses CLEAR); to just erase
+	1 hare's stuff without CS-ing its display list
+	or making it invisible, use ERASE}.  Probably,
+	(VIS:= NIL) is wanted -- which calls ERASE -- rather
+	than ERASE per se.  ERASE does NOT erase cursor,
+	complementing, or outline.
+HERASE	exists.
+
+REDISPLAY	lexpr/lsubr.  0 or 1 args.  returns T.
+	If hare (optional arg 1) is visible, redraws
+	its vectors.  Note that if in XOR mode
+	and if not erased or cleared, REDISPLAY
+	will actually amount to erasing!
+HREDISPLAY	exists.
+
+REDISPLAY-ALL-HARES	expr/subr.  0 args.  returns T.
+	(mapc 'hredisplay hares).  CF. REFRESH-ALL-HARES.
+
+REFRESH		lexpr/lsubr.  0 or 1 arg.  returns T.
+	clear & redisplay hare (optional arg 1).
+HREFRESH	exists.
+
+REFRESH-ALL-HARES	expr/subr.  0 args. returns T.		***********************
+	Much more efficient than (mapc 'refresh hares).		Probably, this is what
+	This is the normal way to use the display-lists,	you really want to use!
+	other than ^N.						***********************
+
+WIPE	like erase, but also flushes display list.
+HWIPE	exists.
+
+WIPE-ALL-HARES	is like ERASE-ALL-HARES, but WIPES them too.
+
+			CS-ing
+
+		Not to be confused with CLEARing
+
+CS	lexpr/lsubr. 0 or 1 args.  returns T.
+	CS has the Logo meaning of (HOME) (WIPE), which
+	leaves the cursor (if showing) showing, and the boundary
+	(& complementing) intact.
+	If the display is not in use, CS does (DISPLAY:= T),
+	as it does in normal Logo.
+	If no hares exist, CS creates a default hare, sets
+	HARE to it, and MAKES IT VISIBLE.  This behavior is
+	desire-able in that one may load in TVHARE, type (CS) and
+	then (FD 100), as in any Logo.  HOWEVER it amounts to an
+	(apparent) EXCEPTION to the usual rule that hares are
+	INVISIBLE when first created.
+HCS	exists.
+
+CS-ALL-HARES	expr/subr.  0 args.  returns T.
+	like (mapc 'cs hares), but much more efficient.
+	Same as ^K.
+
+		SUSPENDING your LISP
+
+	Normally when TK-TV graphics are used, one must
+worry about such things as whether the 11's core for the
+TV-buffer is being mapped into the 10's memory, prior to
+dumping out a lisp core image etc.  TVHARE packages this
+nonsense up into two functions for use when suspending a
+lisp.  One is called prior to SUSPEND, to "clean up" -- and
+the other is called after, to "restore the world".  ALWAYS
+USE THESE WHEN SUSPENDING A JOB INVOLVING TVHARE.  The
+post-suspend function will set things up properly if you
+resume the job on a non-tv, or vice-versa.  In particular,
+this means you can work at a datapoint, suspend the job, and
+then move to a tv -- the display will now appear exactly as
+if you'd been on a tv all along!
+
+HARE-PRE-SUSPEND	expr/subr.  0 args.  returns NIL.
+	take one before suspending.
+
+HARE-POST-SUSPEND	expr/subr.  0 args.  returns T.
+	take one after suspending.
+	If displaying was on before the suspend, it will
+	be on after; and conversely.
+
+Part II.  Routines for Displaying Characters.
+
+
+	The basic routine for displaying characters using
+the hare is DRAWC, which is analogous to LISP's PRINC.  The
+font used is controlled by the special var HARE-FONT.
+
+
+HARE-FONT	var.  value=T or NIL.  read/modify ok.
+	Default value is T on tv's, NIL on non-tv's.
+	If T, the special (8x8 hare-steps) tvhare
+	font is used; if NIL, standard tyo's are used by
+	DRAWC.  {Avoid non-graphics like TAB or ^M unless
+	you are using the hare-font: they confuse updating
+	and cannot be rubbed out properly.}
+		All 128 ascii characters are defined
+	as 1-character-wide graphics in the hare-font.
+	{The assignment was based on 25FR3.}  A figure
+	on the next page illustrates the font for a scale
+	of 1.0, and a heading of 90 degrees.
+
+DRAWC	lexpr/lsubr.  1 to 3 args.  returns <display-item>.
+		Arg 1 (required) is the form to "princ".
+	It is printed at the hare's current position,
+	in the direction of the hare's current heading,
+	using the hare's current ink, in a size which
+	corresponds to the hare's current scale.  If the
+	pen is up, nothing is actually drawn.  Whatever
+	is drawn is added to the display-list in the usual
+	fashion.
+		DRAWC normally uses a special rotatable,
+	scalable, vector-based font to accomplish this
+	flexibility.  All 128 ascii characters result
+	in 1-char wide graphics being drawn.
+	Special actions such as carriage-return and
+	tab are provided by separate functions (see below).
+		When HARE-FONT is NIL, tyo's and rubouts are
+	used to "simulate" as closely as possible the behavior
+	of DRAWC; this is intended for use on non-tv's to
+	get a rough idea of what would have been printed.
+		Arg 2 (optional) is whether to update
+	the hare's position to the point immediately
+	following the last character.  The default is T.
+	(drawc <anything> nil) with the pen UP is a no-op.
+		Arg 3 (optional) is which hare; the default
+	is the current hare.
+		Serving suggestion for non-tv's (e.g.,
+	datapoints): "printer plots" can be created by
+	using (DRAWC '*) instead of FD.  This also
+	works on tv's (but why would you want to?).
+		When HARE-FONT is NIL, a character
+	map of the display-screen is kept, in order
+	to have INK's work (two drawc's at the same
+	spot with XOR ink result in rubbing out; if
+	anything was overprinted, it reappears; etc.).
+	The price is a 40 element table and some
+	otherwise-unnecessary consing.
+
+HDRAWC	expr/subr,  3 args, returns <display-item>.
+	(hdrawc <form> <update?> <hare>).
+	H version of DRAWC.
+
+	TEXT-ORIENTED CURSOR POSITIONING COMMANDS
+
+
+DRAW-CR		lexpr/lsubr.  0 or 1 arg. returns T.
+		Draws a heading-dependent
+		carriage-return (no linefeed)
+		to the appropriate boundary.
+		No lines are drawn (even if PD).
+HDRAW-CR	exists.
+
+DRAW-LF		lexpr/lsubr.  0 or 1 arg.  returns T.
+		draws a heading-dependent
+		linefeed (no cr).  Can cause
+		out-of-bounds error if done in the
+		wrong place.  No lines drawn.
+HDRAW-LF	exists.
+
+DRAW-CRLF	lexpr/lsubr.  0 or 1 arg.  returns T.
+		does a line-feed and then
+		a carriage return, in the hare sense.
+HDRAW-CRLF exists.
+
+DRAW-TAB	lexpr/lsubr.  0 or 1 arg.  returns T.
+		does a heading-dependent tab to about
+		4 chars ahead (always moves at least
+		a little); (the tab-positions are  multiples
+		of 24 hare steps from the cr-positions).
+		No lines drawn.  Beware of oobs.
+HDRAW-TAB	exists.
+
+	OBTAINING INPUT FROM A PARTICULAR HARE
+
+	Sometimes it is effective to think of each hare's
+territory as a "window" in which distinct user-computer
+interactions take place.  In these circumstances it is
+desirable to be able to print a question in a given window
+and then "read the answer from that window".  The user still
+types on the one keyboard, but echo-ing occurs in the window
+where the question was printed (drawc-ed), rather than in
+the bottom (default) echo-area.  TVHARE is capable of this;
+it is not upset by minor details such as where the hare is
+heading (so if slanted, upside-down echoing is your thing,
+have fun!).
+
+READHARE	lexpr/lsubr.  0 or 1 arg.  returns sexpr.
+		optional arg is which hare to read from.
+		reads from the keyboard; echo'es using drawc;
+		(rubout processing cannot be seen in
+		real time however).
+			{READHARE is an exception to
+		the rule that all functions which create
+		display-items return them; it is obliged
+		to return the sexpr which was read, of course.
+		Unfortunately, this means that the item
+		created by the internal call to drawc is
+		not readily "forgettable".  [See TOGGLE-ECHOING
+		for a way around this.]}
+			Before calling READHARE, arrange to
+		have the hare in a good position for echo-ing --
+		for example, drawc a prompt character, and allow
+		enough room for the expected range of replies.
+HREADHARE	exists.
+
+TYIHARE		lexpr/lsubr.  0 or 1 arg.  returns fixnum.
+		similar to READHARE, but TYI's instead.
+HTYIHARE	exists.
+
+TOGGLE-ECHOING	expr/subr.  0 args.  returns T.
+		This is the principle function
+		needed to implement READHARE & TYIHARE.
+		It turns echoing to the bottom (echo-area)
+		tty on/off.  It is provided as a part
+		of the tvhare package so that users may
+		implement their own routines for obtaining
+		input from a given hare.  For example,
+		real-time rubout processing might be nice
+		when reading an sexpr, and can be implemented
+		using TOGGLE-ECHOING, FORGET, and DRAWC.
+			It is advisable to mask interrupts
+		while echoing is off, so as not to be left in
+		a state of "blind typing" after, eg, a ^G quit.
+		The following code is typical of the
+		intended use:
+			(prog (int)
+                              (setq int (nointerrupt t))
+                              (toggle-echoing)
+                                      ;;; <do your thing>
+                              (toggle-echoing)
+                              (nointerrupt int)
+                              (return <your thing>))
+
+Part III.	Miscellaneous.
+
+
+		DISPLAY-LIST EDITING
+
+	All functions which draw things (FD, SETXY, PT,
+DRAWC, BOX, SHADE) return a DISPLAY-ITEMS as their value.
+{The only current exceptions are READHARE and TYIHARE -- see
+those for more information.}  Display-items are NOT of
+interest to the user EXCEPT in connection with the following
+functions.
+
+
+FORGET		lexpr/lsubr.  1 or 2 args.
+		First arg is a <display-item> such as
+		a vector created by FD, or a list of
+		character-specs created by DRAWC.
+		Second arg is optional hare.
+		Removes the display-item from the hare's
+		display-list.  If the display is on and
+		the hare is visible, the item is also
+		removed from the screen.
+HFORGET		exists.
+
+REMEMBER	lexpr/lsubr.  1 or 2 args.
+		Analogous to FORGET (ie, undoes it).  If
+		the display is on and the hare is visible,
+		the item also reappears on the screen.
+		Items can also be remembered to other
+		hares (whether or not they were ever
+		forgotten), and can be remembered multiple
+		times (potentially confusing in xor mode).
+HREMEMBER	exists.
+
+	Examples:
+		[1] See the trivial example near the
+		beginning of this document.
+
+		[2] Suppose you want to create some display
+		items using a second, temporary hare, and then
+		destroy the hare, but save the items.
+		{This might allow you to think in an appropriate
+		coordinate system, or to create the items in
+		the current binding environment but have them
+		not appear until a later time, or ...}
+		You do:
+			 (setq htem (create-hare)
+                               x    (list (drawc foo htem)
+                                          (fd x htem)
+                                          (pt htem)
+                                          (shade bar htem)))
+                         (destroy-hare htem)
+                           ;;; Htem is gone, but you've still
+                           ;;; got its display-list.  Later you
+			   ;;; use it via:
+                         (setq hare <another-hare>)
+                         (mapc 'remember x).
+		Notice that the items were created but never
+		actually displayed since htem was born with
+		vis = nil, and left that way.  If <another-hare>
+		was visible, the items appeared during the mapc.
+
+			ARITHMETIC
+
+
+	These functions are provided only because they are
+needed internally and may be generally useful.
+
+
+ISQ	Expr/subr.  1 fixnum arg.  Returns arg squared as fixnum.
+
+IDIV	Expr/subr.  2 fixnum args, i, j.
+	Returns i divided by j as a rounded-off fixnum.
+
++IDIV	Same as IDIV, but assumes both inputs are positive.
+
+ROUND	Expr/subr.  1 arg (fixnum or flonum).
+	Returns rounded-off fixnum.
+
+ROUND$	Same as ROUND, but assumes arg a flonum.
+
+ISQRT	Expr/subr.  1 fixnum arg, returns its truncated
+	fixnum sqrt (as in the Moonual).   This is the
+	fixnum-only analoque of Gosper's bignum newton
+	iteration.
+
+		SOME LOW LEVEL THINGS
+
+	(For more information, see the code)
+
+LISP-SYMBOLS: Variable.  (T or NIL).
+	Normally TVHARE loads symbols and sets this to T.
+	To prevent this (ie, if already loaded), set it to
+	T prior to fasloading TVHARE.
+
+SYMLOD	Expr/Subr.  No args.  Outputs T.
+	Checks var LISP-SYMBOLS to see if already loaded.
+	If not, loads symbols.
+
+TV	Variable.  Contains the TV buffer array.  READ-ONLY.
+	You can store into this array or read from it if
+	you really want to: but its not normally of interest
+	to the TVHARE user.
+
+FAKE-TV	expr/subr.  1 input (T or NIL).  output=input.
+	(Fake-tv T/NIL) informs the system that you are-not/are
+	on a real tv.  Normally this is noticed automatically.
+
+ECHO-AREA	Variable.  Fixnum.  Read-only.
+	Current size of bottom part of screen used for echo-ing.
+	In lines.
+
+		OTHER FILES USED:
+
+	TVHARE incorporates altered versions of two TVLISP;
+files -- TVOUT and TVLINE.  These were altered by Chuck Rich
+and Bob Woodham to aid the creation of TVHARE.  The
+alterations include additional functions and conventions
+(e.g., wrt. drawmodes), and the possibility of creating a
+fake tv array for non-tv operation (by changing tvline
+functions to examine the specvar TV once per call).  This
+means that things run smoothly (though mostly invisibly) on
+a datapoint.
+
+	LIBLSP;SPLIT is also used; its presence is ensured
+by checking its subr prop and fasloading it if absent.
+
+	TVHARE LOADS SYMBOLS, and does (TVINIT) and
+(MAP-TV-CORE T) at load time.  If you don't know what this
+means, don't worry about it: it does what it has do.  It
+also tries to notice whether you are on a real tv or not,
+and to arrange for reasonableness when you aren't.
+
+	To use TVHARE from compiled code, INCLUDE the file
+TVHARE;TVHARE DECLAR.  This will tell the compiler about all
+user-level lexpr's, special vars, flonum&fixnum only
+functions, etc.
+
+	{To compile TVHARE -- my problem -- TVHARE;MACROS FASL
+is needed -- this fasloaded by a declare}. 
+
+			SUGGESTIONS:
+
+	* Allocate some HUNK4 space to stave off the first
+garbage collection.  {Henry Baker's GCDEMN may be helpful in
+that it quickly realizes when additional HUNK4 space needs
+to be allocated.}
+
+	* Perform complex display tasks in (HT) mode --
+drawing & erasing the hare cursor 360 times to draw a circle
+is not very efficient.
+
+	* If mixing IOR mode and XOR mode, keep them on
+separate hares.  That way the IOR hare can be REDISPLAYed,
+without doing a complete REFRESH, if something (like
+FORGET-ing a non-hare-font character) partially erased a few
+vectors.
+
+	* Creating hares is not very expensive.  Make
+several -- one for each conceptual chunk of your display.
+You can also flip quickly between different displays by
+creating things invisibly, and then making now one, now
+another, visible at a time.
+
+	* The font is most readable at scale 1 or 2 and
+headings near multiples of 90 degrees; and least readable at
+smaller scales, and at headings near multiples of 45 degrees.
+
+	* Don't be afraid to use the full range of features:
+the system is very efficient; (Chuck Rich deserves a lot of
+credit here.)
+
+	* Don't hang onto display-items you have no
+intention of FORGETting.  They can't be garbage collected if
+you don't let go of them.
+
+	* The file AI:TVHARE;TVHARE XMAIL is an archive of
+computer correspondence about tvhare, which supplements this
+manual.  This is useful in case: (a) you are curious about
+the evolution (b) you think you missed something; or (c) the
+document ever fails to be brought up to date as fast as the
+code.  Things like :BUG TVHARE also go there.
+
+	* A computer mailing list, TVHARE FANS, exists --
+people on this list are informed of changes when new
+versions are issued -- let me know if you wish your name to
+be included on (or removed from) this list.
+
+	* If the document ever seems to be inaccurate, check
+the version information (as described on the first page of
+this document).
+
+	* SEND COMMENTS, SUGGESTIONS, and BUGMSGS to
+TVHARE@MIT-AI.  I plan to freeze this version, unless bugs
+arise or easy-to-implement very-useful minor modifications
+are requested in the near future.  If anything in this
+document is confusing or wrong, let me know about that too.
+
+	* Whenever a new version is issued, the previous
+version remains available for a short time as:
+	Tvhare;Tvhare Ofasl    {And Tvhare;Tvhare Odeclar}
+in case of problems.
+
+	* A few simple illustrations of TVHARE features follow.
+
+Mark (MILLER@MIT-AI)
+
+;;; eof
+
+;;; Local Modes
+;;; Mode:TEXT
+;;; End:

@@ -1,0 +1,2278 @@
+;;; Trantor disk routines   -*-PALX-*-
+dkvn==%fnam2
+
+
+.if ne  nrp
+lblk==512.			; length of disk blocks in bytes
+nsecto==10.			; no. of sectors per track
+ntrack==6300.			; no. of tracks per disk
+mfdb==172723
+bm1b==172725
+nbm==102			; no. of bitmap blocks
+lstblk==172723
+.endc
+
+.if ne  nrk
+lblk==512.			; length of disk blocks in bytes
+nsecto==12.			; no. of sectors per track
+ntrack==406.			; no. of tracks per disk
+mfdb==11272
+bm1b==11273
+nbm==5				; no. of bitmap blocks
+lstblk==11272
+.endc
+
+.if ne  nrx
+lblk==128.			; length of disk blocks in bytes
+nsecto==26.			; no. of sectors per track
+ntrack==77.			; no. of tracks per disk
+mfdb==2
+bm1b==3
+nbm==3				; no. of bitmap blocks
+lstblk==177777
+.endc
+
+.if ne nrl
+lblk==256.			; length of disk blocks in bytes
+nsecto==26.			; no. of sectors per track
+ntrack==256.			; no. of tracks per disk
+mfdb==47750			; block containing the MFD
+bm1b==47752			; first bit map block
+nbm==26				; number of bit maps
+lstblk==47750			; do not alloacte this block or any higher
+.endc
+
+
+;;; File System Structure - DOS
+
+;;; UFD entry
+dsect <
+dufiln::  .blkw 3		; 1st word of filename
+dudate::  .blkw 1		; bit 15-12 are type, rest is date
+dubytc::  .blkw 1		; byte count of last block
+dustart:: .blkw 1		; starting block number
+dulen::	  .blkw 1		; length of file in blocks
+duend::	  .blkw 1		; block number of last block
+duprot::  .blkb 1		; protecion code
+duuse::	  .blkb 1		; usage count
+	  >,lufde
+
+.sbttl	Disk DIM Definition
+
+
+disk:
+	defdim datt,ddet,dorder,dread,dwrite,ddel,dren,drfus
+
+
+dsect <		; Channel block
+		.blkw 4		; file name
+dnull::		.blkw 4		; null file name (for finding free UFD slots)
+dctrlb::	.blkw 1		; control bits from Attach
+ddskno::	.blkw 1		; disk no. of file
+ddirbp::	.blkw 1		; directory block ptr
+ddirep::	.blkw 1		; directory entry ptr
+dfilbp::	.blkw 1		; current file block ptr
+dfilbn::	.blkw 1		; current block position in file (1 origin)
+dfilps::	.blkw 1		; byte offset of next byte to r/w in
+				; current block
+	>,ldchb
+
+
+;;; DINIT is the disk DIM initializer.
+dkinit:	clr dblist		; set list of disk blocks to nil
+	clr dbmp		; no current bitmap
+	return
+
+.sbttl	Attach Entry
+
+;;; DATT is the disk DIM attach entry point.
+
+;;;	ARGS:				VALS:
+;;; R1:   unit number		 R0:	error code
+;;; R2:	control bits		 R4:	DIM data word for channel
+;;; R3:	file name ptr		 
+
+datt:	push #ldchb/2,#2*60.	; ALOCW args: size, timeout
+	call alocw		; allocate a channel data block
+	pop r4,r0		; vals: ptr, error code
+	bne dabad4		; no memory for channel block, return error
+	mov (r3)+,(r4)+		; copy file name into channel data block
+	mov (r3)+,(r4)+		; (later this can become parse)
+	mov (r3)+,(r4)+		; ...
+	mov (r3)+,(r4)+		; ...
+	sub #10,r4		; get ptr back to data block
+	mov r2,dctrlb(r4)	; save control bits in channel data block
+	mov #1,dfilbn(r4)	; start at block 1
+	bit #%icrea,r2		; create a new file or look for old one?
+	bne dac
+
+;;; Attach existing file.
+
+        push r1			; DLOOK arg: disk unit number
+	push r4			; DLOOK arg: ptr to filename
+	call dlook		; find the file
+	pop r2,r1,r0		; vals: entry ptr, block ptr, error code
+	if ne,<
+	  jmp dabad3
+	  >
+	mov r1,ddirbp(r4)	; save directory block ptr
+	mov r2,ddirep(r4)	; save ptr to entry in directory block
+	mov ddno(r1),ddskno(r4)	; save disk no. file is on
+	bit #%iupd,dctrlb(r4)	; update permission desired?
+	if ne,<
+	  tstb duuse(r2)	; updating requested, file being used?
+	  if ne,<
+	    mov #%enafi,r0	; give file not available error
+	    br dabad1
+	    >
+	  bisb #200,duuse(r2)	; set lock bit so no one else mungs file
+	  >
+	push ddskno(r4),dustart(r2)	; DGETB args: disk no., block no.
+	call dgetb		; get first block of file
+	pop dfilbp(r4),r0	; vals: block ptr, error code
+	bne dabad1
+	mov #2,dfilps(r4)	; set current position in block to start
+	incb duuse(r2)		; increment usage count
+	mov pc,dwtf(r1)		; set flag to show block has been written
+dabad4:	return
+
+;;; Create a new file rather than using an existing one.
+
+dac:	mov (r4),dnull(r4)	; set directory name in null filename
+	mov r1,r3		; save disk unit # in case no free slots
+	push r1			; DLOOK arg: disk unit number
+	push r4			; DLOOK arg: ptr to filename
+	add #dnull,(sp)		; ...
+	call dlook		; look for a empty slot in directory
+	pop r2,r1,r0		; vals: ptr to entry, block ptr, error code
+	if ne,<
+	  cmp r0,#%ensfl	; file not found? (i.e. no empty slots)
+	  bne dabad3		; no some other error
+
+;;; No empty slots in directory.  Allocate new directory block.
+
+          push r3		; DUICLK arg: disk unit number
+	  push (r4)		; DUICLK arg: directory name
+	  call duiclk		; read in 1st directory block
+	  pop r2,r0		; vals: block ptr, error code
+	  bne dabad3
+	  push ddno(r2)		; DALLOC arg: disk no.
+	  call dalloc		; allocate another block for dir on same disk
+	  pop r1,r0		; vals: block ptr, error code
+	  bne dabad2
+	  mov (r2),(r1)		; copy link in 1st block to new (second) block
+	  mov dblk(r1),(r2)	; put link to new block in 1st block
+	  mov pc,dwtf(r2)	; indicate blocks modified
+	  mov pc,dwtf(r1)	; ...
+	  push r2		; DRELB arg: block ptr
+	  call drelb		; release 1st directory block
+	  pop r0		; val: error code
+	  bne dabad1
+	  mov r1,r2		; set entry ptr to first slot in new block
+	  tst (r2)+		; ...
+	  >
+
+;;; Ptr to directory block in R1.  Ptr to free slot in directory block in R2.
+
+	mov r1,ddirbp(r4)	; save ptr to directory block
+	mov r2,ddirep(r4)	; save ptr to directory entry
+	mov ddno(r1),ddskno(r4)	; set file's disk no. to dir's disk no.
+	push ddskno(r4)		; DALLOC arg: disk no.
+	call dalloc		; allocate first file block on same disk as dir
+	pop dfilbp(r4),r0	; vals: block ptr, error code
+	bne dabad1
+	mov #2,dfilps(r4)	; set current position in block to start
+	mov 2(r4),(r2)+		; copy file name into directory entry
+	mov 4(r4),(r2)+		; ...
+	mov 6(r4),(r2)+		; ...
+	call time		; get current date/time
+	call cvbtf		; convert to file system date
+	pop (r2)+		; CVBTF val: date, copy into directory entry
+	clr (r2)+		; set byte count of last block to zero
+	mov dfilbp(r4),r3	; get block ptr to first block
+	mov dblk(r3),(r2)+	; set start block no.
+	mov #1,(r2)+		; set length to 1
+	mov dblk(r3),(r2)+	; set end block no.
+	mov #100633,(r2)+	; protect code = 233, lock bit, usage count = 1
+	mov pc,dwtf(r1)		; set block written flag
+	return	
+
+
+dabad1:	push r1			; DRELB arg: block ptr
+	call drelb		; release new directory block
+	pop *			; val: error code
+	br dabad3
+dabad2:	push r2			; DRELB arg: block ptr
+	call drelb		; release directory block
+	pop *			; val: error code
+dabad3:	push r4			; FREE arg: ptr
+	call free		; free disk channel data block
+	return
+
+
+;;; Order entry
+
+dorder:	clr r0
+	return
+
+.sbttl	Detach Entry
+
+;;; DDET
+
+;;;	ARGS:				VALS:
+;;; R4:	channel data block ptr		(none)
+
+ddet:	push dfilbp(r4)		; DRELB arg: block ptr
+	call drelb		; release current file block
+	pop *			; val: error code
+	call dubm		; update bitmaps
+	mov ddirbp(r4),r1	; get directory block ptr
+	mov ddirep(r4),r2	; get directory entry ptr
+	bit #%icrea+%iupd,dctrlb(r4)	; creating or updating this file?
+	if ne,<
+	  mov dfilps(r4),dubytc(r2)	; put no. of bytes in last block
+	  sub #2,dubytc(r2)		; in directory
+	  push r1,r2		; save regs
+	  mov r4,r3		; DDEL arg: ptr to filename
+	  mov ddno(r1),r1	; put disk unit number in R1
+	  call ddel		; delete any files of same name
+	  pop r2,r1		; restore regs
+	  >
+	decb duuse(r2)		; decrement usage count
+	cmpb duuse(r2),#300	; lock and del bits set and usage zero?
+	if eq,<
+	  bicb #100,duuse(r2)	; clear del bit
+	  clr (r2)+		; clear filename to set entry free
+	  clr (r2)+
+	  clr (r2)+
+	  push ddno(r1),dustart-6(r2)	; DDF args: disk no., block no.
+	  call ddf		; delete the file
+	  pop *			; val: error code
+	  >
+	cmpb duuse(r2),#200	; locked and usage zero?
+	if eq,<
+	  clrb duuse(r2)	; clear lock bit
+	  >
+	mov pc,dwtf(r1)		; set block has been written flag
+	push r1			; DRELB arg: block ptr
+	call drelb		; release the directory
+	pop *			; val: error code
+	push r4			; FREE arg: ptr
+	call free		; free DWDAT
+	return
+
+drfus:	crash ^"No peeking on the disk"
+
+.sbttl	Write Entry
+
+;;; DWRITE
+
+;;;	ARGS:				VALS:
+;;; R0:	character			(none)
+;;; R4:	channel data block ptr
+
+dwrite:	bit #%iupd,dctrlb(r4)	; writing allowed?
+	if eq,<
+	  lose %ebdio		; give bad i/o error
+	  >
+	mov dfilbp(r4),r1	; get block ptr to current block
+	cmp dfilps(r4),#lblk	; room left in this file block?
+	if eq,<			; no, get another
+	  tst (r1)		; link zero, i.e. no more blocks?
+	  if eq,<
+1$:	    push ddskno(r4)	; DALLOC arg: disk no.
+	    call dalloc		; allocate another file block
+	    pop r2,*		; vals: block ptr, error code
+	    if ne,<
+	      lose %efldv	; give full device error
+	      br 1$		; try again if continued
+	      >
+	    mov dblk(r2),(r1)	; graft block onto end of file
+	    mov ddirep(r4),r3	; get directory entry ptr
+	    inc dulen(r3)	; add one to file length
+	    mov dblk(r2),duend(r3)	; and set last block no.
+	    mov ddirbp(r4),r3	; get directory block ptr
+	    mov pc,dwtf(r3)	; set flag to show block has been written
+	    >
+	  else <
+	    push ddskno(r4),(r1)	; DGETB args: disk no., block no.
+	    call dgetb		; get next file block
+	    pop r2,*		; vals: block ptr, error code
+	    if ne,<
+	      lose %ebdda	; give bad data error
+	      >
+	    >
+	  push r1		; DRELB arg: block ptr
+	  call drelb		; release current file block
+	  pop *			; val: error code
+	  mov r2,dfilbp(r4)	; make next block the current one
+	  mov r2,r1		; ...
+	  inc dfilbn(r4)	; advance virtual block no.
+	  mov #2,dfilps(r4)	; set offset to first data byte
+	  >
+	mov r1,r2		; copy ptr to block
+	add dfilps(r4),r2	; add offset to get ptr to current pos
+	movb r0,(r2)		; put byte into file block
+	mov pc,dwtf(r1)		; indicate file block modified
+	inc dfilps(r4)		; update offset
+	return
+
+.sbttl	Read Entry
+
+;;; DREAD
+
+;;;	ARGS:				VALS:
+;;; R4:	channel data block ptr	 R0:	character
+
+dread:	mov dfilbp(r4),r1	; get ptr to current file block
+	mov ddirep(r4),r2	; get ptr to directory entry
+	cmp dfilbn(r4),dulen(r2)	; reading from last block of file?
+	if eq,<				; yes, check if beyond last char
+	  mov dubytc(r2),r3	; get no. of bytes in last block
+	  cmpb (r3)+,(r3)+	; add 2 to skip link word
+	  cmp dfilps(r4),r3	; current position beyond last byte?
+	  if eq,<
+	    mov #-1,r0		; yes, return end of file indication
+	    return
+	    >
+	  >
+	cmp dfilps(r4),#lblk	; at end of current file block?
+	if eq,<
+	  push r1		; DGNEXT arg: block ptr
+	  call dgnext		; get next file block
+	  pop r1,r0		; vals: block ptr, error code
+	  if ne,<		; some error, could be %EENFI or disk err
+	    mov #-1,r0		; return end of file indication
+	    return
+	    >
+	  inc dfilbn(r4)	; advance virtual block no. of current position
+	  mov r1,dfilbp(r4)	; set block ptr to new current block
+	  mov #2,dfilps(r4)	; set offset to first data position of block
+	  >
+	mov r1,r2		; copy ptr to file block
+	add dfilps(r4),r2	; add offset to get ptr to current pos in block
+	movb (r2),r0		; get character
+	bic #177600,r0		; remove unwanted gunk since this a good char
+	inc dfilps(r4)		; increment offset
+	return
+
+.sbttl	Delete and Rename
+
+;;; DDEL
+
+;;;	ARGS:				VALS:
+;;; R1:  Unit number		  R0:	error code
+;;; R3:	file name
+
+ddel:	push r1,r3		; DLOOK arg: unit number, ptr to filename
+	call dlook		; lookup filename
+	pop r2,r1,r0		; vals: ptr to entry, ptr to block, error code
+	bne 1$
+	bitb #77,duuse(r2)	; file in use?
+	if ne,<
+	  bisb #300,duuse(r2)	; set lock and delete bits
+	  mov pc,dwtf(r1)	; set flag to write back out
+	  push r1		; DRELB arg: block ptr
+	  call drelb		; release directory block
+	  pop r0		; val: error code
+	  br 1$
+	  >
+	push ddno(r1),dustart(r2)	; DDF args: disk no., block no. of file
+	clr (r2)+		; clear filename to indicate entry free
+	clr (r2)+
+	clr (r2)+
+	mov pc,dwtf(r1)		; set flag so block is written back
+	push r1			; DRELB arg: block ptr
+	call drelb		; release directory block
+	pop r0			; val: error code
+	bne 1$
+	call ddf		; delete file (arg on stack from above)
+	pop r0			; val: error code
+1$:	return
+
+
+;;; DREN
+
+;;;	ARGS:				VALS:
+;;; R3:	old file name		 R0:	error code
+;;; R2:	new file name
+;;; R1:   disk unit number
+
+dren:	push r1,r3		; DLOOK arg: disk unit #, ptr to filename
+	call dlook		; lookup filename
+	pop r3,r1,r0		; vals: ptr to entry, ptr to block, error code
+	bne 1$
+	tst (r2)+		; bump ptr over directory name
+	mov (r2)+,(r3)+		; copy new file name over old
+	mov (r2)+,(r3)+		; ...
+	mov (r2)+,(r3)+		; ...
+	mov pc,dwtf(r1)		; indicate block written
+	push r1			; DRELB arg: block ptr
+	call drelb		; release directory block
+	pop r0			; val: error code
+1$:	return
+
+;;; MOUNT prepares a file system for use.
+
+;;;	ARGS:				VALS:
+;;; SP ->	disk no.		 SP ->	error code
+
+mount:	jsr r5,save6		; save regs
+	mov 16(sp),r5		; get disk no.
+	push r5			; DSKTST arg: disk no.
+	jsr r5,dsktst		; see if disk there
+	pop 16(sp)		; val: error code
+	bne 5$			; exit if error
+	mov r5,r4		; copy
+	asl r4			; times two for word operations
+	add pc,r4		; for PICness
+	add #dfree-.,r4		; get ptr to DFREE word for disk
+
+;;; Count no. of free blocks
+
+	clr (r4)		; start no. of free blocks at zero
+	mov #nbm-1,dbmno	; start bitmap no. at highest bitmap
+loop <	  push r5,dbmno		; DGBM args: disk no., bitmap no.
+	  call dgbm		; get bitmap
+	  pop r1		; val: block ptr
+	  add #10,r1		; bump ptr up to 1st bitmap word in block
+	  mov #74,r2		; no. of words in bitmap
+  loop <    mov (r1)+,r0	; get bitmap word
+	    com r0		; complement so bit set for free block
+    loop <    asl r0		; test high bit and for word zero
+	      exitl eq
+	      adc (r4)		; increment free count if bit set
+	      rptl
+	      >
+	    adc (r4)		; increment free count if bit set
+	    sorl r2
+	    >
+	  sub #200,r1		; get block ptr again
+	  push r1		; DRBM arg: block ptr to bitmap
+	  call drbm		; release bitmap
+	  dec dbmno		; move to another bitmap
+	  rptl pl		; stop after bitmap no. zero
+	  >
+	clr dbmno		; start off with bitmap no. zero
+
+;;; Now grovel over disk structure, making it fit to use.  All locked
+;;; files are deleted and all usage counts set to zero.
+
+	sub #dmsfs,sp		; create stack variables
+	push r5,#mfdb		; DGETB args: disk no., block no.
+	call dgetb		; read in MFD
+	pop r4,16+dmsfs(sp)	; vals: block ptr, error code
+	bne 4$
+	mov r4,dmfbp(sp)	; save ptr to MFD
+	tst (r4)+		; get ptr to 1st entry
+	mov #<lblk-2>/10,dmfcnt(sp)	; get no. of slots in MFD
+loop <	  tst (r4)		; slot empty?
+	  beq 2$
+	  mov 2(r4),dufbn(sp)	; slot occupied, get UFD starting block no.
+	  beq 2$
+  loop <    push r5,dufbn+2(sp)	; DGETB args: disk no., block no.
+	    call dgetb		; read in UFD block
+	    pop r3,16+dmsfs(sp)	; vals: block ptr, error code
+	    bne 3$
+	    mov r3,r2		; copy ptr
+	    mov (r2)+,dufbn(sp)	; save block no. of next UFD block
+	    mov #<lblk-2>/lufde,r1	; get no. of slots in UFD block
+    loop <    bisb duuse(r2),dwtf(r3)	; will need to write if usage nonzero
+	      bicb #177,duuse(r2)	; clear usage count, check lock bit
+	      if ne,<
+		clr (r2)	; for now delete locked files by simply
+	  	clr 2(r2)	; removing entry from UFD (blocks not freed
+		clr 4(r2)	; since might have been reused).
+		clrb duuse(r2)	; clear lock bit
+		>
+	      add #lufde,r2	; move ptr to next UFD slot
+	      sorl r1
+	      >
+	    push r3		; DRELB arg: block ptr
+	    call drelb		; release UFD block
+	    pop 16+dmsfs(sp)	; val: error code
+	    bne 3$
+	    tst dufbn(sp)	; another UFD block?
+	    rptl ne
+	    >
+2$:	  add #10,r4		; move to next MFD slot
+	  dec dmfcnt(sp)	; done them all yet?
+	  rptl ne
+	  >
+3$:	push dmfbp(sp)		; DRELB arg: block ptr
+	call drelb		; release the MFD
+	pop *			; val: error code
+	beq 4$
+	crash ^"Can't release MFD"
+4$:	add #dmsfs,sp		; remove variables from stack
+5$:	jsr r5,rest6		; restore regs
+	return
+
+dsect <		; Define stack variable offsets
+dmfbp::	 .blkw 1		; MFD block ptr
+dmfcnt:: .blkw 1		; no. of entries in MFD left to go
+dufbn::  .blkw 1		; current UFD block no.
+	 >,dmsfs
+
+.if ne  nrl
+dsktst:	jmp rltest		; jump to test routine, disk # on stack
+.endc
+.if ne  nrp
+dsktst:	jmp rptest		; jump to test routine, disk # on stack
+.endc
+.if ne	nrx
+dsktst:	jmp rxtest		; jump to test routine, disk # on stack
+.endc
+.if ne	nrk
+dsktst:	jmp rktest		; jump to test routine, disk # on stack
+.endc
+
+
+.sbttl	Directory lookup
+
+;;; DLOOK
+
+;;;	ARGS:				VALS:
+;;; SP ->	filename ptr		 SP ->	ptr to entry
+;;;	disk unit number	        block ptr
+;;;					error code
+
+dlook:	push (sp)		; make room for three return vals
+	jsr r5,save6		; save regs
+	mov 20(sp),r1		; get ptr to file name
+	push 22(sp)		; DUICLK arg: disk unit number
+	push (r1)		; DUICLK arg: directory name
+	call duiclk		; lookup up directory name
+	pop r3,22(sp)		; vals: block ptr, error code
+	bne 2$
+loop <	  mov r3,r4		; get ptr to first entry
+	  tst (r4)+		; ...
+	  mov #<lblk-2>/lufde,r0	; no. of entries per directory block
+  loop <    tst 20(r4)		; locked?
+	    bmi 1$
+	    cmp (r4),2(r1)	; compare filenames
+	    bne 1$
+	    cmp 2(r4),4(r1)
+	    bne 1$
+	    cmp 4(r4),6(r1)
+	    if eq,<
+	      mov r4,16(sp)	; return ptr to entry in directory
+	      mov r3,20(sp)	; return ptr to directory block
+	      br 2$
+	      >
+1$:	    add #lufde,r4	; move to next entry in this block
+	    sorl r0
+	    >
+	  push r3		; DGNEXT arg: block ptr
+	  call dgnext		; get next block of UFD
+	  pop r3,22(sp)		; vals: block ptr, error code
+	  rptl eq
+	  cmp 22(sp),#%eenfi	; end of UFD or real error?
+	  exitl ne
+	  mov #%ensfl,22(sp)	; set error code to "file not found"
+	  >
+2$:	jsr r5,rest6		; restore regs
+	return
+
+.sbttl	MFD lookup
+
+;;; DUICLK
+
+;;;	ARGS:				VALS:
+;;; SP ->	dir name		 SP ->	block ptr
+;;;	disk unit number		error code
+
+duiclk:	jsr r5,save6		; save regs
+	mov 16(sp),r5		; get directory name
+	beq 2$			; if dir=0 then don't look it up
+	mov 20(sp),r4		; get disk unit number
+        push r4,#mfdb		; DGETB args: disk no., block no.
+	call dgetb		; read in MFD
+	pop r2,20(sp)		; vals: block ptr, error code
+	bne 3$
+1$:	mov r2,r1		; get ptr to first entry
+	tst (r1)+		; ...
+	mov #<lblk-2>/10,r0	; get no. of slots in MFD (10 bytes per entry)
+  loop <  cmp (r1),r5		; this the desired directory name?
+	  if eq,<
+	    push r4,2(r1)	; DGETB args: disk no., block no. (call below)
+	    push r2		; DRELB argument: block ptr
+	    call drelb		; release MFD block
+	    pop *		; val: error code
+	    call dgetb
+	    pop 16+2(sp),20(sp)	; vals: block ptr, error code
+	    br 3$
+	    >
+	  add #10,r1		; move to next entry in MFD
+	  sorl r0
+	  >
+	push r2			; DGNEXT arg: block ptr
+	jsr r5,dgnext		; get next MFD block
+	pop r2,*		; vals: ptr, error code
+	beq 1$			; if no error then look through this block
+2$:	mov #%ensdi,20(sp)	; return no such directory error
+3$:	jsr r5,rest6		; restore regs
+	return
+
+.sbttl	DDF
+
+;;; DDF
+
+;;;	ARGS:				VALS:
+;;; SP ->	starting block no.	 SP ->	error code
+;;;	disk no.
+
+ddf:	jsr r5,save6		; save regs
+	mov 20(sp),r4		; get disk no.
+	mov 16(sp),r3		; get starting block no.
+	if ne,<
+  loop <    mov r3,r1		; copy block no.
+	    push r4,r3		; DGETB args: disk no., block no.
+	    call dgetb		; read in block
+	    pop r5,20(sp)	; vals: ptr, error code
+	    bne 1$
+	    mov (r5),r3		; get next block no.
+	    push r5		; DRELB arg: block ptr
+	    call drelb		; release this block
+	    pop *		; val: error code
+	    clr r0		; for DIV
+	    div #1700,r0	; get bitmap no. and offset
+	    push r4,r0		; DGBM args: disk no., bitmap no.
+	    call dgbm		; get bitmap
+	    pop r5		; val: ptr
+	    mov r1,r0		; copy offset
+	    ash #-3,r1		; get byte offset
+	    add r1,r5		; add to block ptr
+	    bic #177770,r0	; get no. of bit position
+	    bitb bits(r0),10(r5)	; bit already clear?
+	    if eq,<			; yes, don't clear anymore!!
+	      clr r3		; by clearing next block no.
+	      sub r1,r5		; restore ptr to block
+	      >
+	    else <
+	      bicb bits(r0),10(r5)	; clear bit for this block in bitmap
+	      sub r1,r5		; restore ptr to block
+	      mov pc,dwtf(r5)	; set flag to show block written
+	      mov r4,-(sp)	; get ptr to DFREE word for disk
+	      asl (sp)		; ...
+	      add pc,(sp)	; ...
+	      add #dfree-.,(sp)	; ...
+	      inc @(sp)+	; add one to no. of free blocks
+	      >
+	    push r5		; DRBM arg: block ptr
+	    call drbm		; release bitmap
+	    tst r3		; another block?
+	    rptl ne
+	    >
+	  >
+1$:	call dubm		; update bitmaps
+	jsr r5,rest6		; restore regs
+	pop (sp)		; remove one arg from stack
+	return
+
+.sbttl	Linked file subr
+
+;;; DGNEXT gets the next block of a file, UFD, MFD etc. given the current
+;;; block.  The first word of the current block specifies the block no. of
+;;; the next block on the same disk.  If there is no next block (i.e. the
+;;; next block no. is zero) then a %EENFI error code is returned.
+
+;;;	ARGS:				VALS:
+;;; SP ->	block ptr		 SP ->	block ptr
+;;;					error code
+
+dgnext:	push (sp),r1		; make slot on stack for extra value, save reg
+	mov 6(sp),r1		; get block ptr
+	push ddno(r1),(r1)	; DGETB args: disk no., block no. (call below)
+	push r1			; DRELB arg: block ptr
+	call drelb		; release this block
+	pop 6+4(sp)		; val: error code
+	bne 1$
+	mov #%eenfi,6+4(sp)	; set error code to EOF in case no next block
+	tst (sp)
+	beq 1$
+	call dgetb		; get next block (args on stack from above)
+	pop 4+2(sp),6(sp)	; vals: block ptr, error code
+	br 2$
+1$:	cmp (sp)+,(sp)+		; remove DGETB args from stack
+2$:	pop r1			; restore reg
+	return
+
+.sbttl	Block allocation
+
+;;; DALLOC allocates and returns a disk block.
+
+;;;	ARGS:				VALS:
+;;; SP ->	disk no.		 SP ->	block ptr
+;;;					error code
+
+dalloc:	push (sp)		; make slot for extra return val
+	jsr r5,save6		; save regs
+	mov 20(sp),r5		; get disk no.
+	asl r5			; times two for word addressing
+	add pc,r5		; for PICness
+	add #dfree-.,r5		; get address of DFREE(I)
+	peof			; turn off preemption
+	tst (r5)		; any free blocks?
+	if eq,<
+	  mov #%efldv,20(sp)	; no free blocks, return device full error
+	  peon			; allow preemption again
+	  br 3$
+	  >
+	dec (r5)		; take one block for us
+	peon			; allow preemption again
+	mov 20(sp),r5		; get disk no. again
+1$:	push r5,dbmno		; DGBM args: disk no, bitmap no.
+	call dgbm		; get bitmap
+	pop r4			; val: block ptr
+	mov r4,r1
+	add #10,r1		; bump up ptr to 1st bitmap word
+	mov r1,r2		; save ptr
+	mov #74,r0		; no. of words in bitmap
+	peof			; turn off preemption
+loop <	  cmp (r1)+,#177777	; find a bitmap word with a free block
+	  bne 2$
+	  sorl r0
+	  >
+	peon			; allow preemption again
+	push r4			; DRBM arg: block ptr to bitmap
+	call drbm		; release bitmap
+	inc dbmno
+	cmp dbmno,#nbm-1
+	if hi,<
+	  clr dbmno
+	  >
+	br 1$
+2$:	tst -(r1)		; move ptr back to word with free block
+	cmpb (r1),#377		; low byte have any free blocks?
+	if eq,<
+	  inc r1		; no, use high byte
+	  >
+	sub r1,r2
+	neg r2
+	ash #3,r2
+	clr r3
+	sec
+loop <	  rol r3		; next bit in byte
+	  inc r2		; increment block no.
+	  bitb r3,(r1)		; this block free?
+	  rptl ne
+	  >
+	dec r2			; correct for over incrementing
+	bisb r3,(r1)		; set bit to allocate block
+	mov pc,dwtf(r4)		; set flag to show block written
+	mov dblk(r4),r0		; get bitmap block no.
+	peon			; allow preemption again
+	push r4			; DRBM arg: block ptr to bitmap
+	call drbm		; release bitmap block
+ifMIT <
+	cmp r2,#lstblk		; are we trying to allocate important
+	if ge,<			; data space on the disk.
+	  crash ^"Attempt to allocate a bit-map block."
+	  >
+      >
+	sub #bm1b,r0		; convert block no. to bitmap no.
+	asl r0			; times two for offset into table
+	add pc,r0		; get block no. of 1st block in bitmap
+	add dbmtab-.(r0),r2	; ...
+	push #ldbuf/2,#60.	; ALOCW args: size, timeout
+	call alocw		; get a sector buffer
+	pop r4,20(sp)		; vals: ptr, error code
+	bne 3$
+	mov #1,duse(r4)		; set usage count to 1
+	mov r5,ddno(r4)		; set disk no.
+	mov r2,dblk(r4)		; set block no.
+	mov pc,dwtf(r4)		; make sure block is written out
+	mov r4,16(sp)		; return ptr to block
+	peof			; turn off preemption
+	mov dblist,dbll(r4)	; put block onto DBLIST
+	mov r4,dblist		; ...
+	peon			; allow preemption again
+3$:	jsr r5,rest6		; restore regs
+	return
+
+dbmtab:	.word 0,1700,3600,5500,7400
+	.word 11300,13200,15100,17000
+	.word 20700,22600,24500,26400
+	.word 30300,32200,34100,36000
+	.word 37700,41600,43500,45400
+	.word 47300
+
+
+dfree:	.blkw 2			; no. of free blocks on each disk
+
+.sbttl	Bitmap i/o
+
+;;; DGBM gets a bitmap given a bitmap no.  A block ptr is returned.
+
+;;;	ARGS:				VALS:
+;;; SP ->	bitmap no.		 SP ->	block ptr
+;;;	disk no.
+
+dgbm:	push 4(sp),2+2(sp)	; DGETB args: disk no., block no.
+	add #bm1b,(sp)		; convert bitmap no. into block no.
+	call dgetb		; get bitmap
+	pop 4+2(sp),*		; vals: block ptr, error code
+	if ne,<
+	  crash ^"Can't read bitmap"
+	  >
+	pop (sp)		; remove arg from stack
+	return
+
+
+;;; DRBM releases a bitmap given a block ptr to it.
+
+;;;	ARGS:				VALS:
+;;; SP ->	block ptr			(none)
+
+drbm:	push r1			; save reg
+	peof			; turn off preemption
+	mov dbmp,r1		; get current bitmap block ptr
+;;;	mov 4(sp),r1		; get pointer to map being released
+;;;	dec duse(r1)		; one less person using this block
+	mov 4(sp),dbmp		; make this block being released current
+	peon			; allow preemption again
+;;;	cmp r1,4(sp)		; is the current bitmap the same
+;;;				; as the previous???
+;;;	if ne,<			; no, better save the previous
+	  tst r1		; was there a previous current bitmap?
+	  if ne,<		; yes, release it
+;;;	    inc duse(r1)	; make it one more user for DRELB
+;;;				; we decremented it when released earlier
+	    push r1		; DRELB arg: block ptr
+	    call drelb		; release previous current bitmap
+	    pop *		; val: error code
+	    bne dcrbm
+	    >
+;;;	  >
+;;; no need to do anything else if blocks are the same
+	pop r1,(sp)		; restore reg, remove arg from stack
+	return
+
+
+;;; DUBM insures that the current bitmap is released,
+;;; and will be written out when the usage count is 0.
+
+;;;	ARGS:				VALS:
+;;;	(none)				(none)
+
+dubm:	push r1			; save reg
+	peof			; turn off preemption
+	mov dbmp,r1		; get block ptr to current bitmap
+	clr dbmp		; no more current bitmap
+	peon			; turn on preemption
+	tst r1			; any current bitmap?
+	if ne,<			; yes
+;;;	  inc duse(r1)		; one more user from when we decremented earlier
+	  push r1		; DRELB arg: block ptr
+	  call drelb		; release current bitmap
+	  pop *			; val: error code
+	  bne dcrbm
+	  >
+	pop r1			; restore reg
+	return
+
+dcrbm:	crash ^"Can't release bitmap"
+
+
+dbmp:	.blkw 1			; block ptr to current bitmap
+dbmno:	.blkw 1			; bitmap no.
+
+.sbttl	Disk buffer management
+
+dsect <
+	 .blkb lblk		; sector buffer
+ddno::	 .blkw 1		; disk no.
+dblk::	 .blkw 1		; block no.
+duse::	 .blkw 1		; usage count
+dwtf::	 .blkw 1		; write flag
+dbll::	 .blkw 1		; DBLIST link
+	>,ldbuf
+
+
+;;; DGETB returns a ptr to copy of a disk block.  If there is already a copy
+;;; in core that copy is shared.
+
+;;;	ARGS:				VALS:
+;;; SP ->	block no.		 SP ->	ptr to block
+;;;	disk no.			error code
+
+dgetb:	jsr r5,save6		; save regs
+	mov 16(sp),r3		; get block no.
+	mov 20(sp),r4		; get disk no.
+	clr 20(sp)		; set error code to zero
+	jsr r5,dgb1		; see if block is on list
+	  br 3$			; found
+	peon			; allow preemption again
+	push #ldbuf/2,#60.	; ALOCW args: size, timeout
+	call alocw		; allocate disk buffer for block
+	pop r1,20(sp)		; vals: ptr, error code
+	bne 2$			; couldn't get memory?
+	mov #1,duse(r1)		; we're only user so far
+	mov r3,dblk(r1)		; set block no.
+	mov r4,ddno(r1)		; and disk no.
+	push r4,r3,r1		; DKREAD args: disk no, block no, buffer
+	call dkread		; read in block
+	pop 20(sp)		; val: error code
+	bne 1$			; error, go free buffer
+
+;;; Before adding the block to DBLIST the list is scanned again to make
+;;; sure no one else put it on in the meantime.
+
+	jsr r5,dgb1		; scan DBLIST for block
+	  br 3$			; found, forget block we just created
+	mov dblist,dbll(r1)	; not found, put on list
+	mov r1,dblist		; ...
+	mov r1,16(sp)		; return val: ptr to block
+	peon			; allow preemption again
+	br 2$
+1$:	push r1			; FREE arg: ptr
+	call free		; free disk buffer
+2$:	jsr r5,rest6		; restore regs
+	return
+
+3$:	inc nobnrd		; increment the numer of blocks not read
+	jsr r5,rest6		; restore regs
+	return
+
+;;; DGB1 scans DBLIST for a specified block.
+dgb1:	peof			; turn off preemption
+	mov dblist,r2		; ptr to first block on DBLIST
+	if ne,<
+  loop <    cmp r3,dblk(r2)	; this right block no.?
+	    if eq,<
+	      cmp r4,ddno(r2)	; right block no., this right disk no.?
+	      if eq,<
+		inc duse(r2)	; add us as another user
+		mov r2,16+2(sp)	; return val: ptr to block buffer
+		peon		; allow preemption again
+		rts r5		; return1 for block found
+		>
+	      >
+	    mov dbll(r2),r2	; get next block buffer on list
+	    rptl ne
+	    >
+	  >
+	tst (r5)+		; set for return2
+	rts r5			; return2 for block not found
+
+;;; DRELB releases a block gotten via DGETB.
+
+;;;	ARGS:				VALS:
+;;; SP ->	ptr to block		 SP ->	error code
+
+drelb:	push r1,r2		; save regs
+	mov 6(sp),r1		; ptr to block
+	clr 6(sp)		; set error code to zero
+	peof			; turn off preemption
+	dec duse(r1)		; decrement usage count of block
+	if eq,<			; no more users
+	  mov dblist,r2		; ptr to first block on DBLIST
+	  beq 1$
+	  cmp r2,r1		; this the one?
+	  if eq,<
+	    mov dbll(r1),dblist	; yes, set DBLIST to next
+	    >
+	  else <
+    loop <    cmp dbll(r2),r1
+	      exitl eq
+	      mov dbll(r2),r2
+	      rptl ne
+1$:	      crash ^"Attempt to release unassigned block"
+	      >
+	    mov dbll(r1),dbll(r2)
+	    >
+	  peon			; allow preemption again
+	  tst dwtf(r1)		; block need to be written back?
+	  if ne,<
+	    clr dwtf(r1)	; clear write flag
+ifSAO <
+            cmp dblk(r1),#bm1b	; writing a bit-map??
+	    if eq,<
+	      inc notbmp	; one more written
+	      >
+            cmp dblk(r1),#bm1b+1	; writing a bit-map??
+	    if eq,<
+	      inc notbmp	; one more written
+	      >
+            cmp dblk(r1),#bm1b+2	; writing a bit-map??
+	    if eq,<
+	      inc notbmp	; one more written
+	      >
+       >
+ifMIT <
+	    cmp dblk(r1),#lstblk+2	; writing a bit-map??
+	    if ge,<
+	      inc notbmp	; one more written
+	      >
+      >
+	    push ddno(r1),dblk(r1),r1	; DKWRIT args: disk no, block no, buf
+	    call dkwrit			; write back block
+	    pop 6(sp)			; val: error code
+	    >
+	  push r1		; FREE arg: ptr
+	  call free		; free storage used by block buffer
+	  >
+	pop r2,r1		; restore regs
+	return
+
+
+dblist:	.blkw 1			; list of disk blocks in core
+
+;;; DKREAD reads one disk sector.
+
+;;;	ARGS:				VALS:
+;;; SP ->	buffer ptr		 SP ->	error code
+;;;	block no.
+;;;	disk no.
+
+.if ne  nrk
+dkread:	push (sp)		; create slot for function code
+	mov #5,2(sp)		; function code for read
+	jmp rkrw
+.endc
+.if ne  nrx
+dkread:	push (sp)		; create slot for function code
+	clr 2(sp)		; zero for reeling
+	jmp rxrw
+.endc
+.if ne  nrl
+dkread:	push (sp)		; create slot for function code
+	mov #14,2(sp)		; function code for read
+	jmp rlrw
+.endc
+.if ne  nrp
+dkread:	push (sp)		; create slot for function code
+	mov #5,2(sp)		; function code for read
+	jmp rprw
+.endc
+
+;;; DKWRIT writes one disk sector.
+
+;;;	ARGS:				VALS:
+;;; SP ->	buffer ptr		 SP ->	error code
+;;;	block no.
+;;;	disk no.
+
+.if ne  nrk
+dkwrit:	push (sp)		; create slot for fcn code
+	mov #3,2(sp)		; fcn code for write
+	jmp rkrw
+.endc
+.if ne  nrp
+dkwrit:	push (sp)		; create slot for fcn code
+	mov #3,2(sp)		; fcn code for write
+	jmp rprw
+.endc
+.if ne  nrx
+dkwrit:	push (sp)		; create slot for function code
+	mov #1,2(sp)		; nonzero for writhing
+	jmp rxrw
+.endc
+.if ne  nrl
+dkwrit: push (sp)		; create slot for function code
+	mov #12,2(sp)		; function code for writing
+	jmp rlrw
+.endc
+
+.sbttl	RK subroutines
+
+.if ne  nrk
+;;; RK11 request block.  RKRW creates a RK11 request block for each disk i/o
+;;; operation requested and RKREQ puts it on the end of the RK11 request queue.
+;;; The RK11 interrupt handler (RKINT) takes the request blocks off the queue
+;;; and performs the desired operation.  When RKINT finishes with a request
+;;; the RKFINI word of the request block is incremented.
+
+dsect <
+	 .blkw 1		; queue link word
+rkopt::	 .blkw 1		; option bits
+rkfcn1:: .blkw 1		; RK11 function code (3 for write, 5 for read)
+rkecnt:: .blkw 1		; recoverable error counter
+rkerrw:: .blkw 1		; RK11 error register
+rkfini:: .blkw 1		; incremented when finished
+;;; Order of next 4 entries is important.  RKDA-RKFCN are loaded into RK11
+;;; regs to perform the desired read/write.
+rkda::	 .blkw 1		; disk address
+rkba::	 .blkw 1		; bus address
+rkwc::	 .blkw 1		; word count
+rkfcn::	 .blkw 1		; function
+	>,lrkrqb		; length of disk request block
+
+%rkwch==1			; write check read or write
+
+
+;;; RKINIT initializes the RK controller and RK data bases.
+rkinit:	mov pc,-(sp)		; set RK interrupt vector to RKINT
+	add #rkint-.,(sp)	; ...
+	pop @#220		; ...
+	mov #pr5,@#222		; set vector PS to priority 5
+	push pc			; set RKSW to RKIDLE
+	add #rkidle-.,(sp)	; ...
+	pop rksw		; ...
+	clr rkrdc		; no reads yet
+	clr rkwtc		; no writes yet
+	clr rkerrc		; no errors yet
+	clr rkrq		; nothing on request queue yet
+	return
+
+
+.if ne  pfail
+;;; RKPWRU restarts the RK11 after a power failure.
+rkpwru:	mov #1,@#rkcsr		; reset the RK11 controller
+loop <	  tstb @#rkcsr		; wait for Done
+	  rptl pl
+	  >
+	mov #rkcsr,r0		; ptr to RKCSR
+	jsr pc,rknext		; check queue, restart any requests
+	pop rksw		; save co-routine PC
+	return
+.endc
+
+
+;;; RKRW performs a read or write operation on the RK11.
+
+;;;	ARGS:				VALS:
+;;; SP ->	function code		 SP ->	error code
+;;;	bus address
+;;;	block no.
+;;;	disk no.
+
+rkrw:	push r0,r1,r2		; save regs
+	bis #101,10(sp)		; turn on interrupt bit in function code
+	push #lrkrqb/2,#60.	; ALOCW args: size, timeout
+	call alocw		; allocate memory for request block
+	pop r2,r0		; vals: ptr, error code
+	if ne,<			; couldn't get memory
+	  mov r0,16(sp)		; return error code
+	  br 1$
+	  >
+	mov 10(sp),rkfcn1(r2)	; set function code (either read or write)
+	mov 10(sp),rkfcn(r2)	; ...
+	mov 12(sp),rkba(r2)	; set bus address in request block
+	mov #-<lblk/2>,rkwc(r2)	; set word count in request block
+	mov 14(sp),r1		; get block no.
+				; R0 is already zero for DIV (from error code)
+	div #12.,r0		; get cylinder no. in r0, sector no. in r1
+	ash #4,r0		; shift cylinder no. into place
+	bis r1,r0		; put cylinder no. and sector no. together
+	mov 16(sp),r1		; get disk no.
+	swab r1			; put disk no. into bits 15:12 of disk address
+	ash #5,r1		; ...
+	bis r1,r0		; ...
+	mov r0,rkda(r2)		; set disk address in request block
+	mov #%rkwch,rkopt(r2)	; write check i/o
+	mov #7,rkecnt(r2)	; retry recoverable errors 7 times
+	push r2			; RKREQ arg: ptr to request block
+	call rkreq		; queue disk request
+	push r2			; TWONNE arg1: location to wait on
+	add #rkfini,(sp)	; ...
+	push #0			; TWONNE arg2: val to change from
+	call twonne		; wait for disk i/o to complete
+	clr 16(sp)		; clear error code
+	tst rkerrw(r2)		; any error bits set?
+	if ne,<
+	  push 10(sp),12+2(sp)
+	  push 14+4(sp),16+6(sp)
+	  push rkerrw(r2)
+	  call sysmsg
+	  .string ^"Bad Data on Disk.  Error register = ^o
+Disk number = ^o. Block number = ^o. Bus Address = ^o.
+Function Code = ^o. 
+"
+          mov #170000,r0	; some time to print out message
+   loop	 <  dec r0		; ...
+	    rptl ne
+	    >
+	  mov #%ebdda,16(sp)	; give bad data error
+	  >
+	push r2			; FREE arg: ptr
+	call free
+1$:	pop r2,r1,r0		; restore regs
+	pop 4(sp)		; move up return r5
+	cmp (sp)+,(sp)+		; remove two args from stack
+	return
+
+.endc	; ne nrk
+
+.if ne  nrk
+;;; RKREQ inserts a request block into the RK queue.
+
+;;;	ARGS:				VALS:
+;;; SP ->	request block ptr	 SP ->	(none)
+
+rkreq:	push r0,r1,r2		; save regs
+	mov pc,r1		; ptr to RK request queue
+	add #rkrq-.,r1		; ...
+	mfps -(sp)		; save priority
+	spl 5			; set ours higher than RK11
+loop <	  mov r1,r0		; save ptr
+	  mov (r1),r1		; move to next block
+	  rptl ne		; continue till found last block in queue
+	  >
+	mov 10+2(sp),r1		; ptr to request block to append
+	clr (r1)		; set its link word to null
+	mov r1,(r0)		; append to queue
+;;; If the disk is idle then wake it up by faking an interrupt.
+	push pc			; ptr to RKIDLE
+	add #rkidle-.,(sp)	; ...
+	cmp rksw,(sp)+		; doing anything now?
+	if eq,<			; no
+	  mov #rkcsr,r0		; ptr to RK regs
+	  jsr pc,rknext		; fake an interrupt
+	  pop rksw		; store address to resume interrupt handler
+	  >
+	mtps (sp)+		; restore priority
+	pop r2,r1,r0,(sp)	; restore regs, remove args from stack
+	return
+
+.endc	; ne nrk
+
+.sbttl	RK11 Interrupt handler
+
+.if ne  nrk
+;;; RK11 interrupts are dispatched to the part of the interrupt handler that
+;;; caused them.  This is accomplished by the handler executing a JSR PC,@(SP)+
+;;; when it expects an interrupt.  The PC is copied into RKSW and when the
+;;; interrupt occurs control is returned to that PC.
+;;; Note: Only R0, R1 and R2 are saved by RKINT; any other regs used must be
+;;; explicitly saved.  R0 is initialized to RKCSR.
+
+rkint:	push r0,r1,r2		; save regs
+	inc intflg		; indicate an interrupt occured
+	mov #rkcsr,r0		; ptr to disk regs
+	bit #20000,(r0)		; seek complete interrupt?
+	if ne,<
+	  jsr pc,rksint		; seek complete, go hack it
+	  >
+	else <
+	  jsr pc,@rksw		; resume interrupt handler where it is waiting
+	  pop rksw		; store address to resume interrupt handler
+	  >
+	pop r2,r1,r0		; restore regs
+	rti
+
+
+;;; RKSINT handles seek complete interrupts.
+rksint:	crash ^"Seek complete interrupt"	; not yet implemented
+	rts pc
+
+;;; RKNEXT initiates the next request on RKRQ.
+rknext:	jsr r5,rkrst		; reset controller if it needs it
+	mov rkrq,r1		; ptr to next request block
+	bne rkgo		; if another request then do it
+	jsr pc,@(sp)+		; no more requests, return from interrupt
+
+;;; RKSW will contain RKIDLE when nothing is happening.
+rkidle:	crash ^"Unexpected disk interrupt"
+
+
+;;; RKRERR handles recoverable errors which occur during a request.  A
+;;; controller reset is performed if it was a hard error.  The RKECNT
+;;; entry in the request block controls the no. of times a request will
+;;; be repeated if recoverable errors occur.
+
+rkrerr:	jsr r5,rkrst		; reset controller if it needs it
+	dec rkecnt(r1)		; try again?
+	beq rkdone		; no, try maximum no. of times
+
+;;; RKGO initiates a read or write function.
+rkgo:	cmp rkfcn(r1),#103	; write?
+	if eq,<
+	  inc rkwtc		; increment write count
+	  >
+	cmp rkfcn(r1),#105	; read?
+	if eq,<
+	  inc rkrdc		; increment read count
+	  >
+	add #10,r0		; ptr to beyond DAR
+	add #rkda,r1		; ptr to DAR in request block
+	mov (r1)+,-(r0)		; set disk address
+	mov (r1)+,-(r0)		; set bus address
+	mov (r1)+,-(r0)		; set word count
+	mov (r1)+,-(r0)		; perform fcn (read or write)
+	jsr pc,@(sp)+		; wait for interrupt
+	mov rkrq,r1		; ptr to request block again
+	mov -2(r0),r2		; get RKERR
+	mov r2,rkerrw(r1)	; save in request block
+	if ne,<
+	  inc rkerrc		; increment RK error count
+	  cmp -(r0),-(r0)	; get ptr to RKDSR
+	  mov pc,r1		; get ptr to RKEREG
+	  add #rkereg-.,r1	; ...
+  loop <    mov (r0)+,(r1)+	; copy disk regs into save area
+	    cmp r0,#rkdar	; RKDAR is last reg
+	    rptl los
+	    >
+	  mov #rkcsr,r0		; get ptr to RKCSR again
+	  mov rkrq,r1		; ptr to request block again
+	  bit #166340,r2	; non-recoverable error?
+	  bne rkdone		; yes, finish this request
+	  bit #011402,r2	; recoverable error?
+	  bne rkrerr		; yes, try again
+				; only error left is write check
+	  mov rkfcn1(r1),rkfcn(r1)	; restore fcn code
+	  bis #%rkwch,rkopt(r1)	; write check fcn when done
+	  br rkrerr
+	  >
+	bit #%rkwch,rkopt(r1)	; write check?
+	beq rkdone		; no, finish this request
+	mov #507,rkfcn(r1)	; set fcn code to write check
+	bic #%rkwch,rkopt(r1)	; don't write check the write check
+	br rkgo
+rkdone:	mov rkrq,r1		; ptr to request block again
+	mov (r1),rkrq		; remove from queue
+	inc rkfini(r1)		; indicate request done
+	br rknext		; do next request
+
+
+;;; RKRST resets the controller if it needs it.
+rkrst:	bit #40000,(r0)		; hard error condtion?
+	if ne,<
+	  mov (r0),r1		; save drive status
+	  mov #1,(r0)		; perform controller reset
+  loop <    tstb (r0)		; wait for done
+	    rptl pl
+	    >
+;;; Commented out because drive reset doesn't work on our drive
+.if ne  0
+	  bit #1000,r1		; seek incomplete error?
+	  if ne,<
+	    mov -4(r0),6(r0)	; copy drive no. from RKDSR to RKDAR
+	    mov #15,(r0)	; perform drive reset
+	    jsr pc,@(sp)+	; wait for interrupt   **Wrong**
+	    br rknext		; try again
+	    >
+.endc
+	  >
+	rts r5
+
+rkrq:	.blkw 1			; RK11 request queue, ptr to first
+				; request block
+rksw:	.blkw 1			; co-routine PC for RK interrupts
+
+rkrdc:	.blkw 1			; no. of disk reads
+rkwtc:	.blkw 1			; no. of disk writes
+rkerrc:	.blkw 1			; no. of RK errors
+
+rkereg:	.blkw 6			; regs from last error
+
+.endc	; ne nrk
+
+.sbttl	RP subroutines
+
+.if ne nrp
+
+;;; RP11 request block.  RPRW creates a RP11 request block for each
+;;; disk i/o operation requested and RPREQ puts it on the end of the
+;;; RP11 request queue.  The RP11 interrupt handler (RPINT) takes the
+;;; request blocks off the queue and performs the desired operation.
+;;; When RPINT finishes with a request the RPFINI word of the request
+;;; block is incremented.
+
+dsect <
+	 .blkw 1		; queue link word
+rpopt::	 .blkw 1		; option bits
+rpfcn1:: .blkw 1		; RP11 function code (3 for write, 5 for read)
+rpecnt:: .blkw 1		; recoverable error counter
+rperrw:: .blkw 1		; RP11 error register
+rpfini:: .blkw 1		; incremented when finished
+
+;;; Order of next 5 entries is important.  RPDA-RPFCN are loaded into
+;;; RP11 regs to perform the desired read/write.
+
+rpda::	 .blkw 1		; disk address
+rpca::	 .blkw 1		; cylinder address
+rpba::	 .blkw 1		; bus address
+rpwc::	 .blkw 1		; word count
+rpfcn::	 .blkw 1		; function (RPCSR)
+	>,lrprqb		; length of disk request block
+
+%rpwch==1			; write check read or write
+
+
+;;; RPINIT initializes the RP controller and RP data bases.
+rpinit:	mov pc,-(sp)		; set RP interrupt vector to RPINT
+	add #rpint-.,(sp)	; ...
+	pop @#254		; ...
+	mov #pr5,@#256		; set vector PS to priority 5
+	push pc			; set RPSW to RPIDLE
+	add #rpidle-.,(sp)	; ...
+	pop rpsw		; ...
+	clr rprdc		; no reads yet
+	clr rpwtc		; no writes yet
+	clr rperrc		; no errors yet
+	clr rprq		; nothing on request queue yet
+	return
+
+
+.if ne  pfail
+;;; RPPWRU restarts the RP11 after a power failure.
+rppwru:	mov #1,@#rpcsr		; reset the RP11 controller
+loop <	  tstb @#rpcsr		; wait for Done
+	  rptl pl
+	  >
+	mov #rpcsr,r0		; ptr to RPCSR
+	jsr pc,rpnext		; check queue, restart any requests
+	pop rpsw		; save co-routine PC
+	return
+.endc
+
+
+;;; RPRW performs a read or write operation on the RP11.
+
+;;;	ARGS:				VALS:
+;;; SP ->	function code		 SP ->	error code
+;;;	bus address
+;;;	block no.
+;;;	disk no.
+
+rprw:	push r0,r1,r2		; save regs
+	bis #101,10(sp)		; turn on interrupt bit in function code
+	push #lrprqb/2,#60.	; ALOCW args: size, timeout
+	call alocw		; allocate memory for request block
+	pop r2,r0		; vals: ptr, error code
+	if ne,<			; couldn't get memory
+	  mov r0,16(sp)		; return error code
+	  br 1$
+	  >
+	mov 10(sp),rpfcn1(r2)	; set function code (either read or write)
+	mov 10(sp),rpfcn(r2)	; ...
+	mov 12(sp),rpba(r2)	; set bus address in request block
+	mov #-<lblk/2>,rpwc(r2)	; set word count in request block
+	mov 14(sp),r1		; get block no.
+				; R0 is already zero for DIV (from error code)
+	div #10.,r0		; divide by number of sectors/track (10.)
+	mov r1,rpda(r2)		; save sector number
+	mov r0,r1		; get ready for another divide
+	clr r0			; ....
+	div #20.,r0		; divide by number of tracks per
+				; cylinder to get track number
+        swab r1			; move track address to bits 8-12
+	clrb r1			; clear lower just in case
+	bis r1,rpda(r2)		; put track no. and sector no. together
+	mov r0,rpca(r2)		; save cylinder number
+	mov 16(sp),r1		; get disk no.
+	swab r1			; put disk no. into bits 10-8 of RPCSR
+	bis r1,rpfcn(r2)	; set disk number in function
+	bis r1,rpfcn1(r2)	; and function1
+	mov #%rpwch,rpopt(r2)	; write check i/o
+	mov #7,rpecnt(r2)	; retry recoverable errors 7 times
+	push r2			; RPREQ arg: ptr to request block
+	call rpreq		; queue disk request
+	push r2			; TWONNE arg1: location to wait on
+	add #rpfini,(sp)	; ...
+	push #0			; TWONNE arg2: val to change from
+	call twonne		; wait for disk i/o to complete
+	clr 16(sp)		; clear error code
+	tst rperrw(r2)		; any error bits set?
+	if ne,<
+	  push 10(sp),12+2(sp)
+	  push 14+4(sp),16+6(sp)
+	  push rperrw(r2)
+	  call sysmsg
+	  .string ^"Bad Data on Disk.  Error register = ^o
+Disk number = ^o. Block number = ^o. Bus Address = ^o.
+Function Code = ^o. 
+"
+          mov #170000,r0	; some time to print out message
+   loop	 <  dec r0		; ...
+	    rptl ne
+	    >
+	  mov #%ebdda,16(sp)	; give bad data error
+	  >
+	push r2			; FREE arg: ptr
+	call free
+1$:	pop r2,r1,r0		; restore regs
+	pop 4(sp)		; move up return r5
+	cmp (sp)+,(sp)+		; remove two args from stack
+	return
+
+.endc	; ne nrp
+
+.if ne  nrp
+;;; RPREQ inserts a request block into the RP queue.
+
+;;;	ARGS:				VALS:
+;;; SP ->	request block ptr	 SP ->	(none)
+
+rpreq:	push r0,r1,r2		; save regs
+	mov pc,r1		; ptr to RP request queue
+	add #rprq-.,r1		; ...
+	mfps -(sp)		; save priority
+	spl 5			; set ours higher than RP11
+loop <	  mov r1,r0		; save ptr
+	  mov (r1),r1		; move to next block
+	  rptl ne		; continue till found last block in queue
+	  >
+	mov 10+2(sp),r1		; ptr to request block to append
+	clr (r1)		; set its link word to null
+	mov r1,(r0)		; append to queue
+;;; If the disk is idle then wake it up by faking an interrupt.
+	push pc			; ptr to RPIDLE
+	add #rpidle-.,(sp)	; ...
+	cmp rpsw,(sp)+		; doing anything now?
+	if eq,<			; no
+	  mov #rpcsr,r0		; ptr to RP regs
+	  jsr pc,rpnext		; fake an interrupt
+	  pop rpsw		; store address to resume interrupt handler
+	  >
+	mtps (sp)+		; restore priority
+	pop r2,r1,r0,(sp)	; restore regs, remove args from stack
+	return
+
+.endc	; ne nrp
+
+.sbttl	RP11 Interrupt handler
+
+.if ne  nrp
+;;; RP11 interrupts are dispatched to the part of the interrupt handler that
+;;; caused them.  This is accomplished by the handler executing a JSR PC,@(SP)+
+;;; when it expects an interrupt.  The PC is copied into RPSW and when the
+;;; interrupt occurs control is returned to that PC.
+;;; Note: Only R0, R1 and R2 are saved by RPINT; any other regs used must be
+;;; explicitly saved.  R0 is initialized to RPCSR.
+
+rpint:	push r0,r1,r2		; save regs
+	inc intflg		; indicate an interrupt occured
+	mov #rpcsr,r0		; ptr to disk regs
+	bit #20000,(r0)		; seek complete interrupt?
+	if ne,<
+	  jsr pc,rpsint		; seek complete, go hack it
+	  >
+	else <
+	  jsr pc,@rpsw		; resume interrupt handler where it is waiting
+	  pop rpsw		; store address to resume interrupt handler
+	  >
+	pop r2,r1,r0		; restore regs
+	rti
+
+
+;;; RPSINT handles seek complete interrupts.
+rpsint:	crash ^"Seek complete interrupt"	; not yet implemented
+	rts pc
+
+;;; RPNEXT initiates the next request on RPRQ.
+rpnext:	jsr r5,rprst		; reset controller if it needs it
+	mov rprq,r1		; ptr to next request block
+	bne rpgo		; if another request then do it
+	jsr pc,@(sp)+		; no more requests, return from interrupt
+
+;;; RPSW will contain RPIDLE when nothing is happening.
+rpidle:	crash ^"Unexpected disk interrupt"
+
+
+;;; RPRERR handles recoverable errors which occur during a request.  A
+;;; controller reset is performed if it was a hard error.  The RPECNT
+;;; entry in the request block controls the no. of times a request will
+;;; be repeated if recoverable errors occur.
+
+rprerr:	jsr r5,rprst		; reset controller if it needs it
+	dec rpecnt(r1)		; try again?
+	beq rpdone		; no, try maximum no. of times
+
+;;; RPGO initiates a read or write function.
+rpgo:	cmp rpfcn(r1),#103	; write?
+	if eq,<
+	  inc rpwtc		; increment write count
+	  >
+	cmp rpfcn(r1),#105	; read?
+	if eq,<
+	  inc rprdc		; increment read count
+	  >
+	add #12,r0		; ptr to beyond DAR
+	add #rpda,r1		; ptr to DAR in request block
+	mov (r1)+,-(r0)		; set sector and track addresses
+	mov (r1)+,-(r0)		; set cylinder address
+	mov (r1)+,-(r0)		; set bus address
+	mov (r1)+,-(r0)		; set word count
+	mov (r1)+,-(r0)		; perform fcn (read or write)
+	jsr pc,@(sp)+		; wait for interrupt
+	mov rprq,r1		; ptr to request block again
+	mov -2(r0),r2		; get RPERR
+	mov r2,rperrw(r1)	; save in request block
+	if ne,<
+	  inc rperrc		; increment RP error count
+	  cmp -(r0),-(r0)	; get ptr to RPDSR
+	  mov pc,r1		; get ptr to RPEREG
+	  add #rpereg-.,r1	; ...
+  loop <    mov (r0)+,(r1)+	; copy disk regs into save area
+	    cmp r0,#rpdar	; RPDAR is last reg
+	    rptl los
+	    >
+	  mov #rpcsr,r0		; get ptr to RPCSR again
+	  mov rprq,r1		; ptr to request block again
+	  bit #177427,r2	; non-recoverable error?
+	  bne rpdone		; yes, finish this request
+	  bit #000340,r2	; recoverable error?
+	  bne rprerr		; yes, try again
+				; only error left is write check
+	  mov rpfcn1(r1),rpfcn(r1)	; restore fcn code
+	  bis #%rpwch,rpopt(r1)	; write check fcn when done
+	  br rprerr
+	  >
+	bit #%rpwch,rpopt(r1)	; write check?
+	beq rpdone		; no, finish this request
+	movb #107,rpfcn(r1)	; set fcn code to write check
+	bic #%rpwch,rpopt(r1)	; don't write check the write check
+	br rpgo
+rpdone:	mov rprq,r1		; ptr to request block again
+	mov (r1),rprq		; remove from queue
+	inc rpfini(r1)		; indicate request done
+	br rpnext		; do next request
+
+
+;;; RPRST resets the controller if it needs it.
+rprst:	bit #40000,(r0)		; hard error condtion?
+	if ne,<
+	  mov (r0),r1		; save drive status
+	  mov #1,(r0)		; perform controller reset
+  loop <    tstb (r0)		; wait for done
+	    rptl pl
+	    >
+	  >
+	rts r5
+
+;;; RPTEST tests to see if the arg drive number is responding
+
+rptest:	push r0,r1		; save registers
+	mov #rpcsr,r0		; get address of disk registers
+	mov 6(sp),r1		; get disk number
+	swab r1			; put disk number into bits 8-10
+	bis #15,r1		; function code for home seek
+	clr 6(sp)		; assume that there is no error yet
+	mov r1,(r0)		; perform a home seek
+  loop <  tstb (r0)		; wait for operation to complete
+	  rptl pl		; ....
+	  >
+	bit #140000,(r0)	; hard error condition???
+	if ne,<
+	  mov #%enadv,6(sp)	; yes, report device not there
+	  >
+	pop r1,r0		; restore registers
+	return
+
+rprq:	.blkw 1			; RP11 request queue, ptr to first
+				; request block
+rpsw:	.blkw 1			; co-routine PC for RP interrupts
+
+rprdc:	.blkw 1			; no. of disk reads
+rpwtc:	.blkw 1			; no. of disk writes
+rperrc:	.blkw 1			; no. of RP errors
+
+rpereg:	.blkw 7			; regs from last error
+
+.endc	; ne nrp
+
+.sbttl	RX subroutines
+
+.if ne nrx
+
+;;; RX11 request block.  RXRW creates a RX11 request block for each
+;;; disk i/o operation requested.  RXREQ puts a request block on the
+;;; RX11 queue.  The RX11 interrupt handler (RXINT) takes request
+;;; blocks off the queue and performs the desired operation.  When
+;;; RXINT finishes with the a request it increments the RXFINI word of
+;;; the request block and goes on to the next item on the queue.
+
+dsect <
+	 .blkw 1		; queue link word
+rxfini:: .blkw 1		; incremented when request completed
+rxerc::	 .blkw 1		; error code
+rxadd::	 .blkw 1		; address to transfer to/from
+rxwtf::	 .blkw 1		; nonzero iff writing
+rxcmnd:: .blkw 1		; command
+rxtrac:: .blkw 1		; track address
+rxsect:: .blkw 1		; sector address
+	 >,lrxrqb		; length of the RX11 request block
+
+
+;;; RXINIT initializes the RX controller and RX data bases.
+rxinit:	mov pc,-(sp)		; set RX interrupt vector to RXINT
+	add #rxint-.,(sp)	; ...
+	pop @#264		; ...
+	mov #pr5,@#266		; set vector PS to priority 5
+	mov pc,-(sp)		; set RXSW to RXIDLE
+	add #rxidle-.,(sp)	; ...
+	pop rxsw		; ...
+	clr rxrdc		; no reads yet
+	clr rxwtc		; no writes yet
+	clr rxperr		; no parity errors
+	clr rxcerr		; no checksum errors
+	clr rxserr		; no seek errors
+	clr rxrq		; nothing on request queue yet
+	return
+
+
+.if ne  pfail
+;;; RXPWRU restarts the RX11 after a power failure.
+rxpwru:	foo
+	return
+.endc
+
+
+;;; RXRW does a floppy read or write operation.  Only one sector is read or
+;;; written.  The write flag argument, if nonzero, specifies a write operation,
+;;; else a read is done.
+
+;;;	ARGS:				VALS:
+;;; SP ->	Write flag		 SP - >	Error Code
+;;;	bus address
+;;;	block no.
+;;;	disk no.
+
+rxrw:	push r0,r1,r2		; save regs
+	push #lrxrqb/2,#60.	; ALOCW args: size, timeout
+	call alocw		; allocate memory for request block
+	pop r2,r0		; vals: ptr, error code
+	if ne,<			; couldn't get memory
+	  mov r0,16(sp)		; return error code
+	  br 1$
+	  >
+	mov 12(sp),rxadd(r2)	; fill in bus address
+	mov 14(sp),r1		; get block number
+				; R0 already zero for DIV (from error code)
+	div #nsecto,r0		; divide block no./no. sectors per track
+	asl r1
+	cmp r1,#nsecto
+	if his,<
+	  sub #nsecto-1,r1
+	  >
+	inc r1			; sector no. in r1, make it one based
+	mov r0,rxtrac(r2)	; track no. in r0, put it in request block
+	mov r1,rxsect(r2)	; put in sector number
+	mov 10(sp),rxwtf(r2)	; copy Write flag (nonzero for write)
+	if eq,<
+	  mov #6,rxcmnd(r2)	; set read function code
+	  >
+	else <
+	  mov #4,rxcmnd(r2)	; set write function code
+	  >
+	tst 16(sp)		; unit 1 or 0?
+	if eq,<			; NOTE: we're backwards here
+				; this is because the left floppy will usually
+				; still have the RT-11 diskette in it
+	  bis #20,rxcmnd(r2)	; set unit #1 for now.  later check 16(sp)
+	  >
+	push r2			; RXREQ args: pointer to request block
+	call rxreq		; issue request
+	push r2			; TWONNE arg1: location to wait on
+	add #rxfini,(sp)	; ...
+	push #0			; TWONNE arg2: val to change from
+	call twonne		; wait for RX i/o to complete
+	mov rxerc(r2),16(sp)	; any error bits set?
+        push r2			; FREE arg: pointer
+	call free		; free request block
+1$:	pop r2,r1,r0		; restore regs
+	pop 4(sp)		; move up return r5
+	cmp (sp)+,(sp)+		; remove two args ffrom stack
+	return
+
+
+;;; RXREQ inserts a request block into the RX queue.
+
+;;;	ARGS:				VALS:
+;;; SP ->	request block ptr	 SP ->	(none)
+
+rxreq:	push r0,r1,r2		; save regs
+	mov pc,r1		; ptr to RX request queue
+	add #rxrq-.,r1		; ...
+	mfps -(sp)		; save priority
+	spl 5			; set ours higher than RX-11
+loop <	  mov r1,r0		; save ptr
+	  mov (r1),r1		; move to next block
+	  rptl ne		; continue till found last block in queue
+	  >
+	mov 10+2(sp),r1		; ptr to request block to append
+	clr (r1)		; set its link word to null
+	mov r1,(r0)		; append to queue
+;;; If the disk is idle then wake it up by faking an interrupt.
+	push pc			; ptr to RXIDLE
+	add #rxidle-.,(sp)	; ...
+	cmp rxsw,(sp)+		; doing anything now?
+	if eq,<			; no
+	  mov #rxcs,r0		; ptr RX11 control/status register
+	  push r3,r4,r5		; save rest of regs
+	  jsr pc,rxnext		; fake an interrupt
+	  pop rxsw		; store address to resume interrupt handler
+	  pop r5,r4,r3		; restore some regs
+	  >
+	mtps (sp)+		; restore priority
+	pop r2,r1,r0,(sp)	; restore regs, remove args from stack
+	return
+
+.endc	; ne nrx
+
+.sbttl	RX11 Interrupt Handler
+
+.if ne  nrx
+rxint:	jsr r5,save6		; save regs
+	inc intflg		; indicate an interrupt occured
+	mov #rxcs,r0		; get ptr to RX11 control/status reg
+	jsr pc,@rxsw		; call RX11 co-routine
+	pop rxsw		; save co-routine PC
+	jsr r5,rest6		; restore regs
+	rti
+
+
+;;; Process next request on queue.
+rxnext:	mov rxrq,r1		; get request block from queue
+	bne rxgo		; something there, go do it
+	jsr pc,@(sp)+		; nothing on queue, return from interrupt
+
+;;; RXSW will contain RXIDLE when nothing is happening.
+rxidle:	crash ^"Unexpected disk interrupt"
+	br rxnext		; in case continued
+
+
+;;; RXGO initiates a read or write command.
+rxgo:	tst rxwtf(r1)		; Write?
+	beq rxrow		; no, don't fill
+;;; Write request.  Fill the RX01 buffer and then issue the write command.
+	mov #10,r3		; no. of times to retry parity errors in Fill
+loop <    mov #1,(r0)		; send Fill command
+	  mov rxadd(r1),r2	; get ptr to data
+  loop <    bitb #240,(r0)	; test Transfer Request and Done bits
+	    rptl eq		; wait till one sets
+	    exitl pl		; Done?
+	    movb (r2)+,2(r0)	; Transfer Request, load data byte
+	    rptl
+	    >
+	  tst (r0)		; Error (parity error in transfer to buffer)?
+	  exitl pl
+	  inc rxperr		; increment parity error count
+	  sorl r3		; retry Fill
+	  mov #%ebdda,rxerc(r1)	; set error code
+	  br rxdone
+	  >
+
+;;; Read or Write RX01 buffer to sector and track specified in request.
+
+rxrow:	mov #10,r3		; no. of times to retry errors
+loop <	  tst rxwtf(r1)		; reeling or writhing?
+	  if eq,<
+	    inc rxrdc		; reeling, increment read counter
+	    >
+	  else <
+	    inc rxwtc		; writhing, increment write counter
+	    >
+	  mov rxcmnd(r1),r2	; get Reel or Writhe command
+	  bis #101,r2		; set go and interrupt on Done
+  loop <    bit #40,(r0)	; wait for Done
+	    rptl eq
+	    >
+	  mov r2,(r0)		; send Reel or Writhe command
+  loop <    tstb (r0)		; wait for Transfer Request
+	    rptl pl
+	    >
+	  mov rxsect(r1),2(r0)	; send Sector address
+  loop <    tstb (r0)		; wait for Transfer Request
+	    rptl pl
+	    >
+	  mov rxtrac(r1),2(r0)	; send Track address
+	  jsr pc,@(sp)+		; wait for Done
+	  mov rxrq,r1		; ptr to request block we're processing
+	  tst (r0)		; Error?
+	  exitl pl		; no
+	  mov 2(r0),r2		; read RXES to determine error
+	  bit #2,r2		; parity error?
+	  if ne,<
+	    inc rxperr		; increment parity error count
+	    br 1$
+	    >
+	  bit #1,r2		; CRC error?
+	  if ne,<
+	    inc rxcerr		; increment CRC error count
+	    br 1$
+	    >
+;;; Seek error
+	  inc rxserr		; increment seek error count
+	  mov #17,(r0)		; send Read Error Register function
+	  jsr pc,@(sp)+		; wait for Done
+	  tst (r0)		; error reading Error Register??
+	  if pl,<
+	    mov 2(r0),rxerr	; save Error Register
+	    >
+	  mov #40000,(r0)	; initialize
+	  jsr pc,@(sp)+		; wait for Done
+	  mov #%ebdda,rxerc	; set error code
+	  br 2$			; give up
+1$:	  sorl r3		; retry operation
+2$:	  mov #%ebdda,rxerc(r1)	; set error code
+	  br rxdone		; too many errors, give up
+	  >
+
+;;; If request is a read then empty the RX01 buffer after doing the read
+;;; operation.
+
+	tst rxwtf(r1)		; Read?
+	bne rxdone
+	mov #10,r3		; no. of times to retry parity errors in Empty
+loop <    mov #3,(r0)		; send Empty function
+	  mov rxadd(r1),r2	; get ptr to data area
+  loop <    bitb #240,(r0)	; test Transfer Request and Done bits
+	    rptl eq		; wait for one to set
+	    exitl pl		; Done?
+	    movb 2(r0),(r2)+	; Transfer Request, get data byte
+	    rptl
+	    >
+	  tst (r0)		; Error (parity error in transfer from buffer)?
+	  exitl pl
+	  inc rxperr		; increment parity error count
+	  sorl r3		; retry Empty
+	  mov #%ebdda,rxerc(r1)	; set error code
+	  >
+rxdone:	inc rxfini(r1)		; indicate done
+	mov (r1),rxrq		; remove request from RX queue
+	jmp rxnext		; process next request
+
+
+rxtest:	return			; for now..
+
+rxrq:	.blkw 1			; RX11 request queue, ptr to 1st request block
+
+rxsw:	.blkw 1			; RX11 co-routine PC
+
+rxrdc:	.blkw 1			; no. of reads
+rxwtc:	.blkw 1			; no. of writes
+rxerr:	.blkw 1			; Error Register after last seek error
+rxperr:	.blkw 1			; no. of Fill or Empty parity errors
+rxcerr:	.blkw 1			; no. of CRC errors
+rxserr:	.blkw 1			; no. of seek errors
+
+.endc
+
+.sbttl	RL subroutines
+
+.if ne  nrl
+;;; RL11 request block.  RLRW creates a RL11 request block for each disk i/o
+;;; operation requested and RLREQ puts it on the end of the RL11 request queue.
+;;; The RL11 interrupt handler (RLINT) takes the request blocks off the queue
+;;; and performs the desired operation.  When RLINT finishes with a request
+;;; the RLFINI word of the request block is incremented.
+
+dsect <
+	 .blkw 1		; queue link word
+rlopt::	 .blkw 1		; option bits
+rlcs1::  .blkw 1		; RL11 function code(12 for write,14 for read)
+rlecnt:: .blkw 1		; recoverable error counter
+rlerrw:: .blkw 1		; RL11 error register
+rlfini:: .blkw 1		; incremented when finished
+;;; Order of next 4 entries is important.  RLMP-RLCS are loaded into RL11
+;;; regs to perform the desired read/write.
+rlmp::	 .blkw 1		; multi-purpose register
+rlda::	 .blkw 1		; disk address register
+rlba::	 .blkw 1		; bus address register
+rlcs::	 .blkw 1		; control status register
+	>,lrlrqb		; length of disk request block
+
+%rlwch==1			; write check
+
+
+;;; RLINIT initializes the RL controller and RL data bases.
+
+rlinit:	mov pc,-(sp)		; set RL interrupt vector to RLINT
+	add #rlint-.,(sp)	; ...
+	pop @#160		; ...
+	mov #pr5,@#162		; set vector PS to priority 5
+	push pc			; set RLSW to RLIDLE
+	add #rlidle-.,(sp)	; ...
+	pop rlsw		; ...
+	mov #13,@#rldar		; for reset/get status on drive
+	mov #4,@#rlcsr		; do it (get status)
+loop <    tstb @#rlcsr		; wait for disk controller
+          rptl pl
+	  >
+	clr rlrdc		; no reads yet
+	clr rlwtc		; no writes yet
+	clr rlerrc		; no errors yet
+	clr rlrq		; nothing on request queue yet
+	return
+
+
+.if ne  pfail
+;;; RLPWRU restarts the RL11 after a power failure.
+
+rlpwru:	jsr r5,rlrst		; reset drive if necessary
+	mov #rlcsr,r0		; ptr to RLCSR
+	jsr pc,rlnext		; check queue, restart any requests
+	pop rlsw		; save co-routine PC
+	return
+.endc
+
+
+;;; RLRW performs a read or write operation on the RL11.
+
+;;;	ARGS:				VALS:
+;;; SP ->	function code		 SP ->	error code
+;;;	bus address
+;;;	block no.
+;;;	disk no.
+
+rlrw:	push r0,r1,r2		; save regs
+	tst 16(sp)		; are we trying to acces disk 1
+	if ne,<			; yes
+	  tst disk1		; is disk 1 there
+	  if ne,<		; no
+	    mov #%enadv,16(sp)	; return device not available
+	    br 1$
+	    >
+	  >
+	bis #100,10(sp)		; turn on interrupt bit in function code
+	push #lrlrqb/2,#60.	; ALOCW args: size, timeout
+	call alocw		; allocate memory for request block
+	pop r2,r0		; vals: ptr, error code
+	if ne,<			; couldn't get memory
+	  mov r0,16(sp)		; return error code
+	  br 1$
+	  >
+	mov 16(sp),rlcs1(r2)	; set disk number
+	swab rlcs1(r2)		; set disk number into bits 8-9 
+	mov 10(sp),rlcs(r2)	; set function code
+	bis rlcs1(r2),rlcs(r2)	; set disk number with function code
+	mov 12(sp),rlba(r2)	; set bus address in request block
+	mov #-<lblk/2>,rlmp(r2)	; set word count in request block
+	mov 14(sp),r1		; get block no.
+				; R0 is already zero for DIV (from error code)
+	div #40.,r0		; get cylinder no. in r0, sector no. in r1
+	ash #6,r0		; shift cylinder no. into place
+	bis r1,r0		; put cylinder no. and sector no. together
+	mov r0,rlda(r2)		; set disk address in request block
+	mov #7,rlecnt(r2)	; retry recoverable errors 7 times
+	push r2			; RLREQ arg: ptr to request block
+	call rlreq		; queue disk request
+	push r2			; TWONNE arg1: location to wait on
+	add #rlfini,(sp)	; ...
+	push #0			; TWONNE arg2: val to change from
+	call twonne		; wait for disk i/o to complete
+	clr 16(sp)		; clear error code
+	tst rlerrw(r2)		; any error bits set?
+	if ne,<
+	  mov pc,r0
+	  add #rlereg-.,r0
+	  push rlerrw(r2)
+	  push (r0)+,(r0)+,(r0)+,(r0)+
+	  call sysmsg
+	  .string ^"Bad Data on Disk.  Disk MPR= ^o.
+Disk DAR= ^o. Disk BAR= ^o. Disk CSR= ^o.
+Disk Error Register= ^o.
+"
+          mov #170000,r0	; some time to print out message
+   loop	 <  dec r0		; ...
+	    rptl ne
+	    >
+	  mov #%ebdda,16(sp)	; give bad data error
+	  >
+	push r2			; FREE arg: ptr
+	call free
+1$:	pop r2,r1,r0		; restore regs
+	pop 4(sp)		; move up return r5
+	cmp (sp)+,(sp)+		; remove two args from stack
+	return
+
+.endc	; ne nrl
+
+.if ne  nrl
+;;; RLREQ inserts a request block into the RL queue.
+
+;;;	ARGS:				VALS:
+;;; SP ->	request block ptr	 SP ->	(none)
+
+rlreq:	push r0,r1,r2		; save regs
+	mov pc,r1		; ptr to RL request queue
+	add #rlrq-.,r1		; ...
+	mfps -(sp)		; save priority
+	spl 5			; set ours higher than RL11
+loop <	  mov r1,r0		; save ptr
+	  mov (r1),r1		; move to next block
+	  rptl ne		; continue till found last block in queue
+	  >
+	mov 10+2(sp),r1		; ptr to request block to append
+	clr (r1)		; set its link word to null
+	mov r1,(r0)		; append to queue
+;;; If the disk is idle then wake it up by faking an interrupt.
+	push pc			; ptr to RLIDLE
+	add #rlidle-.,(sp)	; ...
+	cmp rlsw,(sp)+		; doing anything now?
+	if eq,<			; no
+	  mov #rlcsr,r0		; ptr to RL regs
+	  jsr pc,rlnext		; fake an interrupt
+	  pop rlsw		; store address to resume interrupt handler
+	  >
+	mtps (sp)+		; restore priority
+	pop r2,r1,r0,(sp)	; restore regs, remove args from stack
+	return
+
+.endc	; ne nrl
+
+.sbttl	RL11 Interrupt handler
+
+.if ne  nrl
+;;; RL11 interrupts are dispatched to the part of the interrupt handler that
+;;; caused them.  This is accomplished by the handler executing a JSR PC,@(SP)+
+;;; when it expects an interrupt.  The PC is copied into RLSW and when the
+;;; interrupt occurs control is returned to that PC.
+;;; Note: Only R0, R1 and R2 are saved by RLINT; any other regs used must be
+;;; explicitly saved.  R0 is initialized to RLCSR.
+
+rlint:	push r0,r1,r2		; save regs
+	inc intflg		; indicate an interrupt occured
+	mov #rlcsr,r0		; ptr to disk regs
+	jsr pc,@rlsw		; resume interrupt handler where it is waiting
+	pop rlsw		; store address to resume interrupt handler
+	pop r2,r1,r0		; restore regs
+	rti
+
+;;; RLNEXT initiates the next request on RLRQ.
+rlnext:	jsr r5,rlrst		; reset controller if it needs it
+	mov rlrq,r1		; ptr to next request block
+	bne rlgo		; if another request then do it
+	jsr pc,@(sp)+		; no more requests, return from interrupt
+
+;;; RLSW will contain RLIDLE when nothing is happening.
+rlidle:	crash ^"Unexpected disk interrupt"
+
+
+;;; RLRERR handles recoverable errors which occur during a request.  A
+;;; controller reset is performed if it was a hard error.  The RLECNT
+;;; entry in the request block controls the no. of times a request will
+;;; be repeated if recoverable errors occur.
+
+rlrerr:	jsr r5,rlrst		; reset controller if it needs it
+	dec rlecnt(r1)		; try again?
+	beq rldone		; no, try maximum no. of times
+
+;;; RLGO initiates a read or write function.
+rlgo:	cmpb rlcs(r1),#112	; write?
+	if eq,<
+	  inc rlwtc		; increment write count
+	  >
+	cmpb rlcs(r1),#114	; read?
+	if eq,<
+	  inc rlrdc		; increment read count
+	  >
+	jsr r5,rlrst1		; reset drive if necessary
+	tst (r0)		; was there an error???
+	bmi 2$			; yes if mi
+
+;;; perform a seek on the disk to the right track
+
+	movb #110,rlcs1(r1)	; set function for read header(add to disk #)
+	mov rlcs1(r1),(r0)	; execute read headers function
+	jsr pc,@(sp)+		; wait for interupt
+	push r3			; save register
+	mov 6(r0),r1		; get current disk address
+	mov rlrq,r3		; get pointer to request block
+	mov rlda(r3),r2		; get desired disk address
+	bic #77,r2		; clear sector bits
+	bic #177,r1		; clear sector and surface bits
+	mov r2,r3		; copy desired disk address
+	bic #177677,r3		; isolate surface bit
+	ash #-2,r3		; position it for difference word in seek
+	bic #100,r2		; remove surface bit
+	sub r2,r1		; find difference word for seek operation
+	bcc 1$			; if CC actual >= desired position
+	neg r1			; make positive difference
+	bis #4,r1		; set bit to indicate move towards disk center
+1$:     inc r1			; set marker bit
+	bis r3,r1		; merge in surface bit
+	mov r1,4(r0)		; put difference word into RLDAR
+	pop r3			; restore reg
+	mov rlrq,r1		; get ptr to request block
+	movb #106,rlcs1(r1)	; set code for seek (with disk number)
+	mov rlcs1(r1),(r0)	; perform a seek function
+	jsr pc,@(sp)+		; wait for seek to finish
+
+;now do read or write
+
+	add #10,r0		; ptr to beyond DAR
+	mov rlrq,r1		; get back ptr to request block
+	add #rlmp,r1		; ptr to DAR in request block
+	mov (r1)+,-(r0)		; set word count
+	mov (r1)+,-(r0)		; set disk address
+	mov (r1)+,-(r0)		; set bus address
+	mov (r1)+,-(r0)		; perform fcn (read or write)
+	jsr pc,@(sp)+		; wait for interrupt
+	mov rlrq,r1		; ptr to request block again
+	clr rlerrw(r1)		; no error yet
+	tst (r0)		; was there an error???
+	if mi,<
+2$:	  inc rlerrc		; increment RL error count
+	  mov pc,r1		; get ptr to RLEREG
+	  add #rlereg-.,r1	; ...
+  loop <    mov (r0)+,(r1)+	; copy disk regs into save area
+	    cmp r0,#rlmpr	; RLMPR is last reg
+	    rptl los
+	    >
+	  mov #rlcsr,r0		; get ptr to RLCSR again
+	  mov rlrq,r1
+	  mov #3,4(r0)		; do a get status on the drive
+	  movb #10,rlcs1(r1)	; opcode for get status
+	  mov rlcs1(r1),(r0)	; do it
+  loop <    tstb (r0)		; wait for operation to finish
+	    rptl pl		; ....
+	    >
+	  mov 6(r0),r2		; get RL01 drive error register
+	  mov r2,rlerrw(r1)	; save in request block
+	  mov #rlcsr,r0		; get ptr to RLCSR again
+	  mov rlrq,r1		; ptr to request block again
+	  bit #40000,r2		; drive error???
+	  bne rldone		; yes, finish this request
+	  bit #100000,r2	; recoverable error?
+	  bne rlrerr		; yes, try again
+	  >
+;fall through to rldone (i.e. no error occured)
+
+rldone:	mov rlrq,r1		; ptr to request block again
+	mov (r1),rlrq		; remove from queue
+	inc rlfini(r1)		; indicate request done
+	jmp rlnext		; do next request
+
+
+;;; RLRST resets the controller if it needs it.
+
+rlrst:	bit #140000,(r0)	; hard error condtion?
+	if ne,<
+rlrst1:	  push r1		; save register (RLRST1 is for unconditional
+				; reset of the drive
+	  mov rlrq,r1		; get ptr to request queue
+	  mov #13,4(r0)		; perform controller reset
+	  movb #4,rlcs1(r1)	; set opcode for get status
+	  mov rlcs1(r1),(r0)	; ....(get status)
+  loop <    tstb (r0)		; wait for done
+	    rptl pl
+	    >
+	  pop r1
+	  >
+	rts r5
+
+
+rltest:	push r0,r1		; save registers
+	mov #rlcsr,r0		; get address of disk registers
+	mov 6(sp),r1		; get disk number
+	swab r1			; put disk number into bits 8-9
+	bis #4,r1		; function code for reset
+	clr 6(sp)		; assume that there is no error yet
+	mov #13,4(r0)		; perform a controller reset
+	mov r1,(r0)		; do it
+loop <	  tstb (r0)		; wait for operation to complete
+	  rptl pl		; ....
+	  >
+	bit #140000,(r0)	; hard error condition???
+	if ne,<
+	  mov #%enadv,6(sp)	; yes, report device not there
+	  >
+	pop r1,r0		; restore registers
+	return
+
+rlrq:	.blkw 1			; RL11 request queue, ptr to first
+				; request block
+rlsw:	.blkw 1			; co-routine PC for RL interrupts
+
+rlrdc:	.blkw 1			; no. of disk reads
+rlwtc:	.blkw 1			; no. of disk writes
+rlerrc:	.blkw 1			; no. of RL errors
+
+rlereg:	.blkw 4			; regs from last error
+
+.endc	; ne nrl

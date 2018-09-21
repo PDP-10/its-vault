@@ -1,0 +1,541 @@
+
+						INTEROFFICE MEMORANDUM
+
+TO:  MATHLAB Group				DATE:  6/26/78
+						FROM:  David R. Barton
+						DEPT:  MATHLAB
+						EXT:  x3-5891
+						LOC/MAIL STOP:  NE43-831A
+
+SUBJ:  Guide to the MODE Package for SCA.
+
+
+	This is a guide to DRB's mode package, a complicated macro package
+which extends and changes MACLISP in several ways.  The directory MC:SCA;
+contains source code, documentation, examples of use, etc.  For the purposes
+of this primer, it is assumed that the reader knows MACLISP.  Please send all
+comments, questions, and suggestions concerning either this primer or the mode
+package itself to DRB@MC.  Thank you.
+
+	Section I., the introduction, may serve as a somewhat philosophical
+primer.  It references Section II., where some code is given.  Merely perusing
+this code will give a quick idea of the major themes of section I, without the
+philosophy.  The remaining sections constitute a reference manual for using the
+mode package, more or less, though one is encouraged to consult DRB or the
+code itself for additional information.
+
+
+I.  Introduction
+
+	The purpose of a high-level programming language is to allow the
+programmer to deal with data and procedures ABSTRACTLY, rather than
+implementationally.  By this one means that he need only know the identities
+satisfied by various combinations of operations, rather than "why",
+implementationally, the identities are true.  Thus a lisp programmer is
+constantly aware that CAR(CONS(X,Y))=X, for any X and Y, though he need not
+be concerned with why.
+
+	One accepts the notion of an ABSTRACT DATA OBJECT intuitively, as a
+data object whose implementation is unspecified, but which can nonetheless be
+acted upon by ABSTRACT FUNCTIONS or PROCEDURES, which produce new [abstract]
+data objects, or in some cases modify ["clobber"] old ones.  All that is known
+about these functions and objects is the identities they satisfy, together with
+some law such as TRUE # FALSE [this prevents "vaccuous" implementations, where
+every identity is true].  An ABSTRACT DATA TYPE is defined as a set of abstract
+data objects, usually with some common features.  To each abstract function,
+there are associated data types for the domain and range.  [Actually, since a
+function may have any finite non-negative number of arguments, there is not a
+single domain data type, but rather a list of argument data types.]  A
+collection of data types and functions between them is called an [ABSTRACT]
+ALGEBRA.  In what follows, we will often refer to an abstract data object
+simply as an OBJECT, an abstract data type as a DATA TYPE or even a TYPE, an
+abstract function or procedure as a FUNCTION, and an abstract algebra as an
+ALGEBRA.  We also follow the practices of algebraists and computer scientists,
+who are somewhat loose in their usage of these terms.  First of all, we allow a
+function to have SIDE EFFECTS in the lisp sense, since we are, after all,
+modelling a programming environment.  Secondly, and more confusingly, when an
+algebra has a single "principal" data type, as is often the case, that type is
+sometimes identified with the algebra itself, which is of course, strictly
+speaking, incorrect.  Thus when one speaks of a "MATRIX ALGEBRA", one is
+actually referring to the TYPE of MATRIX, as well as the types of ELEMENT, ROW,
+
+and COLUMN, and all the associated functions [NTH-ROW, NTH-COL, MAT+, MAT*,
+etc.].
+
+	One can view the process of programming as the interleaving of two
+phases:  first, defining problem[s] rigorously in terms of abstract algebra[s],
+which includes the very important stage of subdividing a given problem or
+algebra into smaller problems or algebras [more on this later], and second,
+taking an abstract algebra and creating a concrete instance of it
+["implementing" it].  At present, there is not much automated aid that can be
+given regarding the first stage, other than listings and cross-references of
+algebras already implemented.  The AI problem of choosing representations, for
+example, falls into this stage, and little success has been had with it.  MRG
+and I [DRB] are working on a "repper" which will try to pick a good algebraic
+structure in which to "represent" a MACSYMA general representation expression,
+which could in theory be generalized to handle much of this stage, but we still
+haven't done much work on it.  This is clearly a very difficult and important
+area for AI research.
+
+	The second stage, however, shows more promise.  There actually
+currently exist systems which accept lists of data types, functions, the
+domain and range types of the functions, a [hopefully] "complete" [i.e.,
+sufficient to specify the desired I/O behavior of the implementation] list of
+identities relating the functions, and a proposed implementation.  They then
+attempt to "prove" the implementation correct, by proving as many of the
+identities as possible, given the proposed implementation.  Such systems are
+non-trivial to write, and even if we had one there would be several problems
+with its usage:
+
+	(1)  Certain types of specifications seem beyond most current systems,
+e.g. side effects.
+	(2)  The exact specifications in a system as big as MACSYMA may be
+incredibly complex or not even known when the code is first written.
+	(3)  The specifications tend to parallel the code:  bugs in one may
+often occur in the other, so that no inconsistencies exist to be caught.
+
+	For these reasons, it did not seems worthwhile to embark upon building
+a theorem-prover.  The mode package does, however, accept declarations about
+data types of variables and domains and ranges of functions, and it understands
+the syntax of virtually all MACLISP system FSUBRs, as well as being able to
+expand macros, so that it can catch "syntactic" inconsistencies [i.e., type
+clashes], a great aid in debugging.  It also treats functions as first class
+data objects, allowing them to be passed around as data and then invoked as
+functions, as well as letting them be redefined in certain ways [specifically,
+arbitrary arguments may be held constant, which proves sufficient to do almost
+anything] at run-time.  This proves to be very useful for implementing both
+"upward" and "downward funargs".
+
+	Information about data types can be useful for more than debugging.
+For example, LISP supports implementations for both the type BOOLEAN and the
+type LIST.  The atom NIL is used in both implementations [it is both FALSE and
+EMPTY].  Usually, the programmer knows when he is dealing with a BOOLEAN, and
+when a LIST, so that no confusion results.  In other cases, such as the garbage
+collector, the type doesn't matter.  However, there exists a well-known
+controversy:  should NIL be PRINTed as () or NIL?  There is no correct answer
+in the standard lisp read-eval-print loop, since PRINT cannot know the type of
+a NIL it is passed.  However, using the mode package there is no problem, for
+the input expression [value returned by READ] can be analyzed to determine the
+expected type of the result, and so the correct PRINT function can be called.
+This mechanism also works for calls to PRINT from compiled code, with no loss
+
+of run-time efficiency, since the disambiguation [determination of which PRINT
+to call] is done using compile-time type checking, rather than a compiled
+[run-time] CASEQ, say.
+
+	Even more important than types, however, is the concept of a MODE,
+or CLUSTER in CLU's terminology.  Essentially, a mode is simply a package
+which implements some particular abstract algebra in a particular way, with one
+important distinction:  some of the functions in the algebra may be left
+undefined, to be passed [eventually] as "arguments" to the mode.  This allows
+complex algebras to be split into smaller "sub-algebras", often of independent
+meaning and possible usage, and implemented separately.  The effect and
+importance of this is analogous to that of splitting a single huge FORTRAN
+program into many small LISP functions, and yet this idea [sometimes termed
+"PARAMETERIZED MODES", the undefined or argument functions being thought of
+as parameters] has been virtually ignored by conventional programming
+languages.
+
+	For example, consider addition and multiplication of rational functions
+[quotients of polynomials] in X with coefficients which are rational numbers.
+The relevant types here are RAT [rational function], POLY [polynomial in X],
+TERM [rational number times a power of X], EXPON [exponent, a non-negative
+fixnum], COEF [a rational number], and INTEGER, at least using the
+implementation which follows:  a RAT is a pair of POLYS [numerator and
+denominator], a POLY is a list of TERMS, sorted with highest degree terms
+first, TERM consists of a COEF and an EXPON, and a COEF is a pair of INTEGERS.
+[Note that there is a some leeway in picking the types, e.g. one could make
+NUM-POLY and DEN-POLY separate types, if one desired.  This would result in
+additional automatic type checking, but would force an explicit declaration
+every time a conversion between these types was done.  Also, note that some
+amount of implementational planning has already been done, even as the list
+of types is formulated e.g. POLYS are sorted lists.]  Three implementations of
+this algebra are given in Section II. below:  a standard lisp one, one where
+type-checking is used, but without splitting the problem into separate algebras
+[implementationally speaking, modes], and the final one, where both type
+checking and separate modes are used.  [Note that in all cases efficiency has
+been sacrificed for clarity of exposition.  Also, let us ignore the problem of
+taking GCDs to reduce fractions to lowest terms.]
+
+	Comparing the three implementations, several things become immediately
+apparent, and would be brought out even more if an entire complicated system
+were studied.  First of all, the actual code structure, as far as the specific
+functions written, and the structure within the function definitions, is
+remarkly similar in all three cases.  It is a lot easier to see the structure
+within the functions in either of the second or third implementations, when
+compared with the first.  The explicit types gives the variables and functions
+more meaning than things that manipulate CONS cells.  Also, there are the
+advantages mentioned above:  compiler-time error checking, allowance of
+repetition of function names, etc.
+
+	The difference between the second and third implementations lies not
+WITHIN the function definitions, however.  In fact, virtually all the functions
+in the third implementation are line-for-line copies of the second
+implementation.  However, in section C. the functions are grouped into MODES,
+which reflects the related structure of the functions, which improves the
+clarity somewhat.  [All right, I'll give you a real difference - but remember,
+it is after 3:00 AM.  Hackers unite!  Are you reading this far?  [] Yes  [] No
+- check one.  Actually, now comes the most important point in two years'
+research.]  There are simply less DEFUNS in section C than there are in section
+B.  The definitions for + and * for RATS and COEFS are entirely analogous, and
+
+can be generalized into a single mode, FRACTION, thereby eliminating some clear
+redundancy.  As another example, suppose that now having rational functions in
+X, one wanted to create polynomials in Y with coefficients of the already
+implemented type, RAT.  Using method B, one would have to create new copies of
+all the functions for manipulating polynomials, except that now different
+coefficient operations would be used.  In method C, a single MODE instantiation
+will do the job!
+
+	Hopefully, the reader will now be motivated to use the mode package, at
+least experimentally, in his own programming.  I would like to encourage you to
+do so, and to come to me with any questions or comments you might have.  The
+remaining sections of this document, if and when they are written, should serve
+as a reference guide for different aspects of the mode package.  They are more
+or less independent, and should definitely not necessarily be read in
+sequential order, but rather consulted using random access, according to the
+needs and interests of the reader.
+
+II.  Implemenations of Univariate Rational Functions over the Rational Numbers
+
+	A.  Naked LISP
+
+;A RAT is a CONS of two POLYS, the CAR being the numerator, and the CDR the
+;denominator.  A POLY is a sorted LIST of TERMS [thus NULL checks for 0], with
+;exponents decreasing.  Terms with 0 coefficients are dropped.  The variable
+;[X] is not stored, since it remains constant.  Each TERM is a CONS, the CAR
+;being the EXPON [degree, a FIXNUM] of the term, and the CDR the COEF.  A COEF
+;is also a CONS, the CAR being the numerator, and the CDR the denominator, both
+;INTEGERS [possibly BIGNUMS].  GCDS are ignored throughout.
+
+(defun rat+ (r1 r2)
+       (cons (poly+ (poly* (car r1) (cdr r2))
+		    (poly* (cdr r1) (car r2)))
+	     (poly* (cdr r1) (cdr r2))))
+
+(defun rat* (r1 r2)
+       (cons (poly* (car r1) (car r2))
+	     (poly* (cdr r1) (cdr r2))))
+
+(defun poly+ (p1 p2)
+       (cond ((null p1) p2)
+	     ((null p2) p1)
+	     ((> (caar p1) (caar p2))
+	      (cons (car p1) (poly+ (cdr p1) p2)))
+	     ((< (caar p1) (caar p2))
+	      (cons (car p2) (poly+ p1 (cdr p2))))
+	     (t
+	      ((lambda (c)
+		       (cond ((equal (car c) 0)
+			      (poly+ (cdr p1) (cdr p2)))
+			     (t
+			      (cons (cons (caar p1) c)
+				    (poly+ (cdr p1) (cdr p2))))))
+	       (coef+ (cdar p1) (cdar p2))))))
+
+(defun poly* (p1 p2)
+       (cond ((null p1) nil)
+	     (t
+	      (poly+ (term*poly (car p1) p2)
+		     (poly* (cdr p1) p2)))))
+
+(defun term*poly (term p)
+       (cond ((null p) nil)
+	     (t
+	      (poly+ (term* term (car p))
+		     (term*poly term (cdr p))))))
+
+(defun term* (term1 term2)				;returns a POLY
+       ((lambda (c)
+		(cond ((equal (car c) 0) nil)
+		      (t
+		       (list (cons (+ (car term1) (car term2))
+				   c)))))
+	(coef* (cdr term1) (cdr term2))))
+
+(defun coef+ (c1 c2)
+       (cons (plus (times (car c1) (cdr c2))
+		   (times (cdr c1) (car c2)))
+	     (times (cdr c1) (cdr c2))))
+
+(defun coef* (c1 c2)
+       (cons (times (car c1) (car c2))
+	     (times (cdr c1) (cdr c2))))
+
+	B.  Typed LISP
+
+;DEFUN is special:  for EXPRS, the third argument [the one after the bound
+;variable list] is the type of result expected.  The trivial DEFUNS given
+;here would be turned into macros by the mode package, so that the code would
+;be pretty equivalent to that produced above.  [Actually, since there is no
+;DEFMODE here, this code will not load correctly - the wrong type of DEFUN
+;will be used, for instance.  One could make everything work by putting a
+;DEFMODE around this entire episode.]  Also, :FOO~BAR declares the form BAR to
+;return something of type FOO.  Note that functions defined using the mode
+;package are called by using brackets rather than parentheses - [] not ().
+;Finally, note that there may be many functions with the same name, as they
+;are disambiguated on the basis of types.  [P.S. - *BOOLEAN* is the global
+;system boolean type, as *FIXNUM* is for fixnums, and *INTEGER* for integers.
+;Suitable +, *, <, =, >, etc. functions are defined for these types by the
+;initial system modes.]
+
+;DECLARE the TYPES of the variables:
+(tdeclare (rat r r1 r2) (poly p p1 p2) (term term term1 term2) (coef c c1 c2))
+
+(struct rat (num poly) (den poly))
+;The previous STRUCT declaration is some system sugar, equivalent to the
+;following [it declares a RAT to be 2 POLYS, called NUM and DEN]:
+;(defun rat (p1 p2) rat :rat~(cons p1 p2))
+;(defun num (r) poly :poly~(car r))
+;(defun den (r) poly :poly~(cdr r))
+
+(defun + (r1 r2) rat
+       [rat [+ [* [num r1] [den r2]]
+	       [* [den r1] [num r2]]]
+	    [* [den r1] [den r2]]])
+
+(defun * (r1 r2) rat
+       [rat [* [num r1] [num r2]]
+	    [* [den r1] [den r2]]])
+
+;Define the CONSTANT 0, which is like a function of no args, except that it
+;is never computed more than once [successive calls give EQ results]:
+(constant 0 poly :poly~nil)
+
+(defun 0? (p) *boolean* :*boolean*~(null p))
+(defun lead-term (p) term :term~(car p))	;P is not 0
+(defun reductum (p) poly :poly~(cdr p))		;P is not 0
+(defun ttf (term p) poly :poly~(cons term p))	;TTF is Tack To Front
+(defun single (term) poly :poly~(list term))
+
+(struct term (expon *fixnum*) coef)
+
+(defun degree (p) *fixnum* [expon [lead-term p]])
+
+(defun + (p1 p2) poly
+       (cond ([0? p1] p2)
+	     ([0? p2] p1)
+	     ([> [degree p1] [degree p2]]
+	      [ttf [lead-term p1] [+ [reductum p1] p2]])
+	     ([< [degree p1] [degree p2]]
+	      [ttf [lead-term p2] [+ p1 [reductum p2]]])
+	     (t
+	      ((lambda (c)
+		       (cond ([0? c]
+			      [+ [reductum p1] [reductum p2]])
+			     (t
+			      [ttf [term [degree p1] c]
+				   [+ [reductum p1] [reductum p2]]])))
+	       [+ [coef [lead-term p1]] [coef [lead-term p2]]]))))
+
+(defun * (p1 p2) poly
+       (cond ([0? p1] [0])
+	     (t
+	      [+ [* [lead-term p1] p2]
+		 [* [reductum p1] p2]])))
+
+(defun * (term p) poly
+       (cond ([0? p] [0])
+	     (t
+	      [+ [* term [lead-term p]]
+		 [* term [reductum p]]])))
+
+(defun * (term1 term2) poly			;returns a POLY
+       ((lambda (c)
+		(cond ([0? c] [0])
+		      (t
+		       [single [term [+ [expon term1] [expon term2]]
+				     c]])))
+	[* [coef term1] [coef term2]]))
+
+(struct coef (num *integer*) (den *integer*))
+
+(defun 0? (c) *boolean* [0? [num c]])
+
+(defun + (c1 c2) coef
+       [coef [+ [* [num c1] [den c2]]
+		[* [den c1] [num c2]]]
+	     [* [den c1] [den c2]]])
+
+(defun * (c1 c2) coef
+       [coef [* [num c1] [num c2]]
+	     [* [den c1] [den c2]]])
+
+	C.  DEFMODE Implementation
+
+;There are three "functions" [actually one is a macro and two are even
+;stranger] used here that require explanation, since they don't occur in
+;section B. above, namely DEFMODE, ARG, and MODE.  Defmode is just a
+;localization device - TDECLARES inside a defmode only take effect inside
+;that defmode, DEFUNS and CONSTANTS are not globally accessable, but only
+;can be referenced when that mode is "instantiated" [see below], and the
+;names of various TYPES can be changed when that mode is instantiated [see
+;below].
+;
+;ARG is the all-important construct mentioned in section I. above,
+;which allows one to specify functions whose definitions will supplied at
+;instantiation time, rather than at the normal definition time.  [Hopefully
+;what is meant by this will be clear from usage.]  The syntax is similar to
+;DECLARES made to the lisp compiler, thus (NUM (+ NUM NUM)) means there is
+;a function + which takes two NUMS as arguments and produces a NUM as the
+;answer.  This is extended so that:
+;
+; (arg (fcns (num (+ num num) (* den num) (* num num))
+;	     (den (* den den))
+;	     (*boolean* (0? num))))
+;
+;means there are also three functions named *, all of two args, which allow one
+;to multiply two DENS to get a DEN, two NUMS to get a NUM, and a DEN and a NUM,
+;to get a NUM.  Finally, there is a function 0? of 1 arg, a NUM, which returns
+;a *BOOLEAN*.  ["FCNS" stands for "functions".]
+;
+;Finally, MODE allows a mode defined previously [using a DEFMODE] to be
+;"instantiated".  The first arg to MODE is the name of the mode, and the second
+;and third are lists of even length which are used to rename data types and
+;functions, respectively.  Thus
+;
+; (mode list
+;       (elt term list poly)
+;       (empty 0 empty? 0? first lead-term rest reductum))
+;
+;means to instantiate the mode of LIST, with the data type TERM in place of
+;ELT, and POLY in place of LIST.  Also, the constant EMPTY is renamed to 0,
+;and the functions EMPTY?, FIRST, and REST are renamed to 0?, LEAD-TERM, and
+;REDUCTUM respectively.
+
+(defmode list
+	 (tdeclare (list l) (elt e))
+	 (constant empty list :list~nil)
+	 (defun empty? (l) *boolean* :*boolean*~[empty? l])
+	 (defun first (l) elt :elt~(car l))
+	 (defun rest (l) list :list~(cdr l))
+	 (defun ttf (e l) list :list~(cons e l))
+	 (defun single (e) list [ttf e [empty]]))
+
+(defmode fraction					;no GCDs taken
+	 (arg (fcns (num (+ num num) (* den num) (* num num))
+		    (den (* den den))
+		    (*boolean* (0? num))))
+	 (struct fraction num den)
+	 (tdeclare (fraction f f1 f2))
+
+ (defun 0? (f) *boolean* [0? [num f]])
+
+ (defun + (f1 f2) fraction
+	[fraction [+ [* [den f2] [num f1]]
+		     [* [den f1] [num f2]]]
+		  [* [den f1] [den f2]]])
+
+ (defun * (f1 f2) fraction
+	[fraction [* [num f1] [num f2]]
+		  [* [den f1] [den f2]]]))
+
+(defmode poly
+	 (arg (fcns (coef (+ coef coef) (* coef coef))
+		    (*boolean* (0? coef))))
+	 (struct term (expon *fixnum*) coef)
+	 (mode list
+	       (elt term list poly)
+	       (empty 0 empty? 0? first lead-term rest reductum))
+	 (tdeclare (poly p p1 p2) (term term term1 term2) (coef c c1 c2))
+
+ (defun degree (p) *fixnum* [expon [lead-term p]])
+
+ (defun + (p1 p2) poly
+	(cond ([0? p1] p2)
+	      ([0? p2] p1)
+	      ([> [degree p1] [degree p2]]
+	       [ttf [lead-term p1] [+ [reductum p1] p2]])
+	      ([< [degree p1] [degree p2]]
+	       [ttf [lead-term p2] [+ p1 [reductum p2]]])
+	      (t
+	       ((lambda (c)
+			(cond ([0? c]
+			       [+ [reductum p1] [reductum p2]])
+			      (t
+			       [ttf [term [degree p1] c]
+				    [+ [reductum p1] [reductum p2]]])))
+		[+ [coef [lead-term p1]] [coef [lead-term p2]]]))))
+
+ (defun * (p1 p2) poly
+	(cond ([0? p1] [0])
+	      (t
+	       [+ [* [lead-term p1] p2]
+		  [* [reductum p1] p2]])))
+
+ (defun * (term p) poly
+	(cond ([0? p] [0])
+	      (t
+	       [+ [* term [lead-term p]]
+		  [* term [reductum p]]])))
+
+ (defun * (term1 term2) poly			;returns a POLY
+	((lambda (c)
+		 (cond ([0? c] [0])
+		       (t
+			[single [term [+ [expon term1] [expon term2]]
+				      c]])))
+	 [* [coef term1] [coef term2]])))
+
+(defmode whole-thing
+	 (mode fraction (num *integer* den *integer* fraction coef))
+	 (mode poly)
+	 (mode fraction (num poly den poly fraction rat)))
+
+Tentative outline for remaining sections:
+
+III.  Types 
+	A.  Type clash related to SUBSET?
+	B.  Simple Types
+	C.  Union Types and type ANY
+	D.  Function Types
+	E.  SUB-TYPE and SUB-TYPES
+	F.  FIXNUM and FLONUM
+	G.  TDECLARE, TUNDECLARE
+	H.  :: and :~
+	I.  *HARD-ASSED*
+	J.  NOT and NULL - PRINT of NIL
+	K.  READ-EVAL-PRINT loop
+	L.  MANIFEST Types
+
+IV.  Functions
+	A.  Function Types - Constant, Subr, Lsubr
+	B.  DEFUN & CONSTANT
+		1.  SUBR, LSUBR, CONSTANT
+		2.  Third arg to DEFUN - cases of SUBR and LSUBR
+		3.  Automatic MACRODEF
+			a.  When Done - SUBR vs. CONSTANT case
+			b.  Order of args munged
+	C.  NFN & NFCN - same as DEFUN
+	D.  BFCN & BFN
+		1.  Atomic arg - all possibilities returned
+		2.  Non-atomic arg - FEW-FCNS done
+	E.  CALL, CCALL, SCALL, LCALL - the CCALL mechanism
+	F.  FUNARG
+	G.  Implementation - CLOBBER-FCN
+
+V.  Modes
+	A.  DEFMODE
+	B.  RET-CHECK - Algebras
+	C.  NO-RET - Atoms Only
+	D.  STRUCT
+	E.  MODE
+		1.  Global
+		2.  Local
+		3.  MAPPING
+	F.  ARG & ARGS
+	G.  Implementation - CLDEF, CLOBBER-DEF
+
+VI.  Macros
+	A.  `, DEFSMAC
+	B.  IF, BIND, REPEAT, etc.
+	C.  _ & SETQ
+	D.  RASSOC
+	E.  MMAP, PUSH, POP, etc.
+
+VII.  Random - ???
+	A.  Error handling
+	B.  Modularity - Defmode-fix
+	C.  Debugging - TRACK
+	D.  Implementation - Trees, Vectors, and Networks
+	E.  Examples [complex]

@@ -1,0 +1,186 @@
+	This is a primer for DRB's mode package, a complicated macro package
+which extends and changes MACLISP in several ways.  The directory MC:SCA;
+contains source code, documentation, examples of use, etc.  For the purposes
+of this primer, it is assumed that the reader knows MACLISP.  Please send all
+comments, questions, and suggestions concerning either this primer or the mode
+package itself to DRB@MC.  Thank you.
+
+<send message to drb giving uname of user>
+
+
+I.  Types
+
+	In MACLISP, one can say that there exist 9 basic DATA TYPES, or TYPES,
+namely FIXNUM, FLONUM, BIGNUM, STRING, SYMBOL, RANDOM, ARRAY, LIST [or CONS],
+and HUNK.  These types can be very precisely defined, as all data objects fall
+into one and only one of these categories.  In fact, the types are MANIFEST,
+which means that it is possible to determine the type of an datum by looking
+just at the datum itself.
+
+	The concept of TYPE used in the mode package is a generalization of the
+above example.  Essentially, a type is just a collection of data objects which
+the user thinks of as having some common attributes.  For instance, one can
+speak of the types of POLYNOMIAL, NON-NEGATIVE-FIXNUM, SORTED-LIST, etc.  These
+types are not always manifest.  For example, the atom NIL is used by LISP to
+represent both the truth value of FALSE and the empty list.  This causes a
+well-known controversy when it comes to printing NIL, since PRIN1 can't
+determine whether it would be better to use NIL or ().
+
+	It is important to realize that a type is an abstraction that exists
+only in the user's mind.  In the previous example, LISP supports the two types
+of BOOLEAN and LIST.  Considered implementationally, i.e. as sets of data
+objects, these types are not disjoint, NIL being a common element of both.
+The two ABSTRACTIONS, however, ARE disjoint.  Except for certain system
+functions, such as garbage collection, where only the implementation and not
+the meaning of data is important, one always knows what objects are to be
+considered as BOOLEANS and what are LISTS.  [It is unfortunate that in the
+standard LISP READ-EVAL-PRINT loop it is impossible to print semantically,
+rather than implementationally, as in the NIL vs. () problem, since PRIN1
+DOESN'T know how to interpret the object it is passed.  This problem is solved
+in the mode package, by analyzing the result of the call to READ, to determine
+the TYPE of result expected, as explained below.]  Thus the two types of
+BOOLEAN and LIST may be implemented independently, without regard to possible
+random coincidences.  Certainly one would not want to write code that would not
+run, or could not easily be modified to run, in an environment where BOOLEANS
+and LISTS were implemented differently, say where NIL and () were two distinct
+atoms!  [This amounts to the time-honored advice of using (NOT X) and (NULL X)
+to distinguished the type of X, and (NOT (NULL X)) to check if X is non-empty,
+rather than simply X, where either might suffice.  This makes code easier to
+read, understand, modify, and debug.]
+
+	Here please list several types and possible implementations for them
+[are your objects manifest?!]:
+
+<break for user list>
+
+	In the case of BOOLEANS and LISTS, the TYPES [i.e., abstractions] were
+disjoint, but the implementations were not.  As indicated, this is entirely
+permissible, as long as one always knows the types of one's data objects, and
+is not counting on the implementation to reveal this knowledge.  Sometimes,
+however, the abstractions themselves are not disjoint, as in the case of
+SMALL-INTEGER [or FIXNUM] and POSITIVE-INTEGER.  It is mandatory here that
+the implementations intersect at least as much as the abstractions, e.g. since
+the SMALL-INTEGER of 3 is thought of as identical to the POSITIVE-INTEGER of 3,
+they had both be represented internally the same way.  [This does not mean that
+they are EQ, but merely that they will cause the same effects when fed to any
+routine.]
+
+	This indicates that one should not picture the world as a simple
+collection of non-intersecting types, but rather a universe carved into sets
+[types] which may have all kinds of interesting inclusion relationships,
+non-trivial intersections, etc.  Using this model, the idea of making all data
+objects manifest becomes not only a waste of space, but a physical
+impossibility, since one cannot even define "the" unique type associated to a
+given data object.
+
+	But what does all this buy you, other than philosophy?  There are two
+"concrete" benefits:  (1) The mode package can do type checking, which catches
+many bugs at macro-expansion time, and (2) One can use the same function name
+for many different functions, and have them distinguished by the types of their
+arguments and results.  The first of these ideas is relatively simple, and can
+[and will] be explained now, while the second has important consequences that
+will be indicated later.
+
+	The principle behind type checking is that one cannot use an object of
+type A where one of type B is expected, unless A is a subset of B, or a special
+declaration is made.  To illustrate the relevent commands by example:
+
+<turn on LISP [with mode package, of course, and with *HARD-ASSED* to T]>
+
+;Declare that the values of S and S1 must always be SETS:
+(TDECLARE (SET S S1))
+
+(DEFUN EMPTY? (S)		;Define a function EMPTY? of one arg, a SET,
+       *BOOLEAN*		;which returns a *BOOLEAN*,
+       (NULL S)			;using the lisp function NULL.
+       )
+
+;SETQ S1 to NIL.  The :SET~ declares this occurrence of NIL to be, regardless
+;of what one might think, actually a SET:
+(SETQ S1 :SET~NIL)
+
+;Functions defined using the mode package are called using [ and ], rather than
+;( and ).  Note the output [TRUE rather than T]:
+[EMPTY? S1]
+
+(CONSTANT EMPTY			;The constant EMPTY is defined,
+	  SET			;of type SET,
+	  :SET~NIL		;to be the atom NIL.
+	  )
+
+(CONSTANT EMPTY STRING		;Define the empty string.
+	  (ASCII 0))
+
+;Get "the" constant EMPTY.  Oops:
+[EMPTY]
+
+;Get the EMPTY SET.  The :SET: declares this occurence of [EMPTY] to be a SET:
+:SET:[EMPTY]
+
+<turn off lisp>
+
+	The difference between :SET~NIL and :SET:[EMPTY] is rather subtle.
+:SET~NIL says to take NIL and interpret it as a SET, even though that looks
+illegal.  Essentially a fast one is being put over on the mode package.
+:SET:[EMPTY], on the other hand, says that [EMPTY] should be evaluated
+[actually macro-expanded] USING the knowledge that the result should be a SET.
+The mode package is just being furnished with a little extra information
+concerning the user's intent.  You should be able to explain the following
+errors:
+
+<turn on lisp>
+
+:SET:NIL
+
+:SET~[EMPTY]
+
+<turn off lisp>
+
+	One more point:  notice that while the *BOOLEAN* constant of TRUE
+was printed as TRUE, rather than T [which is presumably a win, since the
+external representation reflects the MEANING of the result, rather than its
+implementation - by the way, made possible by analyzing the input expression of
+[EMPTY? S1], determined to yield a *BOOLEAN*], the EMPTY SET was printed as a
+disappointing NIL.  This is because we have not told the mode package how to
+print SETS.  [In fact, I have not even told you what a SET is, or what
+implementation I was envisioning!]  We could either define a PRIN1 for SETS,
+using (DEFUN PRIN1 (S) ...), or we could declare SETS to be a special case of
+LISTS, which [we assume] the mode package already knows how to print.
+[Actually, by SET I was thinking of ordered lists, using SXHASH ordering, for
+instance.  Thus SET is indeed a subtype of LIST, and using the LIST printer for
+SETS is acceptable.]
+
+<turn on LISP>
+
+;Declare LIST to have a SUB-TYPE of SET:
+(SUB-TYPE LIST SET)
+
+;Note that the mode package picks the most "efficient" PRIN1 function.  The
+;system PRIN1 can be used for any LISP object, but the PRIN1 for LISTS, since
+;it can be used for a more restricted domain, is considered a better choice:
+:SET:[EMPTY]
+
+<turn off LISP>
+
+	Try "implementing" [or at least starting to] some data types of your
+own, using TDECLARE, ::, :~, CONSTANT, DEFUN and SUB-TYPE [or SUB-TYPES].
+
+<turn on LISP, give to user>
+
+
+II.  Modes
+
+	***.
+defmode, arg, ret-types, no-ret, ret-check, algebra
+sub, struct, mapping
+defmode-global, instantiate
+
+
+III.  Miscellany
+
+	***various implementational and/or obscure issues.
+funargs
+bfcns
+error handling, defmode-fix, track
+macros
+*hard-assed*

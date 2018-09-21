@@ -1,0 +1,427 @@
+;-*-stl-*-
+;***********************************************************************
+;************** Multivariate Polynomial Routines for SCA ***************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;These are the routines for manipulating sparse multivariate recursive
+;polynomials, with fixnum exponents.  It is assumed that:
+;
+;	(1)  Exponents are non-negative fixnums.
+;	(2)  Exponents are stored in a decreaing order.
+;	(3)  Coefficients are never zero, except for the zero polynomial.
+;	(4)  Monomials will not have zero exponents.
+;	(5)  The ground ring is sometimes assumed commutative.
+;	(6)  The ground ring is sometimes assumed to have a unit element.
+;	(7)  Zero can be recognized in the ground ring.
+;	(8)  Polynomials are stored sparsely, both variables and degrees.
+;	(9)  There are no algebraic relations, and no truncation levels.
+
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((dsk stl) base)))
+
+(global-open ((sca) mpoly))
+
+(global-read ((sca) upoly))
+
+(stlchar)
+
+(declare (mapex t)
+	 (genprefix scampoly))
+
+(comment MPOLY Mode)
+
+
+(declare (special *var*))
+
+(defmode mpoly
+	 (arg (ordered-set var) (based-set var)
+	      (ordered-set coef) (ring1 coef))
+	 (mode ringc1 (elt coef quo-rem qrc))
+	 (arg (fcns (qrc (divide coef coef))
+		    (coef (// coef coef)
+			  (exact-// coef coef)
+			  (unit-normal coef)
+			  (gcd coef coef))
+		    (*boolean* (simpler? coef coef))))
+	 (mode ringc1 (elt poly quo-rem qrp))
+	 (mode set (rset rsv) ()
+	       (reverse-order elt var) (reverse-order set sv))
+	 (struct ve var expon)
+	 (mode list (elt ve list lve rlve))
+	 (struct poly var (no-var (union coef terms)))
+	 (mode upoly
+	       (coef poly poly terms rpoly rterms qrp qrterms qrc nil
+		e-poly e-terms le-poly le-terms rle-poly rle-terms
+		n-poly n-terms ln-poly ln-terms rln-poly rln-terms
+		lc lp rlc rlp)
+	      (poly nil))
+	 (mode ordered-set-from-compare (elt poly))
+	 (mode ringc1 (ring poly))
+	 (no-ret +< -< -> lv1 md1)
+	 (ret-check (ordered-set poly) (ring1 poly) (module coef poly)
+		    (partial-diff-ring poly var))
+	 (tdeclare (var v v1 v2 *var*) (coef c c1 c2) (expon e e1 e2) (qrc qrc)
+		   (poly p p1 p2 p3) (terms ts ts1 ts2) (rterms rts rqts rrts)
+		   (term t1 t2) (qrterms qrts) (lets lets) (rlets rlets)
+		   (lp lp) (rlp rlp) ((subr coef coef) coef-hom) (*integer* n)
+		   (*fixnum* i) (sv sv sv1) (lve lve lve1) (qrp qrp))
+
+ (defun coef? (p) *boolean* (or :*boolean*~(atom p) [base? [var p]]))
+
+ (defun coef (p) coef
+	:coef~(if :*boolean*~(atom p) p
+		  [no-var p]))	;[BASE? [VAR P]] is [TRUE]
+
+ (defun terms (p) terms :terms~[no-var p])	;[BASE? [VAR P]] is [FALSE]
+
+ (defun poly (c) poly (if :*boolean*~(atom c) :poly~c [poly [base] c]))
+
+ (defun poly (v) poly [poly v [single [term [1] [1]]]])	;[BASE? V] is [FALSE]
+
+ (defun simp (v ts) poly		;[BASE? V] is [FALSE], TS is SIMPed
+	(cond ([empty? ts] [0])
+	      ([0? [degree ts]] [coef [first ts]])
+	      ([true] [poly v ts])))
+
+ (defun lead-coef (p) coef
+	(do ((p p [lead-coef [terms p]]))
+	    ([coef? p] [coef p])))
+
+ (defun prin1 (p) any
+	(if [coef? p] [prin1 [coef p]]
+	    (bind ((*var* <- [var p]))
+		  [prin1 [terms p]])))
+
+ (defun var-prin1 () any [prin1 *var*])
+
+
+ (defun = (p1 p2) *boolean*
+	(if [coef? p1]
+	    (and [coef? p2]
+		 [= [coef p1] [coef p2]])
+	    (and [not [coef? p2]]
+		 [= [var p1] [var p2]]
+		 [= [terms p1] [terms p2]])))
+
+;The ordering on polynomials used makes the ring into an ordered ring [i.e., it
+;respects addition and multiplication, if the COEF ordering does]:
+ (defun compare (p1 p2) *compare*
+	(cond ([coef? p1]
+	       (if [coef? p2] [compare [coef p1] [coef p2]]
+		   [switch (sign [lead-coef p2])]))
+	      ((or [coef? p2] [> [var p1] [var p2]]) (sign [lead-coef p1]))
+	      ([> [var p2] [var p1]] [switch (sign [lead-coef p2])])
+	      ([true] [compare [terms p1] [terms p2]])))
+
+ (comment Ring1 Operations)
+
+
+ (constant 0 poly [poly :coef:[0]])
+
+ (constant 1 poly [poly :coef:[1]])
+
+ (defun z->r (n) poly [poly :coef:[z->r n]])
+
+ (defun 0? (p) *boolean* (and [coef? p] [0? [coef p]]))
+
+ (defun 1? (p) *boolean* (and [coef? p] [1? [coef p]]))
+
+ (defun hom (coef-hom p) poly
+	(if [coef? p] [poly (call coef-hom [coef p])]
+	    [simp [var p]
+;This would be inefficient [??] :
+;[hom (funarg (bfcn (poly (hom (coef coef) poly))) coef-hom *) [terms p]]
+		  (mmap (t1 ts [terms p])
+			((rts [empty]
+			      (bind ((p1 <- [hom coef-hom [coef t1]]))
+				    (if [0? p1] rts
+					[ttf [term [expon t1] p1] rts]))))
+			[nreverse rts])]))
+
+ (defun * (c p) poly [hom (funarg (bfcn (coef (* coef coef))) c *) p])
+
+ (defun * (n p) poly [hom (funarg (bfcn (coef (* *integer* coef))) n *) p])
+
+ (defun - (p) poly [hom (bfcn (coef (- coef))) p])
+
+ (defun + (p1 p2) poly
+	(cond ([coef? p1]
+	       (if [coef? p2] [poly [+ [coef p1] [coef p2]]] [+< p1 p2]))
+	      ([coef? p2] [+< p2 p1])
+	      ([< [var p1] [var p2]] [+< p1 p2])
+	      ([< [var p2] [var p1]] [+< p2 p1])
+	      ([true] [simp [var p1] [+ [terms p1] [terms p2]]])))
+
+ (defun +< (p1 p2) poly			;P1 is less main than P2
+	(bind ((rts <- [reverse [terms p2]]))
+	      (if [0? [expon [first rts]]] (_ p1 [+ p1 [coef (pop rts)]]))
+	      [poly [var p2]
+		    (if [0? p1] [nreverse rts]
+			[nreconc rts [single [term [0] p1]]])]))
+
+ (defun - (p1 p2) poly
+	(cond ([coef? p1]
+	       (if [coef? p2] [poly [- [coef p1] [coef p2]]] [-< p1 p2]))
+	      ([coef? p2] [-> p1 p2])
+	      ([< [var p1] [var p2]] [-< p1 p2])
+	      ([> [var p1] [var p2]] [-> p1 p2])
+	      ([true] [simp [var p1] [- [terms p1] [terms p2]]])))
+
+ (defun -< (p1 p2) poly			;P1 is less main than P2
+	(bind ((rts <- [empty]))
+	      (mmap (t1 ts [terms p2]) () nil
+		    (push [term [expon t1] [- [coef t1]]] rts))
+	      (if [0? [expon [first rts]]] (_ p1 [+ p1 [coef (pop rts)]]))
+	      [poly [var p2]
+		    (if [0? p1] [nreverse rts]
+			[nreconc rts [single [term [0] p1]]])]))
+
+ (defun -> (p1 p2) poly			;P1 is more main than P2
+	(bind ((rts <- [reverse [terms p1]]))
+	      (_ p2
+		 (if [0? [expon [first rts]]] [- [coef (pop rts)] p2] [- p2]))
+	      [poly [var p1]
+		    (if [0? p2] [nreverse rts]
+			[nreconc rts [single [term [0] p2]]])]))
+
+;Care is taken to allow non-commutative COEF ring:
+ (defun * (p1 p2) poly
+	(cond ([coef? p1] (if [1? [coef p1]] p2 [* [coef p1] p2]))
+	      ([coef? p2]
+	       (if [1? [coef p2]] p1 [hom (funarg (bfcn *) * [coef p2]) p1]))
+	      ([< [var p1] [var p2]] [simp [var p2] [* p1 [terms p2]]])
+	      ([> [var p1] [var p2]]
+	       [simp [var p1] [hom (funarg (bfcn *) * p2) [terms p1]]])
+	      ([true] [simp [var p1] [* [terms p1] [terms p2]]])))
+
+ (defun ^ (p i) poly
+	(if [coef? p] [poly [^ [coef p] i]] [simp [var p] [^ [terms p] i]]))
+
+ (comment DIVISION and PSEUDO-DIVISION)
+
+
+;DIVIDE:  quotient and remainder
+;//:  quotient [assumed exact?]
+;EXACT-//:  exact quotient or error
+;
+;It is assumed that polynomials are over a commutative domain.  If there are
+;applications for other cases, this code should be changed.  However, it
+;should be noted where explicit use of this fact occurs [??].
+
+;Exact quotient of two poly's over a domain.  One should not count on anything
+;when the divisor is 0:  divide-checks may fail, 0/0 may return 0, etc.  The
+;fact that p1 # 0 => p1/p2 # 0 is often used:
+
+ (defun exact-// (p1 p2) poly
+	(cond ([0? p1] [0])
+	      ([coef? p1]
+	       (if [coef? p2] [poly [exact-// [coef p1] [coef p2]]] [qne-err]))
+	      ([coef? p2]			;special clause for efficiency
+	       (if [1? [coef p2]] p1
+		   [hom (funarg (bfcn exact-//) * [coef p2]) p1]))
+	      ([> [var p1] [var p2]]
+	;inefficient? [could use MAPCAR-type MMAP]:
+	       [poly [var p1] [hom (funarg (bfcn exact-//) * p2) [terms p1]]])
+	      ([< [var p1] [var p2]] [qne-err])
+	      ([true] [simp [var p1] [exact-// [terms p1] [terms p2]]])))
+
+ (defun divide (p1 p2) qrp
+	(cond ([coef? p1]
+	       (if [coef? p2]
+		   (bind ((qrc <- [divide [coef p1] [coef p2]]))
+			 [quo-rem [poly [quo qrc]] [poly [rem qrc]]])
+		   [quo-rem [0] p1]))
+	      ((or [coef? p2] [> [var p1] [var p2]])
+	       (if [1? p2] [quo-rem p1 [0]]
+		   (bind ((rqts <- [empty]) (rrts <- [empty]))
+			 (mmap (t1 ts [terms p1]) ((qrp))
+			       [quo-rem [simp [var p1] [nreverse rqts]]
+					[simp [var p1] [nreverse rrts]]]
+			       (_ qrp [divide [coef t1] p2])
+			       (if [not [0? [quo qrp]]]
+				   (push [term [expon t1] [quo qrp]] rqts))
+			       (if [not [0? [rem qrp]]]
+				   (push [term [expon t1] [rem qrp]] rrts))))))
+	      ([< [var p1] [var p2]] [quo-rem [0] p1])
+	      ([true]
+	       (bind ((qrts <- [divide [terms p1] [terms p2]]))
+		     [quo-rem [simp [var p1] [quo qrts]]
+			      [simp [var p1] [rem qrts]]]))))
+
+ (defun // (p1 p2) poly [quo [divide p1 p2]])
+
+ (comment Polynomial Differentiation)
+
+
+;Simple derivative w.r.t. one var - no dependencies, etc.:
+ (defun part-deriv (p v) poly
+	(cond ((or [coef? p] [< [var p] v]) [0])
+	      ([= [var p] v] [simp [var p] [deriv [terms p]]])
+	      ([true]
+	       [simp [var p]
+		     [hom (funarg (bfcn part-deriv) * v) [terms p]]])))
+
+ (comment Routines for Getting Variables and Degrees)
+
+
+ (defun degree (p v) expon
+	(cond ((or [coef? p] [< [var p] v]) [0])
+	      ([= [var p] v] [degree [terms p]])
+	      ([true]
+	       (mmap (t1 ts [terms p]) ((e [0] [max e [expon t1]])) e))))
+
+ (defun list-vars (p) sv
+	(cond ([coef? p] [empty])
+	      ([true]
+	       (bind ((sv <- [single [var p]])) [lv1 [terms p] sv] sv))))
+
+ (defun lv1 (ts sv) any		;SV is non-empty
+	(do ((ts ts [rest ts]) (p))
+	    ([empty? ts])
+	    (_ p [coef [first ts]])
+	    (if [not [coef? p]]
+		(bind ((sv1 <- sv))
+		  tag (cond ((or [empty? [rest sv1]]
+				 [> [var p] [first [rest sv1]]])
+			     (push [var p] [rest sv1]))
+			    ([= [var p] [first [rest sv1]]])
+			    ([true] (_ sv1 [rest sv1]) (go tag)))
+		      [lv1 [terms p] [rest sv1]]))))
+
+ (defun max-degs (p) lve		;returns in sorted order
+	(cond ([coef? p] [empty])
+	      ([true]
+	       (bind ((lve <- [single [ve [var p] [degree [terms p]]]]))
+		     [md1 [terms p] lve]
+		     lve))))
+
+ (defun md1 (ts lve) any		;LVE is non-empty
+	(do ((ts ts [rest ts]) (p))
+	    ([empty? ts])
+	    (_ p [coef [first ts]])
+	    (if [not [coef? p]]
+		(bind ((lve1 <- lve))
+		  tag (cond ((or [empty? [rest lve1]]
+				 [> [var p] [var [first [rest lve1]]]])
+			     (push [ve [var p] [degree [terms p]]]
+				   [rest lve1]))
+			    ([= [var p] [var [first [rest lve1]]]])
+			    ([true] (_ lve1 [rest lve1]) (go tag)))
+		      [md1 [terms p] [rest lve1]]))))
+
+ (defun tot-deg (p) expon
+	(do ((lve [max-degs p] [rest lve])
+	     (e [0] [+ [expon [first lve]] e]))
+	    ([empty? lve] e)))
+
+;***Old from here on: -???
+ (defun gather (p v) terms
+	(cond ((or [coef? p] [< [var p] v]) [single [term [0] p]])
+	      ([= [var p] v] [terms p])
+	      ([true]
+	       (mmap (t1 ts1 [terms p])
+		     ((ts [0]
+			  [+ (mmap (t2 ts2 [gather [coef t1] v])
+
+  ((rts [empty]
+	[ttf [term [expon t2]
+		   [poly [var p]
+			 [single [term [expon t1]
+				       [coef t2]]]]]
+	     rts]))
+
+  [nreverse rts])
+
+			     ts]))
+		     ts))))
+
+
+ (comment Polynomial Substitution Routines)
+
+
+;Substitutions are ALWAYS done in PARALLEL.
+
+;***Stick in HOM mode.
+;Be advised that often it pays immensely to make the var to subst for the least
+;main possible such that P1 [the value] is less main that V [the var].
+;P1 is not more main than V:
+ (defun subst< (p1 v p) poly
+	(cond ((or [coef? p] [< [var p] v]) p)
+	      ([= [var p] v] [subst p1 [terms p]])
+	      ([true]
+	       (mmap (t1 ts [terms p])
+		     ((rts [empty]
+			   [ttf [term [expon t1] [subst< p1 v [coef t1]]]
+				rts]))
+		     [simp [var p] [nreverse rts]]))))
+
+;There are the following aspects of computing polynomial GCDs [and resultants]:
+;
+;1.  Checking the cases of 0, 1, coefs, different main variables, monomials
+;2.  Calculating contents and primitive parts, and multiplying back in
+;3.  LINHACK [& FREEOF-HACK?]
+;4.  Evaluation & Modular Homomorphisms
+;5.  Calculating PRS's [actually just the last term]
+;6.  Using HENSEL or CRT to get back up
+;
+;These different aspects correspond to different routines that are linked
+;together as follows:
+;
+;***unfinished
+(comment Polynomial Greatest Common Divisors [GCDs])
+
+
+;*** UNIT-NORMAL, GCD, SIMPLER?
+)
+
+(declare (unspecial *var*))
+
+
+(stlunchar)
+
+(global-close)
+
+(comment Old Comments)
+
+
+;***unfinished:
+;***?[all the rest]:
+;(defmode indeterminate (infolists)
+;	 (struct (varnum fixnum)
+;		 (varlist-num fixnum)
+;		 (k (kernel infolists))
+;		 (misc (struct . infolists))))
+;
+;(defmode kernel (infolists)
+;	 (homog-list (indeterminate infolists)))
+;
+;(defmode khash-elt (infolists)
+;	 (homog-list (kernel infolists)))
+
+
+;Old comments:
+
+;; The mode POLYFn, 0 <= n <= 3, for the actual polynomial, will have a
+;; pointer to the kernel (main variable of that poly), a list of relations if
+;; we are in an algebraic relations mode, a degree number if we are in dense
+;; degree mode, and a list of terms (exponent and coefficient or just
+;; coefficient).  ***
+
+;There are many possible representations for polynomials:
+;increasing/decreasing/unordered exponents, dense/sparse in variables, dense/
+;sparse in degrees, recursive/expanded/univariate, regular/horner/normalized
+;exponents, p-adic, etc.  The ones that currently exist are (regular
+;decreasing fixnum expon ents):
+;	0)  Recursive, sparse degrees, sparse variables
+;	1)  Recursive, sparse degrees, sparse variables, algebraic relations
+;	2)  Recursive, dense degrees, dense variables
+;	3)  Recursive, dense degrees, dense variables, algebraic relations.
+
+;fixnum code corresponding to this alg-struct (as always), and it also points
+;to the coefficient alg-struct and the varlist (varlist-num and kernel
+;predicate).  Kernels are in the two-tier method***?

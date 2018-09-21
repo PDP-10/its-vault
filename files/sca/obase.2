@@ -1,0 +1,109 @@
+;  This file is highly unfinished.
+;***********************************************************************
+;******* Base Structures for the Constructive Algebra Subsystem ********
+;****** (c) copyright 1977 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+(declare (@define mdefun |EXPR|)
+	 (@define defmode |MODE|)
+	 (@define new-alg-struct-type |AS TYPE|)
+	 (@define new-operation |DISP OPER|)
+	 (eval (read)))
+
+(setq base 10. ibase 10. *nopoint t)
+
+
+(include |mc:nrat;macro file|)
+
+
+;; This file is for the non-cheating mode.  See NRAT;CBASE > for cheating.
+
+;; For a description of this package, see A NEW RATIONAL FUNCTION PACKAGE FOR
+;; MACSYMA, submitted to the 1977 MACSYMA USER'S CONFERENCE, by David Barton,
+;; Barry Trager, and Richard Zippel.
+
+;; These are the foundations of the Constructive Algebra Subsystem
+;; (New Rational Function Package).  The two basic modes are ALG-STRUCT
+;; (for a [constructive] algebraic structure), and ALG-ELT (for an element
+;; of such a structure).  The car of an alg-struct is a non-negative
+;; fixnum less than 2.^18. which specifies its type.  Further information
+;; (including substructures) may be stored elsewhere in the alg-struct,
+;; depending on the type.  An alg-elt will have as its car the alg-struct it
+;; belongs to.  Further information will be stored elsewhere in the alg-elt,
+;; depending on the alg-struct. KERNELS present another problem.  Using old
+;; rational function package notions, kernels are atomic variables or
+;; transcendental expressions, i.e. things which must be accepted as given and
+;; cannot be decomposed by the particular alg-struct in question.  Conceivably
+;; each alg-struct could handle its own kernels, but since there should be
+;; some communication between alg-structs, this problem almost always arises
+;; from traditional rational function package usage, and hash tables seem the
+;; answer, it has been decided to use just one hash table which everyone can
+;; access.  Its size is controlled by the special variable *CASHASHSIZE*
+;; [100.].  Elements of this hash-table are in the mode KHASH-ELT, which are
+;; lists of KERNEL's.  KERNEL's are lists of VAR's, which point to varnums
+;; (fixnums >= 2^18), var-list numbers (positive fixnums, except 0 for general
+;; representation), possible auxiliary info (such as algebraic relations), and
+;; the associated KERNEL.  Conversion is accomplished by GCONVERT, with
+;; repping and disrepping as special cases (from and to MACSYMA general
+;; representation).  The two-tier numbering method is used***?
+;; Generic functions such as + and * for rings may be
+;; referenced by G+, G*, etc., which will dispatch on the type of alg-struct
+;; containing the elts (which is an argument to the function).  In case the
+;; elts are alg-elts, then M+, M*, etc. may be used, which find the alg-struct
+;; type in the CAR of one of the elts.  MACSYMA General Representation is
+;; considered as one particular type of alg-struct:  its type code number is
+;; always 0 (no value judgement implied).
+
+                  (comment Mode Declarations)
+
+
+(defmode alg-struct
+	 !@(struct <astyp> <misc>))  ;; Astyp is a fixnum.
+
+(defmode alg-elt
+	 !@(struct <as alg-struct> <misc>))
+
+(defmode khash-elt
+	 !@(struct <k kernel> <lk khash-elt nil>))
+
+(defmode kernel
+	 !@(struct <v var> <lv kernel nil>))
+
+(defmode var
+	 !@(struct <varnum> <varlist-num> <misc> <k kernel>))
+
+
+(new-operation GDIVIDE (as x y) DIVIDE)	;; (CONS <quotient> <remainder>).
+(new-operation GGCD (as x y) GCD)
+
+(macrodef G+? (as x) (eq (GSIGN as x) '>))
+(macrodef G-? (as x) (eq (GSIGN as x) '<))
+
+;(new-alg-struct-type GALOIS-FIELD
+;	((plus gfplus) (difference gfdifference) (times gftimes)
+;	 (quotient gfquotient) (expt gfexpt)
+;	 (greaterp gfgreaterp) 
+;	 (zerop gfzerop) (minus gfminus)))
+
+;  The functions grep, grepmem, and gmakemem (or whatever) need a special
+;  dispatcher (dispatch on car of second arg).  In fact, we need several
+;  dispatchers:
+;
+;  1) G - "lsubr" - first arg is alg-struct
+;  2) M - macro - calls G after getting alg-struct from args, cdr-ing args
+;  3) C - cheating - two arg functions
+;  4) P - poly's - checks < 2^18, cheating
+
+
+;; Presently, the basic alg-struct types are:
+;;
+;; Z - The ring of rational integers.
+;; Q - The field of rational real numbers.
+;; M - The ring of rational integers mod some integer > 1.
+;; FL - Flonums.
+;; BF - Bigfloats.
+;; PF - Multivariate polynomials over a ground ring, fixnum exponents.
+;; PE - Multivariate polynomials over a ground ring, arbitrary exponents.

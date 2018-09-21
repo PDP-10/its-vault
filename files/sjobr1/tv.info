@@ -1,0 +1,690 @@
+-*-Text-*-
+This is file TV INFO which describes various Lisp-callable functions
+available for use on Knight-type tv's (and grey-level display).
+
+GLTV INFO, created 8:59am  Thursday, 16 August 1979.
+
+	 This file describes certain aspects of the grey-level display
+attached (at present) to the Microautomation PDP-11/45.  First there is
+a brief introduction to the physical characteristics of the display.
+Then comes the description of a package which allows the user access to
+the display from LISP, in the style of GLS's TVOUT package (that is, as
+a normal LISP array).
+
+PHYSICAL CHARACTERISTICS
+
+	Like the Knight TV's, the grey-level TV is 576. points across
+and 454.  lines down.  Unlike the Knight displays, the grey-level has
+associated with each pixel an (up to) 8-bit value, so that each pixel
+may take any value in the range 0 to 255. inclusive.  This is done by
+actually using 8. separate bit planes of memory, one corresponding to
+each bit of a grey value.  These planes are weighted accordingly via
+special hardware before being turned into intensities and sent to the tv
+screen.  Thus on an intensity scale of 0 (dark) to 1 (bright), the grey
+value 0 (00000000 in binary) means that the eight bits associated with
+the given pixel are all off and yields an intensity of 0; the value 132.
+(10000100 in binary) means that the pixel's bits in plane 7 (high order
+bit) and plane 2 are on, all others are off, for an intensity of
+(1/2)+(1/64) = .515625; and a grey-level of 255. (11111111 in binary)
+means the pixel's eight bits are all set and yields an intensity of 1.
+
+	Each bit plane consists of 454. lines of 18. consecutive 32-bit
+words (18 * 32 = 576).  Each 32-bit word maps one-to-one with a 36-bit
+PDP-10 word.  The unused four bits (the least significant, rightmost
+bits) are set to zero.  There are therefore (454. * 18.) = 8172. PDP-10
+words per bit plane, which is just 20. words short of being exactly
+eight PDP-10 memory pages.  The eight bit planes are logically and
+physically independent.  They sit on the Microautomation's PDP-11/45
+UNIBUS and occupy byte addresses 200000 to 277657 inclusive.  IMPORTANT
+NOTE!  All eight planes logically occupy the SAME 16kw block of memory.
+Address requests on the UNIBUS are multiplexed by the display hardware
+and routed to/from the proper memory of the currently selected bit
+plane.  Only one plane is selected at a time, and the selection is
+governed by bits in the display control word.
+
+	There is a series of 4 words in the I/O page of the PDP-11 which
+governs the use of the grey-level display.  They are:
+
+	PDP-11 bus address	    Description
+	      776660		control word (see below)
+	      776662		address of word in current plane
+	      776664		data buffer; value of selected word in
+				current plane
+	      776666		incrementing data buffer
+
+Since we are concerned only with interfacing from the PDP-10, please see
+the grey-level display documentation for information on the last three
+words.  Bits in the control word select which plane is currently
+selected for reading or writing, and whether to complement the display.
+(The bit numbering below is according to the PDP-11 scheme.  When
+accessed from the PDP-10, these 16 bits are left-justified in a word.)
+
+	     15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+	    +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    776660  |  |XX|XX|XX|XX|  |  |  |XX|XX|XX|XX|XX|XX|XX|  |
+	    +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+
+Bits marked "XX" are unused.  Bit 15 is the "vertical increment mode" or
+VIM and is used only in conjunction with accessing the display from the
+PDP-11.  Bits [10:8] select the current bit plane, 0 through 7.  As
+mentioned above, plane 7 corresponds to a grey-level of 200 (octal),
+intensity 0.5; plane 6 to a grey-level of 100 (octal), intensity 0.25;
+and so on, until plane 0 which corresponds to a grey-level of 1,
+intensity 0.00390625.  Bit 0 is the complement bit, which if set
+complements the screen values: 0 goes to bright, 255. to dark (this
+function has not yet been implemented).
+
+	Putting a grey-value into the display memory is a two-step
+process.  The first step is to determine which bit in which word
+corresponds to the coordinates of the desired pixel location.  We use
+the same coordinate system as TVOUT does, with (0,0) being the "home"
+position at the top left corner of the screen, and (575.,453.) in the
+lower right.  The pixel at location (x,y) then corresponds to the B'th
+bit from the LEFT of word W in the display memory:
+
+	W = (+ (* y 18.) (// x 32.))
+	B = (\ x 32.)
+	
+W and B are, of course, the same for all bit planes.
+
+	The second step is to turn on the appropriate bits in the eight
+bit planes, determined from the binary representation of the desired
+grey-level.  If bit n (0 <= n <= 7) is set in the binary representation,
+bit B in word W in plane n must also be set; if n = 0, bit B must be
+zero.  IMPORTANT: Whenever writing into the display memory from the
+PDP-10, keep the four low-order bits in the 36-bit PDP-10 word ZERO.
+Otherwise, you most likely will not get what you expect.
+------------------------------------------------------------------------
+
+SUMMARY OF FUNCTIONS AVAILABLE IN GLTV
+
+(GLTVINIT) - sets up the array "GLTV" to be the grey-level display bit
+	plane as:  (ARRAY GLTV FIXNUM 454. 18.)
+	Returns the array pointer, as well as placing it in the special
+	variable GLTV.  This function should NOT be evaluated by the user,
+	as it is called when the GLTV FASL file is loaded.
+(MAP-GLTV-CORE <T or NIL>) - maps the grey-level display memory into the
+	user's LISP space if the argument is T, or out of LISP space if
+	NIL.  (If mapped out, references to the GLTV array will be handled
+	as non-existent memory errors.)  Returns its argument.
+(GLTV-PLANE) - returns as a fixnum the number of the currently selected
+	bit plane.  It is NCALL'able.
+(GLTV-SET-PLANE n) - n is a fixnum between 0 and 7 inclusive.  Sets the
+	current bit plane number to n.  Returns its argument.  This
+	function is NCALL'able.
+(GLTV-COMPLEMENT x) - sets the complement bit according to x:
+	if x is T, toggles the complement bit.
+	if x is fixnum 0, clears the complement bit.
+	if x is fixnum 1, sets the complement bit.
+	Returns is argument.
+(RETURN-BYTEP-GLTV-CONTROL-WORD) - returns in accumulator TT the byte
+	pointer to the grey-level control word plane number field.
+	This function is callable ONLY by LAP or MIDAS, since it
+	returns nothing in particular in A (won't hurt to call it
+	from LISP, just won't do anything useful).
+
+The file GLSTUF INFO describes a set of primitive functions for hacking
+the grey-level display.
+------------------------------------------------------------------------
+
+DETAILS ON THE IMPLEMENTED FUNCTIONS
+
+(GLTVINIT)
+
+	This function is called automatically when this file is
+FASLOAD'ed, and should not be invoked more than once in the LISP job.
+It calls the internal LISP function GETCOR to allocate 10. more pages of
+memory at the end of the LISP job, which are under user control (and
+therefore protected from the garbage collector).  The first of these 10.
+pages holds the header for the array which will be mapped into the
+grey-level bit plane area.  Only the last 6 words of the page are used,
+since the array header must immediately precede the array data and the
+data region for this application must begin on a full page boundary.
+The next 8. pages form the fixnum data area for the array and will be
+mapped into the PDP-11's memory space by a subsequent call to
+MAP-GLTV-CORE.  Note that the page with the array header is NOT mapped
+into the PDP-11's address space, but remains part of the LISP job.  The
+last of the 10. pages will be mapped into the part of the PDP-11 which
+contains the grey-level display control word. Only the first word of
+this page is used, and the protection is set so that only the first
+(leftmost) 16. bits of that word are usable.  This insures that only the
+control word can be clobbered in the PDP-11's I/O page.
+
+	After GLTVINIT has gotten the core for this array mapping, it
+sets up a dummy LISP fixnum array as if it were created with
+	(ARRAY GLTV FIXNUM 454. 18.)
+and assigns the array pointer to the special variable "GLTV".
+
+(MAP-GLTV-CORE T)
+
+	This function is executed immediately after (GLTVINIT) when this
+file is loaded.  It performs the actual mapping of the memory on the
+PDP-10 that contains the data part of the GLTV array to the PDP-11's
+memory, and the mapping of the control word.  Uses the ITS system call
+T11MP to map each of the 8. data pages and 1 control word page (the
+Microautomation PDP-11 is number 5).
+
+(MAP-GLTV-CORE NIL)
+
+	Unmaps the memory in the LISP job from its connection to the
+PDP-11.  This function MUST be called before a LISP is ever PDUMP'ed as
+a subsystem.  When the LISP resumes, it should call (MAP-GLTV-CORE T) to
+remap the array.
+
+(GLTV-PLANE)
+
+	Returns a fixnum in the range 0 to 7 inclusive which is the
+number of the grey-level bit plane currently selected.  This function is
+NCALL'able.
+
+(GLTV-SET-PLANE n)
+
+	Sets the currently selected bit plane to n, where n had better
+be a fixnum in the range 0 to 7.  It doesn't really matter, because the
+function uses the low three bits of whatever n is; but to get expected
+results, n should be a fixnum.  Returns its argument as a fixnum.  This
+function is NCALL'able.
+
+(GLTV-COMPLEMENT x)
+
+	This feature is not yet implemented in the hardware.  But when
+is is, it will sets the grey-level complement bit according to x: If x
+is T, it toggles the complement bit.  If x is a fixnum equal to zero, it
+clears the complement bit.  If x is a fixnum equal to one, it sets the
+complement bit.  Regardless of what x is, returns NIL.
+
+RETURN-BYTEP-GLTV-CONTROL-WORD
+
+	This is for internal use by LAP or MIDAS routines which need
+to know the address of the display control word.  Returns in accumulator
+TT a byte pointer to the plane number field of the control word.  Can
+be called from LISP, but doesn't do anything useful or return a
+meaningful value.
+------------------------------------------------------------------------
+
+GLSTUF INFO, created 10:22am  Thursday, 16 August 1979
+
+	This file describes some primitive functions for handling the
+grey-level display attached to the Microautomation PDP-11/45.  It uses
+the features of GLTV >, which are described in the file GLTV INFO.
+Things to remember when using this package:
+
+    (1) The actual display memory is accessible as a LISP fixnum array
+	named "GLTV" with attributes (ARRAY GLTV FIXNUM 454. 18.).
+	The array pointer to GLTV is store in special variable GLTV.
+    (2) The coordinates of the display memory run from (0,0) in the
+	upper left corner to (575.,453.) in the lower right.  This
+	is the same convention as used in TVLISP; TVOUT >.
+    (3) Only one bit plane in the grey-level display is accessible at
+	any one time.  Selection is governed by the setting of the
+	plane number field in the display control word.
+    (4) Unlike the Knight TV's, there is no hardware "drawmode" for
+	writing into the display memory.  There is, however, a
+	software drawmode which is defined in GLSTUF and may be used 
+	somewhat like the TV drawmode.  See below.
+
+Please read the GLTV INFO file if you haven't already done so.
+
+	When the file GLSTUF FASL is loaded, it will check for the
+presence of the GLTV FASL package, and load it if it isn't already.
+At this point, the grey-level display will be mapped into your LISP user
+space, and some brief initialization will be done.  This includes
+testing to see that the display is activated, then checking to see which
+bit planes are physically available.  This is necessary since at the
+present time only 6 planes are up (there shortly will be 8).  Those
+planes which are up will always be the most significant ones (starting
+with number 7, then 6, and so on).  The global fixnum variable
+GLTV-MIN-PLANE will be set to the number of the least significant bit
+plane which is available on the GLTV.  The functions defined below will
+only access bit planes 7 through GLTV-MIN-PLANE.  When the initialization
+is complete, a message is printed telling which planes are up.
+
+SPECIFYING GREY VALUES
+
+	A grey value is a fixnum in the range 0 to 255. inclusive.  If a
+grey value of smaller than 0 (i.e., negative) is given, 0 is assumed; if
+a number larger than 255. is given, 255. is assumed.  There are eight
+predefined special fixnum variables which specify writing into
+individual planes: PLANE7 has octal value 200 which means only write in
+bit plane 7 (for a grey of 128. out of 255.); PLANE6 has octal value 100
+for a grey of 64., and so on to PLANE0 (= 1), which writes only into
+plane 0.  These are provided for doing "line art" on top of a grey-level
+displayed scene.  Of course, arbitrary combinations of these variables
+are permitted: (+ PLANE7 PLANE4 PLANE2), but it is clearer just to use
+the proper grey value.  There is also the variable ALLPLANES which has
+the octal value 377 and specifies writing into all planes.  A value of
+NIL means use the current grey value.  The initial grey is ALLPLANES.
+The current grey-level is always the value of the special fixnum variable
+GLTV-GREY.  To change the grey value, simply SETQ GLTV-GREY to the desired
+number.  Note that only the low eight bits of GLTV-GREY are recognized,
+even though the value is outside the range 0 to 255.
+
+SOFTWARE DRAWMODE
+
+	It is convenient at times not only to be able to draw lines or
+plot points of varying greys on the display, but also to selectively
+erase or complement sections of the display.  Since there is no hardware
+drawmode ability as with the TV's, this feature is implemented in
+software.  When a word is written into the display memory, its 32 bits
+will be combined with the present value of the memory word, according to
+the current mode, to form the new value.  This may or not be applied to
+the bits in each bit plane, depending on the mode.  The modes are:
+
+    IOR - Inclusively ORs the value to be stored with the current
+	memory contents.  Causes all bits which are set in the value
+	to be stored to be set in the bit plane word.  Affects only
+	those planes whose corresponding bits are set in the current
+	grey value.
+    ANDC - ANDs the memory contents with the Complement of the value
+	to be stored.  Causes all bits which are set in	the value to
+	be stored to be cleared in the bit plane word.  Affects only
+	those planes whose corresponding bits are set in the current
+	grey value.
+    XOR - eXclusively ORs the memory contents with the value to be
+	stored.  Causes all bits set in the value to be stored to
+	complement the corresponding bits in the bit plane word.
+	Affects only those planes selected by the current grey value.
+    SET - applies to all planes.  Effectively does an IOR mode on all
+	planes whose bits are 1 in the current grey value, and an
+	ANDC mode all the others.  Causes all pixels selected by set
+	bits in the value to be stored to take on the current grey
+	value, regardless of the previous value.
+
+The draw mode is initially IOR and is maintained in special variable
+GLTV-MODE.  To change modes, simple SETQ GLTV-MODE to the desired
+value:  (SETQ GLTV-MODE 'XOR), for example.  If GLTV-MODE contains an
+unrecognized mode, it will be treated as IOR.
+
+SUMMARY OF FUNCTIONS
+
+(GLTV-PIXEL x y g) - sets the pixel at (x,y) to grey-level g, ignoring
+	the current grey-value and draw mode.  Returns T if successful,
+	NIL if (x,y) is out of range.
+(GLTV-VALUE x y) - returns a fixnum which is the current grey value of the
+	pixel at (x,y), or -1 if (x,y) is out of range.
+(GLTV-BIT x y p) - returns fixnum 0 or 1 to indicate the setting of the
+	single bit at (x,y) in display plane p (another fixnum).  Returns
+	-1 if (x,y) out of range.
+(GLTV-DOT x y) - puts a point at (x,y) using the current grey and mode.
+	Returns T if successful, NIL if (x,y) was out of range.
+(GLTV-LINE x0 y0 x1 y1) - draws a line between (x0,y0) and (x1,y1) using
+	the current grey value and mode.  Returns T if successful, NIL
+	if any of the coords were out of range.
+(GLTV-BOX xll yll xur yur) - draws a box with lower left coords (xll,yll)
+	and upper right coords (xur,yur) using the current grey and mode.
+	Returns T if successful, NIL if any coord was out of range.
+(GLTV-FILLED-BOX xll yll xur yur) - draws a box as GLTV-BOX, but fills it
+	in.  Returns T if successful, NIL if any coord was out of range.
+(GLTV-CLEAR) - clears all planes of the display.  Returns NIL.
+(GLTV-FILL n) - writes the fixnum n according to the current mode into
+	every word of each plane selected by the current grey value.  n
+	is first masked to its 32. leftmost bits.  Returns NIL.
+
+Notes:
+1. GLTV-CLEAR is functionally equivalent to
+	(LET ((GLTV-GREY ALLPLANES) (GLTV-MODE 'SET)) (GLTV-FILL 0))
+2. To clear a single bit plane, do
+	(LET ((GLTV-GREY PLANEk) (GLTV-MODE 'ANDC))  ;where k is the plane number
+	     (GLTV-FILL -1))
+3. To complement a single bit plane, do
+	(LET ((GLTV-GREY PLANEk) (GLTV-MODE 'XOR))
+	     (GLTV-FILL -1))
+4. To complement the whole display, replace PLANEk in 3. above by
+   ALLPLANES.
+------------------------------------------------------------------------
+
+TVTEXT INFO
+
+1.  Start a Lisp with my environment
+	:L SJOBRG;		;this gets my Lisp environment
+
+2.  Do the following to load the TVTEXT and incidentally the
+    tv package.
+	(LOAD '((SJOBRG) TVTEXT FASL))
+
+3.  Load FONZ and initialize it.
+	(LOAD '((SJOBRG) FONZ FASL))
+	(FONZ-INIT)
+
+4.  You probably want only a small working area at the bottom of
+    the screen, so do
+	(SPLITSCREEN 8.)
+	(ENDPAGEFN TYO NIL)
+
+5.  Decide the fonts you want and load them.
+	(SETQ METLB (LOAD-FONT-FILE '((FONTS1) METMB KST)))
+		;I believe this is the one we used before
+    and of course any others you want, say
+	(SETQ NONLB (LOAD-FONT-FILE '((FONTS1) NONLB KST)))
+
+6.  For each frame you want, type
+	(SHOW-ME <name of frame>)
+    Example:
+	(SHOW-ME 'FRAME1)	;argument must be quoted
+
+7.  Blinking cursor will show you next location to put character.
+    Typing any normal Ascii characters will display them on the
+    screen, except for the special control chars listed below.
+    When you type <alt>, the whole display will be remembered in
+    symbolic form as the value of the argument to SHOW-ME (which
+    was FRAME1 above).  For convenience, the global symbol TEXT
+    also has the same thing on it (bit will go away when you do
+    the next SHOW-ME).  You can redisplay this, or do some other
+    things as described below.  SHOW-ME clears the screen before
+    each frame, 
+
+8.  Commands to type in SHOW-ME.
+
+<cr>    does a newline, advancing to left margin of next line.
+<rubout>  cancels the previous character (cannot be used to rubout
+	the end of the previous line).  Erases it from the display.
+<alt>	exits SHOW-ME and sets the frame name
+#	centers the current line only (once you type <cr> or @, you
+	can't use this correctly).
+!	move the cursor to "home", the upper left corner of the
+	screen
+"foo	changes font to foo.  For the fonts shown above, you would
+	type the double quote, then "METLB", then a space.  The
+	<rubout> should be able to rubout across font changes.
+/	quoting character, used to enter #, !, ", /, or @.  Just
+	type /#, /!, etc.
+@	enter move mode.  Move the cursor around the screen using
+	the commands
+	    [  for left		    ]  for right
+	    \  for up		    /  for down
+	You may type a numeric argument before the command char
+	to repeat.  To exit move mode, type @ again.
+C-L	that is, control-L.  Redisplays the screen with all the
+	text so far written.
+
+9.  There are a couple of other Lisp functions besides SHOW-ME.
+	(SHOW-TEXT <frame>)  will display the given frame (assuming
+	    it has been set using SHOW-ME).  (SHOW-TEXT TEXT) will
+	    display the last string formed by SHOW-ME.
+
+	(MOVE-FRAME frame up/down dy)  will cause the given frame
+	    to be moved vertically up or down (up/down should be
+	    'UP or 'DOWN accordingly) by dy lines.  You should do
+	    a (SHOW-TEXT frame) to verify afterwards.
+
+	(SHOW-GLTEST frame)  will put the given frame up on the
+	    grey-level display.  You must (LOAD '((SJOBRG) GLSTUF FASL))
+	    beforehand.  The text will be displayed in whatever grey
+	    GLTV-GREY is set to.
+	    * Note:  This should have been called SHOW-GLTEXT, but I
+		     mistyped it.
+
+10.  If (when?) you run into bugs or things you want (there are several
+     I can think of) but aren't in TVTEXT, let me know.
+ INFO
+
+IMED -- A PROGRAM FOR INSPECTING IMAGE FILES ON THE GREY-LEVEL DISPLAY
+
+	There is a facility written in LISP for putting up arbitrary
+image files on the Microautomation grey-level display and scrolling
+windows around to inspect them.  Images may be displayed (in theory at
+least) at any magnification up to 454.  (Magnification is done by pixel
+replication, not averaging.)  No minification is implemented.  Commands
+are provided for moving around the image and for computing and
+displaying certain information about it.
+
+	There are two windows into the image file, the SCREEN and the
+WINDOW CURSOR or more commonly, the WINDOW.  The screen is everything
+from the image file that is shown on the TV, while the window cursor is
+a box superimposed on the screen.  The window cursor can never be larger
+than the screen, and the screen cannot be larger than the image.  If the
+window cursor is moved off the screen edge, the screen is automatically
+scrolled to accomodate the window; the new image will have the window
+placed as nearly as possible in the center of the screen.  This
+scrolling happens only when the window is moved, not expanded.  The
+window is not permitted beyond the boundaries of the image.
+
+	There is another cursor provided, called the PIXEL CURSOR, which
+may be moved around the screen at random, and the value of the image
+pixel under it will be shown in the information display on the user's
+terminal.  The pixel cursor appears as a blinking cross at magnification
+1, or a blinking square at magnification larger than 1.  However, at
+magnification 1, near the screen edges, the cross may become a "T" to
+avoid going off the display.  The pixel cursor is confined to the screen
+boundaries, and will not cause scrolling if it is moved off screen.
+Further, whenever the screen is scrolled, the pixel cursor is
+repositioned to the center of the window cursor.
+
+	Commands to IMED are generally single characters and may take
+unsigned decimal numeric arguments as repeat counts (at least for the
+movement commands).  LISP function calls may also be typed (they are
+distinguished by the leading "("; repeat count is not applicable here).
+There is one set of commands for moving the window cursor, another for
+changing the size of the window, another for moving the pixel cursor,
+others for setting variables and magnification, and for controlling
+various aspects of the display.  Other functions for computing things
+from the image are provided as normal LISP functions, and are invoked
+by typing them in directly.  All current commands are explained below.
+
+	Load the IMED program in whatever LISP environment you normally
+use.  Unless you're extremely unlucky, there will be no serious name
+conflicts.  The file should be loaded by:
+
+	(LOAD '((SJOBRG) IMED FASL))
+
+The file will take care of loading whatever auxiliary files it needs:
+LIBLSP; SPLIT FASL (the splitscreen package), BKPH; LSPIMG FASL
+(routines for reading in image files), SJOBRG; GLTV FASL (grey-level
+display primitives), SJOBRG; GLSTUF FASL (more grey-level display
+functions).  The display auxiliary files will check that the display is
+up and find how many bit planes are active (a message will be printed
+giving which ones are up).  For more information, please see the files
+SJOBRG; GLTV INFO and SJOBRG; GLSTUF INFO.  If the grey-level display is
+not available (not turned on), a LISP error is signalled and you will
+have to go into Microautomation, plug in the display electronics, return
+to your terminal, quit out of the error break, then type (GLSTUF-INIT)
+to do the display initialization.  (You're better off making sure that
+the display is already plugged in loading IMED).
+
+	To start the program, type (IMED).  The program will split the
+screen into an upper and lower part, then prompt for the name of the
+image file.  Type this in the usual ITS filename format,
+<dev>:<dir>;<fn1> <fn2> (the defaults are taken from the value of the
+LISP variable DEFAULTF) followed by a <cr>.  If the file doesn't exist,
+a LISP error results with the message "File does not exist!" and the
+file name is printed out.  Since this is a LISP error, you will have to
+quit out of the error break, and type (IMED) again.
+
+	Assuming the file exists, it will be read in, the grey-level
+display cleared, and the image displayed.  The image is displayed
+initially at magnification 1, with the window in the lower left corner
+of the image, 64 by 64 pixels.  The pixel cursor is centered in the
+window.  The screen (that is, the portion of the image which is actually
+shown at any one time) will always be justified against the top left of
+the grey-level display.  This, of course, is only apparent when the
+screen is smaller than the 576. by 454. points the display is capable of
+showing.
+
+------------------------------------------------------------------------
+THE INFORMATION AREA
+
+	On the top of your terminal screen is the information area, in
+which is displayed the values of various variables relevant to the file
+being inspected.  All numbers are decimal, and all coordinates refer to
+image coords.  The information area appears something as follows.
+
+File is  VIS; ERTS BAND4
+Bits/pixel......       9
+Xlow............       0
+Ylow............       0
+Xhigh...........     375
+Yhigh...........     240
+Magnification...       2
+Screen Origin...      20      0
+Screen Size.....     288    227	    
+Window Origin...      40    103
+Window Size.....      25     25	    
+Pixel Cursor....     231     79
+Pixel Value.....     508	    
+Max-Gray........     511
+Min-Gray........       0
+
+Explanation of information variables.
+
+	The first seven lines should be self-explanatory.  Xlow, Ylow,
+Xhigh, and Yhigh are all as taken from the image file itself.  "Screen
+Origin" gives the x and y positions respectively of the lower left
+corner of the screen in image coordinates.  "Screen Size" gives the x
+and y extent, again in image coordinates, of the screen.  Note that the
+magnification times the screen size in x must not exceed 576. and that
+the magnification times the screen size in y must not exceed 454.  The
+"Window Origin" gives the location of the lower left corner of the
+window cursor, "Window Size" gives its size.  "Pixel Cursor" gives the
+position of the pixel cursor, and "Pixel Value" gives the value of the
+image point at the pixel cursor location.
+
+	"Max-Gray" and "Min-Gray" are the thresholds which are used when
+displaying the image on the grey-level tv.  Any image point with a value
+above Max-gray will appear white; any point with a value below Min-Gray
+will appear black.  Values in between will be linearly scaled.  At the
+current time, Max-Gray and Min-Gray are the only numeric variables which
+can be directly set by the user using the ":" command.  Min-Gray is
+initially 0 and Max-Gray is 2**(bits/pixel) - 1 (the maximum possible
+pixel value for this image).
+
+------------------------------------------------------------------------
+COMMANDS TO IMED
+
+	The following are the recognized commands to IMED.  An
+unrecognized command will cause your terminal to flash (beep), but
+otherwise will be ignored.  Alphabetic commands may be in either upper
+or lower case.  All the movement and window sizing commands take
+optional unsigned decimal numeric arguments.  If no argument is given, 1
+is assumed.
+
+Manipulating the Window Cursor
+
+    L - move window left on screen	R - move window right on screen
+    U - move window up on screen	D - move window down on screen
+    N - make window narrow		W - make window wider
+    T - make window taller		S - make window shorter
+    X - moves the window so that it centers on the pixel cursor
+
+Manipulating the Pixel Cursor
+
+    [ - move cursor left		] - move cursor right
+    \ - move cursor up			/ - move cursor down
+    C - moves the pixel cursor to the center of the window cursor
+
+Other Commands
+
+    <arg>M - change magnification to whatever <arg> is.  This is a
+	no-op if the argument is the current magnification.
+    <arg>:<var> - changes the value of a numeric variable to <arg>.
+	<arg> must be an unsigned decimal number.
+    G - display or erase the window cursor on the screen.  There are
+	times when the window cursor may get in the way and you would
+	like to temporarily remove it.  There are also times when the
+	cursor may disappear, and you need it back.  (Typically only
+	happens if you are debugging new code or trying to recover
+	from an error.)
+    ^L (ctl-L) - redisplays the information area on your terminal, and
+	clears the echo area (bottom part of the terminal).
+    ( - signals that a Lisp form is to be read and interpreted (this
+	left paren is the beginning of the Lisp form, not an extra one
+	in front).  The value of the form is returned and printed in
+	the prompt area.
+    Q - quit to LISP.  To get back into IMED, type (RESUME).
+    ? - help.  Prints a summary of the available commands.
+
+Functions Defined as LISP Functions
+
+(ENHANCE-WINDOW)
+    Prompts for a minimum and maximum value to be used to redisplay the
+    window.  Terminate each value with a space.  Scales each point in
+    the window so that every value at or above the maximum comes out
+    white, every value at or below the minimum comes out dark, and
+    values in between are scaled appropriately.  At the present, the
+    only way to restore the original window is to redisplay the whole
+    image using (DISPLAY-IMAGE).
+
+(WINDOW-EXTREMA)
+    Finds and displays the values and locations of the minimum and
+    maximum pixels in the window.
+
+(IMAGE-EXTREMA)
+    Finds and displays the values and locations of the minimum and
+    maximum pixels in the entire image.
+
+(AVERAGE-WINDOW)
+    Finds the minimum and maximum image values in the window, and
+    computes the mean and standard deviation.
+
+(HISTO-WINDOW)
+    A histogramming function which is capable of displaying only on
+    the Knight tv's.  If you are not on a tv, this will refuse to
+    operate.  Scans the current window and produces a histogram on
+    the tv.  A file with 9 bits/pixel will need 512 bins, and these
+    will appear as adjacent vertical lines in the histogram; files
+    with less than 8 will cause the bins will be spaced out; files
+    with greater than 8 will cause the bins to be combined.
+
+    If no bin has more than 430 points in it, then the histogram is
+    displayed full-scale vertically; otherwise, the bins are scaled
+    so that the third largest extends to the top of the screen (the
+    first and second largest will go off-scale).
+
+    At the bottom of the histogram is a line indicating what image
+    pixel values the left and right edges of the histogram correspond
+    to.  When you are done, type any character.
+
+(HISTO-IMAGE)
+    Identical to HISTO-WINDOW except looks at the whole image.
+
+(PRINT-NBD nx ny)
+    Prints out on the top part of the terminal the image values of a nx
+    by ny (in x and y resp.) neighborhood of the location of the pixel
+    cursor.  (If you want this to go to an OPEN ASCII file, bind the
+    variable TOP-TTY to the desire output file object, then execute
+    PRINT-NBD.)
+
+(DISPLAY-IMAGE)
+    Redisplays the image on the grey-level tv.  May be necessary after
+    doing (ENHANCE-WINDOW), or if a program bug interrupts something or
+    leaves a cursor on the screen.  There will be no window cursor after
+    the image is redisplayed, so do a "G" command to get it back.
+
+(NEW-FILE)
+    Causes a new file to be inspected.  Will again prompt for the name
+    of the file, then display it (magnification 1).
+
+------------------------------------------------------------------------
+NOTES
+
+(1) The image can be either read in and stored as is from the image
+    file, each line with pixels packed, or it can be read in, unpacked,
+    and stored one pixel per array element.  If there are less than
+    16384. pixels in the image (128 * 128 = 16384), it will be unpacked
+    first; otherwise, it will be read in packed form and unpacked as
+    needed.  You may notice a slight speed difference between the two.
+
+(2) The window cursor is shown as a box superimposed on the image.  It
+    is written in XOR mode to plane 7 (the most significant) of the
+    grey-level tv, so will partially complement the value of image
+    pixels underneath it.  The box is part of the window, that is, those
+    pixels over which it lies are included in the window.  For
+    magnifications of greater than one, the box is drawn over the
+    outermost tv pixels in the window's boundary.
+
+(3) IMED uses the SHOW grey-level display package written by B.K.P.
+    Horn, in a VALRET string to DDT.  Should the system ever become so
+    loaded that no job slots are available, the system will be unable to
+    run SHOW and will spit out a message saying there are no job slots,
+    and doe an :INPUSH.  One way out of this is to wait for job slots to
+    clear up a bit, then alt-P the LISP (which thinks it is getting a
+    return from running SHOW and will be slightly confused).  A new
+    window cursor will be displayed, which is in the wrong place and is
+    the wrong size.  Now do (DISPLAY-IMAGE), then a "G" command.  You
+    should be okay now.
+
+(4) It is possible to set the pixel cursor position directly, using LISP
+    functions (actually macros).  As no bounds checking is performed,
+    you must be very careful not to exceed the screen boundaries.  To
+    set the pixel cursor's x coord to n, do (PX n); to set the y coord,
+    do (PY n).
+------------------------------------------------------------------------

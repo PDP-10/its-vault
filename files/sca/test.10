@@ -1,0 +1,50 @@
+(cond (*rset
+       (load '((dsk sca) pfs >))
+       (load '((dsk sca) fcns fasl)))
+      (t
+       (load '((dsk sca) mode fasl))
+       (load '((dsk sca) basem fasl))
+       (load '((dsk sca) fcns fasl))
+       (load '((dsk sca) pfs fasl))))
+
+(scachar)
+
+(setq base 10. ibase 10. *nopoint t)
+
+(mdeclare (polyfs p q p1 p2) (indeterminate x y z)
+	  (pplus-tree +tree) (ptimes-tree *tree)
+	  (pexptz-tree ^ztree) (binom-expand-tree btree)
+	  (n*poly-tree ntree) (repeat-sq-fixnum-tree rstree))
+
+(_ x (indeterminate varnum 3 k nil misc nil)
+   y (indeterminate varnum 2 k nil misc nil)
+   z (indeterminate varnum 1 k nil misc nil))
+
+(_ p (polyfs c x 1)
+   q (polyfs p v x ts (pfsterms (pfsterm e 1 c (polyfs c x 1))))
+   p1 (polyfs p v y ts (pfsterms (pfsterm e 1 c (polyfs c x 1))))
+   p2 (polyfs p v x ts (pfsterms (pfsterm e 1 c (polyfs c x -1)))))
+
+(_ +tree (pplus-tree czerop (ncons (get 'zerop1 'subr))
+		     cplus (ncons (get '*plus1 'subr)))
+   ntree (n*poly-tree czerop (ncons (get 'zerop1 'subr))
+		      n*coef (ncons (get '*times1 'subr))
+		      nonep (ncons (get 'onep1 'subr)))
+   *tree (ptimes-tree czerop (ncons (get 'zerop1 'subr))
+		      p+ +tree
+		      n*p ntree)
+   btree (binom-expand-tree r+ +tree
+			    r* *tree
+			    n* ntree)
+   ^ztree (pexptz-tree cexpt (ncons (get 'expt1 'subr))
+		       pone (polyfs c x 1)
+		       czerop (ncons (get 'zerop1 'subr))
+		       be btree)
+   rstree (repeat-sq-fixnum-tree oper *tree))
+
+(cond (*rset (_ :+tree:subr (get 'pplus1 'subr)
+		:*tree:subr (get 'ptimes1 'subr)
+		:ntree:subr (get 'n*poly1 'subr)
+		:btree:subr (get 'binomexpand1 'subr)
+		:^ztree:subr (get 'pexptz1 'subr)
+		:rstree:subr (get 'repeat-sq-fixnum1 'subr))))

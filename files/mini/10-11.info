@@ -1,0 +1,94 @@
+
+THE INTERFACE LETS THE PDP-10 PROGRAMMER DIRECTLY ACCESS THE MEMORIES
+OF UP TO EIGHT PDP-11'S.  PDP-10 PAGES ARE MAPPED INTO SEGMENTS OF
+VARIABLE SIZE IN THE PDP-11'S MEMORY.  THE PDP-10 PAGE MAP IS ALSO
+DIRECTLY ADDRESSABLE IN MEMORY (IT CURRENTLY LIVES IN LOCATIONS
+776000-776377)**.  THERE IS ONE ENTRY IN THE MAP FOR EACH PDP-10 PAGE.
+** SEE ALSO BELOW
+
+PAGE TABLE ENTRY:
+	4.9	VALID
+	4.8	WRITE ENABLE
+	4.3-4.7	(5 BITS) NOT USED (0)
+	3.9-4.2	(3 BITS) PDP-11 NUMBER
+	2.2-3.8	(16 BITS) RELOCATION
+		ORIGIN OF SEGMENT OF IN PDP-11 ADDRESS SPACE
+		PDP-11 ADDRESS=4*RELOCATION
+	1.1-2.1	(10 BITS) PROTECTION (PDP-11 PROTECTION=4*PROTECTION
+		IF PROTECTION=0 THEN ONLY ONE 16 BIT WORD IS ACCESSIBLE)
+
+				    |
+|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|
+0 1 2	      7	    10				    26			|
+|1|1|    5    |  3  |              16               |        10         |
+|_|_|_________|_____|_______________________________|___________________|
+ | |	 |	 |		    |			      |
+ | |	 |	 |		    |			      |----------->protection
+ | |	 |	 |		    |
+ | |	 |	 |		    |------------------------------------->relocation
+ | |	 |	 |
+ | |	 |	 |-------------------------------------------------------->PDP-11 #
+ | |	 |
+ | |	 |---------------------------------------------------------------->not used
+ | |
+ | |---------------------------------------------------------------------->write enable
+ |
+ |------------------------------------------------------------------------>entry valid
+;	PDP-10/PDP-11 INTERFACE CONTINUED
+
+WRITE REFERENCE FORMAT:
+	3.3-4.9	(16 BITS) WORD 0, LOW ORDER WORD
+	1.5-3.2	(16 BITS) WORD 1, HIGH ORDER WORD
+	1.4	DON'T WRITE WORD 0
+	1.3	DON'T WRITE WORD 1
+	1.1-1.2	(2 BITS) NOT USED
+
+				    |
+|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|
+0				16				323334  |
+|              16               |              16               |1|1| 2 |
+|_______________________________|_______________________________|_|_|___|
+		|				|		 | |  |
+		|				|		 | |  |--->not used
+		|				|		 | |
+		|				|		 | |------>inhibit odd
+		|				|		 |
+		|				|		 |-------->inhibit even
+		|				|
+		|				|------------------------->odd word
+		|
+		|--------------------------------------------------------->even word
+
+READ REFERENCE FORMAT:
+	3.3-4.9	(16 BITS) WORD 0, LOW ORDER WORD
+	1.5-3.2	(16 BITS) WORD 1, HIGH ORDER WORD
+	1.1-1.4	(4 BITS) 0
+
+				    |
+|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|
+0				16				32	|
+|              16               |              16               |   4   |
+|_______________________________|_______________________________|_______|
+		|				|		    |
+		|				|		    |----->0
+		|				|
+		|				|------------------------->odd word
+		|
+		|--------------------------------------------------------->even word
+
+NOTE	 -- SPLIT CYCLES WILL DO THE RIGHT THING; HENCE, ILDB AND IDPB WORK.
+CAUTION	 -- WHEN USING BYTE INSTRUCTIONS, A 16 BIT BYTE SIZE IS
+RECCOMMENDED.  SUCCESSIVE INCREMENTS OF BYTE POINTERS WITH AN 8 BIT BYTE
+SIZE DO NOT ADDRESS CONSECUTIVE BYTES IN THE PDP-11!
+
+ITS SYSTEM CALL TO PUT 11 MAP ENTRY IN YOUR 10 MAP:
+	.CALL	[SETZ
+		 SIXBIT /T11MP/
+		 10PGNO			;PTR TO 10 PG NO
+		 SETZ PGENT]		;PTR TO ENTRY (FORMAT ABOVE)
+10PGNO:	PDP-10 PAGE #
+PGENT:	<<ACCESS>_34.>+<<PDP-11 #>_26.>+<<PDP-11 ADDRESS/4>_10.>+<<SEGMENT SIZE (BYTES>/4>
+	FOR ABOVE 10 ADDRESSES 6000-7777 ARE MAPPED INTO
+	11 ADDRESSES 10000-17776. BOTH READ AND WRITE ARE ENABLED.
+$
+

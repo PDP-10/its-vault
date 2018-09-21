@@ -1,0 +1,4024 @@
+       houtline:=
+       hwipe
+       hhome
+       hhere
+       ttyint
+       hremember
+       hforget
+       hrt
+       hdraw-lf
+       hdraw-cr
+       hdraw-crlf
+       hlt
+       hshade
+       hfd
+       hbk
+       hsethare
+       hpen?
+       hink:=
+       hscl:=
+       hiymin?
+       hixmin?
+       idiv
+       hooby:=
+       hoobx:=
+       hiycor?
+       hixcor?
+       hixmax?
+       hpen:=
+       hshow:=
+       hdrawc
+       hyhome:=
+       hxhome:=
+       hymin:=
+       hymin?
+       hxmax:=
+       hxmax?
+       hxmin:=
+
+(comment)
+;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; TVHARE package for lisp
+;;; 	TVHARE is a package of lisp functions similar in purpose
+;;; to LLOGO;TVRTLE.  It is not intended to be strictly compatible
+;;; however.  It is smaller, faster, and more flexible, but has fewer
+;;; features (no shading or color).  This file contains most of the
+;;; relevant code.  A minimal document (an alphabetical list of
+;;; functions and variables) may be found in TVHARE;HARDOC >.  In
+;;; this file upper case is used to signal a user function as opposed
+;;; to an internal function.  The fasl file should contain no macros.
+;;; TVHARE includes a vector-based font which is scalable and
+;;; rotatable, and a display-list capability.
+;;; 	TVHARE incorporates altered versions of two TVLISP;
+;;; files -- TVOUT and TVLINE.  These were altered by Chuck Rich and
+;;; Bob Woodham to aid the creation of TVHARE.  The alterations
+;;; include additional functions and conventions (eg., drawmode?),
+;;; and the possibility of creating a fake tv array for non-tv
+;;; hacking (by changing tvline functions to examine the specvar TV
+;;; once per call).
+;;; 	LIBLSP;SPLIT is also used; its presence is ensured by
+;;; checking its subr prop and fasloading it if absent.  TVHARE uses
+;;; the symbols GETCOR, SACONS, 2DIMF, and CFIX1, which are defined
+;;; within Newio Lisp's with version# > 1633.  For older Lisps, user
+;;; must load symbols before loading Tvhare.  Tvhare does (TVINIT),
+;;; (MAP-TV-CORE T) at load time.  To compile TVHARE, TVHARE;MACROS
+;;; is needed -- this fasloaded by a declare.  To use TVHARE from
+;;; compiled code, INCLUDE the file TVHARE DECLAR (created from the
+;;; DECLARATION declare's here).
+;;; 	If people find TVHARE useful, a working paper may appear
+;;; eventually describing it less cryptically.
+;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(declare (eval (read)))
+(or (get '*version* 'macros)
+    (fasload macros fasl dsk TVHARE))
+
+(version)
+
+(if (status nofeature noldmsg)
+    (terpri)
+    (tyo 59.)						;semi-colon
+    (princ '|Fasloading TVHARE.  |))
+
+(ifnot (get 'splitscreen 'subr)
+       (fasload split fasl dsk liblsp)
+       (crunit dsk TVHARE))
+
+(declaration (newio t)
+             (fixnum nargs pagel)
+             (special top-tty bottom-tty)) ;;; from splitscreen
+
+(declare (macros nil) ;;; no user macros here
+         (expr-hash t))
+
+(declare (eval (read)))
+(setq base 8. ibase 8. *nopoint nil)  ;;; for tvout, tvline.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; BEGINNING OF TVOUT SECTION.
+;;; 	The following is an altered version of TVLISP;TVOUT
+;;; created by Chuck Rich, which facilitates TVHARE stuff.
+
+;;;            GRAPHICS PACKAGE FOR PDP11 TV TERMINALS.
+;;; 	Tv's have 455. horizontal lines of 576. dots each
+;;; (262080.  bits out 'o 262144).  Memory is organized as 9
+;;; 64.-bit words (equiv to 18. 32.-bit words) per line.  The
+;;; pdp10 accesses half of such a word (or two 16.-bit chunks)
+;;; at once.  These 32. bits are packed left justified into the
+;;; 36. bits.  Tvend (or the last word of the tv-memory) has
+;;; two functions: bit 200000 when on, complements the
+;;; black/white output.  Bits 177760 are a word-counter for
+;;; which 64.-bit word the frame is to start on.  for winnage
+;;; the number ought to be a multiple of 9.  TV-characters are 10.
+;;; lines high and 5 points wide (right and top justified).
+;;; Line-pitch is 12. tv-lines, character-pitch is 6 tv-points.
+;;; That's 96. chrs/line exactly and 37. and 11./12. lines
+;;; (3552. chrs).
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;                 Lap Routines for TVOUT
+;;; TVINIT:
+;;; 	The following lap subroutines initialize the tv
+;;; buffer, by performing the system call to map the 11's memory
+;;; into lisp's address space and conning lisp into thinking
+;;; that area of memory is really a fixnum array.
+;;; 	(Tvinit) merely allocates some address space for use
+;;; as the tv buffer, and creates a fake array whose data area
+;;; will really be the tv buffer.  It does *not* actually map
+;;; the tv buffer pages in; thus one can :pdump the job after
+;;; doing (tvinit).  The special variable "TV" is setq'd to the
+;;; SAR of the tv buffer array.
+
+(LAP TVINIT SUBR)
+(ARGS TVINIT (NIL . 0))
+(DEFSYM TTSAR-DATA 200107)
+(DEFSYM FIXNUM-ARRAY 200)
+	(HLLOS 0 NOQUIT)
+	(MOVEI TT 12)
+	(PUSHJ P GETCOR)
+	(SKIPN 0 TT)
+	(*VALUE)
+	(ADDI TT 2000)
+	(MOVEI F -6 TT)
+	(HRLI F TV-ARRAY-HEADER)
+	(BLT F -1 TT)
+	(HRRM TT -6 TT)
+	(PUSH FXP TT)
+	(JSP T SACONS)
+	(POP FXP TT)
+	(MOVEM A -3 TT)
+	(HRLI F FIXNUM-ARRAY)
+	(HLLM F 0 A)
+	(MOVEI F -5 TT)
+	(HRRM F 0 A)
+	(HRLI F TTSAR-DATA)
+	(HLLM F 1 A)
+	(HRRM TT 1 A)
+	(MOVEM A (SPECIAL TV))
+	(HLLZS 0 NOQUIT)
+	(JRST 0 CHECKI)
+TV-ARRAY-HEADER
+	(0 0 0 -17776)
+	(PUSH P CFIX1)
+	(JSP TT 2DIMF)
+ASAR-ADDRESS
+	(0)
+	(710)
+	(22)
+NIL 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; MAP-TV-CORE:
+;;; 	(MAP-TV-CORE <t-or-nil>) assumes that (tvinit) has
+;;; been performed, and thus that the variable "tv" contains the
+;;; sar for the fake tv buffer array.  If the argument is t,
+;;; then the tv buffer pages are mapped into the pdp-10's
+;;; memory; if nil, the pages are excised from the page map.
+;;; Thus one should do (map-tv-core nil) before dumping out a
+;;; job, and (map-tv-core t) after starting it up again.  It
+;;; does not hurt to do (map-tv-core t) (or (map-tv-core nil))
+;;; twice in a row.
+
+(LAP MAP-TV-CORE SUBR)
+(ARGS MAP-TV-CORE (NIL . 1))
+(DEFSYM IMMEDIATE 1000)
+(DEFSYM READ-WRITE-ACCESS 600000)
+(DEFSYM FLUSH-PAGES 0)
+	(MOVEI R READ-WRITE-ACCESS)
+	(SKIPN 0 A)
+	(MOVEI R FLUSH-PAGES)
+	(MOVE A (SPECIAL TV))
+	(HLLOS 0 NOQUIT)
+	(HRRZ TT 1 A)
+	(LSH TT -12)		;MAP INTO PDP-10 STARTING HERE
+	(HRLI TT -11)		;NINE PAGES OF TV CORE
+	(SETZ D)		;STARTING WITH NUMBER 0
+	(*CALL 0 MAP-11-MEMORY-TO-10-ADDRESS-SPACE)
+	(*VALUE)
+	(HLLZS 0 NOQUIT)
+	(JRST 0 CHECKI)
+MAP-11-MEMORY-TO-10-ADDRESS-SPACE
+	(SETZ)
+	(SIXBIT CORBLK)
+	(R)			;MODE BITS (CONTROLS ACTION)
+	(0 0 -1 IMMEDIATE)	;JOB MAPPED INTO (ME)
+	(TT)			;AOBJN POINTER OF PAGES
+	(0 0 -2 IMMEDIATE)	;JOB MAPPED FROM (TV BUFFER)
+	(SETZ 0 D)		;PAGES MAPPED FROM
+NIL 
+
+(TVINIT) 
+
+;;; 	This array is really your tv buffer! doing (store
+;;; (tv <line> <column>) <bits>) actually causes the bits to
+;;; appear on your screen.  Things to remember: keep the last 4
+;;; low order bits clear, and coordinates run top to bottom,
+;;; left to right.
+
+(declaration (array* (fixnum (tv 456. 18.))) (special tv))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Drawmodes.
+;;; 	The 11 has a feature whereby one of the sixteen
+;;; boolean functions of two arguments may be specified, and any
+;;; attempt to write into the 11's memory will actually result
+;;; in the function specified of the word being deposited and
+;;; the word already there in the location.  This is done by
+;;; putting a number to indicate the desired function in the
+;;; "alu register"; the first word after the 8 pages of tv
+;;; memory.  The number is in the high order 8 bits of the word.
+
+(declaration (special andc setz comp eqv same
+		      xor  and  seto ior set)
+	     (notype (drawmode fixnum))
+	     (fixnum (drawmode?)
+		     andc setz comp eqv same
+		     xor  and  seto ior set))
+
+;;; 	DRAWMODE changes the ALU.   Note: it was deemed more
+;;; efficient not to try pseudo-lambda-binding this register,
+;;; since to do it right requires (nointerrupt t) and other
+;;; fooling around.   Each function should set the drawmode as
+;;; it wishes before it starts, making no assumption of previous
+;;; value.
+;;; 	However, DRAWMODE? is provided for those who really
+;;; want to test the drawmode -- but user should beware of
+;;; number-consing!  This is one of the alterations from the
+;;; Tvlisp; version.
+
+(defun DRAWMODE (mode) 
+       (declare (fixnum mode))
+       (store (arraycall fixnum tv 455. 2.)
+ 	      (bitwise-or mode
+  			  (boole 2. -268435456.
+                                 (arraycall fixnum tv 455. 2.))))
+       t)
+
+(defun DRAWMODE? ()
+       (boole 1. -268435456.  ;;; = 776_33 octal
+              (arraycall fixnum tv 455. 2.)))
+
+(setq ANDC 536870912. 
+      SETZ 805306368. 
+      COMP 1342177280. 
+      XOR 1610612736. 
+      EQV 2415919104. 
+      SAME 2684354560. 
+      AND 2952790016. 
+      SETO 3221225472. 
+      IOR 3758096384. 
+      SET 4026531840.)
+
+;;; END OF TVOUT SECTION.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; BEGINNING OF TVLINE SECTION.					;;;
+;;;									;;;
+;;; 	The following is an altered version of tvline from		;;;
+;;; tvlisp.  The commented-out (array t) calls document			;;;
+;;; the changes.  By checking (special tv) once per call		;;;
+;;; instead, setq-ing tv to a "fake" tv array allows			;;;
+;;; everything to run smoothly on non-tv.				;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;			TV POINT AND LINE HACKS				;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;									;;;
+;;; This section contains three hand-coded LAP functions for hacking	;;;
+;;; individual TV points:						;;;
+;;;	(GET-TV-BIT X Y)	Returns 1 or 0 depending on whether TV	;;;
+;;;				point (x y) is 1 or 0. Always returns 0	;;;
+;;;				if (x y) is out of range.		;;;
+;;;	(SET-TV-BIT X Y)	"Sets" TV point (x y) to 1. Return 1	;;;
+;;;				(0 if (x y) out-of-range) Actually, bit	;;;
+;;;				is set in IOR mode, complemented in XOR	;;;
+;;;				mode and cleared in ANDC mode. (You're	;;;
+;;;				on your own in any other mode)		;;;
+;;;	(CLEAR-TV-BIT X Y)	Clears TV point (x y) and returns 0	;;;
+;;;				(Works ONLY in SET mode)		;;;
+;;;									;;;
+;;; There is also a simple LAP line-drawing function. To draw a line	;;;
+;;; from (p,q) to (r,s) (NB off-screen points get clipped):		;;;
+;;;	(DRAW-TV-LINE P Q R S)	With respect to drawmodes, DRAW-TV-LINE	;;;
+;;;				behaves like SET-TV-BIT			;;;
+;;;									;;;
+;;;			IMPORTANT REMINDERS				;;;
+;;;									;;;
+;;;	1. TVOUT stuff must be present (see above).			;;;
+;;;	2. Origin of TV screen is upper left (ie. Y coordinates		;;;
+;;;	   increase from top to bottom)					;;;
+;;;	3. To take advantage of NCALLing, the following			;;;
+;;;	   declaration is essential:					;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(declaration (fixnum (get-tv-bit fixnum fixnum)
+		     (set-tv-bit fixnum fixnum)
+		     (clear-tv-bit fixnum fixnum))
+	     (notype (draw-tv-line fixnum
+				   fixnum
+				   fixnum
+				   fixnum)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; TVLINE section -- GET-TV-BIT, SET-TV-BIT.
+
+(LAP GET-TV-BIT SUBR) 
+(ARGS GET-TV-BIT (NIL . 2)) 
+	(PUSH P (% 0 0 FIX1)) 
+	(SETZ TT)
+	(SKIPL D 0 A)
+	(SKIPGE R 0 B)
+	(POPJ P)
+	(CAIGE D 576.)
+	(CAIL R 454.)
+	(POPJ P)
+	(IMULI R 18.) 
+	(MOVEI TT 0 D) 
+	(LSH TT -5) 
+	(ADDI TT 0 R)
+        (movei t @ (special tv))
+        (move tt @ 1 t)
+;	(MOVE TT @ (ARRAY TV)) 
+	(ANDI D 37) 
+	(LSH TT -35. D) 
+	(ANDI TT 1) 
+	(POPJ P) 
+NIL 
+
+(LAP SET-TV-BIT SUBR) 
+(ARGS SET-TV-BIT (NIL . 2)) 
+	(PUSH P (% 0 0 FIX1)) 
+	(SETZ TT)
+	(SKIPL D 0 A)
+	(SKIPGE R 0 B)
+	(POPJ P)
+	(CAIGE D 576.)
+	(CAIL R 454.)
+	(POPJ P)
+	(IMULI R 18.)
+	(MOVEI TT 0 D) 
+	(LSH TT -5) 
+	(ADDI TT 0 R) 
+	(ANDI D 37) 
+	(MOVNI D 0 D)
+	(MOVSI R 400000) 
+	(LSH R 0 D) 
+        (movei t @ (special tv))
+        (movem r @ 1 t)
+;	(MOVEM R @ (ARRAY TV)) 
+	(MOVEI TT 1) 
+	(POPJ P) 
+NIL 
+
+;;; tvline section cont'd -- clear-tv-bit
+
+(LAP CLEAR-TV-BIT SUBR) 
+(ARGS CLEAR-TV-BIT (NIL . 2)) 
+	(PUSH P (% 0 0 FIX1)) 
+	(SETZ TT)
+	(SKIPL D 0 A)
+	(SKIPGE R 0 B)
+	(POPJ P)
+	(CAIGE D 576.)
+	(CAIL R 454.)
+	(POPJ P)
+	(IMULI R 18.)
+	(MOVEI TT 0 D) 
+	(LSH TT -5) 
+	(ADDI TT 0 R) 
+	(ANDI D 37) 
+	(MOVNI D 0 D)
+	(MOVSI R 400000) 
+	(LSH R 0 D) 
+        (movei t @ (special tv))
+        (andcam r @ 1 t)
+;	(ANDCAM R @ (ARRAY TV)) 
+	(SETZ TT) 
+	(POPJ P) 
+NIL 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; TVLINE section continued: DRAW-TV-LINE.
+
+(LAP DRAW-TV-LINE SUBR) 
+(ARGS DRAW-TV-LINE (NIL . 4)) 
+	(SKIPGE TT 0 A)
+	(SETZ TT)
+	(CAIL TT 576.)
+	(MOVEI TT 575.)
+	(PUSH FXP TT) 
+	(SKIPGE TT 0 B)
+	(SETZ TT)
+	(CAIL TT 454.)
+	(MOVEI TT 453.)
+	(PUSH FXP TT) 
+	(SKIPGE TT 0 C)
+	(SETZ TT)
+	(CAIL TT 576.)
+	(MOVEI TT 575.)
+	(PUSH FXP TT) 
+	(SKIPGE TT 0 AR1)
+	(SETZ TT)
+	(CAIL TT 454.)
+	(MOVEI TT 453.)
+	(PUSH FXP TT) 
+	(MOVE TT -1 FXP) 
+	(SUB TT -3 FXP) 
+	(MOVE D 0 FXP) 
+	(SUB D -2 FXP) 
+	(PUSH FXP TT)
+	(PUSH FXP D) 
+	(JUMPN TT NOT-VERTICAL) 
+	(JUMPGE D VERTICAL-TV-LINE) 
+	(MOVE R -2 FXP)
+	(EXCH R -4 FXP)
+	(MOVEM R -2 FXP)
+	(JRST 0 VERTICAL-TV-LINE) 
+NOT-VERTICAL 
+	(JUMPN D NOT-HORIZONTAL) 
+	(JUMPGE TT HORIZONTAL-TV-LINE) 
+	(MOVE R -3 FXP)
+	(EXCH R -5 FXP)
+	(MOVEM R -3 FXP)
+	(JRST 0 HORIZONTAL-TV-LINE) 
+NOT-HORIZONTAL 
+	(MOVM D D) 
+	(JUMPLE TT RUN-NEGATIVE) 
+	(CAMLE D TT) 
+	(JRST 0 UP-RIGHT) 
+	(JRST 0 RIGHT-UP) 
+RUN-NEGATIVE 
+	(MOVNS 0 -1 FXP) 
+	(MOVNS 0 0 FXP) 
+	(MOVE R -3 FXP)
+	(MOVEM R -5 FXP)
+	(MOVE R -2 FXP)
+	(MOVEM R -4 FXP)
+	(MOVM TT TT) 
+	(CAMLE D TT) 
+	(JRST 0 UP-RIGHT) 
+
+;;; cont'd
+
+;;; draw-tv-line cont'd
+
+RIGHT-UP
+	(MOVE D -5 FXP) 
+	(ANDI D 37) 
+	(MOVNI D 0 D)
+	(MOVSI TT 400000) 
+	(LSH TT 0 D) 
+	(PUSH FXP -4 FXP) 
+	(MOVE D -6 FXP) 
+	(LSH D -5) 
+	(MOVM R -2 FXP) 
+	(PUSH FXP TT) 
+	(PUSH FXP R) 
+	(LSH R -1) 
+	(PUSH FXP D) 
+	(MOVEI TT 1)
+	(PUSH FXP TT) 
+	(SKIPG 0 -5 FXP)
+	(SETOM 0 0 FXP)
+	(MOVMS 0 -5 FXP)
+	(PUSH FXP R) 
+	(PUSH FXP (% 0))
+        (movei t @ (special tv)) 
+RU-2 
+	(MOVE TT 0 FXP) 
+	(CAMLE TT -10 FXP) 
+	(JRST 0 RU-12) 
+	(MOVE TT -6 FXP) 
+	(IMULI TT 18.) 
+	(ADD TT -3 FXP) 
+	(MOVE D -5 FXP) 
+        (movem d @ 1 t)
+;       (MOVEM D @ (ARRAY TV)) 
+	(MOVN TT -7 FXP) 
+	(ADDB TT -1 FXP) 
+	(JUMPGE TT RU-14) 
+	(MOVE TT -2 FXP) 
+	(ADDM TT -6 FXP) 
+	(MOVE TT -4 FXP) 
+	(ADDM TT -1 FXP) 
+RU-14 
+	(MOVE TT -5 FXP) 
+	(LSH TT -1) 
+	(MOVEM TT -5 FXP) 
+	(ANDI TT 17) 
+	(JUMPE TT RU-20) 
+	(MOVSI TT 400000) 
+	(MOVEM TT -5 FXP) 
+	(AOS 0 -3 FXP) 
+RU-20 
+	(AOS 0 0 FXP) 
+	(JRST 0 RU-2) 
+RU-12 
+	(MOVEI A 'T) 
+	(SUB FXP (% 0 0 15 15)) 
+	(POPJ P) 
+
+;;; cont'd
+
+;;; draw-tv-line cont'd
+
+UP-RIGHT
+	(MOVE D -5 FXP) 
+	(ANDI D 37) 
+	(MOVNI D 0 D)
+	(MOVSI TT 400000) 
+	(LSH TT 0 D) 
+	(PUSH FXP -4 FXP) 
+	(MOVE D -6 FXP) 
+	(LSH D -5) 
+	(MOVM R -1 FXP) 
+	(PUSH FXP TT) 
+	(PUSH FXP R) 
+	(LSH R -1) 
+	(PUSH FXP D) 
+	(MOVEI TT 1)
+	(PUSH FXP TT) 
+	(SKIPG 0 -5 FXP)
+	(SETOM 0 0 FXP)
+	(MOVMS 0 -5 FXP)
+	(PUSH FXP R) 
+	(PUSH FXP (% 0))
+        (movei t @ (special tv)) 
+UR-2 
+	(MOVE TT 0 FXP) 
+	(CAMLE TT -7 FXP) 
+	(JRST 0 UR-12) 
+	(MOVE TT -6 FXP) 
+	(IMULI TT 18.) 
+	(ADD TT -3 FXP) 
+	(MOVE D -5 FXP) 
+        (movem d @ 1 t)
+;       (MOVEM D @ (ARRAY TV)) 
+	(MOVE TT -2 FXP) 
+	(ADDM TT -6 FXP) 
+	(MOVN TT -10 FXP) 
+	(ADDB TT -1 FXP) 
+	(JUMPGE TT UR-20) 
+	(MOVE TT -4 FXP) 
+	(ADDM TT -1 FXP) 
+	(MOVE TT -5 FXP) 
+	(LSH TT -1) 
+	(MOVEM TT -5 FXP) 
+	(ANDI TT 17) 
+	(JUMPE TT UR-20) 
+	(MOVSI TT 400000) 
+	(MOVEM TT -5 FXP) 
+	(AOS 0 -3 FXP) 
+UR-20 
+	(AOS 0 0 FXP) 
+	(JRST 0 UR-2) 
+UR-12 
+	(MOVEI A 'T) 
+	(SUB FXP (% 0 0 15 15)) 
+	(POPJ P) 
+
+;;; cont'd
+
+;;; draw-tv-line cont'd
+ 
+HORIZONTAL-TV-LINE
+	(MOVE TT -2 FXP)
+	(IMULI TT 18.)
+	(MOVE T -5 FXP) 
+	(LSH T -5)
+	(ADDI TT 0 T)
+	(AOJ T)
+	(LSH T 5)
+	(MOVE D -5 FXP)
+	(ANDI D 37)
+	(MOVNI D 0 D)
+	(MOVEI R 1)
+	(SETO F)
+	(ROTC R 35. D)
+	(TRZ R 17)
+	(MOVE D -3 FXP)
+	(ANDI D 37)
+	(MOVNI D 0 D)
+	(MOVSI F 400000)
+	(SETO 13)
+	(ROTC F 0 D)
+        (movei d @ (special tv))
+H-LINE1 
+	(CAMLE T -3 FXP)
+	(JRST 0 H-LINE2)
+        (movem r @ 1 d)
+;       (MOVEM R @ (ARRAY TV))
+	(MOVE R (% -20))
+	(ADDI T 32.)
+	(AOJ TT)
+	(JRST 0 H-LINE1)
+H-LINE2
+	(AND R F)
+        (movem r @ 1 d)
+;       (MOVEM R @ (ARRAY TV))
+	(SUB FXP (% 0 0 6 6))
+	(MOVEI A 'T)
+	(POPJ P)
+
+VERTICAL-TV-LINE
+	(MOVE R -3 FXP)
+	(ANDI R 37) 
+	(MOVNI R 0 R)
+	(MOVSI T 400000) 
+	(LSH T 0 R) 
+	(MOVE R -3 FXP)
+	(LSH R -5)
+	(MOVE TT -4 FXP) 
+        (movei d @ (special tv))
+V-LINE1
+	(CAMLE TT -2 FXP) 
+	(JRST 0 V-LINE2) 
+	(IMULI TT 18.) 
+	(ADDI TT 0 R)
+        (movem t @ 1 d) 
+;       (MOVEM T @ (ARRAY TV)) 
+	(AOS TT -4 FXP) 
+	(JRST 0 V-LINE1) 
+V-LINE2 
+	(MOVEI A 'T) 
+	(SUB FXP (% 0 0 6 6)) 
+	(POPJ P) 
+NIL 
+
+;;; END OF TVLINE SECTION.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Beginning of TVHARE proper.
+
+(declare (eval (read)))
+(setq base 10. ibase 10.)
+
+;;; Basic Hare Info
+;;; A "hare" is a gensym atom with a NODETYPE property
+;;; whose value is HARE, and various other props defining
+;;; its current state.  Hares may be created and destroyed
+;;; by user-callable procedures.  HARES is a global list
+;;; of all hares available to the user.
+;;; HARE is a global handle to the "current" hare.
+;;; CREATE-HARE creates and initializes a hare.  Every
+;;; property of a hare may be examined or changed by
+;;; an appropriate access function.
+
+(declaration (special HARE HARES))
+
+(ifnot (boundp 'HARE) (setq HARE nil))
+(ifnot (boundp 'HARES) (setq HARES nil))
+
+(defun hareprops macro (call)
+       ;;; List of all properties carried by hares.
+       ''(bounds home display-list state
+          oob peninfo vis options))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Utilities for complaining about abnormal situations.
+
+(declaration (*lexpr lprincsp))
+;;; not strictly a user routine but harmless to supply
+
+(defun lprincsp nargs
+       (tyo 59.) ;;; semicolon
+       (do ((i 1 (1+ i))) ((> i nargs) T)
+           (declare (fixnum i))
+           (princ (arg i)) (tyo 32.)))
+
+(defun hare-warning macro (call)
+       (rplaca call 'lprincsp)
+       (rplacd call (cons ''HARE-WARNING: (cdr call))))
+
+(defun hare-error macro (call)
+       ;;; Prints an error message, goes into
+       ;;; a break and {maybe} returns nil.
+       (displace call
+                 (list
+                  'progn
+                  (cons 'lprincsp
+                        (cons ''HARE-ERROR: (cdr call)))
+                  '(break hare-error t)
+                  nil)))
+
+(defun HAREP (obj) ;;; useful user routine too
+       (and (symbolp obj)
+            (eq (get obj 'nodetype) 'hare)))
+
+(defun hare-check (har)
+       ;;; internal check+error returns t iff ok
+       (cond
+        ((harep har) t)
+        (t (hare-error 'NOT-A-HARE: har))))
+
+(defun number-check (num)
+       ;;; returns t iff num is fixp or floatp
+       ;;; else generates error {& returns nil}.
+       (cond
+        ((or (fixp num) (floatp num)))
+        ((numberp num) ;;; bignum!?
+         (hare-error 'ILLEGAL-NUMBER: num))
+        (t (hare-error 'NOT-A-NUMBER: num))))
+
+(defun tnil-check (tnil)
+       ;;; returns T if tnil is t or nil.
+       ;;; Else does the error thing and
+       ;;; {maybe} returns nil.
+       (cond
+        ((or (null tnil) (eq tnil t)))
+        (t (hare-error 'VALUE-SHOULD-BE-T-OR-NIL: tnil))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Hack for winnage on non-tktv's:
+
+(declaration (special real-tv-array))
+(ifnot (boundp 'real-tv-array) (setq real-tv-array tv))
+
+(defun real-tv? macro (call)
+       (displace call '(eq tv real-tv-array)))
+
+(declaration (special hare-font fake-cursor))
+(ifnot (boundp 'hare-font) (setq hare-font t))
+(ifnot (boundp 'fake-cursor) (setq fake-cursor nil))
+
+(defun FAKE-TV (x)
+       (cond (x (if (real-tv?) (map-tv-core nil))
+                (setq hare-font nil)
+                (setq tv
+                      (apply (function *array)
+                             (cons nil (arraydims real-tv-array)))))
+             (t (setq tv real-tv-array) ;;; let go of fake tv array
+                (ifnot hare-font (setq hare-font t)
+                       (hare-warning 'SETTING 'HARE-FONT 'TO: T))
+                (map-tv-core t)))
+       (setq fake-cursor x)) ;;; not worth a warning, usually a win
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Arith hackery.
+
+(declaration (fixnum (isq fixnum) (idiv fixnum fixnum)
+                     (+idiv fixnum fixnum) (round notype)
+                     (round$ flonum))
+	     (*expr isq idiv +idiv round))
+
+(defun ISQ (i)
+       (declare (fixnum i))
+       (* i i))
+
+(defun IDIV (i j)
+       ;;; rounding-off integer divide
+       ;;; what a pain!  is there no better way?
+       (declare (fixnum i j))
+       (cond
+        ((inegp i)
+         (cond ((inegp j) (+idiv (- i) (- j)))
+               ((- (+idiv (- i) j)))))
+        ((inegp j) (- (+idiv i (- j))))
+        ((+idiv i j))))
+
+(defun +IDIV (i j)
+       (declare (fixnum i j))
+       (// (+ (lsh i 1) j) (lsh j 1)))
+
+(defun ROUND (x)
+       ;;; symmetrical round.  x must be fixnum or flonum.
+       ;;; (round -x) = - (round x).
+      (cond
+       ((fixp x) x)
+       ((round$ x))))
+
+(defun ROUND$ (flox)
+       ;;; another pain!  too bad have to test for
+       ;;; negative -- else could compile inline.  the
+       ;;; problem is getting symmetry: negative values
+       ;;; like -3.5 should round symmetrically to
+       ;;; +3.5 which is hard with ifix as the primitive,
+       ;;; and ones-complement arithmetic.
+       (declare (flonum flox))
+       (ifix (+$ flox (cond ((< flox 0.0) 0.4999999) (0.5)))))
+
+(declaration (fixnum (isqrt fixnum)
+                     (isqrt1 fixnum fixnum)))
+             
+(defun ISQRT (n) ;;; fixnum-only analogue of Gosper's
+       (declare (fixnum n)) ;;; "newton iteration"
+       (isqrt1 (abs n)      ;;; {see .info.;lisp news}
+	       (expt 2 (// (1+ (haulong n)) 2))))
+
+(defun isqrt1 (n guess)
+       (declare (fixnum n guess)) ;;; {caveat: overflow?}
+       ((lambda (next)
+		(cond ((< next guess)
+		       (isqrt1 n next)) ;;; convert to DO?+++
+		      (t guess)))
+	(// (+ guess (// n guess)) 2)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Headings, Trig
+;;; The external representation for headings is in
+;;; degrees (fixnum or flonum).  The internal
+;;; representation is in quarter-degrees (qees).
+;;; This allows a fixnum to suffice yet maintain
+;;; reasonable accuracy.  External headings may
+;;; run from -179 degrees to + 180 degrees.  North = 0
+;;; and East = 90 degrees.  No record of multiple
+;;; windings is kept -- user can do that easily enough
+;;; if really needed.  Our internal qees run from
+;;; -719 to + 720 which means probably most are unique-ized.
+
+(declare (fixnum (filter-qees fixnum)))
+
+(defun filter-qees (qees)
+       (declare (fixnum qees))
+       (prog ()
+        lp   (cond
+              ((> qees 720.) (setq qees (- qees 1440.)))
+              ((< qees -719) (setq qees (+ qees 1440.)))
+              (t (return qees)))
+             (go lp)))
+
+(macrodef idegs-to-qees (idegs)
+          (filter-qees (lsh idegs 2.)))
+
+(macrodef $degs-to-qees ($degs)
+          (filter-qees (round$ (*$ $degs 4.0))))
+
+(defun degs-to-qees (degs)
+       (cond ((fixp degs) (idegs-to-qees degs))
+             (t ($degs-to-qees degs))))
+
+(macrodef qees-to-idegs (qees)
+          (cond
+           ((inegp qees) (- (+qees-to-idegs (- qees))))
+           ((+qees-to-idegs qees))))
+
+(macrodef +qees-to-idegs (qees)
+          ;;; call idiv so will round symmetrically
+          (idiv qees 4))
+
+(macrodef qees-to-$degs (qees)
+          (//$ (float qees) 4.0))
+
+(defun pi-under-720 macro (call) (//$ 720.0 (pi)))
+
+(defun pi-over-720 macro (call) (//$ (pi) 720.0))
+
+(macrodef qees-to-rads (qees)
+          (*$ (float qees) (pi-over-720)))
+
+(macrodef rads-to-qees (rads)
+          ;;; NB: no check for out-of-range values here
+          (round$ (*$ rads (pi-under-720))))
+
+(macrodef qcos (qees) (cos (qees-to-rads qees)))
+
+(macrodef qsin (qees) (sin (qees-to-rads qees)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; unused:
+;;; (macrodef qtan (qees)
+;;;           (lam (rads) ((qees-to-rads qees))
+;;;                (//$ (sin rads) (cos rads))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(macrodef qcot (qees)
+          (lam (rads) ((qees-to-rads qees))
+               (//$ (cos rads) (sin rads))))
+
+(macrodef qatan (y x)
+          ;;; is atan restricted to Arctan (principal vals)?
+          (rads-to-qees (atan y x)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; COORDINATES.
+;;; There are 4 coordinate systems: RAWTV, CENTEREDTV,
+;;; HR-format, and HARE. Internally most coordinates are
+;;; represented in HR format.  HR format is derived from raw tv
+;;; coords as follows.  While TV's run from 0, 0 in the
+;;; upper left to [575.,454.] in the lower right, HR
+;;; format is has its origin at the point nearest the screen
+;;; center, and is left-shifted 2 bits (multiplied by 4).
+;;; The gives it High Resolution (ie comparable to the XGP).
+;;; The upper-left corner is [-1150.,+908.] with positive Y
+;;; being upwards (unlike raw tv).  The lower-right corner
+;;; is [+1150., -908.].  The X numbers are slightly off-center;
+;;; [0 0] corresponds to raw-tv [287.5, 227], rounded to 288.
+;;; Fixnums are used wherever possible, not flonums.
+;;; Centering, besides being more natural (+Y=up), increases
+;;; the likelihood that the values will be in the unique-ized
+;;; fixnum range.  LSH-ing increases the resolution only as much
+;;; as necessary, so that most points near the screen center
+;;; will probably still be in the unique-ized fixnum range.
+;;; 	The default external representation is CENTERED TV
+;;; coordinates.  This is the low resolution (1 tv dot =
+;;; 1 hare step) but centered version.  Centered TV coords
+;;; run from [-288., +227.] upper left, to [+287., -227.]
+;;; in the lower right.  Changing SCL or XHOME or YHOME
+;;; redefines the external representation for a given hare,
+;;; XMIN, YMIN, XMAX, YMAX, XHOME, YHOME, XCOR, YCOR are
+;;; always specified in Hare Coordinates when interacting
+;;; with the user.  Hare Coordinates are initialized to
+;;; CENTERED TV coordinates, but are modified by changing
+;;; XHOME, YHOME, or SCL.  Changing these does NOT move the
+;;; hare: it just modifies the coordinate system seen
+;;; by the user.  The following macros transform between
+;;; the first three coordinate systems.  Hare coordinate
+;;; transformations are defined later, after some access
+;;; functions they need.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Coordinate-transformation macros.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Hares are born with "Centered coords," which are defined
+;;; by the next four macros.  However, the macros are never
+;;; explicitly used since the "Hare coord" transformations are
+;;; always used.
+;;; 
+;;; (macrodef irawx-to-centrex (rawx) (- rawx 288.))
+;;;  ;;; rounded from 287.5
+;;; (macrodef irawy-to-centrey (rawy) ;;; [Raw +Y = down]
+;;;           (- 227. rawy))
+;;; 
+;;; (macrodef icentrex-to-rawx (cntx) (+ cntx 288.))
+;;;  ;;; rounded from 287.5
+;;; (macrodef icentrey-to-rawy (cnty) ;;; note symmetry
+;;;           (- 227. cnty))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(macrodef irawx-to-hrx (rawx)
+          (- (lsh rawx 2) 1150.))
+
+(macrodef $rawx-to-hrx ($rawx)
+          (- (round$ (*$ $rawx 4.0)) 1150.))
+
+(defun rawx-to-hrx (rawx) ;;; raw x as number -> HR x
+       (cond
+        ((fixp rawx) (irawx-to-hrx rawx))
+        (t ($rawx-to-hrx rawx))))
+
+(macrodef irawy-to-hry (rawy)
+          (- 908. (lsh rawy 2)))
+
+(macrodef $rawy-to-hry (rawy)
+          (- 908. (round$ (*$ rawy 4.0))))
+
+(defun rawy-to-hry (rawy)
+       (cond
+        ((fixp rawy) (irawy-to-hry rawy))
+        (t ($rawy-to-hry rawy))))
+
+(macrodef hrx-to-irawx (hrx)
+          ;;; rsh ok since inner expression a +fixnum
+          ;;; The extra 2 is for rounding off.
+          ;;; {caveat -- asymmetrical round, neg. hrx}
+          (lsh (+ 1152. hrx) -2)) ;;; cf. charx-to-irawx
+
+(macrodef charx-to-irawx (charx)	;;; like hrx but extra factor
+          (lsh (+ 9216. charx) -5))	;;; of 8 for hare charsize.
+
+(macrodef hry-to-irawy (hry)
+          ;;; rsh ok since inner expr. a +fixnum
+          ;;; caveat -- truncate rather than round
+          (lsh (- 908. hry) -2)) ;;; cf. chary-to-irawy
+
+(macrodef chary-to-irawy (chary)	;;; hry w. charsize factor
+          (lsh (- 7264. chary) -5))	;;; see drawt
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Internal Rep for Scale factors
+;;; The scale factor defines the distance metric
+;;; for the coordinate system; it gives the ratio
+;;; of tv raster dots to hare steps.  With scale=2,
+;;; FD 1 moves 2 dots; equivalently, 2 dots from the
+;;; origin is 1 unit in the revised coordinate system.
+;;; minimum noticeable scale factor (jnd) is 0.25.
+;;; The default scale factor is 1.  The internal scale
+;;; factor (hr units) is 0.25.  Scale factors are
+;;; kept internally as integers lsh'ed 2.  This means
+;;; that the transformation from internal scale to
+;;; scale 1 is carried for free by the representation.
+;;; With scl of 0.25, FD x, where x is less than 1, loses.
+
+(macrodef irawscl-to-intscl (inum)
+          (lsh inum 2))
+
+(macrodef $rawscl-to-intscl ($num)
+          (+round$ (*$ $num 4.0)))
+
+(declare (fixnum (rawscl-to-intscl notype)))
+
+;;; (defun rawscl-to-intscl (num)
+;;; previous version which seemed to compile buggily:
+;;;        (cond ((fixp num) (irawscl-to-intscl num))
+;;;              (t ($rawscl-to-intscl num))))
+
+(defun rawscl-to-intscl (num) ;;; temporary replacement+++
+       ;;; since scl is positive, no need to worry about
+       ;;; symmetrical rounding
+       (fix (+$ 0.5 (*$ 4.0 (float num)))))
+
+(macrodef intscl-to-irawscl (scl)
+          ;;; return closest integer to true scale.
+          ;;; rsh ok since scl a +fixnum
+          (lsh (+ scl 2) -2))
+
+(macrodef intscl-to-$rawscl (scl)
+          (*$ (float scl) 0.25))
+
+(macrodef $intscl-to-irawscl (scl)
+          ;;; flonum int scl to fixnum raw scl
+          (+round$ (*$ scl 0.25)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Hare coordinates to internal HR coordinates
+;;; Inputs fixnums or flonums.  Outputs fixnums.
+
+(declare (fixnum (harex-to-hrx notype notype)
+                 (harey-to-hry notype notype)))
+
+(defun harex-to-hrx (harex har)
+       (lam (scl) ((v4 (get har 'state)))
+            (declare (fixnum scl))
+            (+ (pointx (get har 'home)) ;;; hr xhome
+               ;;; scl carries the factor of 4 for free
+               ;;; since hr coords also factor of 4.
+               (cond
+                ((fixp harex) (* harex scl))
+                ((round$ (*$ harex (float scl))))))))
+
+(defun harey-to-hry (harey har)
+       (lam (scl) ((v4 (get har 'state)))
+            (declare (fixnum scl))
+            (+ (pointy (get har 'home))
+                (cond
+                 ((fixp harey) (* harey scl))
+                 ((round$ (*$ harey (float scl))))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Internal HR Coords to Hare Coords; inputs fixnums.
+;;; Outputs fixnum or flonum, depending on which function.
+
+(declare (fixnum (hrx-to-iharex fixnum notype)
+		 (hry-to-iharey fixnum notype))
+	 (flonum (hrx-to-$harex fixnum notype)
+		 (hry-to-$harey fixnum notype)))
+
+(defun hrx-to-iharex (hrx har)
+       (declare (fixnum hrx))
+       (idiv (- hrx (pointx (get har 'home)))
+             (v4 (get har 'state))))
+
+(defun hry-to-iharey (hry har)
+       (declare (fixnum hry))
+       (idiv (- hry (pointy (get har 'home)))
+             (v4 (get har 'state))))
+
+(defun hrx-to-$harex (hrx har)
+       (declare (fixnum hrx))
+       (//$ (float (- hrx (pointx (get har 'home))))
+            (float (v4 (get har 'state)))))
+
+(defun hry-to-$harey (hry har)
+       (declare (fixnum hry))
+       (//$ (float (- hry (pointy (get har 'home))))
+            (float (v4 (get har 'state)))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Lowest level display routines used by TVHARE.
+;;; Objects passed around are vectors, points, and charspecs.
+;;; Numerical values are in HR units.
+
+(defun drawv (vec)
+       (lam (nx ny) ((hrx-to-irawx (v3 vec))
+                     (hry-to-irawy (v4 vec)))
+            (draw-tv-line (hrx-to-irawx (v1 vec))
+			  (hry-to-irawy (v2 vec))
+			  nx ny)
+            (set-tv-bit nx ny) ;;; restore xor-ed corners
+            t))
+
+(defun drawp (pnt)
+       (set-tv-bit (hrx-to-irawx (pointx pnt))
+                   (hry-to-irawy (pointy pnt)))
+       t)
+
+(defun tvrectangle (x1 y1 x2 y2)
+       (declare (fixnum x1 y1 x2 y2))
+       (if (< y2 y1) (exch y2 y1))
+       (do ((y y1 (1+ y))) ((> y y2) t)
+           (declare (fixnum y))
+           (draw-tv-line x1 y x2 y)))
+
+(defun drawr (vec) ;;; Diddle rectangle given by vec
+		   ;;; vec is a vector in HR units
+       (tvrectangle (hrx-to-irawx (v1 vec))
+                    (hry-to-irawy (v2 vec))
+                    (hrx-to-irawx (v3 vec))
+                    (hry-to-irawy (v4 vec))))
+
+(defun drawb (vec) ;;; Draw Box around rectangle vec;
+		   ;;; Vec is a vector in HR units.
+       (lam (x1 y1 x2 y2) ((hrx-to-irawx (v1 vec))
+                           (hry-to-irawy (v2 vec))
+                           (hrx-to-irawx (v3 vec))
+                           (hry-to-irawy (v4 vec)))
+            (draw-tv-line x1 y1 x1 y2) ;;; vert
+            (draw-tv-line x2 y2 x2 y1) ;;; vert
+            ;;; horiz shortened to avoid vanishing corners
+            (cond
+             ((< x1 x2) (draw-tv-line (1+ x1) y1 (1- x2) y1)
+                        (draw-tv-line (1+ x1) y2 (1- x2) y2))
+             (t (draw-tv-line (1+ x2) y1 (1- x1) y1)
+                (draw-tv-line (1+ x2) y2 (1- x1) y2))))
+       t)
+
+;;; DRAWT, the primitive text drawer, is defined below.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Screen Boundaries, in HR coords; Echo Area.
+
+(defun hrxmin macro (call) -1150.)
+(defun hrybot macro (call) -147) ;;; dflt display bottom
+(defun hrymin macro (call) -908.)
+(defun hrxmax macro (call) +1150.)
+(defun hrymax macro (call) +908.)
+
+;;; Echo area -- for calls to splitscreen:
+
+(declaration (special echo-area raw-display-bottom)
+             (fixnum  echo-area raw-display-bottom))
+
+(ifnot (boundp 'echo-area) (setq echo-area 0))
+(ifnot (boundp 'raw-display-bottom) ;;; redund, but avoids recomp.
+       (setq raw-display-bottom 0)) ;;; raw y=0 -> screen top!
+
+(declare (special **tvhare-display**))
+(ifnot (boundp '**tvhare-display**) ;;; top-tty reserved for graphics?
+       (setq **tvhare-display** nil))
+
+(defun adjust-echo-area ()
+       ;;; Recomputes where it should be.
+       ;;; If changed & displaying, updates screen.
+       ;;; Returns non-nil iff size of echo-area changed.
+       (lam (oldech) (echo-area)
+            (declare (fixnum oldech))
+            (setq echo-area
+                  (cond
+                   ((< raw-display-bottom 1) 0)
+                   (t (- (ttylines? bottom-tty)
+                     ;;; #lines of echo-area is device dependent; but
+                     ;;; #lines of display-area is device Independent
+                     ;;; (provided there are enough to accomodate it).
+                     ;;; [Of course, real width is device dependent,
+                     ;;; but Virtual width is used in deciding oob.]
+                         (// (+ raw-display-bottom
+                                (tv-char-ht)) ;;; rounding term
+                             (tv-char-ht))))))
+            (if (and (not (izerop echo-area)) (< echo-area 3))
+                (setq echo-area 3)
+                (hare-warning
+                 'ECHO-AREA-AND-DISPLAY-OVERLAP))
+            (cond ((= oldech echo-area) nil)
+                  (**tvhare-display** (splitscreen echo-area)
+                                      (cursor-to-bottom-tty)
+                                      (clear-entire-screen)
+                                      (redisplay-all-hares))
+                  (t))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Display Bounds: smallest rectangle enclosing all visible
+;;; hares; if none, it's the screen turned inside out.
+
+(declare (special display-bounds))
+
+(defun display-bounds-init ()
+       (vector (hrxmax) (hrymax) (hrxmin) (hrymin)))
+
+(ifnot (boundp 'display-bounds)
+       (setq display-bounds (display-bounds-init)))
+
+(defun display-bounds-reinit ()
+       (rplacv1 display-bounds (hrxmax))
+       (rplacv2 display-bounds (hrymax))
+       (rplacv3 display-bounds (hrxmin))
+       (rplacv4 display-bounds (hrymin))
+       (setq raw-display-bottom 0)
+       (setq echo-area 0)
+       t)
+
+(defun revise-display-bounds ()
+       ;;; recompute size of display & echo areas.
+       ;;; updates screen iff display:= t.
+       ;;; returns non-nil iff echo-area changed.
+       (lam (d1 d2 d3 d4)
+            ((hrxmax) (hrymax) (hrxmin) (hrymin))
+            (declare (fixnum d1 d2 d3 d4))
+            (mapc
+             (fn (har)
+                 (if (get har 'vis)
+                     ;;; revise opinion (not screen) if display:= nil.
+                     (prog (bou h1 h2 h3 h4)
+                           (declare (fixnum h1 h2 h3 h4))
+                           (setq bou (get har 'bounds)
+                                 h1  (v1 bou)
+                                 h2  (v2 bou)
+                                 h3  (v3 bou)
+                                 h4  (v4 bou))
+                           (if (< h1 d1) (setq d1 h1))
+                           (if (< h2 d2) (setq d2 h2))
+                           (if (> h3 d3) (setq d3 h3))
+                           (if (> h4 d4) (setq d4 h4)))))
+             hares)
+            ;;; now round off d2 to next charpos so
+            ;;; that (clear-display) + (clear-echo)
+            ;;; has the effect of (clear-entire-screen).
+            (setq raw-display-bottom
+                     (1- (* (tv-char-ht)
+                            (1+ (// (hry-to-irawy d2)
+                                    (tv-char-ht)))))
+                  d2 (- (irawy-to-hry raw-display-bottom)
+                              ;;; {caveat: constant.  sub. 3,
+                         3.)) ;;; since hry has factor of 4}
+            (rplacv1 display-bounds d1)
+            (rplacv2 display-bounds d2)
+            (rplacv3 display-bounds d3)
+            (rplacv4 display-bounds d4))
+       (adjust-echo-area))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Screen Boundaries.  In Hare Coords.
+
+(declaration (*lexpr screen-xmax? iscreen-xmax?)
+             (flonum (screen-xmax?) (hscreen-xmax? notype))
+             (fixnum (iscreen-xmax?) (hiscreen-xmax? notype)))
+
+(defun SCREEN-XMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hscreen-xmax? har))))
+
+(defun HSCREEN-XMAX? (har)
+       ;;; Returns xcoord of east edge of screen in
+       ;;; coordinate system of har
+       (hrx-to-$harex (hrxmax) har))
+
+(defun ISCREEN-XMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiscreen-xmax? har))))
+
+
+(defun HISCREEN-XMAX? (har)
+       (hrx-to-iharex (hrxmax) har))
+
+;;; screen-boundary functions cont'd next page
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; screen boundaries continued
+
+(declaration (*lexpr screen-xmin? iscreen-xmin?)
+             (flonum (screen-xmin?) (hscreen-xmin? notype))
+             (fixnum (iscreen-xmin?) (hiscreen-xmin? notype)))
+
+(defun SCREEN-XMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hscreen-xmin? har))))
+
+(defun HSCREEN-XMIN? (har)
+       (hrx-to-$harex (hrxmin) har))
+
+(defun ISCREEN-XMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiscreen-xmin? har))))
+
+(defun HISCREEN-XMIN? (har)
+       (hrx-to-iharex (hrxmin) har))
+
+(declaration (*lexpr screen-ymax? iscreen-ymax?)
+             (flonum (screen-ymax?) (hscreen-ymax? notype))
+             (fixnum (iscreen-ymax?) (hiscreen-ymax? notype)))
+
+(defun SCREEN-YMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hscreen-ymax? har))))
+
+(defun HSCREEN-YMAX? (har)
+       (hry-to-$harey (hrymax) har))
+
+(defun ISCREEN-YMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiscreen-ymax? har))))
+
+(defun HISCREEN-YMAX? (har)
+       (hry-to-iharey (hrymax) har))
+
+(declaration (*lexpr screen-ymin? iscreen-ymin?)
+             (flonum (screen-ymin?) (hscreen-ymin? notype))
+             (fixnum (iscreen-ymin?) (hiscreen-ymin? notype)))
+
+(defun SCREEN-YMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hscreen-ymin? har))))
+
+(defun HSCREEN-YMIN? (har)
+       (hry-to-$harey (hrymin) har))
+
+(defun ISCREEN-YMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiscreen-ymin? har))))
+
+(defun HISCREEN-YMIN? (har)
+       (hry-to-iharey (hrymin) har))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Boundaries of the Display Area (Union all hare territories).
+;;; {For bounds of a single hare use XMAX? YMIN? etc.}
+
+(declaration (*lexpr display-xmin? display-ymin?
+                     display-xmax? display-ymax?
+                     idisplay-xmin? idisplay-ymin?
+                     idisplay-xmax? idisplay-ymax?)
+             (flonum (display-xmin?) (hdisplay-xmin? notype)
+                     (display-ymin?) (hdisplay-ymin? notype)
+                     (display-xmax?) (hdisplay-xmax? notype)
+                     (display-ymax?) (hdisplay-ymax? notype))
+             (fixnum (idisplay-xmin?) (hidisplay-xmin? notype)
+                     (idisplay-ymin?) (hidisplay-ymin? notype)
+                     (idisplay-xmax?) (hidisplay-xmax? notype)
+                     (idisplay-ymax?) (hidisplay-ymax? notype)))
+
+(defun DISPLAY-XMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdisplay-xmin? har))))
+
+(defun HDISPLAY-XMIN? (har)
+       (hrx-to-$harex (v1 display-bounds) har))
+
+(defun IDISPLAY-XMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hidisplay-xmin? har))))
+
+(defun HIDISPLAY-XMIN? (har)
+       (hrx-to-iharex (v1 display-bounds) har))
+
+(defun DISPLAY-YMIN? nargs
+      (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+           (if (hare-check har) (hdisplay-ymin? har))))
+
+(defun HDISPLAY-YMIN? (har)
+       (hry-to-$harey (v2 display-bounds) har))
+
+(defun IDISPLAY-YMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hidisplay-ymin? har))))
+
+(defun HIDISPLAY-YMIN? (har)
+       (hry-to-iharey (v2 display-bounds) har))
+
+;;; display-boundary functions continued next page
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; display-boundary functions, continued
+
+(defun DISPLAY-XMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdisplay-xmax? har))))
+
+(defun HDISPLAY-XMAX? (har)
+       (hrx-to-$harex (v3 display-bounds) har))
+
+(defun IDISPLAY-XMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hidisplay-xmax? har))))
+
+(defun HIDISPLAY-XMAX? (har)
+       (hrx-to-iharex (v3 display-bounds) har))
+
+(defun DISPLAY-YMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdisplay-ymax? har))))
+
+(defun HDISPLAY-YMAX? (har)
+       (hry-to-$harey (v4 display-bounds) har))
+
+(defun IDISPLAY-YMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hidisplay-ymax? har))))
+
+(defun HIDISPLAY-YMAX? (har)
+       (hry-to-iharey (v4 display-bounds) har))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Clearing the Screen (not to be confused with CS!).
+
+(declaration (*expr clear-display)
+	     (notype (clear-display)))
+
+(defun CLEAR-DISPLAY ()
+       ;;; Turn the top screen into "white" space.
+       (if (split?)
+           (cond
+            ((real-tv?)
+             (drawmode andc) ;;; clear all bits in top half screen
+             ;;; tvrectangle of entire top half of screen is more
+             ;;; efficient when compiled than clear-top-tty,
+             ;;; after which a substantial wait is required!
+             (tvrectangle 0 0 (tv-xmax) raw-display-bottom))
+            (t (clear-top-tty nil nil) ;;; cursor-clear 1line-at-time
+               (cursor-to-bottom-tty)));;; no sleep since no graphics
+           (charmap-clear))) ;;; update character map
+
+;;; NB: When mixing graphics with stuff on the ascii channel,
+;;; {like (cursorpos 'c)}, one must sleep after using the
+;;; ascii channel or SUBSEQUENT graphics may be clobbered!
+;;; Arbitrary user-ajustable parameter because it depends, e.g.,
+;;; on the load avg.  A flonum number of seconds to wait after
+;;; using ascii channel, e.g., to clear the screen.
+
+(declaration (special hare-wait-time) (flonum hare-wait-time))
+(setq hare-wait-time 0.1) ;;; about right place to start out.
+
+(defun CLEAR-ECHO ()
+       (cursorpos 'c)
+       (if (real-tv?) (sleep hare-wait-time))
+       t)
+
+(declaration (*expr clear-entire-screen))
+(defun CLEAR-ENTIRE-SCREEN ()
+       (clear-display)
+       (clear-echo))
+
+(macrodef visible? (har)
+          (and **tvhare-display** (get har 'vis)))
+
+(declaration (*expr display?) (notype (display?)))
+
+(defun DISPLAY? ()		;;; the var is internal ---
+       **tvhare-display**)	;;; so user won't setq it.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Hare Interrupt Chars
+
+(defun cs-all-hares-interrupt (f ch)
+       (interrupt-init f ch)				;Macro
+       (cs-all-hares))
+
+(defun display-on-interrupt (f ch)
+       (interrupt-init f ch)				;Macro
+       (display:= t))
+
+(defun display-off-interrupt (f ch)
+       (interrupt-init f ch)				;Macro
+       (display:= nil))
+
+(declaration (special **hare-clobbered-interrupts**)
+             (*lexpr hare-interrupts))
+
+(ifnot (boundp '**hare-clobbered-interrupts**)
+       (setq **hare-clobbered-interrupts** nil))
+
+(defun ascii-codep (n) ;;; is n a legitimate ascii code?
+       (and (fixp n) (not (inegp n)) (< n 128.)))
+
+(declare (notype (ttyint fixnum notype)))
+(declare (coutput (read))) ;;; qcomplr can't compile sstatus calls!
+(defun ttyint (n fun)		;;; +++
+;;;       (declare (fixnum n))
+       (sstatus ttyint n fun)
+       t)
+
+(defun HARE-INTERRUPTS nargs
+       ;;; establishes or breaks link between
+       ;;; hare-control chars and their functions.
+       ;;; (hare-interrupts nil) restores the world.
+       ;;; (hare-interrupts t) => (hare-interrupts 11. 14. 15.)
+       ;;; {ascii 11. = ^K, 14. = ^N, 15. = ^O}.
+       ;;; when 3 args, the following linkups are made:
+       ;;; ascii (arg 1) does cs-all-hares;
+       ;;; ascii (arg 2) does display:= t, refresh
+       ;;; ascii (arg 3) does display:= nil, cursorpos 'c.
+       (cond
+        ((= nargs 1)
+         (cond
+          ((eq (arg 1) t) ;;; setup the default interrupts
+            (hare-interrupts 11. 14. 15.))
+          ((arg 1.)
+           (hare-error 'WRONG-TYPE-ARG-TO-HARE-INTERRUPTS: (arg 1)))
+          (t (cond ;;; restore the world
+              (**hare-clobbered-interrupts**
+               (ttyint (1st **hare-clobbered-interrupts**)
+                       (2nd **hare-clobbered-interrupts**))
+               (ttyint (3rd **hare-clobbered-interrupts**)
+                       (4th **hare-clobbered-interrupts**))
+               (ttyint (5th **hare-clobbered-interrupts**)
+                       (6th **hare-clobbered-interrupts**))
+               (setq **hare-clobbered-interrupts** nil))
+              (t (hare-error 'NO-EXISTING-HARE-INTERRUPT-SETTINGS!?!))))))
+        ((= nargs 3.)
+         (lam (a b c) ((arg 1.) (arg 2.) (arg 3.))
+              (cond ((and (ascii-codep a) (ascii-codep b) (ascii-codep c))
+                     (cond
+                      (**hare-clobbered-interrupts**
+                       ;;; redefining -- reuse the conses
+                       (rplac1 **hare-clobbered-interrupts** a)
+                       (rplac2 **hare-clobbered-interrupts**
+                               (status ttyint a))
+                       (rplac3 **hare-clobbered-interrupts** b)
+                       (rplac4 **hare-clobbered-interrupts**
+                               (status ttyint b))
+                       (rplac5 **hare-clobbered-interrupts** c)
+                       (rplac6 **hare-clobbered-interrupts**
+                               (status ttyint c)))
+                      (t ;;; first definition, cons up new list
+                       (setq **hare-clobbered-interrupts**
+                             (list a (status ttyint a)
+                                   b (status ttyint b)
+                                   c (status ttyint c)))))
+                     (ttyint a (function cs-all-hares-interrupt))
+                     (ttyint b (function display-on-interrupt))
+                     (ttyint c (function display-off-interrupt)))
+                    (t
+                     (hare-error 'WRONG-TYPE-ARGS-TO-HARE-INTERRUPTS:
+                                 a b c)))))
+        (t (hare-error 'WRONG-NUMBER-OF-ARGS-TO-HARE-INTERRUPTS:
+                       nargs)))
+       ;;; return the save info
+       **hare-clobbered-interrupts**)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Toggling the use of the top-tty for the display
+
+
+(declaration (*expr display:=)
+	     (notype (display:= notype)))
+
+(defun DISPLAY:= (x)
+       ;;; Turn splitscreening for display-area on/off.
+       ;;; The idea is to quickly toggle between using full
+       ;;; screen for editing&debugging, and reserving
+       ;;; top portion of screen for displaying graphics.
+       ;;; Returns previous value.
+       (charmap-clear)	;;; note that no tyo'd chars remain
+       (cond		;;; in display area unless done below
+        (x (cond (**tvhare-display**
+                  (cond ((= echo-area (echolines?))
+                         (refresh-all-hares))
+                        (t ;;; to modify echo-size: pretend no display
+                         (turn-display-from-off-to-on)))
+                  t)
+                 (t (turn-display-from-off-to-on)
+                    nil)))
+        (**tvhare-display** ;;; turn display from on to off
+          (setq **tvhare-display** nil)
+          (splitscreen nil)
+          (cursorpos 'c)
+          t)
+        (t (cursorpos 'c)
+           nil)))
+
+(defun turn-display-from-off-to-on ()
+       (setq **tvhare-display** t)
+       (if (split?) (splitscreen nil)) ;;; [unlikely to happen]
+       (cursorpos 'c)		;;; clears entire screen
+       (splitscreen echo-area)	;;; does not change screen
+       (cursor-to-bottom-tty)	;;; aesthetically nicer
+       (if (real-tv?)		;;; recover from ascii channel use
+           (sleep hare-wait-time))
+       (redisplay-all-hares))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Creating and Destroying Hares
+
+
+(declaration (*expr create-hare)
+	     (notype (create-hare)))
+
+(defun CREATE-HARE ()
+       ;;; Creates a new hare and assigns it
+       ;;; dflt initial values for all parameters.
+       ;;; A hare is a gensym with an appropriate
+       ;;; plist.  It is up to user whether to intern it.
+       ;;; NB: Hares are invisible when first created.
+       ;;; This allows user to override defaults before
+       ;;; making hare appear by (vis:= T).
+       (lam (har) ((gensym))
+            (putprop har 'hare 'nodetype)
+            (putprop har ;;; xmin, ymin, xmax, ymax
+                     (vector (hrxmin) (hrybot) (hrxmax) (hrymax))
+                     'bounds)
+            (putprop har ;;; xhome, yhome
+                     (point 0 0)
+                     'home)
+            (putprop har ;;; penup/down, ink (drawmode)
+                     (cons t xor)
+                     'peninfo)
+            (putprop har ;;; xcor, ycor, hdg, scl (4=>raw 1)
+                     (vector 0 0 0 4)
+                     'state)
+            (putprop har (cons t t) 'oob)
+            (putprop har ;;; outl, show, complement.
+                     (list t t nil) ;;; rplac-able
+                     'options)
+            (putprop har ;;; vecs, pnts, chars, miscel
+                     (vector nil nil nil nil)
+                     'display-list)
+            (putprop har nil 'vis) ;;; visibility
+            (setq hares (cons har hares))
+            har))
+
+(declaration (*lexpr destroy-hare))
+
+(defun DESTROY-HARE nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdestroy-hare har))))
+
+(declaration (*expr hdestroy-hare))
+(defun HDESTROY-HARE (har)
+       ;;; User procedure for destroying useless HARE
+       (hvis:= nil har) ;;; adjusts display-bounds.
+       (destroy-hare-int har)
+       (setq HARES (delq har HARES))
+       (if (eq har hare) (setq hare nil))
+       t)
+
+(defun destroy-hare-int (har)
+       (mapc (fn (prop) (remprop har prop))
+             (hareprops))
+       (remprop har 'nodetype))
+
+(declaration (*expr destroy-all-hares))
+(defun DESTROY-ALL-HARES ()
+       (display:= nil)
+       (mapc (function destroy-hare-int) hares)
+       (setq hares nil hare nil)
+       (display-bounds-reinit)
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Basic Hare Options -- Internal Routines, Macros.
+;;; User functions for these purposes appear below.
+
+(macrodef outlined? (har)
+          (1st (get har 'options)))
+
+(macrodef cursed? (har)
+          (2nd (get har 'options)))
+
+(macrodef complemented? (har)
+          (3rd (get har 'options)))
+
+(macrodef outline (har)
+          ;;; Outlines har's display area.  {No need
+          ;;; to make this a user routine, since its
+          ;;; always done when its supposed to be.}
+          (progn (drawmode xor)
+                 (drawb (get har 'bounds))))
+
+(macrodef complement (har)
+          (progn (drawmode xor)
+                 (drawr (get har 'bounds))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; HARE CURSOR:
+;;; 	TVHARE does not support the TVRTLE hack of user-defined
+;;; cursors.  The overhead would be high, as cursor-drawing
+;;; involves ensuring that the user routine does not use a
+;;; hare which is showing (=> infinite recursion), as well
+;;; as not creating vectors on the display-list to represent
+;;; the cursor, as well as ensuring that the routine is state-
+;;; transparent (perhaps by supplying a system-hare).  Also,
+;;; the cursor is just a debugging aid which normally is hidden
+;;; in the final display.  The system can draw a simple cursor
+;;; efficiently by calling the vector routines directly without
+;;; going through FD's and RT's etc.  There is also the problem
+;;; of users wanting to draw hares in other-than-xor mode; and
+;;; also taking care of non-tv hares which display text using
+;;; cursorpos, etc.  However, if enough users complain that they
+;;; want a user-drawn cursor capability, it will be added.
+;;; Perhaps a way will be found to reduce its overhead so it
+;;; won't be painful to those who do NOT need it.
+
+(defun cos160 macro (call) (cosine 160.))
+(defun sin160 macro (call) (sine 160.))
+
+(defun real-curse (har)
+ ;;; 	Draw (or erase) the cursor for har. NB: Should not
+ ;;; be called unless har is visible, display is on, and show?=t!
+ ;;; Size of cursor is independent of scale: 8 tv raster dots.
+ ;;; Note: x, y are in raw-tv units here.
+       (drawmode xor)
+       (prog (stat x y qees a b ac160 bs160 as160 bc160)
+             (declare (fixnum x y qees)
+                      (flonum a b ac160 bs160 as160 bc160))
+ ;;; 	{Caveat: We need the sin and cos of the actual
+ ;;; heading as well as the heading +- 160 degrees.  This is
+ ;;; done here using the flonum vars, calling sin&cos once,
+ ;;; and then using the sin(sum) cos(sum) hack.  But it's
+ ;;; unclear whether saving the flonum intermediate results
+ ;;; is really a good idea: are they just on the flonum pdl,
+ ;;; or are they causing flonum consing? It's probably worth
+ ;;; getting this right, since the cursor routine is run OFTEN.}
+             (setq stat  (get har 'state)
+                   x     (hrx-to-irawx (v1 stat))
+                   y     (hry-to-irawy (v2 stat))
+                   qees  (v3 stat)
+                   a     (*$ 8.0 (qsin qees))
+                   b     (*$ -8.0 (qcos qees)) ;;; raw tv +y -> down
+                   ac160  (*$ a (cos160))
+                   bs160  (*$ b (sin160))
+                   as160  (*$ a (sin160))
+                   bc160  (*$ b (cos160)))
+             (draw-tv-line x y (+ x (round$ (-$ ac160 bs160)))
+                               (+ y (round$ (+$ bc160 as160))))
+             (draw-tv-line x y (+ x (round$ (+$ ac160 bs160)))
+                               (+ y (round$ (-$ bc160 as160))))
+             (return T)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Simulating cursor for pos & hdg on non-ty using tyo's
+
+(macrodef hrx-to-cursorx (x)
+         (idiv (hrx-to-irawx x) (tv-char-width)))
+
+(macrodef hry-to-cursory (y)
+          (idiv (hry-to-irawy y) (tv-char-ht)))
+
+(defun fake-curse (har) ;;; cursor for non-tv's using tyo's
+       (prog (stat qhdg x y lx ly rx ry)
+             (declare (fixnum qhdg x y lx ly rx ry))
+             (setq stat (get har 'state)
+                   qhdg (v3 stat)
+                   x    (hrx-to-cursorx (v1 stat))
+                   y    (hry-to-cursory (v2 stat)))
+             (cond ((and (> qhdg -90.) (not (> qhdg +90.)))
+                    (setq lx (1- x) ly (1+ y) rx (1+ x) ry (1+ y)))
+                   ((and (> qhdg +90.) (not (> qhdg +270.)))
+                    (setq lx (1- x) ly y rx x ry (1+ y)))
+                   ((and (> qhdg +270.) (not (> qhdg +450.)))
+                    (setq lx (1- x) ly (1+ y) rx (1- x) ry (1- y)))
+                   ((and (> qhdg 450.) (not (> qhdg 630.)))
+                    (setq lx x ly (1- y) rx (1- x) ry y))
+                   ((or (> qhdg 630.) (not (> qhdg -630.)))
+                    (setq lx (1- x) ly (1- y) rx (1+ x) ry (1- y)))
+                   ((and (> qhdg -630.) (not (> qhdg -450)))
+                    (setq lx x ly (1- y) rx (1+ x) ry y))
+                   ((and (> qhdg -450.) (not (> qhdg -270.)))
+                    (setq lx (1+ x) ly (1- y) rx (1+ x) ry (1+ y)))
+                   ((setq lx x ly (1+ y) rx (1+ x) ry y)))
+             (charmap:= 'xor 42. x y) ;;; tip of arrow = *
+             (charmap:= 'xor 43. lx ly) ;;; "left" wing = +
+             (charmap:= 'xor 43. rx ry) ;;; "right" wing = +
+             (cursor-to-bottom-tty)
+             (return t)))
+
+(defun curse (har)
+       (cond (fake-cursor (fake-curse har))
+             (t (real-curse har))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Internal hacks for updating the DISPLAY-LIST.
+
+(macrodef remember-vector (vec har)
+          (lam (dis) ((get har 'display-list))
+               (rplacv1 dis
+                       (cons vec (v1 dis)))
+               t))
+
+(macrodef remember-point (pnt har)
+          (lam (dis) ((get har 'display-list))
+               (rplacv2 dis
+                       (cons pnt (v2 dis)))
+               t))
+
+(macrodef remember-chars (nchrs har)
+          ;;; nchrs is a LIST of char specs.
+          (lam (dis) ((get har 'display-list))
+               (rplacv3 dis
+                        (cons nchrs (v3 dis)))
+               t))
+
+(macrodef remember-miscel (misc har)
+          ;;; misc is a miscellaneous form to eval
+          ;;; when performing display list.  Allows
+          ;;; for adding open-ended class of hacks
+          ;;; as well as std pnts, lines, and chars.
+          (lam (dis) ((get har 'display-list))
+               (rplacv4 dis
+                        (cons misc (v4 dis)))
+               t))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Internal routines for clobbering various fields
+
+(defun int-clobber-state (har pen x y hdg scl)
+       ;;; Takes care of cursor while clobbering fields.
+       ;;; NIL value means leave this field as is.
+       ;;; (All legal values are fixnums).
+       (prog (stat vis cur vec)
+             (setq stat (get har 'state)
+                   vis  (visible? har)
+                   cur  (and vis (cursed? har)))
+             (if cur (curse har))
+             (if (and (car pen) (or x y))
+                  (setq vec (vector (v1 stat)
+                                    (v2 stat)
+                                    (or x (v1 stat))
+                                    (or y (v2 stat))))
+                  (remember-vector vec har)
+                  (if vis (drawmode (cdr pen))
+                          (drawv vec)))
+             (if x (rplacv1 stat x))
+             (if y (rplacv2 stat y))
+             (if hdg (rplacv3 stat hdg))
+             (if scl (rplacv4 stat scl))
+             (if cur (curse har))
+             (return vec)))
+
+(defun int-clobber-bounds (har xmin ymin xmax ymax)
+       ;;; nil means leave current value as is
+       ;;; all legal values are fixnums
+       (lam (bou out vis) ((get har 'bounds) nil (get har 'vis))
+            (cond
+             ((and vis **tvhare-display**)
+              (if (setq out (outlined? har)) (outline har))
+              (if xmin (rplacv1 bou xmin))
+              (if xmax (rplacv3 bou xmax))
+              (if ymax (rplacv4 bou ymax))
+              (if ymin (rplacv2 bou ymin))
+              (cond ((revise-display-bounds)) ;;; clears & refreshes
+                    (out (outline har))))
+             (t (if xmin (rplacv1 bou xmin))
+                (if xmax (rplacv3 bou xmax))
+                (if ymax (rplacv4 bou ymax))
+                (if ymin (rplacv2 bou ymin))
+                (if vis (revise-display-bounds)))))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Per-Hare Scale-Factor Access & Modify Funs:
+
+(declaration (*lexpr scl? iscl? scl:=)
+             (flonum (scl?) (hscl? notype))
+             (fixnum (iscl?) (hiscl? notype))
+             (notype (scl:= notype) (hscl:= notype notype)))
+
+(defun SCL? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hscl? har))))
+
+(defun HSCL? (har)
+       (intscl-to-$rawscl (v4 (get har 'state))))
+
+(defun ISCL? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiscl? har))))
+
+(defun HISCL? (har)
+       (intscl-to-irawscl (v4 (get har 'state))))
+
+(defun SCL:= nargs
+       (lam (num har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (if (hare-check har)
+		(cond ((and (number-check num)
+			    (plusp num))
+		       (hscl:= num har))
+		      (t (hare-error 'SCL-MUST-BE-POSITIVE:
+				     num))))))
+
+(defun HSCL:= (num har)
+       ;;; Redefines this hare's coordinate system.
+       ;;; Does not move hare.
+       (rplacv4 (get har 'state) (rawscl-to-intscl num))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; XMIN, XMAX, YMIN, YMAX, XHOME, YHOME
+;;; These functions access/modify the boundary info in hare
+;;; coords.  Probably useful to implement "clipping" in
+;;; user oob handlers.  No need for XHOME? or YHOME? funs
+;;; since both are always 0 in hare coords (by definition).
+;;; First, XMIN.
+
+(declaration (*lexpr xmin? ixmin? xmin:=)
+             (flonum (xmin?) (hxmin? notype))
+	     (*expr hxmin?)
+             (fixnum (ixmin?) (hixmin? notype))
+             (notype (xmin:= notype) (hxmin:= notype notype)))
+
+(declare (notype (off-screen-warnx? notype fixnum notype)))
+
+(defun XMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hxmin? har))))
+
+(defun HXMIN? (har)
+       (hrx-to-$harex (v1 (get har 'bounds)) har))
+
+(defun IXMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hixmin? har))))
+
+(defun HIXMIN? (har)
+       (hrx-to-iharex (v1 (get har 'bounds)) har))
+
+(defun XMIN:= nargs
+       (lam (nmin har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+             ;;; NB: Currently does not check if
+             ;;; XMIN =< XMAX.  Perhaps should?
+            (and (hare-check har) (number-check nmin)
+                 (hxmin:= nmin har))))
+
+(defun off-screen-warnx? (harex hrx har)
+       ;;; See if hrx is offscreen and if so
+       ;;; print a warning message.  NOT an error!
+       ;;; {harex is hrx in hare coords}
+       (declare (fixnum hrx))
+       (cond
+        ((< hrx (hrxmin))
+         (hare-warning har 'OFF-SCREEN-TO-THE-WEST: harex))
+        ((> hrx (hrxmax))
+         (hare-warning har 'OFF-SCREEN-TO-THE-EAST: harex)))
+       t)
+
+(defun HXMIN:= (nmin har)
+       (lam (hrmin) ((harex-to-hrx nmin har))
+            (declare (fixnum hrmin))
+            (off-screen-warnx? nmin hrmin har)
+            (int-clobber-bounds har hrmin nil nil nil)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; YMIN
+
+(declaration (*lexpr ymin? iymin? ymin:=)
+             (flonum (ymin?) (hymin? notype))
+             (fixnum (iymin?) (hiymin? notype))
+             (notype (ymin:= notype) (hymin:= notype notype)))
+
+(declare (notype (off-screen-warny? notype fixnum notype)))
+
+(defun YMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hymin? har))))
+
+(defun HYMIN? (har) (hry-to-$harey (v2 (get har 'bounds)) har))
+
+(defun IYMIN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiymin? har))))
+
+(defun HIYMIN? (har)
+       (hry-to-iharey (v2 (get har 'bounds)) har))
+
+(defun YMIN:= nargs
+       (lam (nmin har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har) (number-check nmin)
+                 (hymin:= nmin har))))
+
+(defun off-screen-warny? (harey hry har)
+       ;;; cf analogous x routine
+       (declare (fixnum hry))
+       (cond
+        ((< hry (hrymin))
+         (hare-warning har 'OFF-SCREEN-TO-THE-SOUTH: harey))
+        ((> hry (hrymax))
+         (hare-warning har 'OFF-SCREEN-TO-THE-NORTH: harey)))
+       t)
+
+(defun HYMIN:= (nmin har)
+       (lam (hrmin) ((harey-to-hry nmin har))
+            (declare (fixnum hrmin))
+            (off-screen-warny? nmin hrmin har)
+            (int-clobber-bounds har nil hrmin nil nil)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; XMAX
+
+(declaration (*lexpr xmax? ixmax? xmax:=)
+             (flonum (xmax?) (hxmax? notype))
+             (fixnum (ixmax?) (hixmax? notype))
+             (notype (xmax:= notype) (hxmax:= notype notype)))
+
+(defun XMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hxmax? har))))
+
+(defun HXMAX? (har)
+       (hrx-to-$harex (v3 (get har 'bounds)) har))
+
+(defun IXMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hixmax? har))))
+
+(defun HIXMAX? (har)
+       (hrx-to-iharex (v3 (get har 'bounds)) har))
+
+(defun XMAX:= nargs
+       (lam (nxmax har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check nxmax)
+		 (hxmax:= nxmax har))))
+
+(defun HXMAX:= (nxmax har)
+       (lam (hrxmax) ((harex-to-hrx nxmax har))
+            (declare (fixnum hrxmax))
+            (off-screen-warnx? nxmax hrxmax har)
+            (int-clobber-bounds har nil nil hrxmax nil)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; YMAX
+
+(declaration (*lexpr ymax? iymax? ymax:=)
+	     (*expr hymax? hiymax? hymax:=)
+             (flonum (ymax?) (hymax? notype))
+             (fixnum (iymax?) (hiymax? notype))
+             (notype (ymax:= notype) (hymax:= notype notype)))
+
+(defun YMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hymax? har))))
+
+(defun HYMAX? (har)
+       (hry-to-$harey (v4 (get har 'bounds)) har))
+
+(defun IYMAX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiymax? har))))
+
+(defun HIYMAX? (har)
+       (hry-to-iharey (v4 (get har 'bounds)) har))
+
+(defun YMAX:= nargs
+       (lam (nymax har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check nymax)
+		 (hymax:= nymax har))))
+
+(defun HYMAX:= (nymax har)
+       (lam (hrymax) ((harey-to-hry nymax har))
+            (declare (fixnum hrymax))
+            (off-screen-warny? nymax hrymax har)
+            (int-clobber-bounds har nil nil nil hrymax)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Changing XHOME and YHOME.
+;;; (XHOME? and YHOME? are always 0 so no funs).
+;;; Changing them redefines the origin of coordinates.
+;;; It does not move the hare!  To do that, do:
+;;; (xhome:= newx) (yhome:= newy) (home).
+
+(declaration (*lexpr xhome:= yhome:=)
+             (notype (xhome:=) (hxhome:= notype)
+                     (yhome:=) (hyhome:= notype)))
+
+(defun XHOME:= nargs
+       (lam (nxhom har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check nxhom)
+		 (hxhome:= nxhom har))))
+
+(defun HXHOME:= (nxhom har)
+       (rplaca (get har 'home) (harex-to-hrx nxhom har))
+       T)
+
+(defun YHOME:= nargs
+       (lam (nyhom har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+                 (number-check nyhom)
+                 (hyhome:= nyhom har))))
+
+(defun HYHOME:= (nyhom har)
+       (rplacd (get har 'home) (harey-to-hry nyhom har))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Whether a hare is VISIBLE.
+;;; Not the same as penstate!
+;;; AN "INVISIBLE hare" CREATES A DISPLAY-LIST.
+;;; The entire display list is done at once if and when
+;;; hare becomes visible.  Hare-cursor, outline,
+;;; and graphics are all controlled by vis.
+;;; Caveat: If (display:= NIL) is in effect, then
+;;; "visible hares" don't actually get refreshed.
+
+(declaration (*lexpr vis? vis:=)
+	     (*expr hvis? hvis:=))
+
+(defun VIS? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (HVIS? har))))
+
+(defun HVIS? (har) (get har 'vis))
+
+(defun VIS:= nargs
+       (lam (nvis har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (tnil-check nvis)
+		 (hvis:= nvis har))))
+
+(defun HVIS:= (nvis har)
+       (cond
+        ((eq nvis (get har 'vis)))
+        (t (putprop har nvis 'vis)
+           (ifnot (revise-display-bounds) ;;; clears & refreshes
+                  (if **tvhare-display**
+                      (clear-entire-screen)
+                      (sleep hare-wait-time)
+                      (redisplay-all-hares)))))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Whether a hare normally complements its territory.
+
+(declaration (*lexpr complement? complement:=))
+
+(defun COMPLEMENT? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hcomplement? har))))
+
+(defun HCOMPLEMENT? (har) (complemented? har))
+
+(defun COMPLEMENT:= nargs
+       (lam (ncomp har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (tnil-check ncomp)
+		 (hcomplement:= ncomp har))))
+
+(declaration (*expr hcomplement:=)
+	     (notype (hcomplement:= notype notype)))
+
+(defun HCOMPLEMENT:= (tornil har)
+       (lam (opts) ((get har 'options))
+            (ifnot (eq (3rd opts) tornil)
+                   (rplac3 opts tornil)
+                   (if (visible? har) (complement har))))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Whether to SHOW the hare cursor 
+
+(declaration (*lexpr show? show:=))
+
+(defun SHOW? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hshow? har))))
+
+(defun HSHOW? (har) (cursed? har))
+
+(defun SHOW:= nargs
+       (lam (nshow har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (tnil-check nshow)
+		 (hshow:= nshow har))))
+
+(defun HSHOW:= (nshow har)
+       (lam (opts) ((get har 'options))
+            (if (and (visible? har)
+                     (not (eq nshow (2nd opts))))
+                (curse har))
+            (rplac2 opts nshow))
+       t)
+
+;;; Concessions to compatibility (tho the names are an anomoly):
+
+(declaration (*lexpr ST HT))
+
+(defun ST nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hshow:= t har))))
+
+(defun HT nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hshow:= nil har))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Penstate
+
+(declaration (*lexpr pen? pen:= pu pd))
+
+(defun PEN? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hpen? har))))
+
+(defun HPEN? (har)
+       (car (get har 'peninfo)))
+
+(defun PEN:= nargs
+       (lam (npen har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (tnil-check npen)
+		 (hpen:= npen har))))
+
+(defun HPEN:= (npen har)
+       (rplaca (get har 'peninfo) npen)
+       t)
+
+(defun PU nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (hpen:= nil har)))
+
+(defun PD nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (hpen:= t har)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; What TK-TV drawing mode to use for this hare.
+;;; Dflt is XOR.  IOR and ANDC are also allowed.
+;;; Other values not allowed but used internally.
+;;; Notice that mode NAMES are passed around by hares!
+;;; This for mnemonicity and avoidance of number consing.
+
+(declaration (*lexpr ink? ink:=))
+
+(defun INK? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            ;;; returns mode NAME (not fixnum)
+            (if (hare-check har) (hink? har))))
+
+(defun HINK? (har)
+       (lam (ink) ((cdr (get har 'peninfo)))
+            (cond ((= ink xor) 'xor)
+                  ((= ink ior) 'ior)
+                  (t 'andc))))
+
+(defun INK:= nargs
+       ;;; Takes mode NAME, not fixnum (eg (ink:= 'xor))
+       ;;; {Used on display-list in next refresh.}
+       (lam (mode har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (if (hare-check har)
+		(cond ((memq mode '(xor ior andc))
+		       (hink:= mode har))
+		      (t (hare-error 'BAD-INK: mode))))))
+
+(defun HINK:= (mode har)
+       (rplacd (get har 'peninfo) (symeval mode))
+       T)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Out-Of-Bounds-Handler hackery.  OOBX for
+;;; out-of-bounds X, OOBY for out-of-bounds Y.
+;;; If the oob for a hare is nil, then no out-of-bounds
+;;; errors occur for that dimension:  vectors will be allowed
+;;; anywhere on screen, and just "clipped" at screen edge.
+;;; if T, violating hare boundary causes error break; it it's
+;;; a function (expr or subr) name, that's the user error handler
+;;; for out-of-bounds errors.  The dflt is T.  The handler
+;;; should take a hare coordinate (X or Y depending on which
+;;; handler) as its 1st input, and a hare as its 2nd; it should
+;;; return a hare coordinate as output, if it returns at all.
+
+(declaration (*lexpr oobx? ooby? oobx:= ooby:=))
+
+(defun OOBX? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hoobx? har))))
+
+(defun HOOBX? (har)
+       (car (get har 'oob)))
+
+(defun OOBY? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hooby? har))))
+
+(defun HOOBY? (har)
+       (cdr (get har 'oob)))
+
+(defun legal-oobp (noob)
+       ;;; internal check for legality of oob value
+       (cond
+        ((or (null noob) ;;; means ignore oob errors
+             (eq noob t) ;;; means cause hare error
+             (and (symbolp noob) ;;; user oob handler should be
+                   ;;; an expr or subr taking 2 args: coord, and
+                   ;;; hare.  (correct# args not checked for here).
+                  (getl noob '(expr subr))))
+         T)
+        (t (hare-error 'ILLEGAL-OOB-HANDLER noob))))
+
+(defun OOBX:= nargs
+       (lam (noob har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (legal-oobp noob)
+		 (hoobx:= noob har))))
+            
+(defun OOBY:= nargs
+       (lam (noob har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (legal-oobp noob)
+		 (hooby:= noob har))))
+
+(defun HOOBX:= (noob har)
+       (rplaca (get har 'oob) noob)
+       t)
+
+(defun HOOBY:= (noob har)
+       (rplacd (get har 'oob) noob)
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Hare Heading Access & Modify Functions
+;;; Modifying the HDG of a visible hare of
+;;; course changes the display.
+
+(declaration (*lexpr hdg? ihdg? hdg:=)
+	     (*expr hhdg? hihdg? hhdg:=)
+             (flonum (HDG?) (HHDG? notype))
+             (fixnum (IHDG?) (HIHDG? notype))
+             (notype (HDG:= notype) (HHDG:= notype notype)))
+
+(defun HDG? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hhdg? har))))
+
+(defun HHDG? (har)
+       (qees-to-$degs (v3 (get har 'state))))
+
+(defun IHDG? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hihdg? har))))
+
+(defun HIHDG? (har)
+       (qees-to-idegs (v3 (get har 'state))))
+
+(defun HDG:= nargs
+       (lam (degs har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check degs)
+		 (hhdg:= degs har))))
+
+(defun HHDG:= (degs har)
+       (int-clobber-state
+        har nil nil nil (degs-to-qees degs) nil))
+
+(defun RT nargs
+       (lam (degs har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check degs)
+		 (hrt degs har))))
+
+(defun HRT (degs har)
+       (int-clobber-state har nil nil nil
+                          (filter-qees
+                           (+ (v3 (get har 'state))
+                              (degs-to-qees degs)))
+                          nil))
+
+(defun LT nargs
+       (lam (degs har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check degs)
+		 (hlt degs har))))
+
+(defun HLT (degs har)
+       (cond ((fixp degs) (hrt (- degs) har))
+             ((hrt (-$ degs) har))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; OUTLINE hackery:  Whether to draw the outline of
+;;; the hare's boundary.   Dflt is T (yes).
+
+(declaration (*lexpr outline? outline:=))
+
+(defun OUTLINE? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (houtline? har))))
+
+(defun HOUTLINE? (har) (outlined? har))
+
+(defun OUTLINE:= nargs
+       ;;; T or Nil as to drawing of hare boundary.
+       (lam (noutl har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (tnil-check noutl)
+		 (houtline:= noutl har))))
+
+(defun HOUTLINE:= (noutl har)
+       (lam (opts) ((get har 'options))
+            (ifnot (eq noutl (1st opts))
+                   (if (visible? har) (outline har))
+                   (rplac1 opts noutl)))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Examining hare's current position.
+;;; Routines for modifying them (which
+;;; involves vector drawing) are handled below.
+
+(declaration (*lexpr xcor? ycor? ixcor? iycor? here)
+             (flonum (xcor?) (hxcor? notype)
+                     (ycor?) (hycor? notype))
+             (fixnum (ixcor?) (hixcor? notype)
+                     (iycor?) (hiycor? notype)))
+
+(defun XCOR? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hxcor? har))))
+
+(defun HXCOR? (har)
+       (hrx-to-$harex (v1 (get har 'state)) har))
+
+(defun IXCOR? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hixcor? har))))
+
+(defun HIXCOR? (har)
+       (hrx-to-iharex (v1 (get har 'state)) har))
+
+(defun YCOR? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hycor? har))))
+
+(defun HYCOR? (har)
+       (hry-to-$harey (v2 (get har 'state)) har))
+
+(defun IYCOR? nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hiycor? har))))
+
+(defun HIYCOR? (har)
+       (hry-to-iharey (v2 (get har 'state)) har))
+
+(defun HERE nargs
+       ;;; Returns a handle to the hare's current
+       ;;; position, and hdg.  NB: Unlike in LLOGO,
+       ;;; the internal structure of this frob is
+       ;;; NOT useful to the user -- other than to
+       ;;; pass it back to SETHARE, RECT, or BOX.
+       ;;; This allows it to be efficient &
+       ;;; therefore one need not fear using it.
+       ;;; To look at the components separately,
+       ;;; look at them separately! (?!)
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (HHERE har))))
+
+(defun HHERE (har)
+       ;;; Must create a copy since otherwise
+       ;;; hare movements intervening between now
+       ;;; and the SETHARE will clobber (rplac) it!
+       ;;; But after all, its just a HUNK4!
+       (copyvector (get har 'state)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; OUT OF BOUNDS CHECKING.
+;;; Checking whether coordinates of a given point
+;;; are inbounds, and taking needed actions if not.
+;;; Bounds are the user-chosen bounds for this hare.
+;;; The screen bounds are not considered relevant.
+;;; Vectors which happen to fall on the screen will
+;;; appear.  When the user chooses offscreen bounds,
+;;; a warning is printed and that is all.  Perhaps the
+;;; user wants to create a display-list file which
+;;; takes advantage of the entire 2000 feet of paper
+;;; on the xgp spool!  The tv-screen is just a window
+;;; on the hare's world.
+
+(declare (fixnum (xcheck fixnum notype) (ycheck fixnum notype)))
+
+(defun xcheck (hrx har)
+	;;; 	Hrx is an internal HR format x coord.  Checks if
+	;;; inbounds for har; if no, does the out-of-bound handler.
+       (lam (bou oobx) ((get har 'bounds) nil)
+            (cond
+             ((and (or (< hrx (v1 bou)) (> hrx (v3 bou)))
+                   (setq oobx (car (get har 'oob))))
+              (harex-to-hrx
+               (cond ((eq oobx t)
+		      (hare-error 'OUT-OF-BOUNDS-X:
+                                  (hrx-to-$harex hrx har)
+                                  har))
+		     (t (funcall oobx ;;; flonum forced here:++
+				 (hrx-to-$harex hrx har)
+				 har)))
+              har))
+             (t hrx))))
+
+(defun ycheck (hry har)
+       ;;; See xcheck doc.
+       (lam (bou ooby) ((get har 'bounds) nil)
+            (cond
+             ((and (or (< hry (v2 bou)) (> hry (v4 bou)))
+                   (setq ooby (cdr (get har 'oob))))
+              (harey-to-hry
+               (cond
+                ((eq ooby T)
+                 (hare-error 'OUT-OF-BOUNDS-Y:
+                             (hry-to-$harey hry har)
+                             har))
+                (t (funcall ooby ;;; note flonum forced here:++
+                            (hry-to-$harey hry har)
+                            har)))
+               har))
+             (t hry))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Modifying the turtles position by changing
+;;; XCOR or YCOR directly.
+
+(declaration (*lexpr setxy setx sety)
+             (notype (setxy notype notype)
+                     (hsetxy notype notype notype)
+                     (setx notype)
+                     (hsetx notype notype)
+                     (sety notype)
+                     (hsety notype notype))
+	     (*expr hsetxy hsetx hsety))
+
+(defun SETXY nargs
+       (lam (harx hary har)
+            ((arg 1) (arg 2) (cond ((> nargs 2) (arg 3)) (t hare)))
+            (and (hare-check har)
+		 (number-check harx)
+		 (number-check hary)
+		 (hsetxy harx hary har))))
+
+(defun HSETXY (harx hary har)
+       (int-clobber-state har (get har 'peninfo)
+                          (xcheck (harex-to-hrx harx har) har)
+                          (ycheck (harey-to-hry hary har) har)
+                          nil nil))
+
+(defun SETX nargs
+       (lam (harx har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check harx)
+		 (hsetx harx har))))
+
+(defun HSETX (harx har)
+       (int-clobber-state har (get har 'peninfo)
+                          (xcheck (harex-to-hrx harx har) har)
+                          nil nil nil))
+
+(defun SETY nargs
+       (lam (hary har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check hary)
+		 (hsety hary har))))
+
+(defun HSETY (hary har)
+       (int-clobber-state har (get har 'peninfo)
+                          nil
+                          (ycheck (harey-to-hry hary har) har)
+                          nil nil))
+
+;;; cont'd
+
+;;; chging xcor,ycor -- cont'd
+
+(declaration (*lexpr sethare home)
+             (notype (sethare notype)
+                     (hsethare notype notype)
+                     (home)
+                     (hhome notype)))
+
+(defun SETHARE nargs
+       ;;; reset hares pos & hdg from statvec.
+       (lam (statvec har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (if (hare-check har) (hsethare statvec har))))
+
+(defun HSETHARE (statvec har)
+       ;;; Note that if coordinates (home, scale) are
+       ;;; diddled between HERE and SETHARE, the turtle
+       ;;; will go to the same old physical spot!  However,
+       ;;; the new values of XCOR etc. will not = the old.
+       ;;; Ignores scl (the v4 slot).
+       (int-clobber-state har
+                          (get har 'peninfo)
+                          (v1 statvec)
+                          (v2 statvec)
+                          (v3 statvec)
+                          nil))
+
+(defun HOME nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hhome har))))
+
+(defun HHOME (har)
+       (lam (home) ((get har 'home))
+            (int-clobber-state har
+                               (get har 'peninfo)
+                               (pointx home)
+                               (pointy home)
+                               0
+                               nil)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; The main point of it all:
+
+(declaration (*lexpr fd bk))
+
+(defun FD nargs
+       (lam (steps har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check steps)
+		 (hfd steps har))))
+
+(defun HFD (steps har)
+       (hfd-pen (get har 'peninfo) steps har))
+
+(defun hfd-pen (pen steps har)
+       (prog (stat hdg scl)
+             (declare (fixnum hdg scl))
+             (setq stat (get har 'state)
+                   hdg  (v3 stat)
+                   scl  (v4 stat))
+              ;;; We could pre-compute (times steps scl)
+              ;;; as a flonum value here but it is unclear
+              ;;; whether it would save anything; also that
+              ;;; that would probably result in flonum consing.
+              (return
+               (int-clobber-state har pen
+                (xcheck (+ (v1 stat)
+			   (round$ (*$ (float steps)
+				       (float scl)
+				       (qsin hdg))))
+			har)
+                (ycheck (+ (v2 stat)
+			   (round$ (*$ (float steps)
+				       (float scl)
+				       (qcos hdg))))
+			har)
+                nil nil))))
+
+(defun BK nargs
+       (lam (steps har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+		 (number-check steps)
+		 (hbk steps har))))
+
+(defun HBK (steps har)
+       (cond
+        ((fixp steps) (hfd (- steps) har))
+        ((hfd (-$ steps) har))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; User Manip of Ind Points
+
+(declaration (*lexpr pt))
+
+(defun PT nargs
+       ;;; Turn on the point at the current location,
+       ;;; modulo current penstate, ink, etc.
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hpt har))))
+
+(defun HPT (har)
+       (prog (stat pen pnt)
+             (setq pen  (get har 'peninfo))
+             (ifnot (car pen) (return nil))
+             (setq stat (get har 'state)
+                   pnt  (point (v1 stat) (v2 stat)))
+             (remember-point pnt har)
+             (if (visible? har)
+                 (drawmode (cdr pen))
+                 (drawp pnt))
+             (return pnt)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; User Version of DRAWR -- (cf. BOX).
+;;; Takes a MARK (ie, a HERE vector) as 1st input.
+;;; Diddles ("shades") points in rectangle between
+;;; mark and cursor, modulo current penstate, ink.
+
+(declaration (*lexpr shade))
+
+(defun SHADE nargs ;;; called RECT in earlier version
+       (lam (mark har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (harep har)
+                 (vectorp mark)
+                 (fixp (v1 mark))
+                 (fixp (v2 mark))
+                 (hshade mark har))))
+
+(defun HSHADE (mark har)
+       (prog (pen stat vec obj)
+             (setq pen (get har 'peninfo))
+             (ifnot (car pen) (return nil))
+             (setq stat (get har 'state)
+                   vec  (vector (v1 stat)
+				(v2 stat)
+				(v1 mark)
+				(v2 mark))
+                   obj  (list 'drawr (kwote vec)))
+             (remember-miscel obj har)
+             (if (visible? har)
+                 (drawmode (cdr pen))
+                 (drawr vec))
+             (return obj)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; User Version of DRAWB -- (cf SHADE).
+;;; Not strictly necessary (user can draw boxes easily),
+;;; but since this is a fairly common operation,
+;;; providing a primitive which is much more efficient
+;;; (conceptually, storage-wise and speed-wise) is useful.
+;;; Like SHADE, takes a HERE vector as 1st input.
+;;; Boxes between that mark and cursor.
+
+(declaration (*lexpr box))
+
+(defun BOX nargs
+       (lam (mark har)
+            ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (harep har)
+                 (vectorp mark)
+                 (fixp (v1 mark))
+                 (fixp (v2 mark))
+                 (hbox mark har))))
+
+(defun HBOX (mark har)
+       (prog (pen stat vec obj)
+             (setq pen (get har 'peninfo))
+             (ifnot (car pen) (return nil))
+             (setq stat (get har 'state)
+                   vec  (vector (v1 stat)
+				(v2 stat)
+				(v1 mark)
+				(v2 mark))
+                   obj  (list 'drawb (kwote vec)))
+             (remember-miscel obj har)
+             (if (visible? har)
+                 (drawmode (cdr pen))
+                 (drawb vec))
+             (return obj)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Programmable Background Screen Color (a little sugar):
+
+(defun SCREENCOLOR:= (mode)
+       ;;; Programmable <esc C>.
+       ;;; {A bit in the last word of the tv memory
+       ;;;  controls whether the screen is in
+       ;;;  dark-on-light mode or light-on-dark mode.}
+       ;;; Effect depends on input mode.  XOR toggles;
+       ;;; ANDC goes to colornegative; IOR colorpositive.
+       (lam (old-drawmode) ((drawmode?))
+            ;;; lambda-binding drawmode is neither
+            ;;; necessary nor foolproof, but may
+            ;;; as well be tidy as this routine
+            ;;; probably not called frequently.
+            (drawmode mode)
+	    (store (arraycall fixnum tv 455. 1) 65536.)
+	    (drawmode old-drawmode)))
+
+(defun SCREENCOLOR? ()
+       ;;; T if colorpositive
+       (not (izerop
+             (bitwise-and
+              (arraycall fixnum tv 455. 1) 65536.))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Clearing & Refreshing Hares.
+
+(macrodef backgroundmode (har)
+          ;;; What color is background of har's territory?
+          ;;; ior = light green; usually want andc = dark grey.
+          ;;; reversed if in screen positive (odd # of <esc>C's).
+          (lam (comp) ((complemented? har))
+               (cond
+                ((and comp (screencolor?)) seto)
+                (comp ior)
+                (t andc))))
+
+(declaration (*lexpr clear))
+
+(defun CLEAR nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hclear har))))
+
+(defun HCLEAR (har)
+       ;;; Turns off all the tv points in hare's territory.
+       ;;; NB: NOT the same as running thru its
+       ;;; display-list with negative ink!  CF: ERASE.
+       ;;; In particular: (a) hare may have written
+       ;;; OUTSIDE of its territory; (b) CLEAR
+       ;;; gets rid of OUTLINE & CURSOR too; (c) some OTHER
+       ;;; hare may have stuff in THIS territory!
+       ;;; NB: Does its thing even if (DISPLAY?) = NIL.
+       (cond ;;; if > 1 visible hare, be more cautious:
+         ((do ((h hares (cdr hares)))
+              ((null h) nil)
+              (if (and (get (1st h) 'vis)
+                       (not (eq (1st h) har)))
+                  (return t)))
+          (drawmode (backgroundmode har))
+          (drawr (get har 'bounds)))
+         (t (clear-display))))
+
+;;; cont'd
+
+;;; Clearing & Refreshing, cont'd
+
+(defun perform-display-list (har)
+       ;;; assumes drawmode has been set
+       ;;; properly just prior to being called.
+       (lam (disl) ((get har 'display-list))
+            (mapc (function drawv) ;;; vectors
+                  (v1 disl))
+            (mapc (function drawp) ;;; points
+                  (v2 disl))
+            (mapc (function drawt) ;;; chars
+                  (v3 disl))
+            (mapc (function eval)  ;;; misc. forms
+                  (v4 disl)))
+       t)
+
+(declaration (*lexpr erase redisplay))
+
+(defun ERASE nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (herase har))))
+
+(macrodef erasermode (har)
+          ;;; check har's ink & use the "opposite"
+          (lam (ink)
+	       ((cdr (get har 'peninfo)))
+	       (drawmode (cond ((= ink ior) andc)
+			       ((= ink andc) ior)
+			       (t xor)))))
+
+(defun HERASE (har)
+       ;;; perform display-list using negative ink.
+       ;;; Caveat: outline, cursor, and complementing
+       ;;; are not affected!   Cf: CLEAR.
+       (erasermode har)
+       (perform-display-list har))
+
+(defun REDISPLAY nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hredisplay har))))
+
+(defun HREDISPLAY (har)
+       (if (visible? har)
+           (if (outlined? har) (outline har))
+           (if (cursed? har) (curse har))
+           (if (complemented? har) (complement har))
+           (drawmode (cdr (get har 'peninfo)))
+           (perform-display-list har)))
+
+(defun REDISPLAY-ALL-HARES ()
+       (mapc (function hredisplay) hares)
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Refreshing.
+
+(declaration (*lexpr refresh wipe))
+
+(defun REFRESH nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hrefresh har))))
+
+(defun HREFRESH (har)
+       (hclear har) (hredisplay har))
+
+(defun REFRESH-ALL-HARES ()
+       (clear-display) (redisplay-all-hares))
+
+(defun WIPE nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hwipe har))))
+
+(defun HWIPE (har)
+       ;;; Flushes display-list and erases all user
+       ;;; display items for this hare from screen.
+       ;;; This (usually) means the boundary and
+       ;;; cursor will remain visible!  (Contrast CLEAR).
+       (and (visible? har) (herase har))
+       (wipe-int har))
+
+(defun wipe-int (har)
+       (lam (dis) ((get har 'display-list))
+            (rplacv1 dis nil) ;;; vecs
+            (rplacv2 dis nil) ;;; pts
+            (rplacv3 dis nil) ;;; chars
+            (rplacv4 dis nil) ;;; misc. forms
+            t))
+
+(defun WIPE-ALL-HARES ()
+       (mapc (function wipe-int) hares)
+       (refresh-all-hares))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; CS-ing (Logo meaning: leaves the boundary as is, and the
+;;; cursor showing -- if now showing -- at home).
+;;; NOT to be confused with Clearing the Screen! (lose lose).
+
+(declaration (*lexpr cs) (*expr hcs))
+
+(defun CS nargs
+       ;;; If no hares yet, creates default hare.
+       ;;; Then runs HCS.  Default hare made visible
+       ;;; right away so first CS still like normal Logo.
+       (cond
+        ((> nargs 0) (if (hare-check (arg 1)) (hcs (arg 1))))
+        ((null hares) (setq hare (create-hare))
+                      ;;; special case hack for 1st call:
+                      (hvis:= t hare)
+                      (ifnot **tvhare-display** (display:= t)))
+        ((hare-check hare) (hcs hare))))
+
+(defun HCS (har)
+       ;;; Normally means (home) (wipe).
+       ;;; NB: Normally does NOT "CLEAR" screen!
+       ;;; CF CLEAR, ERASE!  This nulls its
+       ;;; display-list & updates the screen.
+       ;;; The boundary and cursor (usually) remain.
+       ;;; Cursor is moved to Home of course.
+       (lam (home) ((get har 'home))
+            (int-clobber-state har nil
+                               (pointx home)
+                               (pointy home)
+                               0
+                               nil))
+       (hwipe har)
+       (ifnot **tvhare-display** (display:= t)))
+
+(defun CS-ALL-HARES ()
+       ;;; better than (mapc 'hcs hares) because can use
+       ;;; non-incremental (global) clear & redisplay.
+       (mapc (fn (har)
+                 ;;; here, eg, we dont have to call
+                 ;;; int-clobber-state & do the cursor
+                 ;;; hiding & redisplaying thing each time:
+                 ;;; we know we're going to clear the entire
+                 ;;; screen shortly anyhow.
+                 (lam (stat home)
+                      ((get har 'state) (get har 'home))
+                      (rplacv1 stat (pointx home))
+                      (rplacv2 stat (pointy home))
+                      (rplacv3 stat 0)))
+             hares)
+       (wipe-all-hares)
+       (cond
+        ((null hares) (cs))
+        ((null **tvhare-display**) (display:= t)))
+       t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Text-display hacks for tvhare pkg
+;;; Data file is: dsk:TVHARE;harfnt >.
+;;; Basic font uses 8x8 characters with 1 dot pitch.
+;;; Since chars are represented as vectors (not bit arrays),
+;;; they are are rotatable & scalable with scl=1 corresponding
+;;; to raster dot units.
+;;; Drawn by draw-tv-line, and basic data is a vector list
+;;; for each char.  {Self-intersections are un-XOR-ed by
+;;; including a point-list for points with even number of
+;;; intersections.}  All 128. chars will eventually print
+;;; as graphics; temporarily missing chars print as blanks.
+;;; Vector approach allows sensitivity to pen, scale, ink,
+;;; (drawmode), heading, etc.  If ink=XOR, erase by redrawing.
+;;; Since chars are square, nicely mixable with other turtle
+;;; commands.  EG: (FD <1char>) = (pu) (drawc <anychar>).
+;;; Each char starts in upper left, facing right wrt local coords.
+;;; BOTTOM-RIGHT justified: top row & left column always blank.
+;;; Vectors specified as (x1 y1 x2 y2) hunk4's wrt. local coords.
+;;; chars end with same heading as initially, but in position
+;;; for next char, ie., upper right.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(declaration (array* (notype (hare-font-data-array 128.)))
+;;;          (array* (notype hare-font-data-array 1)) ;;; old style
+             (special hare-font-data-array))
+
+(array hare-font-data-array t 128.)
+
+(setq hare-font-data-array (get 'hare-font-data-array 'array))
+
+(defun hare-font-data macro (call)
+       ;;; Use this like a normal array;
+       ;;; but it does arraycalls for you.
+       (displace call
+                 (list 'arraycall t
+                       'hare-font-data-array
+                       (cadr call))))
+
+(defun hare-font-char-size macro (call) 8.)
+
+(defun list-to-vector (list4)
+       (vector ;;; converts list4 to vector (hunk4).
+        (1st list4) (2nd list4) (3rd list4) (4th list4)))
+
+(defun hare-font-store (chnum vecs pnts)
+       ;;; vecs is a list of 4lists for now
+       ;;; because cannot quote hunk4s.
+       (store (hare-font-data chnum)
+              (cons (mapcar (function list-to-vector)
+                     ;;; this mapcar could happen at
+                     ;;; compile time if compiler could
+                     ;;; handle quoted hunk4s.
+                     ;;; the result would be improved
+                     ;;; load-time efficiency.
+                            vecs)
+                    pnts)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun hare-font-def macro (call)
+       (lam (pnts vecs) (nil nil)
+            (mapc
+             (fn (frob)
+                 (cond
+                  ((cddr frob) ;;; not 2tuple => vector
+                   (setq vecs (cons frob vecs)))
+                  (t ;;; 2tuple => pnt.  expand now.
+                   (setq pnts
+                         (cons (eval (cons 'point frob))
+                               pnts)))))
+             (cddr call))
+            (displace call
+             (list 'hare-font-store
+                   (cadr call)
+                   (list 'quote vecs)
+                   (list 'quote pnts)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This version deleted because compiler was barfing on
+;;; quoted hunks:
+;;;
+;;; (defun hare-font-def macro (call)
+;;;        ;;; (hare-font-def <chnum>
+;;;        ;;;   <vec1> ... <pnti> <veci> ... <vecn>)
+;;;        ;;; does makevector for each 4tuple, makepoint for
+;;;        ;;; each 2tuple.  Stores list of vectors in car,
+;;;        ;;; and list of points in cdr of array cell.
+;;;        (lam (pnts vecs) (nil nil)
+;;;             (mapc
+;;;              (fn (frob)
+;;;                  (cond
+;;;                   ((cddr frob) ;;; not 2tuple
+;;;                    (setq vecs  ;;; => vector
+;;;                          (cons ;;; "apply" macro:
+;;;                           (eval
+;;;                            (cons 'vector frob))
+;;;                           vecs)))
+;;;                   (t ;;; 2tuple => pnt
+;;;                    (setq pnts
+;;;                          (cons
+;;;                           (eval
+;;;                            (cons 'point frob))
+;;;                           pnts)))))
+;;;              (cddr call))
+;;;             (displace
+;;;              call
+;;;              (list
+;;;               'store ;;; below expands to arraycall:
+;;;               (list 'hare-font-data (cadr call))
+;;;               (list 'quote (cons vecs pnts))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(include ((dsk TVHARE) harfnt >))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Keeping track of tyo's:
+;;; needed when hare-font is nil.
+;;; [Each element of charmap-array represents
+;;;  1 line of chars.  Declared to be 40. since tv's are
+;;;  37. lines, and a little slop added {in case another
+;;;  terminal happens to be a bit larger -- unlikely}.
+;;;  The rationale here is that mostly screen is blank so
+;;;  a 2-d array taking up 4K (40x100 chars) too wasteful;
+;;;  instead each bucket isa list of sub-buckets (xpos . chars).]
+
+;;; ++++ It might be worth keeping the buckets sorted! (?)
+
+(declaration (array* (notype (charmap-array 40.)))
+         ;;; (array* (notype charmap-array 1.)) ;;; old style
+             (special charmap-array)) ;;; for arraycall hack
+
+(defun charmap-max macro (call) 39.)
+(array charmap-array t 40.)
+(setq charmap-array (get 'charmap-array 'array))
+
+(defun charmap macro (call) ;;; arraycall macro
+       (displace call
+                 (list 'arraycall t
+                       'charmap-array (cadr call))))
+
+(declare (special charmap-clear)) ;;; to avoid re-clearing
+(ifnot (boundp 'charmap-clear)    ;;; when not being used
+       (setq charmap-clear nil))  ;;; {do it once anyway}
+
+(defun charmap-clear ()
+       (and (not charmap-clear)
+            (split?)
+            (do ((i 0 (1+ i)))
+                ((> i (charmap-max)) t) ;;; max = 39
+                (declare (fixnum i))
+                (store (charmap i) nil))
+            (setq charmap-clear t)))
+
+;;; charmap stuff cont'd on next page
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; charmap stuff, cont'd
+
+(declare (notype (turn-on-char fixnum fixnum fixnum)
+                 (turn-off-char fixnum fixnum fixnum)))
+
+(defun turn-on-char (n x y)
+       ;;; caller should restore cursor to bottom-tty,
+       ;;; and sleep if on real tv with graphics.
+       (declare (fixnum n x y))
+       (if (split?)
+           (cursorpos y x top-tty) ;;; on a tv should make +++
+           (tyo n top-tty)))       ;;; sure background right
+
+(defun turn-off-char (unusedn x y)
+       ;;; {lisp's rubout function never does the right thing.}
+       ;;; caller should restore cursor to bottom-tty
+       ;;; and sleep if on real tv with graphics.
+       (declare (fixnum unusedn x y))
+       (if (split?)
+           (cond
+            ((real-tv?) ;;; use tvrectangle here, because space
+                        ;;; doesn't erase previous char on a tv
+                        (lam (mode x1 y1)
+			     ((drawmode?)
+			      (* x (tv-char-width))
+			      (* y (tv-char-ht)))
+			     (declare (fixnum mode x1 y1))
+			     (drawmode andc)
+			     (tvrectangle x1 y1
+					  (+ x1 (tv-char-width))
+					  (+ y1 (tv-char-ht)))
+			     (drawmode mode))
+                        ;;; now setup for the mapc below:
+                        (cursorpos y (1+ x) top-tty))
+            (t (cursorpos y x top-tty) ;;; printing a space
+               (tyo 32. top-tty))) ;;; should work on non-tv.
+           (mapc (fn (ch) ;;; overprint the rest
+                     (cursorpos 'b top-tty) ;;; backspace
+                     (tyo ch top-tty))      ;;; {in case >1}
+                 ;;; this do => the chars left at x,y:
+                 (do ((tail (charmap y) (cdr tail)))
+		     ((null tail) nil)
+		     (if (= (caar tail) x)
+			 (return (cdar tail))))))
+       t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; charmap stuff, cont'd
+
+(declare (notype (charmap:= notype fixnum fixnum fixnum)))
+
+(defun charmap:= (ink n x y)
+       ;;; call this to keep track of tyo's & rubouts
+       ;;; of ascii n at cursorpos x, y.
+       ;;; {only keep 0 or 1 occurrence, as only
+       ;;;  the parity matters; ior makes it 1,
+       ;;;  andc makes it 0, xor toggles.}
+       ;;; returns previous status of n at x,y
+       (declare (fixnum n x y))
+       (setq charmap-clear nil) ;;; {over-cautious}
+       (prog (ybuck xbuck found prevx prevn)
+             ;;; ybuck is the ybucket for char-line y
+             ;;; xbuck is the sub-bucket for column x
+             (if (or (< y 0) (> y (charmap-max)))
+                 (return nil)) ;;; {off screen ok here, just ignore}
+             (setq ybuck (charmap y)
+                   xbuck (cond
+                          ((null ybuck) nil)
+                          ((= (caar ybuck) x) (car ybuck))
+                          ((do ((tailx ybuck (cdr tailx)))
+                               ((null (cdr tailx)) nil)
+                               (if (= (caadr tailx) x)
+                                   (setq prevx tailx)
+                                   (return (cadr tailx))))))
+                   found (do ((ntail xbuck (cdr ntail)))
+                             ((null (cdr ntail)) nil)
+                             (and (= (cadr ntail) n)
+                                  (setq prevn ntail)
+                                  (return t))))
+             (cond
+              ((cond (found (eq ink 'ior)) ;;; no-ops
+                     ((eq ink 'andc))))
+              (found  ;;; delete -- ink is andc or xor
+               (cond ((cddr xbuck) ;;; just splice out this n
+                      (rplacd prevn (cddr prevn)))
+                     (prevx ;;; last n for this xbuck, splice out
+                      (rplacd prevx (cddr prevx)))
+                     ((store (charmap y) (cdr ybuck))))
+               (turn-off-char n x y))
+              ;;; not found, and ink is xor or ior, so add it
+              ((progn (turn-on-char n x y) xbuck)
+                 ;;; add it to bucket for this x
+               (rplacd xbuck (cons n (cdr xbuck))))
+              (t ;;; create new bucket for this x
+               (store (charmap y) (cons (list x n) ybuck))))
+             (return found)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Drawc & Friends
+
+(declaration (*lexpr drawc))
+
+(defun DRAWC nargs
+       ;;; top level user routine analogous to princ.
+       ;;; arg 1 (required) is form to princ.
+       ;;; arg 2 (optional) is whether to update
+       ;;; hare position (dflt is T -> Yes).
+       ;;; arg 3 (optional) is which hare.
+       (prog (updat har)
+             (cond
+              ((> nargs 2) (setq updat (arg 2)
+                                 har   (arg 3)))
+              ((> nargs 1) (setq updat (arg 2)
+                                 har   hare))
+              (t (setq updat t har hare)))
+             (return
+              (and (hare-check har) (tnil-check updat)
+                   (hdrawc (arg 1) updat har)))))
+
+(defun make-char-spec (chnum x y dx dy)
+       (cond
+        (hare-font (cons chnum (vector x y dx dy))) ;;; winner
+        (t (cons (+ chnum 128.) ;;; convention to signify non-hf
+                 (vector (hrx-to-cursorx x)
+                         (hry-to-cursory y)
+                         0 0))))) ;;; just place-holders
+
+(defun HDRAWC (form updat har)
+       (prog (pen fl stat x y hdg scl delx dely nx ny dx dy nchrs w h)
+             (declare (fixnum fl x y hdg scl delx dely nx ny dx dy w h))
+             (setq pen (get har 'peninfo))
+             (ifnot (or updat (car pen)) (return nil)) ;;; no-op
+             (setq fl	(flatc form)
+                   stat	(get har 'state)
+                   x	(v1 stat)
+                   y	(v2 stat)
+                   hdg	(v3 stat)
+                   scl  (v4 stat)
+                   w    (cond (hare-font (setq h (hare-font-char-size)))
+                              (t (setq h (tv-char-ht)) (tv-char-width)))
+                   delx	(round$ ;;; general multiply since mixed types --
+                                ;;; compiles same as type-specific version
+                         (times scl fl w (qsin hdg)))
+                   dely (round$ (times scl fl h (qcos hdg)))
+                   nx	(xcheck (+ x delx) har)
+                   ny	(ycheck (+ y dely) har))
+             (ifnot (car pen) ;;; then updat must be T
+                    (int-clobber-state har nil nx ny nil nil)
+                    (return nil))
+             (setq dx (idiv delx fl) dy (idiv dely fl))
+             (cond
+              ((symbolp form)	;;; win by not exploding
+	       (do ((i 1 (1+ i))) ((> i fl))
+		   (declare (fixnum i))
+		   (push (make-char-spec (getcharn form i) x y dx dy)
+			 nchrs)
+		   (setq x (+ x dx) y (+ y dy))))
+              (t (mapc (fn (chnum) (declare (fixnum chnum))
+                           (push (make-char-spec chnum x y dx dy)
+                                 nchrs)
+                           (setq x (+ x dx) y (+ y dy)))
+                       (exploden form))))
+             (if (visible? har) (drawmode (cdr pen))
+                                (drawt nchrs))
+             (remember-chars nchrs har)
+             (if updat (int-clobber-state har nil nx ny nil nil))
+             ;;; CAVEAT: Do not try to collapse the two calls
+             ;;; to int-clobber-state.  If chars ARE DRAWN, in IOR
+             ;;; mode, it is essential that the cursor get drawn
+             ;;; (when showing) AFTER the characters, to prevent
+             ;;; info lossage due to IOR on top of XOR.
+             (return nchrs)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Drawt & Friends
+
+(defun drawt (chlis)
+       ;;; chlis is a list of char specs created by drawc
+       (cond
+        ((> (caar chlis) 127.) ;;; "non hare-font" signifier.
+         ;;; [use or non-use of hare-font same thruout chlis]
+         (prog (mode ink) ;;; simulate drawmode, which
+               (setq mode (drawmode?) ;;; is set up by caller.
+                     ink  (cond ((= mode ior) 'ior)
+                                ((= mode andc) 'andc)
+                                ('xor)))
+               (mapc (fn (chspec)
+                         (charmap:= ink
+                                    (- (car chspec) 128.)
+                                    (v1 (cdr chspec))
+                                    (v2 (cdr chspec))))
+                     chlis)
+               (if (split?) (cursor-to-bottom-tty))
+               (if (real-tv?) (sleep hare-wait-time))
+               (return t)))
+        (t (mapc (function drawt-hare) chlis) t)))
+
+(defun drawt-hare (chspec)
+       ;;; look up the font data for chnum and draw char
+       ;;; at x, y.  the font data is a dotted
+       ;;; pair: the car is a list of vectors, the cdr
+       ;;; a list of points (to un-xor self intersections).
+       ;;; the font data encodes for a std-sized char at
+       ;;; [0 0] with east hdg, so translation, rotation,
+       ;;; & dilation are usually needed.  x and y are
+       ;;; added to get the translation.  dx and dy encode
+       ;;; scaling & rotation.  loc info in hr units.
+       ;;; {An extra factor of 8 arises because of the
+       ;;; products -- the char-to-raw macros fix this.}
+       (prog (data loc x y dx dy)
+             (declare (fixnum x y dx dy))
+             (setq data (hare-font-data (car chspec))
+                        ;;; {arraycall macro}
+                   loc  (cdr chspec)
+                   x    (lsh (v1 loc) 3) ;;; hare char-size is 8, so lsh
+                   y    (lsh (v2 loc) 3) ;;; converts to hr-char units.
+                   dx   (v3 loc)
+                   dy   (v4 loc))
+             (mapc
+              (fn (vec)
+                  (lam (x1 y1 x2 y2)
+                       ((v1 vec) (v2 vec) (v3 vec) (v4 vec))
+                       (declare (fixnum x1 y1 x2 y2))
+                       (draw-tv-line
+                        (charx-to-irawx (+ x (* x1 dx) (* y1 dy)))
+                        (chary-to-irawy (+ y (- (* x1 dy) (* y1 dx))))
+                        (charx-to-irawx (+ x (* x2 dx) (* y2 dy)))
+                        (chary-to-irawy (+ y (- (* x2 dy) (* y2 dx)))))))
+              (car data))
+             (mapc
+              (fn (pnt)
+                  (lam (px py) ((pointx pnt) (pointy pnt))
+                       (declare (fixnum px py))
+                       (set-tv-bit
+                        (charx-to-irawx (+ x (* px dx) (* py dy)))
+                        (chary-to-irawy (+ y (- (* px dy) (* py dx)))))))
+              (cdr data))
+             (return t)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Auxiliary Functions for Text-display Hacking
+;;; Hare-generalized CR, LF, and similar functions.
+;;; {Remember that, e.g., (drawc <cr>) does not do a CR!}
+
+(declaration (*lexpr draw-cr))
+
+(defun DRAW-CR nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdraw-cr har))))
+
+(declare (notype (draw-cr-int notype notype)
+                 (draw-cr-int-step notype fixnum fixnum)))
+
+(defun HDRAW-CR (har)
+       ;;; Go to the "beginning of this line of text" -- ie,
+       ;;; just inside its intersection with a boundary.
+       (prog (stat bou hhdg newxy)
+             (declare (fixnum hhdg))
+             (setq stat (get har 'state)
+                   bou  (get har 'bounds)
+                   hhdg (v3 stat)) ;;; in qees
+             (return
+              (cond
+               ((and (> hhdg 358.) (< hhdg 362.))
+                ;;; heading is approx. 90 degrees -- this
+                ;;; common special case gets special treatment.
+                (int-clobber-state har nil ;;; 3 raster dots inside
+                                   (+ (v1 bou) 12.)
+                                   nil nil nil))
+               (t (setq newxy (draw-cr-pnt stat bou))
+                  ;;; newxy is a point {ie dotted pair} +++
+                  ;;; {each non-90-deg CR costs 1 cons,
+                  ;;; since need "multiple value return".}
+                  (int-clobber-state har nil (pointx newxy)
+                                             (pointy newxy)
+                                             nil nil))))))
+
+(defun draw-cr-pnt (stat bou)
+       ;;; stat is a state vector for a hare,
+       ;;; bou is a bounds vector for same hare.
+       ;;; returns POINT representing a carriage-return
+       ;;; to the appropriate boundary.  {This costs
+       ;;; a cons, since multiple-value-return needed.}
+       (prog (hhdg scl xinc yinc newxy)
+             (declare (fixnum hhdg scl yinc xinc))
+             ;;; Finds the appropriate boundary by taking first
+             ;;; large, and then smaller steps toward it.
+             ;;; {Choice of #steps and step-sizes arbitrary.}
+             ;;; {{This approach is nowhere near optimal --
+             ;;;  someday replace by smarter & faster one.}}+++
+             (return
+              (setq hhdg  (v3 stat)
+                    scl   (v4 stat) ;;; allow for bigger letters
+                    xinc  (round$ (*$ (float (* scl 128.)) (qsin hhdg)))
+                    yinc  (round$ (*$ (float (* scl 128.)) (qcos hhdg)))
+                    newxy (draw-cr-step ;;; first approx
+                           (point (v1 stat) (v2 stat)) ;;; {ouch}
+                            xinc yinc bou)
+                    newxy (draw-cr-step ;;; second approx
+                           newxy (idiv xinc 16.) (idiv yinc 16.) bou)
+                    newxy (draw-cr-step ;;; third & final
+                           newxy (idiv xinc 64.) (idiv yinc 64.) bou)))))
+
+(defun draw-cr-step (newxy xinc yinc bou)
+       ;;; newxy is current approximation to point
+       ;;; where hare crosses boundary -- xinc & yinc
+       ;;; incorporate hdg & accuracy (step size)
+       (declare (fixnum xinc yinc))
+       (do ((nx (- (pointx newxy) xinc) (- nx xinc))
+            (ny (- (pointy newxy) yinc) (- ny yinc))
+            (xmin (+ (v1 bou) 12.)) ;;; {get NEAR bounds, not UPTO
+            (ymin (+ (v2 bou) 12.)) ;;;  them -- within 3 raster dots.}
+            (xmax (- (v3 bou) 12.))
+            (ymax (- (v4 bou) 12.)))
+           ((or (< nx xmin) (> nx xmax) (< ny ymin) (> ny ymax))
+            (rplacpointx newxy (+ nx xinc)) ;;; back up to
+            (rplacpointy newxy (+ ny yinc)) ;;; be inbounds
+            newxy) ;;; return clobbered value of newxy
+           ;;; {there is no actual loop body}
+           (declare (fixnum nx ny xmin xmax ymin ymax))))
+
+;;; aux. text funs. cont'd next page
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; auxiliary functions for text hacking, cont'd
+
+(declaration (*lexpr draw-lf))
+
+(defun DRAW-LF nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdraw-lf har))))
+
+(defun HDRAW-LF (har)
+       ;;; Line-feed sans carriage-return.
+       ;;; {Adds 1 line of "leading" to basic char-size
+       ;;; when using hare-font, so that small scale
+       ;;; lettering doesn't look "run-together".}
+       (prog (stat hhdg scl w h)
+             (declare (fixnum hhdg scl w h))
+             (setq stat (get har 'state)
+                   hhdg (filter-qees
+                         (+ 360. (v3 stat))) ;;; hdg+90 in qees
+                   scl  (v4 stat)
+                   w    (cond
+                         (hare-font (setq h (1+ (hare-font-char-size))))
+                         (t (setq h (tv-char-ht)) (tv-char-width))))
+             (return
+              (int-clobber-state har nil
+               (xcheck (+ (v1 stat)
+                          (round$
+                           (*$ (float (* scl w)) (qsin hhdg))))
+                       har)
+               (ycheck (+ (v2 stat)
+                          (round$
+                           (*$ (float (* scl h)) (qcos hhdg))))
+                       har)
+               nil nil))))
+
+(declaration (*lexpr draw-crlf))
+
+(defun DRAW-CRLF nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdraw-crlf har))))
+
+(defun HDRAW-CRLF (har)
+       ;;; {For now just combine the two operations --
+       ;;;  could be made slightly more efficient, +++
+       ;;;  by having it: (a) check for 90degs, and
+       ;;;  (b) (when not 90) call draw-cr-pnt; so that
+       ;;;  int-clobber-state not done twice.}
+       (hdraw-lf har)
+       (hdraw-cr har))
+
+;;; aux. funs. for text cont'd next page
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; aux. funs. for text cont'd
+;;; Reading from hares!
+
+(declare (eval (read)))
+(setq base 8. ibase 8.)
+
+(defun TOGGLE-ECHOING ()
+       ;;; USER function to turn echo-ing on/off.
+       ;;; {That way, can build own reader for hares.}
+       ;;; Toggles the ITS status bit which controls
+       ;;; echo-ing during readin.  For details of these
+       ;;; status words, see :DOC CALL TTYGET.
+       ;;; There are 6 groups of 6 bits, and bit 3.4
+       ;;; (low-order = 1.1) in this #ing scheme is it.
+       ;;; User is advised to mask interrupts while
+       ;;; echo-ing turned off (until turned back on)!
+       (lam (ttywds) ((status tty))
+            (sstatus tty (1st ttywds) ;;; leave as is
+                         (2nd ttywds) ;;; leave as is
+                         (bitwise-xor ;;; toggle echo-bit
+                           0010000000 ;;; octal.  bit 3.4.
+                           (3rd ttywds)))))
+
+(declare (eval (read)))
+(setq base 10. ibase 10.)
+
+(declaration (*lexpr readhare))
+
+(defun READHARE nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hreadhare har))))
+
+(defun HREADHARE (har)
+       ;;; "read from" this hare -- ie,
+       ;;; read, but echo via drawc.
+       (lam (oint ans) ;;; mask interrupts: ^G = disaster.
+            ((nointerrupt t) nil)
+            (toggle-echoing) ;;; hopefully now off
+            (setq ans (read))
+            (toggle-echoing) ;;; hopefully back on
+            (nointerrupt oint)
+            (drawc ans t har)
+            ans))
+
+(declaration (*lexpr tyihare)
+             (fixnum (tyihare) (htyihare notype)))
+
+(defun TYIHARE nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (htyihare har))))
+
+(defun HTYIHARE (har)
+       ;;; TYI from a hare (echo-ing only there)
+       (lam (oint ans) ((nointerrupt t) 0)
+            (declare (fixnum ans))
+            (toggle-echoing) ;;; see also: hreadhare
+            (setq ans (tyi))
+            (toggle-echoing)
+            (nointerrupt oint)
+            (drawc (ascii ans) t har)
+            ans))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; aux. text funs., cont'd
+
+(declaration (*lexpr draw-tab))
+
+(defun DRAW-TAB nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hdraw-tab har))))
+
+(defun HDRAW-TAB (har)
+       ;;; Tabs to next column which is a multiple
+       ;;; of 24 hare-steps from the "beginning" of
+       ;;; the line" ala draw-cr.
+       ;;; {24 [ = lcm(8,6,12)] => either font wins.}
+       ;;; Always moves at least 1 hare-step if inbounds.
+       (prog (stat bou hhdg scl x xyini sqdis dis)
+             (declare (fixnum hhdg scl x sqdis dis))
+             (setq stat (get hare 'state)
+                   bou  (get hare 'bounds)
+                   hhdg (v3 stat) ;;; in qees
+                   scl  (v4 stat)
+                   x    (v1 stat)) ;;; hr units
+             (cond ;;; find initial x,y for this line
+              ((and (> hhdg 358.) (< hhdg 362.))
+               ;;; special case treatment of 90 degs
+               ;;; {avoids draw-cr-pnt cons, and knows
+               ;;; change-in-y is zip.}
+               (setq sqdis (isq (- x (v1 bou) 12.))))
+              (t (setq xyini (draw-cr-pnt stat bou)
+                       sqdis (+ (isq (- x (pointx xyini)))
+                                (isq (- (v2 stat) ;;; ycor
+                                        (pointy xyini)))))))
+             (setq dis
+                   (idiv (- 96. (\ (isqrt sqdis) 96.))
+                         scl))
+             (ifnot (> dis 3.)
+                    (setq dis (idiv 96. scl)))
+             (return (hfd-pen nil dis har))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Display coordinates nicely for user edification
+
+(declaration (*lexpr show-coords))
+
+(defun SHOW-COORDS nargs
+       (lam (har) ((cond ((> nargs 0) (arg 1)) (t hare)))
+            (if (hare-check har) (hshow-coords har))))
+
+(defun hsc-move-to (x y hdg har)
+       ;;; internal to hshow-coords
+       (hpen:= nil har)
+       (hsetxy x y har)
+       (hhdg:= hdg har)
+       (hpen:= t har))
+
+(defun hsc-init (har)
+       (hshow:= nil har)
+       (hink:= 'xor har)
+       (hsc-move-to 0 0 0 har))
+
+(defun hsc-rvee (har)
+       ;;; internal to hshow-coords
+       (prog (scl x)
+             (setq scl (hscl? har))
+             (hscl:= 1 har)
+             (hrt 30 har)
+             (setq x (hbk 10 har))
+             (hpen:= nil har)
+             (hfd 10 har)
+             (hpen:= t har)
+             (hlt 30 har)
+             (hscl:= scl har)
+             (return x)))
+
+(defun hsc-lvee (har)
+       (prog (scl x)
+             (setq scl (hscl? har))
+             (hscl:= 1 har)
+             (hlt 30 har)
+             (setq x (hbk 10 har))
+             (hpen:= nil har)
+             (hfd 10 har)
+             (hpen:= t har)
+             (hrt 30 har)
+             (hscl:= scl har)
+             (return x)))
+
+(defun hsc-drawc (x har)
+       ;;; internal to hshow-coords
+       (lam (scl) ((hscl? har))
+            (prog2 (hscl:= 1.0 har)
+                   (hdrawc x t har)
+                   (hscl:= scl har))))
+
+(defun HSHOW-COORDS (har)
+       (prog (her pen ink show scl s5 s12 items)
+             ;;; returns the list of display-items so that
+             ;;; they may be forgotten
+             (declare (flonum scl) (fixnum s5 s12))
+             (setq her  (hhere har)
+                   pen  (hpen? har)
+                   ink  (hink? har)
+                   show (hshow? har)
+                   scl  (hscl? har)
+                   s5   (round$ (//$ 5.0 scl))
+                   s12  (round$ (//$ 12.0 scl)))
+             (hsc-init har)
+             (push (hsety (1- (hiymax? har)) har) items) ;;; top y axis
+             (push (hsc-rvee har) items)
+             (push (hsc-lvee har) items)
+             (hsc-move-to s5 (- (hiymax? har) s5) 90 har)
+             (push (hsc-drawc (list 'Y '= (hiymax? har)) har) items)
+             (hsc-move-to 0 0 0 har)
+             (push (hsety (1+ (hiymin? har)) har) items) ;;; bottom y axis
+             (hsc-move-to s5 (+ (hiymin? har) s12) 90 har)
+             (push (hsc-drawc (list 'Y '= (hiymin? har)) har) items)
+             (hsc-move-to (1+ (hixmin? har)) 0 90 har)
+             (push (hsetx (1- (hixmax? har)) har) items) ;;; x axis
+             (push (hsc-rvee har) items)
+             (push (hsc-lvee har) items)
+             (hsc-move-to (+ (hixmin? har) s5) s12 90 har)
+             (push (hsc-drawc (list 'X '= (hixmin? har)) har) items)
+             (hsc-move-to (- (hixmax? har) s5) s12 -90 har)
+             (lam (str) ((list 'X '= (hixmax? har)))
+                  (hpen:= nil har) ;;; back up over char spaces
+                  (hsc-drawc str har)
+                  (hpen:= t har)
+                  (hrt 180 har)
+                  (push (hsc-drawc str har) items))
+             ;;;
+             (hpen:= nil har) ;;; restore the world
+             (hsethare her har)
+             (hpen:= pen har)
+             (hink:= ink har)
+             (hshow:= show har)
+             (return items))) ;;; so user can flush when ready
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; slow garbage -- old hshow-coords
+;;; (defun hvee (har) ;;; assumes pd
+;;;        (lt 20 har)
+;;;        (bk 10 har)
+;;;        (pu har)
+;;;        (fd 10 har)
+;;;        (rt 40 har)
+;;;        (bk 10 har)
+;;;        (pd har)
+;;;        (fd 10 har)
+;;;        (lt 20 har))
+;;; 
+;;; (defun hshow-coords (har)
+;;;        ;;; that way will win on non-tv
+;;;        ;;; but rewrite so that (1) not buggy; (!)
+;;;        ;;; (2) use direct vector primitives
+;;;        (lam (scl ink pen ymax ymin xmax xmin)
+;;;             ((scl? har) (ink? har) (pen? har)
+;;;              (ymax? har) (ymin? har) (xmax? har) (xmin? har))
+;;;             (cs har)
+;;;             (ink:= 'xor)
+;;;             (pd har)
+;;;             (sety ymax har)
+;;;             (scl:= 1 har)
+;;;             (hvee har)
+;;;             (pu har)
+;;;             (bk 10 har)
+;;;             (rt 90 har)
+;;;             (fd 9 har)
+;;;             (pd har)
+;;;             (drawc (list 'Y '= ymax) nil har)
+;;;             (pu har)
+;;;             (home  har)
+;;;             (fd 10 har)
+;;;             (rt 90 har)
+;;;             (fd 9 har)
+;;;             (pd har)
+;;;             (drawc '(0 0) nil har)
+;;;             (pu har)
+;;;             (home har)
+;;;             (pd har)
+;;;             (scl:= scl har)
+;;;             (sety ymin har)
+;;;             (scl:= 1 har)
+;;;             (pu har)
+;;;             (fd 10 har)
+;;;             (rt 90 har)
+;;;             (fd 9 har)
+;;;             (pd har)
+;;;             (drawc (list 'Y '= ymin) nil har)
+;;;             (pu har)
+;;;             (scl:= scl har)
+;;;             (setxy xmax -2 har)
+;;;             (hdg:= -90 har)
+;;;             (scl:= 1 har)
+;;;             (drawc (list 'X '= xmax) t har)
+;;;             (fd 9 har)
+;;;             (rt 180 har)
+;;;             (pd har)
+;;;             (drawc (list 'X '= xmax) nil har)
+;;;             (pu har)
+;;;             (scl:= scl har)
+;;;             (setxy xmax 0 har)
+;;;             (pd har)
+;;;             (scl:= 1 har)
+;;;             (hvee har)
+;;;             (scl:= scl har)
+;;;             (setx xmin har)
+;;;             (pu har)
+;;;             (scl:= 1 har)
+;;;             (sety -9 har)
+;;;             (hdg:= 90 har)
+;;;             (fd 9 har)
+;;;             (pd har)
+;;;             (drawc (list 'X '= xmin) t har)
+;;;             (pu har)
+;;;             (home har)
+;;;             (scl:= scl har)
+;;;             (pen:= pen har)
+;;;             (ink:= ink har)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Utilities for Suspending Lisp Job.
+;;; Allows user to not know about MAP-TV-CORE, etc.
+
+(declare (special **tvhare-display-suspend**))
+
+(ifnot (boundp '**tvhare-display-suspend**)
+       (setq **tvhare-display-suspend** nil))
+
+(declaration (*expr hare-pre-suspend)
+	     (notype (hare-pre-suspend)))
+
+(defun HARE-PRE-SUSPEND ()
+       (cond ((real-tv?) (map-tv-core nil))
+             ((setq tv nil))) ;;; recreate if necessary
+       (setq **tvhare-display-suspend** **tvhare-display**)
+       (display:= nil))
+
+(declaration (*expr hare-post-suspend)
+	     (notype (hare-post-suspend)))
+
+(defun HARE-POST-SUSPEND ()
+       (fake-tv (not (tv?)))
+       (drawmode xor)
+       (if **tvhare-display-suspend** (display:= t)))
+
+(hare-post-suspend)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Forgetting (deleting items from display-lists)
+
+(declaration (*lexpr forget))
+
+(defun FORGET nargs
+       (lam (frob har) ((arg 1) (cond ((> nargs 1) (arg 2)) (t hare)))
+            (and (hare-check har)
+                 (or (vectorp frob) (listp frob)
+                        ;;; minimally legal object
+                     (hare-error 'CANT-FORGET-ILLEGAL-FROB: frob))
+                 (hforget frob har))))
+
+(defun drawn (n frob)
+       (cond ((= n 1) (drawv frob))
+             ((= n 2) (drawp frob))
+             ((= n 3) (drawt frob))
+             ((eval frob))))
+
+(defun HFORGET (frob har)
+       ;;; frob either a vector, a point, a char-list,
+       ;;; or a miscel form {eg (drawb --) or (drawr --)}.
+       ;;; Deletes frob from display list,
+       ;;; & erases it from screen (if necessary).
+       ;;; returns T if frob found, else nil.
+       (prog (n dis disvn val)
+             (declare (fixnum n))
+             (setq n     (cond ;;; all frobs are vectors or conses
+                           ((vectorp frob) 1)
+                           ((fixp (car frob)) 2) ;;; point
+                           ((symbolp (car frob)) 4) ;;; miscel
+                           (3)) ;;; list of charspecs
+                   dis   (get har 'display-list)
+                   disvn (vn n dis)
+                   val   (cond
+                           ((eq frob (car disvn))
+                            (setq disvn (cdr disvn))
+                            t)
+                           ((do ((tail disvn (cdr tail)))
+                                ((null (cdr tail)) nil)
+                                (if (eq (cadr tail) frob)
+                                    (rplacd tail (cddr tail))
+                                    (return t)))))) ;;; from do
+             (if val (rplacvn n dis disvn)
+                     (if (visible? har) (erasermode har)
+                                        (drawn n frob)))
+             (return val)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; remembering (restore items to display lists)
+;;; win: one hare may "remember" an item forgotten by another!
+
+(declaration (*lexpr remember))
+
+(defun REMEMBER nargs
+       (lam (frob har) ((arg 1) (cond ((> nargs 1) (arg 2)) (hare)))
+            (and (hare-check har)
+                 (or (vectorp frob) (listp frob)
+                     ;;; minimally legal object
+                     (hare-error 'CANT-REMEMBER-ILLEGAL-FROB: frob))
+                 (hremember frob har))))
+
+(defun HREMEMBER (frob har)
+       ;;; analogous to hforget
+       (lam (n dis) ((cond ((vectorp frob) 1)
+                           ((fixp (car frob)) 2)
+                           ((symbolp (car frob)) 4)
+                           (3))
+                     (get har 'display-list))
+            (declare (fixnum n))
+            (rplacvn n dis (cons frob (vn n dis)))
+            (if (visible? har) (drawmode (cdr (get har 'peninfo)))
+                               (drawn n frob))
+            frob))
+
+
+(declaration (*expr Hare-Recover)
+	     (notype (Hare-Recover)))
+
+(defun Hare-Recover ()
+       ;;; Recover from lossage after e.g.,
+       ;;; tv-switching, without actually
+       ;;; suspending the Lisp.
+       (hare-pre-suspend)
+       (hare-post-suspend))
+
+(declaration (*expr How-Many-Users)
+	     (fixnum (How-Many-Users)))
+
+(defun How-Many-Users ()
+;(3rd (status its)) is a fixnum giving the number of users on the
+;system.  This should be useful in adjusting various parameters
+;which depend on the load average: the sleep time for the ascii
+;channel, and sleep time for the flasher, etc.
+       (3rd (status its)))
+
+
+
+;;; Flashing a tvhare display item on and off.
+;;; Assumes initially on.  Leaves it on at the end.
+
+(declaration (*expr flash-item)
+	     (notype (flash-item notype flonum notype)))
+
+(defun hFlash-Item (itm tim har)
+       (declare (flonum tim))
+       (prog (cnt)
+	     (declare (flonum cnt))
+	     (setq cnt 0.0)
+	     LOOP				  ;Always flashes at least once.
+	     (hforget itm har)
+	     (sleep 0.15)
+	     (hremember itm har)
+	     (setq cnt (+$ 0.3 cnt))		  ;Avoids sleeping after last
+	     (cond				  ;remember.
+	      ((< cnt tim) (sleep 0.15) (GO LOOP))
+	      (t (return itm)))))
+
+(if (status nofeature noldmsg)
+    (terpri)
+    (tyo 59.)						;semi-colon
+    (princ (get '*version* 'tvhare))
+    (princ '| loaded.  |))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; eof

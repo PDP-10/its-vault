@@ -1,0 +1,601 @@
+(DECLARE (MAPC '(LAMBDA (X) (REMPROP X 'ACS))
+	       '(DISCOPY DISBLINK DISMARK DISET DISAPOINT DISALINE
+		 DISLIST DISCRIBE DISGOBBLE DISCREATE DISLINK
+		 DISFLUSH DISLOCATE DISCHANGE DISMOTION DISINI
+		 DISCUSS DISGORGE))
+	 (*lexpr discreate disini disaline disflush))
+
+(declare (special anum arate file-last file-name file-switch fn1-last fn2-last
+		  horizontal lefthander max-index negate-accx negate-accy
+		  old-aname old-description old-scale old-vertical orient-switch
+		  pnum position-interval power-name prate reverse-accelerations
+		  rrate rscale shear-angle shear-discuss slant-switch tangent
+		  units:sec vnum vrate))
+	 
+(declare (fixnum anum arate element end end1 end2
+		 hor hor1 horiz horizontal i index item item1 item2 item3 j max-index
+		 nargs num old-vertical pendown pnum pos prate rate right-end
+		 slant temp units:sec ver ver1 vertical vnum vrate width))
+
+(declare (flonum elem fend2 max min rscale sum tangent
+		 (array-max notype) (array-min notype)))
+
+(declare (notype accelx accely acoord aname anamex anamey apointer aptr atype
+		 description file-object file-specs fn1 fn1-last fn2 fn2-last
+		 fname fnames iname item00 item22 itype label1 label2
+		 letter letter1 namex namey old-description p0 p1 p2 params
+		 power-name ptr ptr1x ptr1y ptrx ptry scale shear-discuss
+		 (plot notype fixnum notype)))
+
+(declare (array* (flonum posx 1 posy 1)))
+
+(declare (*expr orient power-ticks rotate shear))
+
+(declare (*fexpr write))
+
+(declare (*lexpr plot power xgp))
+
+
+;;;Define an arithmetic shift.
+(LAP ASH SUBR)
+(ARGS
+ ASH
+ (NIL . 2))
+	(PUSH P (%
+		 0
+		 0
+		 FIX1))
+	(MOVE TT 0 A)
+	(MOVE T 0 B)
+	(ASH TT 0 T)
+	(POPJ P)
+NIL 
+
+
+;;;;;Find the absolute maximum in an array.  Set a global variable max-index.
+(defun absolute-max (aname)
+       (max (abs (array-max aname)) (abs (array-min aname))))
+
+
+;;;Adjust the horizontal axis so that all points show.
+(defun adjust-horizontal nil
+       (prog (temp)
+	     (setq temp (// (* 1400. arate) anum))
+	     (cond ((> temp 750.)
+		    (setq units:sec 750.))
+		   ((setq units:sec temp)))))
+
+
+;;;Find the maximum value in an array.
+(defun array-max (aname)
+       (prog (apointer max elem)
+	     (setq apointer (get aname 'array)
+		   max (arraycall flonum apointer 0)
+		   max-index 0)
+	     (do ((i 1 (1+ i))
+		  (end (cadr (arraydims aname))))
+		 ((= i end))
+		 (setq elem (arraycall flonum apointer i))
+		 (cond ((< elem max))
+		       ((setq max elem)
+			(setq max-index i))))
+	     (return max)))
+
+
+;;;Find the minimum value in an array.
+(defun array-min (aname)
+       (prog (min)
+	     (setq min (arraycall flonum (get aname 'array) 0))
+	     (do ((i 1 (1+ i))
+		  (end (cadr (arraydims aname)))
+		  (ptr (get aname 'array))
+		  (index 0))
+		 ((= i end) min)
+		 (cond ((< (arraycall flonum ptr i) min)
+			(setq index i
+			      min (arraycall flonum ptr i)))))
+	     (return min)))
+
+;;;Print plot description at bottom.
+(defun describe (description) 
+       (cond ((null description) (setq description old-description)))
+       (setq old-description description)
+       (discuss (discreate) 0. -150. description)) 
+
+
+;;;Velocity is calculated by differencing position.
+;;;The sampling interval K must be given.
+(defun diff (aname)
+       (prog (anamex anamey namex namey ptrx ptry ptr1x ptr1y letter)
+	     (setq letter (car (explode aname)))
+	     (cond ((eq letter 'p)
+		    (setq anamex 'velx
+			  anamey 'vely
+			  namex 'posx
+			  namey 'posy
+			  vnum pnum
+			  vrate prate))
+		   ((eq letter 'v)
+		    (setq anamex 'accx
+			  anamey 'accy
+			  namex 'velx
+			  namey 'vely
+			  anum vnum
+			  arate vrate)))
+	     (setq ptrx (get (*array anamex 'flonum pnum) 'array)
+		   ptry (get (*array anamey 'flonum pnum) 'array)
+		   ptr1x (get namex 'array)
+		   ptr1y (get namey 'array))
+	     (do ((i 1 (1+ i)))
+		 ((= i pnum))
+		 (store (arraycall flonum ptrx i)
+			(-$ (arraycall flonum ptr1x i)
+			    (arraycall flonum ptr1x (1- i))))
+		 (store (arraycall flonum ptry i)
+			(-$ (arraycall flonum ptr1y i)
+			    (arraycall flonum ptr1y (1- i)))))
+	     (store (arraycall flonum ptrx 0)
+		    (-$ (*$ (arraycall flonum ptrx 1) 2.0)
+			(arraycall flonum ptrx 2)))
+	     (store (arraycall flonum ptry 0)
+		    (-$ (*$ (arraycall flonum ptry 1) 2.0)
+			(arraycall flonum ptry 2)))
+	     (cond ((eq letter 'p)
+		    (setq rscale (float vrate))
+		    (scale 'velx rscale)
+		    (scale 'vely rscale)))
+	     (return (list anamex anamey))))
+
+
+;;;Apply a running square filter of width 2*width+1 to an array.
+(defun filter (aname width)
+	(prog (end1 end2 fend2 ptr)
+	      (setq end1 (- (cadr (arraydims aname)) width)
+		    end2 (1+ (* width 2))
+		    fend2 (float end2)
+		    ptr (get aname 'array))
+	      (do ((i (* 2 width) (1+ i))
+		   (sum 0.0 0.0))
+		  ((= i end1))
+		  (do ((j 0 (1+ j)))
+		      ((= j end2))
+		      (setq sum (+$ sum (arraycall flonum ptr (- i j)))))
+		  (store (arraycall flonum ptr (- i width))
+			 (//$ sum fend2)))))
+
+
+;;;Use trapezoidal rule to integrate an array.
+(defun integrate (atype)
+       (trapezoidal atype 'x)
+       (trapezoidal atype 'y))
+
+
+;;;Label the plot and draw a horizontal axis with ticks.
+(defun label (aname item)
+       (prog (letter item1 item00)
+	     (setq letter (car (explode aname)))
+	     (cond ((or (eq letter 'p)
+			(eq letter 'v)
+			(eq letter 'a))
+		    (label-plot aname item)
+		    (cond (file-switch
+			   (discuss item -150. 30. fn1-last)
+			   (discuss item -80. 30. fn2-last)))
+		    (cond (shear-discuss
+			   (discuss item -150. 45. 'sheared)
+			   (discuss item -70. 45. shear-angle)))
+		    (ticks item))
+		   ((eq letter 'r)
+		    (power-ticks item)
+		    (discuss item 400. 300. 'power)
+		    (discuss item 400. 270. 'spectrum)
+		    (discuss item 400. 500. 'scaled)
+		    (discuss item 400. 470. rscale)
+		    (discuss item 400. 600. 'file)
+		    (discuss item 400. 570. fn1-last)
+		    (discuss item 500. 570. fn2-last)
+		    (discuss item 400. 400. 'main-peak)
+		    (array-max 'real)
+		    (discuss item 400. 370. (//$ (float (* max-index units:sec))
+						 (*$ 20.0 (float rrate))))
+		    (setq item00 (discribe item))
+		    (setq item1 (discreate (+ 600. (car item00))
+					   (+ 200. (cadr item00))))
+		    (label-plot power-name item1)))))
+
+
+;;;Does the actual lettering.
+(defun label-plot (aname item3)
+       (prog (letter letter1 label1 label2)
+	     (setq letter (explode aname))
+	     (setq letter1 (cadddr letter)
+		   letter (car letter))
+	     (cond ((eq letter 'p)
+		    (setq label2 'position))
+		   ((eq letter 'v)
+		    (setq label2 'velocity))
+		   ((eq letter 'a)
+		    (setq label2 'acceleration)))
+	     (cond ((eq letter1 'x)
+		    (setq label1 'horizontal))
+		   ((eq letter1 'y)
+		    (setq label1 'vertical)))
+	     (discuss item3 -150. 15. label1)
+	     (discuss item3 -150. 0. label2)))
+
+
+;;;Massage raw position data.
+(defun massage (atype)
+       (cond ((eq atype 'pos)
+	      (filter 'posx 1)
+	      (filter 'posx 1)
+	      (filter 'posy 1)
+	      (filter 'posy 1))
+	     ((eq atype 'vel)
+	      (filter 'velx 1)
+	      (filter 'velx 1)
+	      (filter 'vely 1)
+	      (filter 'vely 1))))
+
+
+;;;Plot an array line.  The second argument is the vertical offset, the third the
+;;;scaling.  Defaults for the last two arguments are the previous values.
+;;;If the scale is an integer, it is assumed to mean the maximum range in TV
+;;;coordinates.  If scale is a flonum, it is multiplied against the data.
+(defun plot nargs
+       (prog (aname vertical scale rate item apointer element)
+	     (cond ((= nargs 0)
+		    (setq aname old-aname
+			  vertical old-vertical
+			  scale old-scale)
+		    (go tag)))
+	     (setq aname (arg 1)
+		   old-aname aname)
+	     (cond ((= nargs 1)
+		    (setq vertical old-vertical
+			  scale old-scale))
+		   ((= nargs 2)
+		    (setq vertical (arg 2)
+			  scale old-scale
+			  old-vertical vertical))
+		   ((setq vertical (arg 2)
+			  scale (arg 3)
+			  old-vertical vertical
+			  old-scale scale)))
+    tag	     (setq rate (eval (implode (list (car (explode aname))
+					     'r 'a 't 'e)))
+		   item (discreate horizontal vertical))
+	     (cond ((fixp scale)
+		    (setq rscale (//$ (float scale) (absolute-max aname))))
+		   ((setq rscale scale)))
+	     (setq apointer (get aname 'array))
+	     (disaline item 0 (fix (*$ rscale (arraycall flonum apointer 0))) 1)
+	     (do ((i 1 (1+ i))
+		  (index)
+		  (end (cadr (arraydims aname))))
+		 ((= i end))
+		 (setq element (fix (*$ rscale (arraycall flonum apointer i)))
+		       index (// (* i units:sec) rate))
+		 (disaline item index element -1))
+	     (label aname item)))
+
+
+;;;Plot and xgp data one line at a time to conserves storage.
+(defun plot1 fexpr (fname)
+       (apply 'preplot fname)     
+       (plot 'posx 1000. 100.)
+       (plot 'velx 800.)
+       (xgp)
+       (disflush)
+       (plot 'accx 600.)
+       (xgp 'a)
+       (disflush)
+       (plot 'posy 400.)
+       (plot 'vely 200.)
+       (xgp 'a)
+       (disflush)
+       (plot 'accy 0)
+       (discuss (discreate) 1000. -150. (list fn1-last fn2-last))
+       (xgp 'a)
+       (disflush)
+       (write 0 500. 30.)
+       (xgp))
+
+
+;;;Display just the accelerations.
+(defun plot2 nil
+       (disflush)
+       (plot 'accx 500 .15)
+       (plot 'accy 200 .15)
+       (discuss (discreate) 1000 0 (list fn1-last fn2-last)))
+
+
+;;;Plot 6 graphs together: horizontal position, velocity, and acceleration,
+;;;then vertical.
+(defun plot6 fexpr (fname)
+       (disflush)
+       (apply 'unpack fname)
+       (massage 'pos)
+       (orient)
+       (disflush)
+       (cond ((= tangent 0.0))
+	     ((rotate 'acc tangent 1)))
+       (plot 'posx 1000. 1.0)
+       (diff 'pos)
+       (plot 'velx 800. 9.0)
+       (plot 'accx 600. 0.1)
+       (plot 'posy 400. 1.0)
+       (plot 'vely 200. 9.0)
+       (plot 'accy 0 0.1)
+       (discuss (discreate) 1000. -125. (list fn1-last fn2-last)))
+
+
+;;;Plot a successive list of files.
+(defun plotn fexpr (fnames)
+       (do ((fname fnames (cdr fname)))
+	   ((null fname))
+	   (apply 'plot1 (list (car fname)))
+	   (disflush)))
+
+;;;Preplot the position data for possible orientation change.
+(defun preplot fexpr (fname)
+       (prog (slant)
+       (disflush)
+       (apply 'unpack fname)
+       (massage 'pos)
+       (adjust-horizontal)
+       (cond (orient-switch
+	      (orient)
+	      (disflush)))
+       (cond (slant-switch
+	      (print '>>>enter)
+	      (mapcar 'princ '(slant / angle: / ))
+	      (setq slant (read))
+	      (shear 'pos slant)
+	      (shear 'acc slant)))
+       (diff 'pos)))
+
+
+;;;Use Simpson's rule to integrate an array.
+(defun simpson (atype acoord)
+       (prog (aname itype iname ptr aptr num)
+	     (setq aname (implode (append (explode atype) (list acoord))))
+	     (cond ((eq atype 'acc)
+		    (setq vrate arate
+			  vnum anum
+			  num anum
+			  itype '(v e l)))
+		   ((eq atype 'vel)
+		    (setq prate vrate
+			  pnum vnum
+			  num vnum
+			  itype '(p o s)))
+		   ((return nil)))
+	     (setq iname (implode (append itype (list acoord))))
+	     (*array iname 'flonum num)
+	     (setq ptr (get iname 'array)
+		   aptr (get aname 'array))
+	     (store (arraycall flonum ptr 0) 0.0)
+	     (store (arraycall flonum ptr 1) 0.0)
+	     (do ((i 1 (1+ i))
+		  (end (1- (cadr (arraydims aname)))))
+		 ((= i end))
+		 (store (arraycall flonum ptr (1+ i))
+			(+$ (arraycall flonum ptr (1- i))
+			    (//$ (+$ (arraycall flonum aptr (1+ i))
+				     (*$ 4.0 (arraycall flonum aptr i))
+				     (arraycall flonum aptr (1- i)))
+				 3.0))))
+	     (cond ((eq atype 'vel)
+		    (scale iname (//$ 10.0 (float vrate)))))))
+
+
+;;;Places tick marks on the axis every 100 msecs.
+(DEFUN TICKS (item2) 
+       (prog (right-end index horiz item22)
+	     (setq item22 (discribe item2))
+	     (setq right-end (- (caddr item22) (car item22)))
+	     (disaline item2 right-end 0 1)
+	     (disaline item2 0 0 -1)
+	     (DO ((I 0. (1+ i))
+		  (index 0 (// (* i units:sec) 10.)))
+		 ((NOT (< index right-end)))
+		 (DISALINE item2 index 5. 1.)
+		 (DISALINE item2 index -5. -1.))
+	     (do ((i 1 (1+ i))
+		  (index (lsh units:sec -1) 
+			 (lsh (* (1+ i) units:sec) -1)))
+		 ((not (< index right-end)))
+		 (discuss item2 (- index 25.) -35. (* i 500.)))
+	     (do ((i 1 (1+ i)))
+		 ((= i 10.))
+		 (setq index (// (* i units:sec) 100.))
+		 (disaline item2 index 3 1)
+		 (disaline item2 index -3 -1))
+	     (setq horiz (// units:sec 20.))
+	     (disaline item2 horiz 5 1)
+	     (disaline item2 horiz -5 -1)))
+
+
+;;;Integrate by using the trapezoidal rule.
+(defun trapezoidal (atype acoord)
+       (prog (aname itype iname ptr aptr num)
+	     (setq aname (implode (append (explode atype) (list acoord))))
+	     (cond ((eq atype 'acc)
+		    (setq vrate arate
+			  vnum anum
+			  num anum
+			  itype '(v e l)))
+		   ((eq atype 'vel)
+		    (setq prate vrate
+			  pnum vnum
+			  num vnum
+			  itype '(p o s)))
+		   ((return nil)))
+	     (setq iname (implode (append itype (list acoord))))
+	     (*array iname 'flonum num)
+	     (setq ptr (get iname 'array)
+		   aptr (get aname 'array))
+	     (store (arraycall flonum ptr 0) (arraycall flonum aptr 0))
+	     (do ((i 1 (1+ i))
+		  (end (cadr (arraydims aname))))
+		 ((= i end))
+		 (store (arraycall flonum ptr i)
+			(+$ (arraycall flonum ptr (1- i))
+			    (arraycall flonum aptr i))))
+	     (cond ((eq atype 'vel)
+		    (scale iname (//$ 1.0 (float vrate)))))))
+ 
+
+;;;Unpack binary file of coordinate pairs sent from the mini-robot 1145.
+;;;The first halfword is the number of position points, the second the number
+;;;of acceleration points, the third the sampling rate for position, the fourth
+;;;the sampling rate for acceleration.  The data halfwords follow as
+;;;alternated horizontal position, horizontal acceleration, vertical position,
+;;;and vertical acceleration.  Arrays are created for them.  Velocity is
+;;;calculated from the position and an array created.
+(defun UNPACK fexpr (fname) 
+       (PROG (nargs file-object fn1 fn2 P0 p1 p2 accelx accely)
+	     (setq nargs (length fname))
+	     (cond ((= nargs 0)
+		    (setq fn1 fn1-last
+			  fn2 fn2-last))
+		   ((= nargs 1)
+		    (setq fn1 fn1-last
+			  fn2 (car fname)
+			  fn2-last fn2))
+		   ((setq fn1 (car fname) 
+			  fn1-last fn1
+			  fn2 (cadr fname)
+			  fn2-last fn2)))
+	     (print '***unpacking)
+	     (mapcar 'princ (list fn1 '/  fn2))
+	     (SETQ file-object (OPEN (list fn1 fn2) '(IN FIXNUM)) 
+		   P0 (IN FILE-OBJECT) 
+		   pnum (lsh p0 -18.)
+		   anum (boole 1 77777 p0)
+		   p0 (in file-object)
+		   prate (lsh p0 -18.)
+		   arate (boole 1 77777 p0))
+	     (array posx flonum pnum)
+	     (array posy flonum pnum)
+	     (setq prate 94.
+		   accelx (get (ARRAY ACCX FLONUM anum) 'array)
+		   accely (get (ARRAY ACCY FLONUM anum) 'array))
+	     (cond (reverse-accelerations
+		    (setq accelx accely)
+		    (setq accely (get 'accx 'array))))
+	     (DO ((I 0. (1+ I)))
+		 ((= i pnum))
+		 (setq p1 (in file-object))
+		 (setq p2 (in file-object))
+		 (STORE (posx i)
+			(FLOAT (ASH (LSH P1 2) -20.)))
+		 (STORE (posy i)
+			(FLOAT (ASH (LSH P2 2) -20.)))
+		 (cond (negate-accx
+			(store (arraycall flonum accelx i)
+			       (float (- (ash (lsh p1 20.) -20.)))))
+		       ((store (arraycall flonum accelx i)
+			       (float (ash (lsh p1 20.) -20.)))))
+		 (cond (negate-accy
+			(STORE (arraycall flonum accely i)
+			       (FLOAT (- (ASH (LSH P2 20.) -20.)))))
+		       ((store (arraycall flonum accely i)
+			       (float (ash (lsh p2 20.) -20.))))))
+	     (cond ((= pnum anum)(return nil)))
+	     (do ((i pnum (1+ i))
+		  (p1 (in file-object) (in file-object))
+		  (p2 (in file-object) (in file-object)))
+		 ((= (1+ i) anum)
+		  (close file-object))
+		 (cond (negate-accx
+			(store (arraycall flonum accelx i)
+			       (float (- (ash (lsh p1 20.) -20.)))))
+		       ((store (arraycall flonum accelx i)
+			       (float (ash (lsh p1 20.) -20.)))))
+		 (cond (negate-accy
+			(store (arraycall flonum accely i)
+			       (float (- (ash (lsh p2 20.) -20.)))))
+		       ((store (arraycall flonum accely i)
+			       (float (ash (lsh p2 20.) -20.))))))
+	     (scale 'posx 0.1)
+	     (scale 'posy 0.1)))
+
+
+;;;This unpack was used for the data format of files created before oc20.
+;;;The position sampling rate was approx. 100 hz, the acc. rate 400 hz.
+(defun UNPACK-old fexpr (fname) 
+       (PROG (FILE-OBJECT P0 p1 p2 pos fn1 fn2 nargs
+			  accelx accely)
+	     (setq nargs (length fname))
+	     (cond ((= nargs 0)
+		    (setq fn1 fn1-last)
+		    (setq fn2 fn2-last))
+		   ((= nargs 1)
+		    (setq fn1 fn1-last)
+		    (setq fn2 (car fname)
+			  fn2-last fn2))
+		   ((setq fn1 (car fname) fn1-last fn1)
+		    (setq fn2 (cadr fname) fn2-last fn2)))
+	     (print '***unpacking)
+	     (mapcar 'princ (list fn1 '/  fn2))
+	     (SETQ FILE-OBJECT (OPEN (list fn1 fn2) '(IN FIXNUM)) 
+		   P2 (IN FILE-OBJECT) 
+		   anum (LSH P2 -20.)
+		   pnum (lsh anum -2))
+	     (array posx flonum pnum)
+	     (array posy flonum pnum)
+	     (setq accelx (get (ARRAY ACCX FLONUM anum) 'array)
+		   accely (get (ARRAY ACCY FLONUM anum) 'array)
+		   prate 100.
+		   arate 400.)
+	     (cond (reverse-accelerations
+		    (setq accelx accely
+			  accely (get 'accx 'array))))
+	     (DO ((I 0. (1+ I)))
+		 ((= i anum) 
+		  (CLOSE FILE-OBJECT))
+		 (setq p0 p2
+		       p1 (in file-object)
+		       p2 (in file-object))
+		 (cond ((and (= 0 (remainder i 4))
+			     (< (lsh i -2) pnum))
+			(setq pos (lsh i -2))
+			(STORE (posx pos)
+			       (FLOAT (ASH (LSH P0 20.) -20.)))
+			(STORE (posy pos)
+			       (FLOAT (ASH (LSH P1 20.) -20.)))))
+		 (store (arraycall flonum accelx i)
+			(float (ash (lsh p1 2.) -20.)))
+		 (STORE (arraycall flonum accely i)
+			(FLOAT (ASH (LSH P2 2.) -20.))))
+	     (scale 'posx 0.1)
+	     (scale 'posy 0.1)))
+
+
+;;;Write the handwriting on the screen, with given horizontal and vertical
+;;;offsets and an absolute scale.
+(defun write fexpr (params)
+       (prog (item hor1 ver1 hor ver)
+	     (cond ((null params)
+		    (setq rscale 20.0
+			  hor 0
+			  ver 500.))
+		   ((setq rscale (float (caddr params))
+			  hor (car params)
+			  ver (cadr params))))
+	     (setq hor (- hor (fix (*$ rscale (array-min 'posx))))
+		   ver (- ver (fix (*$ rscale (*$ 0.5 (+$ (array-max 'posy)
+							  (array-min 'posy)))))))
+	     (setq hor1 (fix (*$ rscale (posx 0)))
+		   ver1 (fix (*$ rscale (posy 0))))
+	     (setq item (discreate hor ver))
+	     (disaline item hor1 ver1 1)
+	     (do ((i 1 (1+ i)))
+		 ((= i pnum))
+		 (disaline item (fix (*$ rscale (posx i)))
+			        (fix (*$ rscale (posy i))) -1))
+	     (cond ((null file-switch))
+		   ((discuss item (- hor1 150.) ver1 fn1-last)
+		    (discuss item (- hor1 80.) ver1 fn2-last)))))

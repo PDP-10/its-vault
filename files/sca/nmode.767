@@ -1,0 +1,2301 @@
+;-*-lisp-*-
+;***********************************************************************
+;*************** New Mode Package for Extending Maclisp ****************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This is the new Mode Package for extending MACLISP.  It contains various
+;macro definitions, as well as the basic mode package.  For more documentation
+;than appears here, see SCA;MODMEM >.
+
+;This file consists of basically 7 parts:  Introductory Documentation, TYPE
+;Handlers, Macro Expanders, BFCN Handlers, DEFMODE Stuff, Error Messages, and
+;Debugging Aids.
+
+(comment 1.  Introductory Documentation)
+
+
+(comment 1.1  Syntax Description)
+
+
+;***revise:
+
+;A CLOBBER-DEF must come AFTER the SUB it modifies.
+;One can only NO-RET ATOMs.  [***change?]
+
+;A TYPE-DESC is either an atomic symbol [the name of the type], or a function
+;type:  (<KIND> <RANGE-TYPE> . <DOMAIN>), where <RANGE-TYPE> is a TYPE-DESC and
+;<DOMAIN> is a DOMAIN-DESC.
+;
+;A CHANGES-DESC looks like:
+;((repeat TYPE-NAME TYPE)
+; (repeat FCN-DESC SYMBOL)
+; repeat (MAPPING-NAME repeat TYPE)).
+;
+;A FCN-DESC is a description of a BFCN or constant.  It consists of either an
+;atomic symbol [name of a BFCN or constant], or (RANGE-TYPE NAME), where
+;RANGE-TYPE is a TYPE-DESC and NAME is an atomic symbol, or
+;(RANGE-TYPE (NAME . DOMAIN)), where DOMAIN is a DOMAIN-DESC.
+;[***Explain FCNS-DESCs.]
+;
+;A DOMAIN-DESC is either a list of TYPE-DESCs, or a list of TYPE-DESCs with the
+;atom REPEAT in it somewhere.
+;
+;An LFROBS-DESC is a list of either (<ALGEBRA-NAME> repeat <TYPE-DESC>) or
+;(FCN[S] repeat <FCNS-DESC>).
+;
+;DEFMODEs look like the following, except that one may put NIL and/or T in
+;many places, which mean special things:
+;(DEFMODE <MODE-NAME> repeat <CLAUSE>), where <CLAUSE> is one of:
+;
+;(T[UN]DECLARE repeat (<TYPE-DESC> repeat [<VAR> or (<VAR> <DOMAIN-DESC>)])),
+;
+;(TYPE <TYPE-NAME> [<OPT-ARG>]), where <OPT-ARG>, if present, is either FIXNUM,
+;FLONUM, or a TYPE-DESC,
+;
+;([CONSTANT or constant] <NAME> <TYPE-DESC> @<BODY>),
+;
+;(DEFUN <NAME> <BVL> <RET-DESC> @<BODY>), where <RET-DESC> is a TYPE-DESC, the
+;returned type for SUBRs, and the total [functional] type for LSUBRs.
+;
+;(ARG @<LFROBS-DESC>),
+;
+;(RET-TYPE[S] repeat <TYPE-DESC>),
+;
+;(RET-CHECK @<LFROBS-DESC>),
+;
+;(NO-RET @<LFROBS-DESC>),
+;
+;(STRUCT <STRUCT-DESC> repeat <PART-DESC>),
+;where <STRUCT-DESC> and <PART-DESC> both look like either:
+;<TYPE-NAME> or (<BFCN-NAME> <TYPE-DESC>), or finally
+;
+;([ARG-]SUB [<MODE-NAME> or (<MODE-NAME>) or (<MODE-NAME> <constant-NAME>)]
+;	    <ARG-TYPES> <RET-TYPES> @<CHANGES-DESC>).
+
+(comment 1.2  Data Structure Descriptions
+
+
+;ANY cannot have or be a MODE-SUB-TYPE.
+
+ (defmode type ()
+	  (fixed-prop mode-sub-types (list type)
+		      mode-lisp-type (disj 'nil 'fixnum 'flonum)))
+
+ (defmode type-name ()
+	  (disj 'any				;union of everything legal
+		symbol				;non-functional type
+		fcn-type
+		(cons 'union (list type))))
+
+ (defmode fcn-type ()
+	  (cons (kind (disj 'subr 'lsubr 'constant))
+		(cons (range type)
+		      (domain (list (disj 'repeat type))))))
+
+ (defmode *tvars* () (list (cons (var symbol) (type type))))
+
+;The following mode is for results returned by TFORMS-EXPANDER.  The hunk may
+;actually be just a CONS, with the CXR 2 and CXR 3 slots missing.  Full 4-hunks
+;will only exist if the [top-level] list has >1 elt, and CXR 2 of all the items
+;will be the same.  TYPE [CXR 1] will never be NONE.
+
+ (defmode tforms-result ()
+	  (list (hunk type
+		      (list (ncons 'nil))
+		      (list new-form)
+		      expansion)))
+
+ (defmode *return-forms* ()
+	  (cons (list (ncons 'nil))
+		(list (cons type (list new-form)))))
+
+ (defmode bfcn-name ()
+	  (fixed-prop mode-bfcn (list bfcn)
+		      mode-keep-insts
+		      (list (cons (num-args fixnum) bfcn-inst))))
+
+ (defmode bfcn ()
+	  (struct (domain-kind (disj 'constant 'subr 'lsubr))
+		  (domain (list type))
+		  (range type)
+		  (mode-name symbol)
+		  (slot (disj 'nil (list fixnum)))
+		  (status
+		   (disj (current-bfcn (disj 'arg 'virgin 'expanding))
+			 (mode-bfcn (disj 'hunk 'cxr 'alias 'macro 'nfcn))))
+		  (disj (bfcn-name symbol)
+			(lisp-fcn-name symbol)
+			subr-pointer lsubr-pointer)		;not in files
+		  (random (disj (arg (arg-num fixnum))
+				(virgin (lttf *tvars* bvl body))
+				(cxr fixnum)
+				(alias symbol)
+				(macro (cons bvl body))
+				(nfcn (disj 'nil	      ;normal case
+					    (cons bvl body)   ;must ADD-COMPILE
+					    ))))))
+ 
+ (defmode bfcn-inst () (disj 'nil (cons (type fcn-type) (frob bfcn-frob))))
+
+ (defmode bfcn-frob ()
+	  (disj 'nil
+		(struct (netw-name (disj 'nil symbol))
+			(slot (list fixnum))
+			(status (disj 'arg 'arg-temp 'virgin 'expanding
+				      'hunk 'cxr 'alias 'macro 'nfcn))
+			(random (disj (cxr fixnum)
+				      (alias symbol)
+				      (macro (cons bvl body))
+				      (arg fixnum)
+				      (arg-temp (cons fixnum mode-inst))
+				      (virgin bfcn)
+				      (expanding bfcn))))))
+
+(defmode fcn-desc ()
+	 (disj (bfcn-name symbol)
+	       (cons (type fcn-type)
+		     (bfcn-name symbol))))
+
+ (defmode mode-name ()
+	  (fixed-prop ret-mode ret-mode
+		      mode-hunks (list hunk)
+		      mode-bfcn-cnis
+		      (list (cons (bfcn-name symbol) bfcn-inst))))
+
+ (defmode ret-mode ()
+	  (struct (types (list (lttf type	;symbol, not ANY
+				     lisp-type
+				     (sub-types (list type)))))
+		  (netw-desc (list bfcn))
+		  (arg-frobs (list (cons (cons (type fcn-type) bfcn-name)
+					 (slot-num fixnum))))
+		  (*netw-num* fixnum)
+		  (*no-rets* (list bfcn-name))		;change to FCN-DESC?
+		  (subs (list mode-inst))))
+
+;TYPE-CHANGES and RET-CHANGES have their CONSes reversed from each other:
+ (defmode mode-inst ()
+	  (struct (mode-name symbol)
+		  (type-changes
+		   (list (cons (type symbol)			;not ANY
+			       type)))
+		  (ret-changes
+		   (list (cons (bfcn-name symbol)		;caller mode
+			       fcn-desc)))			;callee mode
+		  (loc (disj (netw-name symbol) (slot-num fixnum)))
+		  (arg-frobs (list bfcn-frob)))))
+
+;***change this page:
+(comment 1.3  New Mode Introduction)
+
+;When a defmode expands, three things are created:  a function for creating
+;that mode at run-time [actually a function for building the necessary netws],
+;a model of the mode, used at compile-time to expand the function definitions,
+;and a function for creating a compile-time model of the mode.
+;
+;The compile-time model is very similar to the run-time mode.  Both are
+;collections of:
+;
+;1.  DATA-TYPEs or TYPEs
+;2.  ELTs
+;3.  FUNCTIONs or ARROWs
+;4.  ALIAS-FUNCTIONs or ALIASes
+;5.  CANONICAL ARROWs or CANONs
+;6.  MACROs
+;
+;In addition, one must keep track of *TVARS*, a global [special] variable
+;which lists the TYPEs of user variables [information gotten from TDECLAREs].
+;These models are represented by putting appropriate things on the property
+;lists of the generic names involved [???].
+
+;DON'T use NEGATIVE args to LISTIFY [change to allow them?].
+
+(comment 1.4  Mode Base Introduction)
+
+;***Revise this page.
+
+;This is a "stupid" mode package in that all complicated issues, such as
+;manifestation, choice of alternative but isomorphic representations, etc.,
+;are left to the user.  This is because these issues involve heuristic
+;decisions that will affect space and time efficiencies.  Also, one cannot
+;define or use modes at run-time, unless this package is loaded first.  There
+;are, however, two good reasons for using (stupid) modes:  (1) They allow the
+;use of mnemonic names, which makes code easier to write and read, and (2) They
+;make code somewhat extensible, as well as changeable (representation
+;independent).
+
+;One can define new
+;modes out of old ones using DEFMODE.  Some "modes", such as STRUCT, are
+;actually mode "functions".  One can define new modes, or new mode functions.
+;***unfinished
+
+;MODES can be used for anything where (at least one of) these two goals apply,
+;in particular whenever there exist several alternate implementations of a
+;particular idea.  [No - modes raise LEVEL of thinking - ??]
+
+;A type is a mapping from a set of lisp objects to a set of abstract
+;constructive objects.  (Bijective/injective/surjective/well-defined?)
+
+;Note that MODE, and MMACRO properties are put on various symbols.
+
+;MOBJECT's:  on alist's MSYMBOLS, MFUNCTIONS
+
+;Defmodes and mmacros may not be destroyed or made local.
+
+;No mode can be named nil.
+
+;***Allow a run-time debug-mode with run-time type checking?
+
+
+(comment 1.5  System Modes)
+
+;One can construct, modify, and extract parts of objects [STRUCT's?] defined
+;using modes.  The particular set of functions which perform these actions are
+;determined by the "type" of the mode.  The currently existing mode types and
+;their corresponding functions are:
+;
+;	(1)  Primitive - This should be called atomic, but that term is used by
+;lisp.  This category includes things like booleans, integers, flonums,
+;character objects, etc.  There are no non-trivial constructors, modifiers, or
+;selectors.
+;	(2)  ***
+
+;Maclisp already knows about some
+;modes:  Booleans (T and NIL), Fixnums, Flonums, Integers (Fixnums and
+;Bignums), Hunks (including Conses), Lists, and Arrays.
+
+;Files should (declare ((lambda (macros) (eval (read))) nil))
+;(load '((mc sca) mode fasl)) [rather than (macros fasl)] to use the mode
+;package.  Users should also (load '((mc sca) mfcns fasl)) at run-time.
+
+;This file should be expanded as needed.
+
+;***Create an ALIST and a PLIST mode (and a HASHED mode?).
+
+;Only works for QNCOMPLR:
+(declare (or (memq 'mmacro (status features)) (load '((sca) nmacro))))
+(or (memq 'mmacro (status features)) (load '((sca) nmacro)))
+
+;(include ((sca) nmacro >)) should be used for NCOMPLR.
+
+(declare (mapex t)
+	 (genprefix scamode)
+	 (macros t)
+	 (special *tvars* *hard-assed* *return-forms* *return-type*
+		  *bfcn* *lsubr-type*
+		  *no-rets* *ret-checks* *types* *modes* *subs* *all-bfcns*
+		  *mode-name* *compiles* *name-num* *netw-num* *arg-num*
+		  *keep-insts* *keep-names* *arg-temps* *mode-inst*
+		  *num-args*
+		  *modes-file* *in-file* *in-specs*
+		  *prin1* prin1 *top-type* *rset)
+	 (fixnum *name-num* *netw-num* *arg-num* *num-args*
+		 (form-weight notype notype notype))
+	 (*lexpr mode-err))
+
+
+(scachar)
+
+
+(comment 1.6  Mode Initialization)
+
+
+(sstatus feature mode)
+
+%(or (boundp '*tvars*) (setq *tvars* nil))
+(or (boundp '*keep-insts*) (setq *keep-insts* nil))
+(or (boundp '*modes*) (setq *modes* nil))
+(or (boundp '*subs*) (setq *subs* nil))
+
+(or (boundp '*hard-assed*) (setq *hard-assed* t))	;make NIL?
+(declare (eval (read)))
+(setq *hard-assed* nil)		;for mode package code itself [since in LISP]
+
+
+;BFCN-INST-TYPE is defined here because it is a macro:
+(defsmac bfcn-inst-type (bfcn-inst) `(car ,bfcn-inst))
+
+(comment 2.  TYPE Handlers)
+
+
+;A UNION type may have 1 or even 0 args, but none of the args will be NIL, T,
+;another UNION type, or a TYPE$SUBSET? of another arg to the union.  The CDRs
+;of UNION types are assumed clobberable.
+;
+;The fundamental operation on TYPEs is TYPE$SUBSET?, defined as follows:
+;(TYPE$SUBSET? (TYPE 'A) (TYPE 'B)) tells whether or not the assignment
+;(_ A B) is safe.  This leads to some weird facts, such as the parity of
+;being a SUBSET is reversed for arg-types of function-types.  [I.e., one can
+;never get in trouble using PLUS instead of +, if the result is known to be
+;a fixnum.]
+
+
+(defsmac type$joker () `(ncons 'union))		;type NONE
+
+
+%(defun type$subset? (t1 t2)
+	(cond ((or (eq t1 t2) (eq t2 'any)) t)
+	      ((eq t1 'any) nil)
+	      ((and (not (atom t1)) (eq (car t1) 'union))
+	       (do ((t1 (cdr t1) (cdr t1)))
+		   ((null t1) t)
+		   (if (not (type$subset? (car t1) t2)) (return nil))))
+	      ((or (atom t2) (eq (car t2) 'union))
+	       (do ((t2 (if (atom t2) (get t2 'mode-sub-types) (cdr t2))
+			(cdr t2)))
+		   ((null t2) nil)
+		   (if (type$subset? t1 (car t2)) (return t))))
+	      ((eq (car t2) 'lsubr)
+	       (and (eq (car t1) 'lsubr)
+		    (type$subset? (cadr t1) (cadr t2))
+		    (lsubr-subset? (cddr t1) (cddr t2))))
+	      (t
+	       (and (eq (car t1) (car t2))
+		    (= (length t1) (length t2))
+		    (type$subset? (cadr t1) (cadr t2))
+		    (catch (progn (mapc (function type$subset?-or-throw)
+					(cddr t2) (cddr t1))
+				  t)
+			   ict-err)))))
+
+%(defun lsubr-subset? (l1 l2)
+	(prog (r1 r2 x1)		;uses NIL initial value
+	 loop (if (and (null l2) (null r2)) (return t))
+	      (if (and (null l1) (null r1)) (return nil))
+	      (cond ((null l1) (setq l1 r1))
+		    ((eq (car l1) 'repeat) (setq l1 (cdr l1) r1 l1)))
+	      (cond ((null l2) (if (eq l1 x1) (return t) (setq l2 r2)))
+		    ((eq (car l2) 'repeat) (setq l2 (cdr l2) r2 l2 x1 l1)))
+	      (if (not (type$subset? (lpop l2) (lpop l1))) (return nil)
+		  (go loop))))
+
+;Works for atom REPEAT:
+%(defun type$subset?-or-throw (t1 t2)
+	(or (type$subset? t1 t2) (throw nil ict-err)))
+
+%(defun type$= (t1 t2)		;ignores sub-types, works for atom REPEAT
+	(or (eq t1 t2)
+	    (and (not (atom t1))
+		 (not (atom t2))
+		 (eq (car t1) (car t2))
+		 (or (type$list= (cdr t1) (cdr t2))
+		     (and (eq (car t1) 'union)
+			  (type$lsub? (cdr t1) (cdr t2))
+			  (type$lsub? (cdr t2) (cdr t1)))))))
+
+%(defun type$lsub? (l1 l2)
+	(do ((l1 l1 (cdr l1)))
+	    ((null l1) t)
+	    (if (do ((l2 l2 (cdr l2)))
+		    ((null l2) t)
+		    (if (type$= (car l1) (car l2)) (return nil)))
+		(return nil))))
+
+%(defun type$list= (l1 l2)	;check (= (length l1) (length l2)) first?
+	(do ((l1 l1 (cdr l1))
+	     (l2 l2 (cdr l2)))
+	    ((null l1) (null l2))
+	    (if (or (null l2) (not (type$= (car l1) (car l2)))) (return nil))))
+
+%(defun type$union (t1 t2)
+	(setq t1 (cons 'union (nec-types t1 t2))
+	      t2 (nconc (cdr t1) (nec-types t2 t1)))
+	(if (null (cdr t2)) (car t2) (cons 'union t2)))
+
+%(defun type$lunion (ltypes)
+	(do ((type (type$joker) (type$union (car ltypes) type))
+	     (ltypes ltypes (cdr ltypes)))
+	    ((null ltypes) type)))
+
+%(defun nec-types (t1 t2)
+	(if (or (atom t1) (not (eq (car t1) 'union)))
+	    (and (not (type$subset? t1 t2)) (list t1))
+	    (mapcan (fn (t3) (and (not (type$subset? t3 t2)) (list t3)))
+		    (cdr t1))))
+
+;Works for atom REPEAT:
+%(defun get-type (desc)
+	(cond ((atom desc) (no-num desc))
+	      ((memq (car desc) '(subr lsubr constant))
+	       (cons (car desc) (mapcar (function get-type) (cdr desc))))
+	      ((eq (car desc) 'union)
+	       (type$lunion (mapcar (function get-type) (cdr desc))))
+	      (t (cpt-err desc))))
+
+%(defun put-sub-types (type-name sub-types)
+	(or (atom type-name) (nat-err type-name))
+	(or (memq type-name *types*) (lpush type-name *types*))
+	(bind ((type <- (type$lunion (nconc sub-types
+					    (get type-name 'mode-sub-types)))))
+	      (putprop type-name
+		       (if (or (atom type) (not (eq (car type) 'union)))
+			   (list type)
+			   (cdr type))
+		       'mode-sub-types)))
+
+%(defun put-lisp-type (type-name lisp-type)
+	(or (atom type-name) (nat-err type-name))
+	(if (and (get type-name 'mode-lisp-type)
+		 (not (eq (get type-name 'mode-lisp-type) lisp-type)))
+	    (tae-err type-name))
+	(or (memq type-name *types*) (lpush type-name *types*))
+	(putprop type-name lisp-type 'mode-lisp-type))
+
+%(defun rem-type (type-name)
+	(remprop type-name 'mode-sub-types)
+	(remprop type-name 'mode-lisp-type))
+
+%(defun lsubr-type-expand (ltypes n)
+	(declare (fixnum i n))
+	(bind ((repeat <- nil) (rout <- nil))
+	      (repeat i (abs n)
+		      (cond ((null ltypes)
+			     (if (null repeat) (throw nil lsubr-wna))
+			     (setq ltypes repeat))
+			    ((eq (car ltypes) 'repeat)
+			     (setq repeat (cdr ltypes)
+				   ltypes repeat)))
+		      (lpush (lpop ltypes) rout))
+	      (if (and ltypes repeat) (throw nil lsubr-wna))
+	      (nreconc rout (and (< n 0) (or ltypes `(repeat @repeat))))))
+
+%(defun ret-type (type)
+	(cond ((eq type 'any) 'any)
+	      ((or (atom type) (eq (car type) 'union))
+	       (type$lunion (mapcar (function ret-type)
+				    (if (atom type) (get type 'mode-sub-types)
+					(cdr type)))))
+	      (t (cadr type))))
+
+%(defun fcn-type-num (fcn-type n)		;FCN-TYPE is an LSUBR type
+	(declare (fixnum n i))
+	(bind ((ltypes <- (cddr fcn-type)) (repeat <- nil))
+	      (repeat i n
+		      (cond ((null ltypes)
+			     (if (null repeat) (ict-err `(arg ,n)))
+			     (setq ltypes repeat))
+			    ((eq (car ltypes) 'repeat)
+			     (setq repeat (cdr ltypes)
+				   ltypes repeat)))
+		      (setq ltypes (cdr ltypes)))
+	      (if (null ltypes)
+		  (if (null repeat) (ict-err `(arg ,n))
+		      (car repeat))
+		  (car ltypes))))
+
+(defsmac tdeclare l		;put in DECLARE stuff for local use
+	 (mapc (fn (l1)
+		   (bind ((type <- (get-type (car l1))))
+			 (mapc (fn (v)
+				   (or (symbolp v) (ns-err v))
+				   (lpush (cons v type) *tvars*))
+			       (cdr l1))))
+	       l)
+	 t)
+
+(defsmac tundeclare l
+	 (mapc (fn (l1)
+		   (bind ((type <- (get-type (car l1))))
+			 (mapc (fn (v)
+
+  (do ((tvars *tvars* (cdr tvars))
+       (rout nil (cons (car tvars) rout)))
+      ((null tvars) (ce-err `(tundeclare (,(car l1) ,v))))
+      (cond ((and (eq (caar tvars) v) (type$= (cdar tvars) type))
+	     (setq *tvars* (nreconc rout (cdr tvars)))
+	     (return nil)))))
+
+			       (cdr l1))))
+	       l)
+	 t)
+
+(comment 3.  Macro Expanders)
+
+
+;TFORMS-EXPANDER takes a form and an expected type for the result as arguments,
+;and returns a list of possible expansions as dotted pairs of types of the
+;result, and expansions of the form, or 4-hunks, which also include some
+;expressions to be RPLACA'd.  One should generally DISPLACE the result.
+
+
+;E should be an expression to evaluate, whose value will be used if TYPE is
+;non-RANDOM:
+%(defun tforms-expander (e type)
+	(or (tforms-expander1 e type)
+	    (if (eq type 'any) (ce-err e) (ce2-err e type))))
+
+%(defun single-expand (e type)
+	(bind ((lctfs <- (tforms-expander e type)))
+	      (if (cdr lctfs)			;(NULL LCTFS) is impossible
+		  (amb2-err e type lctfs)
+		  (car lctfs))))
+
+%(defun single-return (out form)
+	(cond ((null out) (ce-err form))
+	      ((not (null (cdr out))) (amb-err form))
+	      (t (car out))))
+
+%(defun form-expander (e) (form-type-expander e 'any))
+
+%(defun form-type-expander (e type) (cdr (single-expand e type)))
+
+%(defun type (e) (car (single-expand e 'any)))
+
+%(defun tf-ok? (tp e type) (if (type$subset? tp type) (list (cons tp e)) nil))
+
+%(defun tf-ret (tp e type)				;a hack
+	(if (type$subset? tp type) (list (cons tp e))
+	    (and (not *hard-assed*) (list (cons type e)))))
+
+%(defun tforms-expander1 (e type)
+	(cond ((numberp e)
+	       (tf-ret (cadr (assq (typep e)
+				   '((fixnum *fixnum*)
+				     (flonum *flonum*)
+				     (bignum *bignum*))))
+		       e type))
+	;a hack for FUNARG macro:
+	      ((eq e '*) (list (cons (type$joker) e)))
+	      ((eq e t) (tf-ret '*boolean* e type))
+	      ((symbolp e)
+	       (bind ((cetp <- (assq e *tvars*)))
+		     (if cetp
+			 (tf-ok? (cdr cetp) e type)
+			 (tf-ret 'any e type))))
+	      ((atom e) (tf-ret 'any e type))
+	      ((eq (car e) 'quote) (tf-ret 'any e type))
+	      ((eq (car e) 'comment) (tf-ok? 'any e type))
+	      ((eq (car e) 'type-will-be)
+	       (tf-ok? (get-type (cadr e)) (form-expander (caddr e)) type))
+	      ((eq (car e) 'type-must-be)
+	       (clobber-if-single
+		(mapcan (fn (ctf)
+			    (and (type$subset? (car ctf) type) (list ctf)))
+			(tforms-expander (caddr e) (get-type (cadr e))))))
+	      ((eq (car e) 'left-bracket) (left-bracket-expander e type))
+	      ((eq (car e) 'call) (call-expander e type))
+	      ((eq (car e) 'funarg) (funarg-expander e type))
+	      ((memq (car e) '(bfcn bfn)) (bfcn-macro-expander e type))
+	      ((memq (car e) '(_ setq)) (_-expander e type))
+	      ((eq (car e) 'bfcn-call)		;this clause ok?
+	       (bind ((tp <- (cadr (bfcn-inst-type (cadr e)))))
+		     (and (type$subset? tp type)
+			  (progn
+			   (setq e (funcall (get 'bfcn-call 'macro) e))
+			   (tf-ret tp
+				   (if (eq (car e) 'bfcn-call) e
+				       (form-expander e))
+				   type)))))
+	      ((eq (car e) 'bfcn-nfn)		;this clause ok?
+	       (bind ((tp <- (bfcn-inst-type (cadr e))))
+		     (and (type$subset? tp type)
+			  (progn
+			   (setq e (funcall (get 'bfcn-nfn 'macro) e))
+			   (tf-ret tp
+				   (if (eq (car e) 'bfcn-nfn) e
+				       (form-expander e))
+				   type)))))
+	      ((memq (car e) '(defmode mode))
+	       (tf-ret 'any (funcall (get (car e) 'macro) e) type))
+	      ((and (atom (car e)) (get (car e) 'macro))
+	       (tforms-expander (funcall (get (car e) 'macro) e) type))
+	      ((eq (car e) 'function) (function-expander e type))
+	      ((eq (car e) 'progn)
+	       (bind ((lctfs <- (progn-expander (cdr e) type)))
+		     (mapc (fn (ctfs)
+			       (rplacd ctfs (if (null (cddr ctfs)) (cadr ctfs)
+						`(progn @(cdr ctfs)))))
+			   lctfs)
+		     lctfs))
+	      ((eq (car e) 'prog2) (prog2-expander (cdr e) type))
+
+;Continuation of function TFORMS-EXPANDER:
+
+	      ((eq (car e) 'cond) (cond-expander (cdr e) type))
+	;A hack:
+	      ((eq (car e) 'cond-clause) (cond-clause-expander (cdr e) type))
+	      ((eq (car e) 'do)
+	       (if (and (cadr e) (atom (cadr e)))
+		   (old-do-expander e type)
+		   (new-do-expander e type)))
+	      ((eq (car e) 'prog)
+	       (bind ((lctfs <- (prog-expander (cddr e) type)))
+		     (mapc (fn (ctfs)
+			       (rplacd ctfs `(prog ,(cadr e) @(cdr ctfs))))
+			   lctfs)
+		     lctfs))
+	      ((eq (car e) 'return)
+	       (list (cons (type$joker) (return-expander e))))
+	      ((memq (car e) '(and or))
+	       (bind ((lctfs <- (compat-forms (cdr e) type)))
+		     (mapc (fn (ctf) (rplacd ctf (cons (car e) (cdr ctf))))
+			   lctfs)
+		     lctfs))
+	      ((eq (car e) 'arg) (arg-expander e type))
+	      ((eq (car e) 'defun)
+	       (tf-ok? 'any (defun-expander e) type))
+	      ((eq (car e) 'go)
+	       (tf-ret (type$joker)
+		       `(go ,(if (atom (cadr e)) (cadr e)
+				 (form-expander (cadr e))))
+		       type))
+	      ((memq (car e) '(throw catch))
+	       (tf-ret (if (eq (car e) 'throw) (type$joker) 'any)
+		       `(,(car e) ,(form-expander (cadr e)) @(cddr e))
+		       type))
+	      ((memq (car e) '(status sstatus)) (tf-ret 'any e type))
+	;Stick in SET, hack CATCH and THROW [?]
+	      ((atom (car e))
+	       (tf-ret 'any
+		       `(,(car e) @(mapcar (function form-expander) (cdr e)))
+		       type))
+	      ((eq (caar e) 'lambda) (lambda-expander e type))
+	      (t
+	       (bind ((fcn <- (form-expander (car e))))
+		     (if (atom fcn) (tforms-expander (cons fcn (cdr e)) type)
+			 (tf-ret 'any
+				 `(,fcn
+				   @(mapcar (function form-expander) (cdr e)))
+				 type))))))
+
+
+%(defun function-expander (e type)
+	(bind ((fcn <- (cadr e)))
+	      (tf-ret 'any
+
+ (if (or (atom fcn) (not (eq (car fcn) 'lambda))) e
+     `(function (lambda ,(cadr fcn)
+			@(bind ((*tvars* <- *tvars*))
+			       (mapcar (function form-expander)
+				       (cddr fcn))))))
+ type)))
+
+;PROGN-EXPANDER takes a NON-EMPTY list of forms and an expected type of the
+;result, and returns a list of dotted pairs of the type returned by the last
+;form in the list, and a list of the expanded forms:
+%(defun progn-expander (lforms type)		;LFORMS cannot be empty
+	(do ((lforms lforms (cdr lforms))
+	     (*tvars* *tvars*)
+	     (rout nil (cons (form-expander (car lforms)) rout)))
+	    ((null (cdr lforms))
+	     (setq rout (nreverse rout))
+	     (bind ((lctfs <- (tforms-expander (car lforms) type)))
+		   (mapc (fn (ctf)
+			     (rplacd ctf (append rout (ncons (cdr ctf)))))
+			 lctfs)
+		   lctfs))))
+
+;PROG2-EXPANDER takes the CDR of a PROG2 form and an expected type of the
+;result, and returns a list of dotted pairs of the type returned by the PROG2,
+;and the expanded PROG2:
+%(defun prog2-expander (lforms type)	;(> (length LFORMS) 1) returns T
+	(bind ((*tvars* <- *tvars*) lctf form)
+	      (setq form (form-expander (lpop lforms))
+		    lctf (tforms-expander (lpop lforms) type)
+		    lforms (mapcar (function form-expander) lforms))
+	      (mapc (fn (ctf) (rplacd ctf `(prog2 ,form ,(cdr ctf) @lforms)))
+		    lctf)
+	      lctf))
+
+%(defun compat-forms (lforms type)
+	(prog (lctfs out)
+	      (setq out (list (ncons (type$joker))))
+	 loop (cond ((null lforms)
+		     (mapc (fn (ctfs) (rplacd ctfs (nreverse (cdr ctfs)))) out)
+		     (return out)))
+	      (setq lctfs (tforms-expander (car lforms) type))
+	      (if (null lctfs) (return nil))
+	      (setq out (mapcan (fn (ctf) (mapcar (fn (ctfs)
+
+  (bind ((tp <- (type$union (car ctf) (car ctfs))))
+	(if (= (hunksize ctf) 2)
+	    (if (= (hunksize ctfs) 2)
+		(cons tp (cons (cdr ctf) (cdr ctfs)))
+		(hunk tp (cxr 2 ctfs) (cxr 3 ctfs)
+		      (cons (cdr ctf) (cdr ctfs))))
+	    (if (= (hunksize ctfs) 2)
+		(hunk tp (cxr 2 ctf) (cxr 3 ctf)
+		      (cons (cdr ctf) (cdr ctfs)))
+		(hunk tp
+		      (append (cxr 2 ctf) (cxr 2 ctfs))
+		      (append (cxr 3 ctf) (cxr 3 ctfs))
+		      (cons (cdr ctf) (cdr ctfs)))))))
+
+						  out))
+				lctfs))
+	      (if (null out) (return nil))
+	      (setq out (clobber-if-single out)
+		    lforms (cdr lforms))
+	      (go loop)))
+
+%(defun pair-expander (f1 f2 type)
+	(setq f1 (tforms-expander f1 type))
+	(cond ((null f1) nil)
+	      ((null (cdr f1))
+	       (setq type (caar f1)
+		     f2 (tforms-expander f2 type))
+	       (mapc (fn (ctf) (rplacd ctf (list (cdar f1) (cdr ctf)))) f2)
+	       f2)
+	      (t
+	       (setq f2 (tforms-expander f2 type))
+	       (clobber-if-single
+		(mapcan (fn (ctf1)
+			    (mapcan (fn (ctf2)
+
+  (and (type$subset? (car ctf2) (car ctf1))
+       (list (if (> (hunksize ctf1) 2)
+		 (if (> (hunksize ctf2) 2)
+		     (hunk (car ctf2)
+			   (append (cxr 2 ctf1) (cxr 2 ctf2))
+			   (append (cxr 3 ctf1) (cxr 3 ctf2))
+			   (list (cdr ctf1) (cdr ctf2)))
+		     (hunk (car ctf2) (cxr 2 ctf1) (cxr 3 ctf1)
+			   (list (cdr ctf1) (cdr ctf2))))
+		 (if (> (hunksize ctf2) 2)
+		     (hunk (car ctf2) (cxr 2 ctf2) (cxr 3 ctf2)
+			   (list (cdr ctf1) (cdr ctf2)))
+		     (cons (car ctf2) (list (cdr ctf1) (cdr ctf2))))))))
+
+				    f2))
+			f1)))))
+
+;PROG-EXPANDER gets passed a CDDR of a PROG, and returns a list of dotted
+;pairs of the type returned by the prog, and the expanded forms:
+%(defun prog-expander (lforms *return-type*)		;LFORMS can be empty
+	(bind ((*tvars* <- *tvars*)
+	       (*return-forms* <- (cons nil (list (ncons (type$joker))))))
+	      (setq lforms
+		    (mapcar (fn (form)
+				(if (atom form) form (form-expander form)))
+			    lforms))
+	      (clobber-if-single
+	       (mapcar (fn (ctfs)
+			   (hunk (car ctfs)
+				 (car *return-forms*)
+				 (cdr ctfs)
+				 lforms))
+		       (cdr *return-forms*)))))
+
+%(defun return-expander (l)
+	(bind ((lctfs <- (tforms-expander (cadr l) *return-type*)))
+
+  (rplacd *return-forms*
+	  (mapcan (fn (ctl)
+		      (mapcar (fn (ctf)
+				  (cons (type$union (car ctl) (car ctf))
+					(cons (cdr ctf)
+					      (if (> (hunksize ctf) 2)
+						  (append (cxr 3 ctf)
+							  (cdr ctl))
+						  (cdr ctl)))))
+			      lctfs))
+		  (cdr *return-forms*)))
+  (rplaca *return-forms*
+	  (cons (ncons nil)
+		(if (> (hunksize (car lctfs)) 2)
+		    (append (cxr 2 (car lctfs)) (car *return-forms*))
+		    (car *return-forms*))))
+  (cons 'return (caar *return-forms*))))
+
+%(defun steps-expander (steps) (mapcar (function step-expander) steps))
+
+%(defun step-expander (step)		;STEP is non-NIL
+	(if (atom step) (mode-err '|Atomic step in do:| step))
+	(bind ((ctf <- (single-expand (car step) 'any)))
+	      (cons (cdr ctf)
+		    (mapcar (fn (form) (form-type-expander form (car ctf)))
+			    (cdr step)))))
+
+%(defun new-do-expander (e type)
+	(bind ((end-clause <- (caddr e)))
+	      (if (or (null end-clause) (null (cdr end-clause)))
+		  (bind ((body <- (prog-expander (cdddr e) type))
+			 (steps <- (steps-expander (cadr e)))
+			 (end-clause <- (and end-clause
+					     (list (form-type-expander
+						    (car end-clause)
+						    (get-type '*boolean*))))))
+			(mapc (fn (ctf)
+				  (rplacd ctf
+					  `(do ,steps ,end-clause @(cdr ctf))))
+			      body)
+			body)
+		  (bind ((body <- (prog-expander
+				   (cons `(return @(last (caddr e))) (cdddr e))
+				   type))
+			 (steps <- (steps-expander (cadr e)))
+			 (*tvars* <- *tvars*))
+			(setq end-clause
+			      (cons (form-type-expander (car end-clause)
+							(get-type '*boolean*))
+				    (mapcar (function form-expander)
+					    (nreverse
+					     (cdr (reverse
+						   (cdr end-clause)))))))
+			(mapc (fn (ctf)
+				  (rplacd ctf
+					  `(do ,steps
+					       ,(append end-clause (cdadr ctf))
+					       @(cddr ctf))))
+			      body)
+			body))))
+
+%(defun old-do-expander (e type)
+	(bind ((vin <- (step-expander (list (cadr e) (caddr e) (cadddr e))))
+	       (out <- (prog-expander (cdddddr e) type))
+	       (end-test <- (form-type-expander (caddddr e)
+						(get-type '*boolean*))))
+	      (mapc (fn (ctf) (rplacd ctf `(do @vin ,end-test @(cdr ctf))))
+		    out)
+	      out))
+
+%(defun lambda-expander (e type)
+	(bind ((args <- (steps-expander (mapcar (function list)
+						(cadar e) (cdr e))))
+	       (out <- (progn-expander (cddar e) type)))
+	      (mapc (fn (ctf)
+			(rplacd ctf
+				`((lambda ,(mapcar (function car) args)
+					  @(cdr ctf))
+				  @(mapcar (function cadr) args))))
+		    out)
+	      out))
+
+%(defun defun-expander (e)
+	(if (or (memq (cadr e) '(macro fexpr lexpr expr))
+		(memq (caddr e) '(macro fexpr lexpr expr)))
+	    `(defun ,(cadr e) ,(caddr e) ,(cadddr e)
+		    @(drop-progn (form-expander `(progn @(cddddr e)))))
+	    `(defun ,(cadr e) ,(caddr e)
+		    @(drop-progn (form-expander `(progn @(cdddr e)))))))
+
+%(defun drop-progn (f)
+	(if (or (atom f) (not (eq (car f) 'progn))) (list f) (cdr f)))
+
+%(defun cond-expander (l type)
+	(bind ((out <- (compat-forms (mapcar (fn (clause)
+						 `(cond-clause @clause))
+					     l)
+				     type)))
+	      (mapc (fn (ctf) (rplacd ctf `(cond @(cdr ctf)))) out)
+	      out))
+
+%(defun cond-clause-expander (clause type)	;a hack
+	(if (null (cdr clause))
+	    (compat-forms clause type)
+	    (bind ((out <- (progn-expander (cdr clause) type))
+		   (pred <- (form-type-expander (car clause)
+						(get-type '*boolean*))))
+		  (mapc (fn (ctf) (rplacd ctf (cons pred (cdr ctf)))) out)
+		  out)))
+
+%(defun clobber-if-single (lctfs)
+	(cond ((and lctfs (null (cdr lctfs)) (> (hunksize (car lctfs)) 2))
+	       (mapc (function rplaca) (cxr 2 (car lctfs)) (cxr 3 (car lctfs)))
+	       (list (cons (caar lctfs) (cdar lctfs))))
+	      (t lctfs)))
+
+(comment 3.1  Assignment Macro)
+
+
+;Doesn't work for named arrays, or anything not explicit [grab-able].  Also,
+;value returned is random, except in the case of SETQ, and it doesn't like
+;eval, member, or memq.
+
+;Still need:	  
+;getchar, getcharn, substr, pnget, get_pname, status, last, and getl.
+
+;Status I don't understand (what are all the screwy cases?).
+
+;Last and getl are special:  one usually does (car (last foo)),
+;(cdr (last foo)), or (cadr (getl foo boo)).
+
+(defun _ macro (l) (displace l (form-expander l)))
+(alias <- _)
+
+(defsmac swap (a b) `(_ ,a (prog1 ,b (_ ,b ,a))))
+	;inefficient if a and b take several steps to obtain correct slot
+
+(alias nfcn nfn)
+(defun left-bracket macro (l) (displace l (form-expander l)))
+(defun type-will-be macro (l) (displace l (form-expander l)))
+(defun type-must-be macro (l) (displace l (form-expander l)))
+(defun call macro (l) (displace l (form-expander l)))
+(defun funarg macro (l) (displace l (form-expander l)))
+(defun bfcn macro (l) (displace l (form-expander l)))
+(alias bfn bfcn)
+(defun bfcn-call macro (l)				;can't DISPLACE
+       (bfcn-call-expander (cadr l) (cddr l)))
+(defun bfcn-nfn macro (l) (bfcn-nfn-expander (cadr l)))
+
+%(defun _-expander (e type)
+	(do ((l (cdr e) (cddr l))
+	     (rout nil (cons (assign-expander
+			      (cdr (single-return
+				    (pair-expander (car l) (cadr l) 'any)
+				    `(_ ,(car l) ,(cadr l)))))
+			     rout)))
+	    ((null (cddr l))
+	     (setq rout (nreverse rout))
+	     (bind ((lctfs <- (pair-expander (car l) (cadr l) type)))
+		   (mapc (fn (ctf)
+			     (rplacd ctf (assign-expander (cdr ctf)))
+			     (if (and (not (eq type 'any))
+				      (not (eq (cadr ctf) 'setq)))
+				 (tu-err e))
+			     (if rout
+				 (rplacd ctf `(progn @rout ,(cdr ctf)))))
+			 lctfs)
+		   lctfs))))
+
+%(defun assign-expander (var-val)
+	(bind ((cell <- (car var-val)) (value <- (cadr var-val)))
+	      (cond ((symbolp cell) `(setq ,cell ,value))
+		    ((atom cell) (cat-err cell))
+		    ((sublis (list (cons 'cell cell)
+				   (cons 'cadr-cell (cadr cell))
+				   (cons 'caddr-cell
+					 (and (cddr cell) (caddr cell)))
+				   (cons 'value value))
+			     (cadr (assq (car cell)
+
+	'((car (rplaca cadr-cell value))
+	  (cdr (rplacd cadr-cell value))
+	  (cxr (rplacx cadr-cell caddr-cell value))
+	  (arraycall (store cell value))
+	  (get (putprop cadr-cell value caddr-cell))
+	  (symeval (set cadr-cell value))
+	  (plist (setplist cadr-cell value))
+	  (args (args cadr-cell value))
+	  (caar (rplaca (car cadr-cell) value))
+	  (cadr (rplaca (cdr cadr-cell) value))
+	  (cdar (rplacd (car cadr-cell) value))
+	  (cddr (rplacd (cdr cadr-cell) value))
+	  (caaar (rplaca (caar cadr-cell) value))
+	  (caadr (rplaca (cadr cadr-cell) value))
+	  (cadar (rplaca (cdar cadr-cell) value))
+	  (caddr (rplaca (cddr cadr-cell) value))
+	  (cdaar (rplacd (caar cadr-cell) value))
+	  (cdadr (rplacd (cadr cadr-cell) value))
+	  (cddar (rplacd (cdar cadr-cell) value))
+	  (cdddr (rplacd (cddr cadr-cell) value))
+	  (caaaar (rplaca (caaar cadr-cell) value))
+	  (caaadr (rplaca (caadr cadr-cell) value))
+	  (caadar (rplaca (cadar cadr-cell) value))
+	  (caaddr (rplaca (caddr cadr-cell) value))
+	  (cadaar (rplaca (cdaar cadr-cell) value))
+	  (cadadr (rplaca (cdadr cadr-cell) value))
+	  (caddar (rplaca (cddar cadr-cell) value))
+	  (cadddr (rplaca (cdddr cadr-cell) value))
+	  (cdaaar (rplacd (caaar cadr-cell) value))
+	  (cdaadr (rplacd (caadr cadr-cell) value))
+	  (cdadar (rplacd (cadar cadr-cell) value))
+	  (cdaddr (rplacd (caddr cadr-cell) value))
+	  (cddaar (rplacd (cdaar cadr-cell) value))
+	  (cddadr (rplacd (cdadr cadr-cell) value))
+	  (cdddar (rplacd (cddar cadr-cell) value))
+	  (cddddr (rplacd (cdddr cadr-cell) value)))))))
+
+		    (t (cat-err cell)))))
+
+;Change CALL/SCALL/LCALL to a lap function and/or don't take CDRs of NETWs at
+;calling time?:
+(defun scall macro (l) (displace l (slcall-expander l)))
+(defun lcall macro (l) (displace l (slcall-expander l)))
+
+%(defun slcall-expander (l)
+	(bind ((macro <- (car l)) (nfcn <- (cadr l)) (args <- (cddr l)) genvar)
+	      (setq genvar (if (atom nfcn) nfcn (gensym)))
+	      ((lambda (out)
+		       (if (atom nfcn) out
+			   `((lambda (,genvar) ,out) ,nfcn)))
+;***			   `(do ((,genvar ,nfcn)) (t ,out))))
+	;`((lambda (,genvar) ,out) ,nfcn) loses to COMPLR bugs
+	       `(,(if (and (eq macro 'scall) (< (length args) 5))
+		      'subrcall 'lsubrcall)
+		 nil (car ,genvar) @args (cdr ,genvar)))))
+
+%(defun call-expander (e type)
+	(bind ((args <- (cddr e)) out)
+	      (setq out
+		    (few-fcns-args (get-fcns (tforms-expander (cadr e) 'any)
+					     type (length args))
+				   args))
+	      (mapc (fn (ctf)
+			(rplacd ctf
+				`(,(cadr (assq (caar ctf)
+					       '((subr scall)
+						 (lsubr lcall)
+						 (constant ccall))))
+				  @(cdr ctf)))
+			(rplaca ctf (cadar ctf)))
+		    out)
+	      out))
+
+%(defun get-fcns (lctfs ret-type num-args)
+	(declare (fixnum num-args))
+	(mapcan (fn (ctf)
+
+;make ANY a NF-ERR?:
+  (cond ((or (atom (car ctf)) (eq (caar ctf) 'union))
+	 (get-fcns (mapcar (fn (type) (cons type (cdr ctf)))
+			   (if (atom (car ctf)) (get (car ctf) 'mode-sub-types)
+			       (cdar ctf)))
+		   ret-type
+		   num-args))
+	(t
+	 (and (type$subset? (cadar ctf) ret-type)
+	      (if (eq (caar ctf) 'lsubr)
+		  (catch (list (cons (lttf 'lsubr
+					   (cadar ctf)
+					   (lsubr-type-expand (cddar ctf)
+							      num-args))
+				     (cdr ctf)))
+			 lsubr-wna)
+		  (and (= (abs num-args) (length (cddar ctf)))
+		       (list ctf)))))))
+
+		lctfs))
+
+%(defun few-fcns-args (lctfs args) (few-fcns (get-fcns-args lctfs args)))
+
+%(defun few-fcns (l)
+	(do ((l l (cdr l)) (out nil) (cftx))
+	    ((null l) out)
+	    (setq cftx (car l))
+	    (do ((l (append out (cdr l)) (cdr l)))
+		((null l) (lpush cftx out))
+		(and (if (eq (caaar l) 'lsubr)
+			 (<= (length (cddar cftx)) (length (cddaar l)))
+			 (and (not (eq (caar cftx) 'lsubr))
+			      (= (length (cddar cftx)) (length (cddaar l)))))
+		     (catch
+		      (progn (mapc (function type$subset?-or-throw)
+				   (cdaar l) (cdar cftx))
+			     t)
+		      ict-err)
+		     (return nil)))))
+
+%(defun get-fcns-args (lctfs args)
+	(cond ((null lctfs) nil)
+	      ((null (cdr lctfs))
+	       (list (cons (caar lctfs)
+			   (cons (cdar lctfs)
+				 (mapcar (function form-type-expander)
+					 args (cddaar lctfs))))))
+	      (t
+	       (bind ((larglists <- (distribute
+				     (mapcar (fn (arg)
+						 (tforms-expander arg 'any))
+					     args))))
+		     (clobber-if-single
+		      (mapcan (fn (nfcn)
+				  (mapcan (fn (arglist)
+
+  (catch (bind ((c2 <- (and (> (hunksize nfcn) 2) (cxr 2 nfcn)))
+		(c3 <- (and (> (hunksize nfcn) 2) (cxr 3 nfcn))))
+	       (setq arglist
+		     (mapcar (fn (ctf tp)
+				 (type$subset?-or-throw (car ctf) tp)
+				 (if (> (hunksize ctf) 2)
+				     (setq c2 (append (cxr 2 ctf) c2)
+					   c3 (append (cxr 3 ctf) c3)))
+				 (cdr ctf))
+			     arglist (cddar nfcn)))
+	       (list (if c2
+			 (hunk (car nfcn) c2 c3 (cons (cdr nfcn) arglist))
+			 (cons (car nfcn) (cons (cdr nfcn) arglist)))))
+	 ict-err))
+
+					  larglists))
+			      lctfs))))))
+
+%(defun distribute (lofls)
+	(if (null lofls) (list nil)
+	    (mapcan (fn (l) (mapcar (fn (x) (cons x l)) (car lofls)))
+		    (distribute (cdr lofls)))))
+
+%(defun funarg-expander (e type)
+	(bind ((args <- (cddr e)) numlist)
+	      (if (null args) (return (tforms-expander (cadr e) type)))
+	      (setq numlist (mapcar (fn (arg) (if (eq arg '*) 0 1)) args))
+	      (mapcan (fn (ctf) (funarg-clobber ctf numlist type))
+		      (get-fcns-args (get-fcns (tforms-expander (cadr e) 'any)
+					       (ret-type type)
+					       (- (length args)))
+				     args))))
+
+%(defun funarg-clobber (ctf numlist type)
+	(declare (fixnum n))
+	(catch (progn (rplaca ctf (fcn-type-contract (car ctf) numlist))
+		      (type$subset?-or-throw (car ctf) type)
+		      (bind ((args <- (mapcan (fn (n arg)
+						  (and (= n 1) (list arg)))
+					      numlist (cddr ctf))))
+			    (rplacd ctf
+
+  (if (and (eq (caar ctf) 'subr) (< (length (cddar ctf)) 5))
+      `(cons (get ',(implode (append '(f u n a r g)
+				     (mapcan (function exploden) numlist)))
+		  'subr)
+	     (hunk @args ,(cadr ctf)))
+      (bind ((genvar <- (if (atom (cadr ctf)) (cadr ctf) (gensym))))
+	    ((lambda (out)
+		     (if (atom (cadr ctf)) out
+			 `((lambda (,genvar) ,out) ,(cadr ctf))))
+	     `(cons (get 'lsubr-funarg 'lsubr)
+		    (hunk (bind ((var <- (gensym)))
+				(setplist var (list 'lsubr (car ,genvar)))
+				var)
+			  (list
+			   @(mapcar (fn (n)
+					(if (= n 0) nil `(ncons (lpop args))))
+				    numlist))
+			  (cdr ,genvar)))))))
+
+			    (list ctf)))
+	       ict-err))
+
+%(defun fcn-type-contract (type numlist)
+	(lttf (car type) (cadr type)
+	      (do ((numlist numlist (cdr numlist))
+		   (ltypes (cddr type) (cdr ltypes))
+		   (rout nil
+			 (if (= (car numlist) 0)
+			     (cons (car ltypes) rout)
+			     rout)))
+		  ((null numlist) (nreconc rout ltypes)))))
+
+(comment 3.2  CASE Macro)		;eliminate when CASEQ is installed
+
+
+;Case takes forms such as:  (case caseitem clause clause ...).  The caseitem
+;is evaluated, and should produce either a fixnum, flonum, or symbol.  It is
+;then matched against the clauses, which are of the form:  (t @frobs),
+;(e @frobs), or ((e1 e2 ...) @frobs).  These expand to COND clauses, where t
+;has its normal meaning, and e[i]'s return t iff any one matches the caseitem,
+;for.  The e[i]'s are not evaluated.
+
+;BODY is a list of clauses, and there must be a single TYPE:
+;No clobbering [except the top-level DISPLACE] to be safe:
+(defsmac case (case-item . body)
+	 (setq case-item (form-expander case-item))
+	 (bind ((genvar <- (if (atom case-item) case-item (gensym))) type)
+	       (setq body
+		     (maplist (fn (y)
+				  (and (cdr y) (eq (caar y) t)
+				       (error '|Illegal "t" clause in case|
+					      (car y)))
+				  (if (or (eq (caar y) t)
+					  (not (atom (caar y))))
+				      (car y)
+				      (cons (ncons (caar y)) (cdar y))))
+			      body))
+	       (setq type (typep (or (eq (caar body) t) (caaar body))))
+	       (or (memq type '(fixnum flonum symbol))
+		   (error '|Illegal case item type| (car body)))
+	       (mapc (fn (clause)
+			 (and (not (eq (car clause) t))
+			      (mapc (fn (item)
+					(or (eq (typep item) type)
+					    (error
+					     '|Conflicting case item type|
+					     (list type item))))
+				    (car clause))))
+		     body)
+	       (setq body
+		     (mapcar (fn (clause)
+				 (cons
+				  (or (eq (car clause) t)
+				      ((lambda (condpred)
+					       (if (null (cdr condpred))
+						   (car condpred)
+						   `(or @condpred)))
+				       (mapcar
+					(fn (item)
+					    `(,(if (eq type 'symbol) 'eq '=)
+					      ,genvar ',item))
+					(car clause))))
+				  (cdr clause)))
+			     body))
+	       (if (atom case-item) `(cond @body)
+		   `((lambda (,genvar) (cond @body)) ,case-item))))
+
+(comment 4.  BFCN Handlers)		;includes some mode stuff too
+
+
+(comment 4.1  Macrodef Stuff)
+
+
+%(defun make-macrodef? (body bvl n)
+	(declare (fixnum n))
+	(cond ((not (null (cdr body))) 'nfcn)
+	      ((atom (car body)) 'macro)
+	      ((and (equal (cdar body) bvl)
+		    (memq (sysp (caar body)) '(nil subr)))
+	       'alias)
+	      ((simple-form? (car body) bvl n) 'macro)
+	      (t 'nfcn)))
+
+%(defun simple-form? (form bvl n)
+	(declare (fixnum n))
+	(catch (< (form-weight form bvl (cons nil (lcopy1 bvl))) n)
+	       simple-form))
+
+%(defun form-weight (form bvl bvl1)
+	(declare (fixnum n))
+	(cond ((atom form)
+	       (if (memq form bvl)
+		   (cond ((memq form bvl1) (delq form bvl1) 0)
+			 (t (throw nil simple-form)))
+		   1))
+	      ((eq (car form) 'quote) 1)
+	      ((and (eq (sysp (car form)) 'fsubr)
+		    (not (memq (car form)
+			       '(arraycall catch throw))))	;others?
+	       (throw nil simple-form))
+
+;Handling AND and OR as special cases [since they are only barely FSUBRs]
+;can get one into trouble, for instance by turning
+;(defun foo (l) (or (car l) (foo (cdr l)))) into a macro.
+
+	      (t
+	       (do ((n (if (memq (car form) '(bfcn-call bfcn-nfn)) 2 1)
+		       (+ n (form-weight (car form) bvl bvl1)))
+		    (form (if (memq (car form) '(bfcn-call bfcn-nfn))
+			      (cddr form)
+			      (cdr form))
+			  (cdr form)))
+		   ((or (null form) (> n 4)) n)))))
+
+%(defun mexpand (arglist bvl-body)	;BVL-BODY is a (CONS BVL BODY)
+	(if (null (car bvl-body)) (cadr bvl-body)
+	    (sublis1 (mapcar (function cons) (car bvl-body) arglist)
+		     (cadr bvl-body))))
+
+%(defun sublis1 (alist form)
+	(cond ((atom form) (sublis alist form))
+	      ((memq (car form) '(quote bfcn-nfn)) form)
+	      ((eq (car form) 'bfcn-call)
+	       `(bfcn-call ,(cadr form)
+			   @(mapcar (fn (frm) (sublis1 alist frm))
+				    (cddr form))))
+	      (t
+	       `(,(car form)
+		 @(mapcar (fn (frm) (sublis1 alist frm)) (cdr form))))))
+
+(comment 4.2  BFCN Stuff)
+
+
+%(defun bfcn-type (bfcn) (lttf (cxr 1 bfcn) (cxr 3 bfcn) (cxr 2 bfcn)))
+
+%(defun left-bracket-expander (e type)
+	(if (get (cadr e) 'mode-rassoc) (rassoc-expander e))
+	(bind ((bfcns <- (get-bfcn-insts (cadr e) (length (cddr e)))))
+	      (setq bfcns
+		    (few-fcns-args
+		     (mapcan (fn (bfcn-inst)
+				 (and (type$subset? (cadar bfcn-inst) type)
+				      (list (cons (car bfcn-inst) bfcn-inst))))
+			     bfcns)
+		     (cddr e)))
+	      (mapc (fn (ctf)
+			(rplacd ctf (bfcn-call-expander (cadr ctf) (cddr ctf)))
+			(rplaca ctf (cadar ctf)))
+		    bfcns)
+	      bfcns))
+
+%(defun bfcn-call-expander (bfcn-inst args)
+	(if (or (null bfcn-inst) (null (cdr bfcn-inst))) '(mfa-err)
+	    (bind ((frob <- (cdr bfcn-inst)))
+		  (bfcn-frob-clobber frob)
+		  (caseq (cxr 3 frob)
+			 (nil '(mfa-err))
+			 (hunk `(hunk @args))
+			 (cxr `(cxr ,(cxr 0 frob) @args))
+			 (alias `(,(cxr 0 frob) @args))
+			 (macro (mexpand args (cxr 0 frob)))
+			 ((nfcn arg arg-temp expanding)
+			  (if (boundp '*mode-name*)
+			      `(bfcn-call ,bfcn-inst @args)
+			      `(,(cadr (assq (caar bfcn-inst)
+					     '((subr scall)
+					       (lsubr lcall)
+					       (constant ccall))))
+				(bfcn-nfn ,bfcn-inst) @args)))
+			 (t (int-err))))))
+
+%(defun bfcn-nfn-expander (bfcn-inst)
+	(cond ((null bfcn-inst) '(mfa-err))
+	      ((boundp '*mode-name*) `(bfcn-nfn ,bfcn-inst))
+	      (t (bfcn-cxrs (cdr bfcn-inst)))))
+
+%(defun bfcn-cxrs (bfcn-frob)
+	(bfcn-frob-clobber bfcn-frob)
+	(if (or (null bfcn-frob) (memq (cxr 3 bfcn-frob) '(nil arg-temp)))
+	    '(ncons (get 'mfa-err 'subr))
+	    (caseq (cxr 3 bfcn-frob)
+		   (hunk '(ncons (get 'hunk 'lsubr)))
+		   (cxr `(cons (get 'ncxr 'subr) ,(cxr 0 bfcn-frob)))
+		   (t (add-cxrs (get-netw-name (cxr 1 bfcn-frob))
+				(cxr 2 bfcn-frob))))))
+
+%(defun add-cxrs (form l)
+;	(declare (fixnum n))	;RZ says it does no good
+	(mapc (fn (n) (setq form `(cxr ,n ,form))) l)
+	form)
+
+%(defun get-netw-name (name) (or name '**mode-netw**))
+
+(defun rassoc macro (l)
+       (and (boundp '*modes-file*) *modes-file* (print-sexp l *modes-file*))
+       (mapc (fn (fcn) (putprop fcn t 'mode-rassoc)) (cdr l))
+       t)
+
+%(defun rassoc-expander (e)
+	(do ((e e (cadr e)) (fcn (cadr e)))
+	    ((< (length e) 5))
+	    (setq e (cddr e))
+	    (rplacd e (ncons (lttf 'left-bracket fcn (cadr e) (cddr e))))))
+
+%(defun bfcn-frob-clobber (frob)
+	(and frob
+	     (caseq (cxr 3 frob)
+		    (arg-temp
+		     (bind ((l <- (ncdrs (car (cxr 0 frob))
+					 (cxr 0 (cdr (cxr 0 frob))))))
+			   (and l
+				(if (null (car l))
+				    (_ (cxr 3 frob) nil)
+				    (_ (cxr 1 frob) (cxr 1 (car l))
+				       (cxr 2 frob) (cxr 2 (car l))
+				       (cxr 3 frob) (cxr 3 (car l))
+				       (cxr 0 frob) (cxr 0 (car l)))))))
+		    ((virgin expanding)
+		     (bind ((bfcn <- (cxr 0 frob)))
+			   (if (eq (cxr 6 bfcn) 'virgin) (bfcn-expand bfcn))
+			   (caseq (cxr 6 bfcn)
+				  ((alias macro nfcn)
+				   (_ (cxr 0 frob) (cxr 0 bfcn)
+				      (cxr 3 frob) (cxr 6 bfcn)))
+				  (expanding (_ (cxr 3 frob) (cxr 6 bfcn)))
+				  (t (int-err))))))))
+
+%(defun ncdrs (n l)
+	(declare (fixnum n))
+	(do ((n n (1- n))
+	     (l l (cdr l)))
+	    ((or (null l) (= n 0)) l)))
+
+%(defun arg-expander (e type)
+	(bind ((arg-num <- (form-type-expander (cadr e) '*fixnum*)))
+	      (or (and (boundp '*lsubr-type*) *lsubr-type*) (anl-err e))
+	      (if (numberp arg-num)
+		  (if (or (not (eq (typep arg-num) 'fixnum))
+			  (not (> arg-num 0)))
+		      (arg-err e)
+		      (tf-ok? (fcn-type-num *lsubr-type* arg-num)
+			      `(arg ,arg-num)
+			      type))
+		  (list (cons (type$lunion (delet 'repeat (cddr *lsubr-type*)))
+			      `(arg ,arg-num))))))
+
+;(CXR 6 *BFCN*) = 'VIRGIN:
+%(defun bfcn-expand (*bfcn*)			;*BFCN* SPECIAL for debugging
+	(bind ((*lsubr-type* <- (and (eq (cxr 1 *bfcn*) 'lsubr)
+				     (bfcn-type *bfcn*)))
+	       (random <- (cxr 0 *bfcn*)) (name <- (cxr 7 *bfcn*))
+	       *tvars* (fcn-type <- (bfcn-type *bfcn*)))
+	      (_ *tvars* (car random)
+		 (cxr 6 *bfcn*) 'expanding
+		 (car random) (cadr random)
+		 (cdr random)
+		 (shrink-progn
+		  (drop-progn (form-type-expander `(progn @(cddr random))
+						  (cxr 3 *bfcn*))))
+		 (cxr 6 *bfcn*)
+		 (if (eq (cxr 1 *bfcn*) 'subr)
+		     (make-macrodef? (cdr random) (car random) 5)
+		     (if (and (null (cddr random))
+			      (if (atom (cadr random))
+				  (or (eq (cxr 1 *bfcn*) 'constant)
+				      (not (eq (cadr random) (car random))))
+			;***CONSTANTs may not be EQ?:
+				  (eq (caadr random) 'quote)))
+			 'macro 'nfcn)))
+	      (caseq (cxr 6 *bfcn*)
+		     (alias (_ (cxr 0 *bfcn*) (caadr random)
+			       (cxr 7 *bfcn*) (cxr 0 *bfcn*)))
+		     (t
+		      (cond ((or (not (eq (cxr 1 *bfcn*) 'constant))
+				 (not (eq (cxr 6 *bfcn*) 'macro)))
+			     (_ (cxr 7 *bfcn*) (make-subr-name (cxr 7 *bfcn*)))
+			     (add-compiles (cxr 7 *bfcn*)
+					   (car random)
+					   (cdr random))
+			     (if (eq (cxr 6 *bfcn*) 'nfcn)
+				 (_ (cxr 0 *bfcn*) nil))))))
+	      (if (> (length
+
+  (mapcan (fn (inst) (and (type$= (car inst) fcn-type) (list inst)))
+	  (get-bfcn-insts name
+			  (if (eq (cxr 1 *bfcn*) 'lsubr)
+			      (1- (length (cxr 2 *bfcn*)))
+			      (length (cxr 2 *bfcn*))))))
+
+		     2)
+		  (fae-err (cons fcn-type name)))))
+
+%(defun shrink-progn (l)
+	(mapcon (fn (l1)
+		    (if (null (cdr l1)) l1
+			(and (not (atom (car l1)))
+			     (not (memq (caar l1) '(quote function comment)))
+			     (list (car l1)))))
+		l))
+
+%(defun put-bfcn (name bfcn)
+	(setq name (no-num name))
+	(cond ((or (not (eq (cxr 6 bfcn) 'arg))
+		   (do ((bs (get name 'mode-bfcn) (cdr bs)) (b))
+		       ((null bs) t)
+		       (setq b (car bs))
+		       (if (and (eq (cxr 6 b) 'arg)
+				(type$= (bfcn-type bfcn) (bfcn-type b)))
+			   (return nil))))
+	       (if (boundp '*all-bfcns*) (lpush (cons name bfcn) *all-bfcns*))
+	       (putprop name (cons bfcn (get name 'mode-bfcn)) 'mode-bfcn)
+	       (if (and (null (cxr 5 bfcn))
+			(not (memq (cxr 6 bfcn) '(hunk cxr))))
+		   (_ (cxr 5 bfcn) (slot))))))
+
+%(defun rem-bfcn (name bfcn)
+	(bind ((bfcn-prop <- (delq bfcn (get name 'mode-bfcn))))
+	      (if (null bfcn-prop)
+		  (remprop name 'mode-bfcn)
+		  (putprop name bfcn-prop 'mode-bfcn))))
+
+%(defun make-subr-name (bfcn-name)
+	(_ *name-num* (1+ *name-num*))
+	(implode (nconc (exploden *mode-name*)
+			(list '$)
+			(exploden bfcn-name)
+			(list '$)
+			(pretty-exploden *name-num*))))
+
+%(defun add-compiles (subr-name bvl body)
+	(_ *compiles*
+	   `((declare @(mapcan (fn (var-type)
+
+  (bind ((type <- (cdr var-type)))
+	(and (atom type)
+	     (get type 'mode-lisp-type)
+	     (list `(,(get type 'mode-lisp-type) ,(car var-type))))))
+
+			       *tvars*))
+	     (defun ,subr-name
+		    ,(if (and bvl (atom bvl)) bvl `(@bvl **mode-netw**))
+		    @body)
+	     (declare (notype @(mapcan (fn (var-type)
+
+  (bind ((type <- (cdr var-type)))
+	(and (atom type)
+	     (get type 'mode-lisp-type)
+	     (list (car var-type)))))
+
+				       *tvars*)))
+	     @*compiles*)))
+
+%(defun slot () (prog1 (list *netw-num*) (setq *netw-num* (1+ *netw-num*))))
+
+(comment 5.  DEFMODE Stuff)
+
+
+(comment 5.1  MODE-PUT-PROP Stuff)
+
+
+%(defun mode-put-prop (form)
+	(caseq (car form)
+	       (ret-check
+		(setq *ret-checks*
+		      (append (algebra-expander (cdr form)) *ret-checks*)))
+	       (no-ret (setq *no-rets* (append *no-rets* (cdr form))))
+	       ((fixnum flonum)
+		(mapc (fn (type) (put-lisp-type (get-type type) (car form)))
+		      (cdr form)))
+	       ((sub-type sub-types)
+		(put-sub-types (get-type (cadr form))
+			       (mapcar (function get-type) (cddr form))))
+	       ((constant defun clobber-def cldef) (defun-put-prop form))
+	       ((arg args arg-mode) (args-put-prop (cdr form)))
+	       ((struct hunk) (struct-put-prop (cdr form)))
+	       ((sub sub-mode mode) (sub-put-prop (cdr form)))
+	       (t (eval form))))
+
+%(defun defun-put-prop (form)	       
+	(bind ((kind <- (car form)) (name <- (no-num (cadr form))) (bvl <- nil)
+	       domain-kind ret-type arg-types bfcn-frob (iform <- form))
+	      (setq domain-kind (cond ((eq kind 'constant) 'constant)
+				      (t
+				       (setq form (cdr form) bvl (cadr form))
+				       (if (and bvl (atom bvl)) 'lsubr 'subr)))
+		    form (cddr form)
+		    ret-type (get-type (lpop form))
+		    arg-types (if (eq domain-kind 'lsubr)
+				  (mapcar (function get-type) (lpop form))
+				  (mapcar (function type) bvl)))
+	      (cond ((eq domain-kind 'lsubr)
+		     (setq form
+			   `((bind ((**mode-netw** <- (arg ,bvl)))
+				   (setq ,bvl (1- ,bvl))
+				   @form))))
+		    (t (setq bvl (mapcar (function form-expander) bvl))))
+	      (cond ((memq kind '(clobber-def cldef))
+		     (setq bfcn-frob
+			   (get-bfcn-frob=
+			    (cons (lttf domain-kind ret-type arg-types) name)))
+		     (if (or (null bfcn-frob)
+			     (cxr 1 bfcn-frob)
+			     (null (cxr 2 bfcn-frob))
+			     (null (cdr (cxr 2 bfcn-frob))))
+			 (ce-err iform))))		;make a better error?
+	      (put-bfcn name
+			(hunk domain-kind arg-types ret-type *mode-name*
+			      (and (memq kind '(clobber-def cldef))
+				   (cxr 2 bfcn-frob))
+			      'virgin name (lttf *tvars* bvl form)))))
+
+%(defun car? (form) (if (atom form) form (car form)))
+%(defun cadr? (form) (if (atom form) form (cadr form)))
+
+%(defun struct-put-prop (form)
+	(declare (fixnum slot-num))
+	(bind ((struct-type <- (get-type (cadr? (car form))))
+	       (slot-num <- 0) (slot-types <- nil))
+	      (map (fn (lslot-desc)
+		       (lpush (get-type (cadr? (car lslot-desc))) slot-types)
+		       (setq slot-num (if (cdr lslot-desc) (1+ slot-num) 0))
+		       (put-bfcn (car? (car lslot-desc))
+				 (hunk 'subr (list struct-type)
+				       (car slot-types) *mode-name*
+				       nil 'cxr nil slot-num)))
+		   (cdr form))
+	      (put-bfcn (car? (car form))
+			(hunk 'subr (nreverse slot-types) struct-type
+			      *mode-name* nil 'hunk nil nil))))
+
+%(defun args-put-prop (form)
+	(mapc (fn (fcn-desc)
+		  (if (atom fcn-desc) (alg-err fcn-desc))
+		  (put-bfcn (cdr fcn-desc)
+			    (hunk (caar fcn-desc) (cddar fcn-desc)
+				  (cadar fcn-desc) *mode-name* nil 'arg nil
+				  (prog1 *arg-num*
+					 (_ *arg-num* (1+ *arg-num*))))))
+	      (algebra-expander form)))
+
+%(defun sub-put-prop (form)
+	(bind ((ctfs <- (mapping-expander (cdr form))))
+	      (or (and (symbolp (car form)) (get (car form) 'ret-mode))
+		  (nmd-err (car form)))
+	      (lpush (hunk (car form) (car ctfs) (cdr ctfs) (car (slot)) nil)
+		     *subs*)
+	      (mapc (fn (nls)
+			(bind ((name <- (up-type (car nls) (car ctfs))))
+			      (cond ((atom name)
+				     (if (cadr nls)
+					 (put-lisp-type name (cadr nls)))
+				     (if (cddr nls)
+					 (put-sub-types
+					  name
+					  (mapcar (fn (tp)
+						      (up-type tp (car ctfs)))
+						  (cddr nls))))))))
+		    (cxr 1 (get (car form) 'ret-mode)))))
+
+;Works for the atom REPEAT:
+%(defun up-type (type up)
+	(cond ((memq type '(any repeat)) type)
+	      ((atom type) (type$ass type up))
+	      (t
+	       (cons (car type)
+		     (mapcar (fn (tp) (up-type tp up)) (cdr type))))))
+
+%(defun type$ass (type up)
+	(bind ((p <- (assq type up)))
+	      (if p (cdr p) type)))
+
+(comment 5.2  ALGEBRA and MAPPING Stuff)
+
+
+(defun algebra macro (l)
+       (and (boundp '*modes-file*) *modes-file* (print-sexp l *modes-file*))
+       (putprop (cadr l)
+		(cons (mapcar (function get-type) (caddr l))
+		      (algebra-expander (cdddr l)))
+		'mode-algebra)
+       (boundp '*modes-file*))
+
+%(defun algebra-expander (lforms)
+	(no-repeats
+	 (mapcan (fn (form)
+		     (cond ((atom form) (alg-err form))
+			   ((memq (car form) '(fcn fcns))
+			    (mapcan (function parse-fcn-descs) (cdr form)))
+			   (t
+
+  (bind ((ctsfs <- (get (car form) 'mode-algebra)))
+	(if (null ctsfs) (alg-err form))
+	(mapcar (fn (frm)
+		    (cons (type-subst (cdr form) (car ctsfs) (car frm))
+			  (cdr frm)))
+		(cdr ctsfs))))))
+
+		 lforms)))
+
+%(defun parse-fcn-descs (same-ret)
+	(if (atom same-ret) (alg-err same-ret)
+	    (mapcar (fn (fcn-desc) (parse-f2 (car same-ret) fcn-desc))
+		    (cdr same-ret))))
+
+%(defun parse-fdesc (fdesc)
+	(if (atom fdesc) (no-num fdesc) (parse-f2 (car fdesc) (cadr fdesc))))
+	    
+%(defun parse-f2 (ret-type form)
+	(cons (get-type `(,(cond ((atom form) 'constant)
+				 ((memq 'repeat (cdr form)) 'lsubr)
+				 (t 'subr))
+			  ,ret-type
+			  @(and (not (atom form)) (cdr form))))
+	      (no-num (if (atom form) form (car form)))))
+
+;Shouldn't really use MEMBER in following:
+%(defun no-repeats (l)
+	(do ((l l (cdr l))
+	     (rout nil (if (member (car l) rout) rout (cons (car l) rout))))
+	    ((null l) (nreverse rout))))
+
+%(defun ltype-subst (vals vars ltypes)
+	(mapcar (fn (tp) (type-subst vals vars tp)) ltypes))
+
+%(defun type-subst (vals vars type)
+	(if (atom type)
+	    (do ((vals vals (cdr vals)) (vars vars (cdr vars)))
+		((null vals) type)
+		(if (eq (car vars) type) (return (car vals))))
+	    (cons (car type) (ltype-subst vals vars (cdr type)))))
+
+(defun mapping macro (l)
+       (and (boundp '*modes-file*) *modes-file* (print-sexp l *modes-file*))
+       (putprop (cadr l)
+		(cons (mapcar (function get-type) (caddr l))
+		      (mapping-expander (cdddr l)))
+		'mode-mapping)
+       (boundp '*modes-file*))
+
+%(defun mapping-expander (lforms)
+	(bind ((types <- nil) (fcns <- nil))
+	      (do l2 (and lforms (lpop lforms)) (cddr l2) (null l2)
+		  (lpush (cons (get-type (car l2)) (get-type (cadr l2)))
+			 types))
+	      (do l2 (and lforms (lpop lforms)) (cddr l2) (null l2)
+		  (if (not (atom (cadr l2)))
+		      (alg-err (list (car l2) (cadr l2))))
+		  (lpush (cons (no-num (cadr l2)) (parse-fdesc (car l2)))
+			 fcns))
+	      (mapc (fn (form)
+			(bind ((cttfs <- (get (car form) 'mode-mapping)))
+			      (if (null cttfs) (alg-err form))
+			      (setq cttfs
+				    (mapping-subst (cdr form)
+						   (car cttfs)
+						   (cdr cttfs))
+				    types (nconc (car cttfs) types)
+				    fcns (nconc (cdr cttfs) fcns))))
+		    lforms)
+	      (cons (shrink-types types) (no-repeats fcns))))
+
+%(defun mapping-subst (vals vars ctfs)
+	(cons (mapcar (fn (ctt)
+			  (cons (type-subst vals vars (car ctt))
+				(type-subst vals vars (cdr ctt))))
+		      (car ctfs))
+	      (mapcar (fn (cnf)
+			  (cons (car cnf)
+				(cons (type-subst vals vars (cadr cnf))
+				      (cddr cnf))))
+		      (cdr ctfs))))
+
+%(defun shrink-types (types)
+	(do ((types types (cdr types))
+	     (rout nil))
+	    ((null types) rout)
+	    (if (not (symbolp (caar types)))
+		(alg-err `(,(caar types) ,(cdar types))))
+	    (bind ((p <- (assq (caar types) rout)))
+		  (if p (rplacd p (type$union (cdr p) (cdar types)))
+		      (lpush (car types) rout)))))
+
+(comment 5.3  DEFMODE Stuff)
+
+
+;Inside a DEFMODE, the only legal defuns are for EXPRs and LEXPRs [no FEXPRs or
+;MACROs]:
+(defsmac defmode (*mode-name* . body)
+	 (catch (defmode-expander body) mode-err))
+
+;***Change *KEEP-INSTS* to NIL?:
+%(defun defmode-expander (body)
+	(bind ((*no-rets* <- nil) (*ret-checks* <- nil) (*types* <- nil)
+	       (*subs* <- nil) (*all-bfcns* <- nil) (*compiles* <- nil)
+	       (*name-num* <- 0) (*netw-num* <- 0) (*keep-insts* <- t)
+	       (*keep-names* <- nil) (*arg-num* <- 0))
+	      (bind ((*tvars* <- *tvars*))
+		    (mapc (function mode-put-prop) body))
+	      (putprop *mode-name* (ret-mode-expander) 'ret-mode)
+	      (prog1 `(progn 'compile		;***put in DECLARE somewhere
+			     @*compiles*)
+		     (mapc (function rem-type) *types*)
+		     (mapc (fn (bfcn-name)
+			       (remprop bfcn-name 'mode-keep-insts))
+			   *keep-names*))))
+
+(defsmac global-open (file-specs)
+	 (setq file-specs (mergef file-specs '((dsk sca) * modes)))
+	 (eval `(sstatus feature ,(cadr file-specs)))
+	 (if (probef file-specs) (deletef file-specs))		;necessary?
+	 (cond ((and (boundp '*modes-file*) *modes-file*)
+		(close *modes-file*)
+		(cnamef *modes-file* file-specs)
+		(open *modes-file*))
+	       (t
+		(setq *modes-file* (open file-specs '(fixnum out)))))
+	 (if (boundp '*in-file*) (open *in-file*)
+	     (setq *in-file* (open '((sca) modes >) 'fixnum)))
+	 (or (boundp '*in-specs*) (setq *in-specs* '((dsk sca) modes >)))
+	 t)
+
+(defsmac global-read (file-specs)
+	 (and (boundp '*modes-file*) *modes-file*
+	      (print-sexp `(global-read ,file-specs) *modes-file*))
+	 (setq file-specs (mergef file-specs '((dsk sca) * modes)))
+	 (cond ((not (memq (cadr file-specs) (status features)))
+		(eval `(sstatus feature ,(cadr file-specs)))
+		(close *in-file*)
+		(cnamef *in-file* file-specs)
+		(open *in-file*)
+		(bind ((*modes-file* <- nil) (*in-specs* <- file-specs))
+		      (do input (read-sexp *in-file*) (read-sexp *in-file*)
+			  (eq input 'eof) (eval input)))
+		(close *in-file*)
+		(cnamef *in-file* *in-specs*)
+		(open *in-file*)))
+	 t)
+
+(defsmac global-close ()
+	 (print-sexp 'eof *modes-file*)
+	 (close *modes-file*)
+	 (cnamef *modes-file* '((dsk sca) _^temp >))
+	 (open *modes-file*)
+	 (close *in-file*)
+	 t)
+
+%(defun ret-mode-expander ()
+	(bind ((cnbs <- nil) ret-mode (outputs <- nil))
+	      (do ((all-bfcns *all-bfcns* *all-bfcns*)
+		   (*all-bfcns* nil nil))
+		  ((null all-bfcns))
+		  (mapc (fn (cnb)
+			    (if (eq (cxr 6 (cdr cnb)) 'virgin)
+				(bfcn-expand (cdr cnb)))
+			    (lpush cnb cnbs))
+			all-bfcns))
+	      (mapc (fn (*mode-inst*)
+			(_ (cxr 0 *mode-inst*)
+			   (mapcar (fn (cctnn)
+				       (get-bfcn-frob
+					(up-fcn-desc (car cctnn))))
+				   (cxr 3 (get (cxr 1 *mode-inst*)
+					       'ret-mode)))))
+		    *subs*)
+	      (mapc (fn (fcn-desc)
+			(or (get-bfcn-frob fcn-desc) (nrc-err fcn-desc)))
+		    *ret-checks*)
+	      (mapc (fn (cnb)
+			(if (eq (cxr 6 (cdr cnb)) 'arg)
+			    (rem-bfcn (car cnb) (cdr cnb))
+			    (lpush `(put-bfcn ',(car cnb) ',(cdr cnb))
+				   outputs)))
+		    cnbs)
+	      (setq ret-mode
+		    (hunk (mapcar (fn (type)
+				      (lttf type
+					    (get type 'mode-lisp-type)
+					    (get type 'mode-sub-types)))
+				  *types*)
+			  (mapcan (fn (cnb)
+				      (and (memq (cxr 6 (cdr cnb))
+						 '(alias macro nfcn))
+					   (list (cdr cnb))))
+				  cnbs)
+			  (mapcan (fn (cnb)
+				      (and (eq (cxr 6 (cdr cnb)) 'arg)
+					   (list
+					    (cons (cons (bfcn-type (cdr cnb))
+							(car cnb))
+						  (car (cxr 5 (cdr cnb)))))))
+				  cnbs)
+			  *netw-num*
+			  *no-rets*
+			  *subs*))
+	      (and (boundp '*modes-file*) *modes-file*
+		   (print-sexp `(progn (defprop ,*mode-name*
+						,ret-mode
+						ret-mode)
+				       @outputs)
+			       *modes-file*))
+	      ret-mode))
+
+(comment 5.4  GET-BFCN-INSTS Stuff)
+
+
+;Returns no NILs [hopefully]:
+%(defun get-bfcn-insts (bfcn-name *num-args*)
+	(bind (p out)
+	      (cond ((and *keep-insts*
+			  (setq p (ass= *num-args*
+					(get bfcn-name 'mode-keep-insts))))
+		     (cdr p))
+		    (t
+		     (setq out
+
+  (prog2 (put-bfcn-insts bfcn-name)
+	 (mapcar (function cdr)
+		 (append (and (boundp '*mode-name*)
+			      (get *mode-name* 'mode-bfcn-cnis))
+			 (mapcan (fn (mode-inst)
+				     (get-cnis mode-inst (list bfcn-name)))
+				 (append (and (boundp '*mode-name*) *subs*)
+					 *modes*))))
+	 (rem-bfcn-insts bfcn-name)))
+
+		     (cond (*keep-insts*
+			    (putprop bfcn-name
+				     (cons (cons *num-args* out)
+					   (get bfcn-name 'mode-keep-insts))
+				     'mode-keep-insts)
+			    (lpush bfcn-name *keep-names*)))
+		     out))))
+
+%(defun ass= (n l)
+	(declare (fixnum n))
+	(do l l (cdr l) (null l) (if (= n (caar l)) (return (car l)))))
+
+%(defun nargs-ok? (bfcn)
+	(declare (fixnum n))
+	(or (< *num-args* 0)
+	    (if (eq (cxr 1 bfcn) 'lsubr)
+		(do ((l (cxr 2 bfcn) (cdr l))
+		     (n *num-args* (1- n))
+		     (repeat nil))
+		    ((= n 0) (or (null repeat) (null l)))
+		    (cond ((null l)
+			   (if (null repeat) (return nil) (setq l repeat)))
+			  ((eq (car l) 'repeat)
+			   (setq repeat (cdr l) l repeat))))
+		(= *num-args* (length (cxr 2 bfcn))))))
+	
+%(defun type-nargs-ok? (type)				;a hack
+	(nargs-ok? (hunk (car type) (cddr type) nil)))
+
+%(defun bfcn-to-inst (bfcn)
+	(cons (bfcn-type bfcn)
+	      (hunk nil (cxr 5 bfcn) (cxr 6 bfcn)
+		    (caseq (cxr 6 bfcn)
+			   ((arg cxr alias macro) (cxr 0 bfcn))
+			   ((virgin expanding) bfcn)
+			   (t nil)))))
+
+%(defun put-bfcn-insts (bfcn-name)
+	(mapc (fn (bfcn)
+		  (and (nargs-ok? bfcn)
+		       (putprop (cxr 4 bfcn)
+				(cons (cons bfcn-name (bfcn-to-inst bfcn))
+				      (get (cxr 4 bfcn) 'mode-bfcn-cnis))
+				'mode-bfcn-cnis)))
+	      (get bfcn-name 'mode-bfcn)))
+
+;EQ checks [BFCN=] avoided thru the wonders of STACK DISCIPLINE!!! [sort of]:
+%(defun rem-bfcn-insts (bfcn-name)
+	(mapc (fn (bfcn)
+		  (and (nargs-ok? bfcn)
+		       (putprop (cxr 4 bfcn)
+				(cdr (get (cxr 4 bfcn) 'mode-bfcn-cnis))
+				'mode-bfcn-cnis)))
+	      (get bfcn-name 'mode-bfcn)))
+
+%(defun get-cnis (*mode-inst* bfcn-names)
+	(bind ((no-rets <- (cxr 5 (get (cxr 1 *mode-inst*) 'ret-mode)))
+	       (new-names <- nil) all-names)
+	      (mapc (fn (cnd)
+			(and (memq (car cnd) bfcn-names)
+			     (not (memq (car cnd) no-rets))
+			     (or (atom (cdr cnd))
+				 (type-nargs-ok? (cadr cnd)))
+			     (bind ((name <- (if (atom (cdr cnd))
+						 (cdr cnd)
+						 (cddr cnd))))
+				   (and (not (memq name new-names))
+					(lpush name new-names)))))
+		    (cxr 3 *mode-inst*))
+	      (setq all-names (append new-names bfcn-names))
+
+  (prog2 (mapc (fn (name)
+		   (and (not (memq name no-rets)) (put-bfcn-insts name)))
+	       new-names)
+	 (mapcan (fn (cni)
+		     (setq cni (up-cni cni))
+		     (and (memq (car cni) bfcn-names)
+			  (not (memq (car cni) no-rets))
+			  (list cni)))
+		 (append (get (cxr 1 *mode-inst*) 'mode-bfcn-cnis)
+			 (mapcan (fn (mode-inst)
+				     (get-cnis mode-inst all-names))
+				 (cxr 0 (get (cxr 1 *mode-inst*) 'ret-mode)))))
+	 (mapc (fn (name)
+		   (and (not (memq name no-rets)) (rem-bfcn-insts name)))
+	       new-names))))
+
+%(defun get-bfcn-frob= (fcn-desc)
+	(bind ((insts <- (get-insts fcn-desc)))
+	      (setq insts
+		    (mapcan (fn (inst)
+				(and (type$= (car fcn-desc) (car inst))
+				     (list inst)))
+			    insts))
+	      (and insts (cdar insts))))
+
+%(defun get-bfcn-frob (fcn-desc)
+	(bind ((insts <-(get-insts fcn-desc)))
+	      (and insts (null (cdr insts)) (cdar insts))))
+
+%(defun get-insts (fcn-desc)
+	(if (atom fcn-desc) (get-bfcn-insts fcn-desc -1)
+	    (few-fcns
+	     (mapcan (fn (inst)
+			 (and (type$subset? (car inst) (car fcn-desc))
+			      (list inst)))
+		     (get-bfcn-insts (cdr fcn-desc)
+				     (if (eq (caar fcn-desc) 'lsubr)
+					 (1- (length (cddar fcn-desc)))
+					 (length (cddar fcn-desc))))))))
+
+%(defun up-cni (cni)
+	(bind ((ctn <- (up-fcn-desc (cons (cadr cni) (car cni)))))
+	      (cons (cdr ctn) (cons (car ctn) (up-frob (cddr cni))))))
+
+%(defun up-fcn-desc (ctn)
+	(bind ((type <- (car ctn)) (name <- (cdr ctn)))
+	      (cons (up-type type (cxr 2 *mode-inst*))	;***will compiler bug?
+		    (do ((l (cxr 3 *mode-inst*) (cdr l)))
+			((null l) name)
+			(if (if (atom (cdar l)) (eq (cdar l) name)
+				(and (eq (cddar l) name)
+				     (type$= (cadar l) type)))
+			    (return (caar l)))))))
+
+%(defun up-form (form)				;FORM is MACRO-EXPANDed
+	(cond ((or (atom form) (eq (car form) 'quote)) form)
+	      ((eq (car form) 'bfcn-nfn) `(bfcn-nfn ,(up-inst (cadr form))))
+	      ((eq (car form) 'bfcn-call)
+	       `(bfcn-call ,(up-inst (cadr form))
+			   @(mapcar (function up-form) (cddr form))))
+	      (t `(,(car form) @(mapcar (function up-form) (cdr form))))))
+
+%(defun up-inst (inst)
+	(and inst
+	     (bind ((frob <- (up-frob (cdr inst))))
+		   (and frob
+			(cons (up-type (car inst) (cxr 2 *mode-inst*))
+			      frob)))))
+
+;(CXR 3 FROB) shouldn't be VIRGIN, EXPANDING, or ARG-TEMP:
+%(defun up-frob (frob)
+	(bfcn-frob-clobber frob)		;should be unnecessary?
+	(and frob
+	     (caseq (cxr 3 frob)
+		    (arg
+		     (bind ((l <- (ncdrs (cxr 0 frob) (cxr 0 *mode-inst*))))
+			   (if (null l)
+			       (hunk nil nil 'arg-temp
+				     (cons (cxr 0 frob) *mode-inst*))
+			       (car l))))
+		    ((hunk cxr) frob)
+		    ((alias macro nfcn)
+		     (hunk (and (symbolp (cxr 4 *mode-inst*))
+				(cxr 4 *mode-inst*))
+			   (if (numberp (cxr 4 *mode-inst*))
+			       (cons (cxr 4 *mode-inst*) (cxr 2 frob))
+			       (cxr 2 frob))
+			   (cxr 3 frob)
+			   (if (eq (cxr 3 frob) 'macro)
+			       (cons (car (cxr 0 frob))
+				     (mapcar (function up-form)
+					     (cdr (cxr 0 frob))))
+			       (cxr 0 frob))))
+		    (t (int-err)))))
+
+(comment 5.5  NFN, BFCN, and MODE Macros)
+
+
+;Put in FLUID and LEXICAL stuff, including search for free vars, and write
+;NAPPLY:
+(defsmac nfn body
+	 (if (not (boundp '*mode-name*)) (ce-err (cons 'nfn body)))
+	 (bind ((name <- (gensym)))
+	       (mode-put-prop `(defun ,name @body))
+	       (mode-put-prop `(no-ret ,name))
+	       `(bfcn ,name)))
+
+%(defun bfcn-macro-expander (e type)			;***Do FEW-FCNs ?
+	(mapcan (fn (inst)
+		    (and (type$subset? (car inst) type)
+			 (list (cons (car inst) (bfcn-nfn-expander inst)))))
+		(get-insts (parse-fdesc (cadr e)))))
+
+(defsmac mode (var-name mode-name . changes)
+	 (mode-expander var-name mode-name changes))
+
+%(defun mode-expander (var-name mode-name changes)
+	(bind ((type-info <- (cxr 1 (get mode-name 'ret-mode))) *mode-inst*)
+	      (or (and (symbolp mode-name) (get mode-name 'ret-mode))
+		  (nmd-err mode-name))
+	      (setq changes (mapping-expander changes)
+		    *mode-inst*
+		    (hunk mode-name (car changes) (cdr changes)
+			  (implode (nconc (exploden var-name)
+					  '($ m o d e - n e t w)))
+			  nil))
+	      (add-mode *mode-inst*)
+	      (_ (cxr 0 *mode-inst*)
+		 (mapcar (fn (cctnn)
+			     (get-bfcn-frob (up-fcn-desc (car cctnn))))
+			 (cxr 3 (get mode-name 'ret-mode))))
+	      (put-type-info type-info (car changes))
+	      (cond ((and (boundp '*modes-file*) *modes-file*)
+		     (print-sexp `(add-mode ',*mode-inst*) *modes-file*)
+		     (print-sexp `(put-type-info ',type-info ',(car changes))
+				 *modes-file*)))
+	      `(inst-mode ',(cxr 4 *mode-inst*))))
+
+%(defun put-type-info (lnls type-changes)
+	(bind ((*types* <- nil))
+	      (mapc (fn (nls)
+			(bind ((name <- (up-type (car nls) type-changes)))
+			      (cond ((atom name)
+				     (if (cadr nls)
+					 (put-lisp-type name (cadr nls)))
+				     (if (cddr nls)
+					 (put-sub-types
+					  name
+					  (mapcar (fn (tp)
+						      (up-type tp
+							       type-changes))
+						  (cddr nls))))))))
+		    lnls)))
+
+%(defun add-mode (mode-inst)
+	(lpush mode-inst *modes*)
+	(putprop (cxr 4 mode-inst) mode-inst '*mode-inst*))
+
+(comment 6.  Error Messages)
+
+
+;Improve CE-ERR, AMB-ERR, and ICT-ERR?
+
+%(defun ce-err (l) (mode-err '|Cannot expand the form:| l))
+
+%(defun amb-err (l) (mode-err '|Ambiguity encountered in the form:| l))
+
+%(defun nmd-err (mode-name) (mode-err mode-name '|is not a MODE.|))
+
+%(defun cat-err (l) (mode-err '|Cannot assign to| l))
+
+%(defun ict-err (form)
+	(mode-err '|Incompatible types encountered in the form:| form))
+
+%(defun adg-err ()
+	(mode-err '|Arguments present in DEFMODE-GLOBAL for| *mode-name*))
+
+%(defun tae-err (type-name) (mode-err '|Type:| type-name '|already exists.|))
+
+%(defun nf-err (form) (mode-err '|CALL applied to a non-function???:| form))
+
+%(defun tu-err (form)
+	(mode-err '|Value of form is undefined, so should not be used:| form))
+
+%(defun alg-err (form)
+	(mode-err '|ALGEBRA or MAPPING error - unrecognizable form:| form))
+
+%(defun nrc-err (fcn-desc)
+	(mode-err '|RET-CHECK error - FCN-DESC not returned:|
+		  (out-fcn-desc fcn-desc)))
+
+%(defun arg-err (form)
+	(mode-err '|Arguments to ARG must evaluate to positive FIXNUMs:| form))
+
+%(defun int-err ()
+	(mode-err '|Mode Package internal error - please tell DRB.|
+		  '|[Sorry about that.]|))
+
+%(defun cpt-err (desc) (mode-err '|Cannot parse the TYPE description:| desc))
+
+%(defun nat-err (type-name) (mode-err '|Type:| type-name '|is not atomic.|))
+
+%(defun ns-err (v f) (mode-err v '|is not an atomic symbol in form:| f))
+
+%(defun tck-err (v t1 t2 f)
+	(mode-err v '|is of type:| t1 '|not of type:| t2 '|in form:| f))
+
+%(defun anl-err (form)
+	(mode-err '|Illegal use of function ARG - not within an LSUBR:| form))
+
+%(defun fae-err (fcn-desc)
+	(mode-err '|Function:| (out-fcn-desc fcn-desc)
+		  '|already exists - can't DEFUN|))
+
+(comment 7.  Debugging Aids)
+
+
+%(defun out-fcn-desc (fcn-desc)
+	(if (atom fcn-desc) fcn-desc
+	    `(,(cadar fcn-desc)
+	      ,(if (eq (caar fcn-desc) 'constant) (cdr fcn-desc)
+		   `(,(cdr fcn-desc) @(cddar fcn-desc))))))
+
+%(defun ce2-err (e type)
+	(bind ((lctfs <- (tforms-expander e 'any)))
+	      (mode-err '|Can only expand the form:|
+			e
+			'|to get types:|
+			(mapcar (function car) lctfs)
+			'|while the expected type was:|
+			type)))
+
+%(defun amb2-err (e type lctfs)
+	(mode-err '|Can expand the form:|
+		  e
+		  '|to get types:|
+		  (mapcar (function car) lctfs)
+		  '|which are all sub-types of the expected type:|
+		  type))
+
+%(defun which-defun? ()
+	(and (boundp '*bfcn*)
+    ;*MODE-NAME* should always be bound if *BFCN* is?:
+	     `(,(and (boundp '*mode-name*) *mode-name*)
+	       ,(out-fcn-desc (cons (bfcn-type *bfcn*)
+				    (cxr 7 *bfcn*))))))		;***ok?
+
+%(defun rset-warn ()
+	(cond ((null *rset) (terpri) (princ '|Warning:  *RSET = NIL|))))
+
+%(defun types (exp)
+	(mapcar (function car) (tforms-expander1 exp 'any)))
+
+%(defun fcns (exp)
+	(setq exp (parse-fdesc exp))
+	(no-repeats (mapcar (fn (inst)
+				(out-fcn-desc (cons (car inst)
+						    (if (atom exp) exp
+							(cdr exp)))))
+			    (get-insts exp))))
+
+%(defun desc-of-lfn (lfn)
+	(and (atom lfn)
+	     (bind ((fcns <- (delq nil (list (get lfn 'subr)
+					     (get lfn 'lsubr))))
+		    (l <- (exploden lfn)) (bfcn-name <- nil) fcn)
+		   (do () ((or (null l) (= (lpop l) 36))))	;|$|
+		   (do ()
+		       ((null l) (setq bfcn-name nil))
+		       (cond ((= (car l) 36)			;|$|
+			      (setq bfcn-name (implode (nreverse bfcn-name)))
+			      (return nil))
+			     (t (lpush (lpop l) bfcn-name))))
+		   (and bfcn-name
+			(catch (progn (mapc (fn (bfcn)
+
+  (setq fcn (cxr 7 bfcn))
+  (and (if (symbolp fcn)
+	   (samepnamep fcn lfn)
+	   (memq fcn fcns))
+       (throw `(,(cxr 4 bfcn)
+		,(out-fcn-desc (cons (bfcn-type bfcn) bfcn-name)))
+	      ext-desc)))
+
+					    (get bfcn-name 'mode-bfcn))
+				      nil)
+			       ext-desc)))))
+
+
+%(defun mode-debug-prin1 (x)
+	(bind ((fcn-desc <- (desc-of-lfn (and (not (atom x)) (car x))))
+	       (l <- (nreverse (cdr (reverse x)))))
+	      (funcall (or prin1 'prin1)
+		       (if fcn-desc (cons fcn-desc l) x))))
+
+%(defun mode-debug-princ (x) (princ (or (desc-of-lfn x) x)))
+
+(setq *debug-prin1* 'mode-debug-prin1 *debug-princ* 'mode-debug-princ)
+
+%(defun mode-r*ep (x)
+	(setq prin1 (and (boundp '*prin1*) *prin1*)
+	      x (single-expand x 'any)
+	      *top-type* (car x))
+	(cdr x))
+
+%(defun mode-re*p (x)
+	(setq prin1 'mode-top-prin1)
+	x)
+
+%(defun mode-top-prin1 nargs				;ignores second arg
+	(declare (fixnum nargs))
+	(bind ((arg1 <- (arg 1)))
+	      (if (eq arg1 '*) (prin1 '*)		;hack for 
+		  (mode-prin2 arg1 *top-type*))))
+
+%(defun mode-prin2 (x type)
+	(bind ((out <- (tforms-expander1 `[prin1 :,type~',x] 'any)))
+	      (if (null out)
+		  (if (type$subset? 'any type)
+		      (prin1 x)
+		      (funcall (or (and (boundp '*prin1*) *prin1*) 'prin1) x))
+		  (eval (cdar (clobber-if-single (list (car out)))))))
+	t)
+
+;Change to use [optional] second arg [?] :
+%(defun mode-prin1 nargs
+	(mode-prin2 (arg 1) 'any))
+
+;***Add DEFMODE-FIX [check for redefining macros].
+;***Add TRACK [a mode trace package].
+
+(scaunchar)
+
+(or (memq 'genpr (status features))
+    (progn (load '((sca) genpr)) (load '((sca) genpr1))))
+
+(declare (unspecial *tvars* *hard-assed* *return-forms* *return-type*
+		    *bfcn* *lsubr-type*
+		    *no-rets* *ret-checks* *types* *modes* *subs* *all-bfcns*
+		    *mode-name* *compiles* *name-num* *netw-num* *arg-num*
+		    *keep-insts* *keep-names* *arg-temps* *mode-inst*
+		    *num-args*
+		    *modes-file* *in-file* *in-specs*
+		    *prin1* prin1 *top-type* *rset)
+	 (notype *name-num* *netw-num* *arg-num* *num-args*))

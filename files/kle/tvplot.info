@@ -1,0 +1,107 @@
+
+File: ITSTTY,  Node: K/1,  Previous: K,  Up: K,  Next: K/2
+
+ 1. ITS OUTPUT BUFFER CODES.
+
+The internal ITS output buffer codes are 8 bits long.
+Sty handlers should read them in unit mode only.  To read
+more than one at a time, use SIOT with 8-bit bytes.
+Real terminals are assumed to be able to receive only
+7-bit characters;  for them, codes 0 - 176 are sent as
+is;  codes above 176 have 176 subtracted from them and
+are escaped by a 177.  200-codes that have following arguments
+which can reasonably be zero (%TDMOV, %TDMV0, %TDMV1)
+have 1 added to each argument, so that 0 need not be sent.
+
+Note that not all 200-codes are meaningful on all types
+of terminals.  Programs outputting them in superimage mode
+must be careful to use codes that work on the terminal
+they have.
+
+ 0 - 177	Characters, to be output as is.
+		Normally, only single-spacing graphic characters
+		will be sent this way.  Other characters will
+		appear if programs output them in image mode.
+%TDMOV=200	Move cursor.  followed by 4 bytes of arguments:
+		first, the old vertical and horizontal positions
+		(these are probably not needed by the sty
+		handling program); next, the desired vertical
+		and horizontal positions.
+		Should not be used on "raw" ttys (%TORAW set),
+		though it will work.
+%TDMV1==201	Should never be encountered.  If it is, it is
+		followed by 2 bytes of args - the desired
+		vertical and horizontal positions.
+		Should not be used on "raw" ttys (%TORAW set).
+%TDEOF==202	Clear rest of line and rest of page.
+		Does not move the cursor.
+		Does nothing on terminals that aren't selectively
+		erasable, even if they are displays.
+%TDEOL==203	Clear rest of line
+%TDDLF==204	Delete character after cursor, without moving cursor.
+%TDMTF==205	Turn off motor (should not come out except on terminets).
+%TDMTN==206	Turn on motor (" ").
+%TDCRL==207	Crlf.
+%TDNOP==210	No-op.
+%TDBS==211	Backspace - used only on tty's with %TORAW set.
+%TDLF==212	Linefeed -		 (").
+%TDRCR==213	Carriage return -	 (").
+%TDORS==214	Output reset.  Put in the buffer when a tty
+		output reset is done, to inform the sty handling
+		program or the terminal.  Should never be sent by
+		a program explicitly.
+%TDQOT==215	Quote the next character so that it is output to the
+		terminal without being interpreted by ITS.
+%TDFS==216	Move cursor forward one column.
+		This is identical to an appropriate %TDMOV command, and
+		exists to increase the efficiency of utilisation of
+		space in the output buffer.
+%TDMV0==217	Move cursor, followed by 2 args: the desired
+		vertical and horizontal positions.
+		Should not be used on "raw" ttys (%TORAW set).
+%TDCLR==220	Clear the screen, and move the cursor to the top left.
+		On printing terminals, it does nothing.
+%TDBEL==221	Produce a sound on the terminal, or otherwise try
+		to attract the user's attention, without permanently
+		altering the contents of the screen.
+%TDINI==222	Sent at system start-up to all terminals,
+		to tell them to reset themselves.
+%TDILP==223	Insert Line Positions.  Followed by a byte containing
+		the number of lines to insert.  The current line and
+		all lines below it are pushed down on the screen that
+		many positions.  Lines pushed off the bottom of the
+		screen are lost.  Blank lines appear at the cursor to
+		replace the lines shifted downward.  The cursor does
+		not move.
+		This code and the following one should be used only
+		on terminals which have %TOLID set, and only with the
+		cursor at the beginning of a line.
+%TDDLP==224	Delete Line Positions.  Followed by a byte containing
+		the number of positions to delete.  That many lines,
+		starting with the current line, disappear.  The lines
+		below them are shofted up to take their places.  Blank
+		lines are shifted in as necessary at the bottom of the
+		screen.  The cursor does not move.
+%TDICP==225	Insert Character Positions.  Followed by a byte
+		containing the number of spaces to insert.  All of the
+		characters on the current line from the cursor to the
+		end move that many positions to the right.  The last
+		few move off the right margin and disappear.  The
+		terminal is not expected to know anything about
+		continuation lines.  Spaces are shifted in at the
+		cursor to replace the characters that are moving
+		right.
+		This code and the following one should be used only
+		on terminals which have %TOCID set.
+%TDDCP==226	Delete Character Positions.  Followed by a byte
+		containing the number of character positions to
+		delete.  All of the characters to the right of the
+		cursor move that many positions left, except for the
+		first few, which disappear rather than move past the
+		cursor.  Spaces appear at the right margin to replace
+		them.
+%TDBOW==227	Turns on inverse video mode for characters which are
+		output subsequently.  The terminal should use some
+		sort of alternate display mode to emphasize them.
+%TDRST==230	Turns off inverse video mode.  If any other similar
+		modes are created, %TDRST will turn them off too.

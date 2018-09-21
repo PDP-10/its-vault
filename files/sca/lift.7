@@ -1,0 +1,95 @@
+;-*-stl-*-
+;***********************************************************************
+;***************** Polynomial Lifting Routines for SCA *****************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;These routines can be used to lift univariate results to multivariate
+;results.  The sparse modular algorithm and the sparse p-adic algorithms
+;are included.
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((stl) base)))
+
+(global-open ((sca) lift))
+
+(global-read ((sca) mpoly))
+(global-read ((sca) matrix))
+
+(stlchar)
+
+(declare (mapex t)
+	 (genprefix scalift))
+
+;Just a list of exponents, the corresponding coefficients are assumed
+;non-zero
+
+(defmode poly-skel
+	 (arg (ring1 coef) (ordered-set var) (based-set var))
+	 (mode list (elt *fixnum* list evec rlist revec))
+	 (mode list (elt evec list poly-skel rlist rpoly-skel))
+	 (mode mpoly (lead-coef lc))
+	 (arg (fcn (sv list-vars)))
+	 (tdeclare (mpoly p) (poly-skel ep)
+		   (evec e))
+
+ (defun lead-exp (ep) evec [first ep])
+
+ (defun red (ep) poly-skel [rest ep])
+
+ (defun poly-skel (p e lv) poly-skel
+	(tdeclare (ve ve) (revec re) (sv lv))
+	(cond ([not [= [first lv] [var p]]]
+	       [poly-skel p [ttf [0] e] [rest lv]])
+	      ([coef? p]
+	       [poly-skel [reverse re]])
+	      (t (mmapcan (ve [terms p]) ()
+			  [poly-skel [lp p] [ttf [le p] re]]))))
+
+ (defun eval-term (cv lv )))
+
+
+(comment MODULAR LIFT routines)
+
+(defmode modular-lift
+    (args (field coef)			;Must be a field for matrix inversion
+	  (ordered-set var)		;List of variables
+	  (fcn (lv list-of-vars)))	;
+    (mode list (elt var list lv))	;List of variables
+    (mode mpoly)
+    (no-ret make-mat)
+    (struct point coef-vec coef)	;A value for the vars and the value of poly
+    (mode list (elt point list lpts))
+    (mode array (elt coef))
+    (mode vector (elt coef vector coef-vector))
+    (tdeclare (poly-skel skeleton)
+	      (lpts lpts)
+	      (array a)
+	      (row row))
+
+ (defun make-mat (skeleton lpts) poly
+	(do ((m [array [length lpts] [1+ [length lpts]]])
+	     (lpts lpts [rest lpts])
+	     (vals [empty]
+		   [ttf [coef [first lpts]] vals])
+	    ([empty? lpts]
+	     [fill-in skeleton
+		      [dot vals [inverse m]]])
+	    (push (do ((row [empty]
+			    [ttf [subst [coef-vec [first lpts]]
+					[list-of-vars]
+					[first xp]]
+				 row])
+		       (xp xp [rest xp]))
+		      ([empty? xp] row))
+		  m))))
+
+(comment P-ADIC LIFTING routines)
+
+
+(stlunchar)
+
+(global-close)

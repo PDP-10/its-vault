@@ -1,0 +1,362 @@
+;-*-stl-*-
+;***********************************************************************
+;********** Routines for Simple Algebraic Structures for SCA ***********
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This file contains the routines for handling simple algebraic structures for
+;SCA.
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((dsk stl) base)))
+
+(global-open ((sca) algebr))
+
+(global-read ((stl) mesas))
+
+(stlchar)
+
+(declare (mapex t) (genprefix scaalg))
+
+(comment MONOID Mode)
+
+(defmode monoid
+	 (arg (monoid elt))
+	 (tdeclare (elt x y) (*fixnum* i) (*integer* n))
+
+ (defun r-m^ (x i) elt
+	(if [0? i] [1]
+	    (do ((y x [* x y])
+		 (i [1- i] [1- i]))
+		([0? i] y))))
+
+;Answer = y*x^n at [almost] all times, n a non-negative *fixnum*:
+ (defun r-s^ (x n) elt
+	(if [0? n] [1]
+	    (prog (y)
+	     tag1 (cond ([= n 1] (return x))
+			([odd? n]
+			 (_ y x
+			    x [* x x]
+			    n [// n 2]))
+			([true]
+			 (_ x [* x x]
+			    n [// n 2])
+			 (go tag1)))
+	     tag2 (cond ([1? n] (return [* x y]))
+			([odd? n] (_ y [* x y])))
+		  (_ x [* x x] n [// n 2])
+		  (go tag2)))))
+
+(comment WORD-MONOID Mode)
+
+
+(defmode word-monoid
+	 (arg (monoid coef) (based-set var))
+	 (struct term var (p2 (union coef expon)))
+	 (mode fixnum (fixnum expon))
+	 (mode list (elt term list word rlist rword)
+	       ((any (prin1 list)) list-prin1))
+	 (mode monoid (elt word) (r-s^ ^))
+	 (ret-check (monoid word))
+	 (tdeclare (word w w1 w2) (rword rw) (coef c) (expon e) (term t1 t2)
+		   (var v))
+
+ (defun coef? (t1) *boolean* [base? [var t1]])
+ (defun coef (t1) coef :coef~[p2 t1])
+ (defun expon (t1) expon :expon~[p2 t1])
+ (defun term (c) term [term [base] c])
+ (defun var-term (v e) term [term v e])
+
+ (defun = (t1 t2) *boolean*
+	(if [coef? t1]
+	    (and [coef? t2] [= [coef t1] [coef t2]])
+	    (and [= [var t1] [var t2]] [= [expon t1] [expon t2]])))
+
+ (constant 1 word [empty])
+ (defun 1? (w) *boolean* [empty? w])
+ (defun word (c) word (if [1? c] [1] [single [term c]]))
+ (defun word (v) word (if [base? v] [1] [single [var-term v [1]]]))
+
+ (defun * (w1 w2) word
+	(do ((rw [reverse w1] [rest rw]) (w2 w2 [rest w2]) (c) (e))
+	    ((or [empty? rw] [1? w2]
+		 [not [= [var [first rw]] [var [first w2]]]])
+	     [nreconc rw w2])
+	    (cond ([base? [var [first rw]]]
+		   (_ c [* [coef [first rw]] [coef [first w2]]])
+		   (if [not [1? c]]
+		       (return
+			[nreconc [rest rw]
+				 [ttf [term c] [rest w2]]])))
+		  ([true]
+		   (_ e [+ [expon [first rw]] [expon [first w2]]])
+		   (if [not [0? e]]
+		       (return
+			[nreconc [rest rw]
+				 [ttf [term [var [first rw]] e]
+				      [rest w2]]]))))))
+
+ (defun prin1 (w) any
+	(cond ([1? w] (princ 1))
+	      ((and [empty? [rest w]]
+		    (or [coef? [first w]] [1? [expon [first w]]]))
+	       [prin1 [first w]])
+	      ([true] [list-prin1 w])))
+
+ (defun prin1 (t1) any
+	(cond ([coef? t1] [prin1 [coef t1]])
+	      ([1? [expon t1]] [prin1 [var t1]])
+	      (t [prin1 [var t1]] (princ '|^|) [prin1 [expon t1]]))))
+
+(defmode word-monoid-hom
+	 (arg (monoid coef) (based-set var) (monoid monoid))
+	 (mode word-monoid)
+	 (tdeclare (word w) (monoid m) (term t1) ((subr monoid coef) coef-hom)
+		   ((subr monoid var) var-hom))
+
+ (defun hom (w coef-hom var-hom) monoid
+	(mmap (t1 w)
+	      ((m [1]
+		  [* m (if [base? [var t1]] (call coef-hom [coef t1])
+			   [^ (call var-hom [var t1]) :*fixnum*~[expon t1]])]))
+	      m)))
+
+
+(comment Permutation Groups)
+
+;***subgroups of finite permutation groups:  use arrays [?].  1, 1?, *, //,
+;make-cycle [?], apply [?].
+
+
+(comment ORDERED-GROUP Mode)
+
+;Create an ORDERED-GROUP algebra?
+
+(defmode ordered-group
+	 (arg (fcns (*boolean* (neg? elt)) (elt (- elt))))
+	 (tdeclare (elt x))
+	 (defun abs (x) elt (if [neg? x] [- x] x)))
+
+(comment Modular Integers)
+
+
+;Integers modulo an odd fixnum prime:
+(defmode zmodofp
+     ;HMODULUS is the largest legal positive integer [modulo MODULUS]:
+	 (arg (fcns (*fixnum* modulus hmodulus)))
+	 (fixnum elt)
+	 (mode monoid () (r-s^ ^))
+	 (mode ringc1)
+	 (ret-check (field elt))
+	 (tdeclare (elt m n) (*fixnum* i a1 b1 c1 a2 b2 c2 q) (*integer* x))
+	 (defun prin1 (n) any (prin1 n))
+	 (defun fix (n) *fixnum* :*fixnum*~n)
+	 (defun unfix (i) elt :elt~i)
+	 (defun md (i) elt
+		(cond ([> i [hmodulus]] [unfix [- i [modulus]]])
+		      ([< i [- [hmodulus]]] [unfix [+ i [modulus]]])
+		      ([true] [unfix i])))
+	 (defun z->r (x) elt [md :*fixnum*~[rem x [modulus]]])
+	 (defun = (m n) *boolean* [= [fix m] [fix n]])
+	 (constant 0 elt [unfix [0]])
+	 (defun 0? (n) *boolean* [0? [fix n]])
+	 (defun - (n) elt [unfix [- [fix n]]])
+	 (defun + (m n) elt [md [+ [fix m] [fix n]]])
+	 (defun - (m n) elt [md [- [fix m] [fix n]]])
+	 (defun * (x n) elt [* :elt:[z->r x] n])
+	 (constant 1 elt [unfix [1]])
+	 (defun 1? (n) *boolean* [1? [fix n]])
+	 (defun * (m n) elt [z->r [* [fix m] [fix n]]])
+	 (defun // (m n) elt [* m [// n]])
+	 (defun 1+ (n) elt
+		(if [= [fix n] [hmodulus]] [unfix [- [hmodulus]]]
+		    [unfix [1+ [fix n]]]))
+	 (defun 1- (n) elt
+		(if [= [fix n] [- [hmodulus]]] [unfix [hmodulus]]
+		    [unfix [1- [fix n]]]))
+
+;Ai * [MODULUS] + Bi * N = Ci, at all times:
+ (defun // (n) elt
+	(if [0? n] [qbz-err]
+	    (do ((a1 [1] a2) (a2 [0] [- a1 [* q a2]])
+		 (b1 [0] b2) (b2 [1] [- b1 [* q b2]])
+		 (c1 [modulus] c2) (q)
+		 (c2 [abs [fix n]] [rem c1 c2]))
+		([1? c2] (if [> [fix n] 0] [unfix b2] [unfix [- b2]]))
+		(_ q [// c1 c2])))))
+
+(comment FREE-MODULE Modes)
+
+;Can something be done about all these modes?!!!
+(defmode simple-free-module
+	 (arg (ring1 coef) (ordered-set var))
+	 (mode pair
+	       (head var tail coef pair term)
+	       (head var tail coef pair term prin1 nil))
+	 (mode list (elt term list sum rlist rsum) (deln nil prin1 nil)))
+
+(defmode var-hom-free-module
+	 (arg (ring1 coef) (ordered-set var1) (ordered-set var2))
+	 (mode simple-free-module (var var1 term term1 sum sum1 rsum rsum1))
+	 (mode simple-free-module (var var2 term term2 sum sum2 rsum rsum2))
+	 (mode two-lists (elt1 term1 elt2 term2 list1 sum1 list2 sum2))
+	 (tdeclare ((subr var2 var1) var-hom) (sum1 s1) (term1 term1))
+
+ (defun hom (var-hom s1) sum2
+	[mapcar (funarg (nfn (var-hom term1) term2
+			     [term (call var-hom [var term1]) [coef term1]])
+			var-hom *)
+		s1]))
+
+(defmode coef-hom-free-module
+	 (arg (ring1 coef1) (ring1 coef2) (ordered-set var))
+	 (mode simple-free-module (coef coef1 sum sum1 rsum rsum1 term term1))
+	 (mode simple-free-module (coef coef2 sum sum2 rsum rsum2 term term2))
+	 (mode two-lists (elt1 term1 elt2 term2 list1 sum1 list2 sum2))
+	 (tdeclare ((subr coef2 coef1) coef-hom) (coef2 c2) (sum1 s1)
+		   (term1 term1))
+
+ (defun hom (coef-hom s1) sum2
+	[mapcan (funarg
+		 (nfn (coef-hom term1) sum2
+		      (bind ((c2 <- (call coef-hom [coef term1])))
+			    (if [0? c2] [empty]
+				[single [term [var term1] c2]])))
+		 coef-hom *)
+		s1]))
+
+(defmode var-elt-hom-free-module
+	 (arg (ring1 coef) (ordered-set var) (module coef module))
+	 (mode simple-free-module)
+	 (tdeclare ((subr module var) var-hom) (module m) (sum s) (term term))
+
+ (defun hom (var-hom s) module
+	(mmap (term s)
+	      ((m [0] [+ [* [coef term] (call var-hom [var term])] m]))
+	      m)))
+
+;***Put in module stuff - if COEF is a module over KOEF.
+
+(defmode both-hom-free-module
+	 (arg (ring1 coef) (ordered-set var) (ring1 koef) (module koef module))
+	 (mode simple-free-module)
+	 (tdeclare ((subr module var) var-hom) (module m) (sum s) (term term)
+		   ((subr koef coef) coef-hom))
+
+;I can't resist this feeble excuse to try out run-time mode creation:
+ (defun hom (coef-hom var-hom s) module
+	(mmap (term s)
+	      ((m [0] [+ [* (call coef-hom [coef term])
+			    (call var-hom [var term])]
+			 m]))
+	      m)))
+
+(defmode free-module
+	 (arg (ordered-ringc1 coef) (ordered-set var))
+;	 (mode simple-free-module)	- done in following:
+	 (mode coef-hom-free-module
+	       (coef1 coef coef2 coef sum1 sum sum2 sum rsum1 rsum rsum2 rsum
+	        term1 term term2 term))
+	 (mode ordered-set-from-compare (elt sum))
+	 (ret-check (ordered-set sum) (module coef sum))
+	 (tdeclare (term t1 t2) (var v) (sum s s1 s2) (coef c) (rsum rout)
+		   (*integer* n))
+
+ (defun same-var? (t1 t2) *boolean* [= [var t1] [var t2]])
+
+ (constant 0 sum [empty])
+
+ (defun 0? (s) *boolean* [empty? s])
+
+ (defun sum (v) sum [single [term v [1]]])
+
+ (defun lead-term (s) term [first s])
+
+ (defun lead-coef (s) coef [coef [lead-term s]])
+
+ (defun lead-var (s) var [var [lead-term s]])
+
+ (defun ass (v s) term
+	(mmap (t1 s) () [term v [0]]
+	      (cond ([< [var t1] v])
+		    ([= [var t1] v] (return t1))
+		    ([true] (return [term v [0]])))))
+
+;These functions implement an ordering on SUMs which makes a free module an
+;ordered abelian group:
+
+ (defun compare (s1 s2) *compare*
+	(tdeclare (*compare* ans))
+	(do ((s1 s1 [rest s1]) (s2 s2 [rest s2]))
+	    ([0? s2] (sign s1))
+	    (cond ([0? s1] (return [switch (sign s2)]))
+		  ([< [lead-var s1] [lead-var s2]]
+		   (return (sign [lead-coef s1])))
+		  ([< [lead-var s2] [lead-var s1]]
+		   (return (sign [lead-coef s2])))
+		  ([true]
+		   (bind ((ans <- [compare [lead-coef s1] [lead-coef s2]]))
+			 (if [not [=? ans]] (return ans)))))))
+
+;***Put in quick and dirty [LEXLP] ordering?
+
+
+ (defun + (s1 s2) sum
+	(do ((rout [empty]) (c))
+	    ([false])
+	    (cond ([0? s1] (return [nreconc rout s2]))
+		  ([0? s2] (return [nreconc rout s1]))
+		  ([< [lead-var s1] [lead-var s2]] (push (pop s1) rout))
+		  ([< [lead-var s2] [lead-var s1]] (push (pop s2) rout))
+		  ([true]
+		   (_ c [+ [lead-coef s1] [lead-coef s2]])
+		   (if [not [0? c]] (push [term [lead-var s1] c] rout))
+		   (_ s1 [rest s1] s2 [rest s2])))))
+
+ (defun - (s1 s2) sum
+	(do ((rout [empty]) (c))
+	    ([false])
+	    (cond ([0? s2] (return [nreconc rout s1]))
+		  ([0? s1] (return [nreconc rout [- s2]]))
+		  ([< [lead-var s1] [lead-var s2]] (push (pop s1) rout))
+		  ([< [lead-var s2] [lead-var s1]]
+		   (push [term [lead-var s2] [- [lead-coef s2]]] rout)
+		   (_ s2 [rest s2]))
+		  ([true]
+		   (_ c [- [lead-coef s1] [lead-coef s2]])
+		   (if [not [0? c]] (push [term [lead-var s1] c] rout))
+		   (_ s1 [rest s1] s2 [rest s2])))))
+
+ (defun - (s) sum [hom (bfcn -) s])
+
+ (defun * (c s) sum
+	(if [1? c] s [hom (funarg (bfcn *) c *) s]))
+
+ (defun * (n s) sum
+	(if [1? n] s [hom (funarg (bfcn *) n *) s]))
+
+ (defun prin1 (s) any
+	(cond ([0? s] (princ 0))
+	      ((and [empty? [rest s]] [1? [lead-coef s]]) [prin1 [first s]])
+	      ([true]
+	       (princ '|(|)
+	       (mmap (t1 s) () nil
+		     [prin1 t1]
+		     (if [not [empty? [rest s]]] (princ '| + |)))
+	       (princ '|)|))))
+
+ (defun prin1 (t1) any
+	(cond ([1? [coef t1]] [prin1 [var t1]])
+	      ([true]
+	       [prin1 [coef t1]]
+	       (princ '| |)
+	       [prin1 [var t1]]))))
+
+
+(stlunchar)
+
+(global-close)

@@ -1,0 +1,685 @@
+;-*-stl-*-
+;***********************************************************************
+;*********** Univariate Polynomial [UPOLY] Routines for SCA ************
+;****** (c) copyright 1977 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;These are the routines for graded rings, including univariate polynomials
+;[with no algebraic relations, weights, or truncation levels].  Objects are
+;stored as lists [SUMs] of terms, where a term consists of a weight and a
+;coefficient, with the weights in increasing order.  Coefficients are never
+;0.  The ground ring is sometimes assumed commutative with a unit element.
+;The monoid is hoped to have a unit element, and multiplication of elements of
+;the coefficient ring and of the monoid should commute [when considered as
+;elements of the graded ring].  [These assumptions will hopefully be documented
+;when they occur, especially commutativity of the coefficient ring.]  There are
+;currently 3 cases implemented:
+;
+;	(1)  Univariate polynomials - i.e., the grading monoid consists of the
+;	     positive fixnums under addition, in decreasing order of exponents.
+;	(2)  General monoid to do the grading.
+;	(3)  A pseudo-monoid to do the grading, where this means that
+;	     multiplication of two elements of the pseudo-monoid results in
+;	     0, an element of the pseudo-monoid, or a negative of an element of
+;	     the pseudo-monoid.
+
+
+;***Do all the zerop and onep checks really win anything?
+;***Create pcplus, pctimes, etc.?
+;Big arg first in -, quotient, etc.
+;Big arg second in plus, times, etc.
+;***0/0 - make error if possible.
+;***x/0 & (divide? 0 a) - return garbage.
+
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((dsk stl) base)))
+
+(global-open ((sca) upoly))
+
+(global-read ((sca) algebr))
+
+(stlchar)
+
+(declare (mapex t) (genprefix scaupoly))
+
+(comment Graded-Ring Mode)
+
+
+;Following depends on order of argument evaluation:
+(defsmac make-order-0 (p) `[- [degree ,p] [degree (_ ,p [order-0 ,p])]])
+
+;This is the mode for graded ring [including polynomial] routines that don't
+;assume expon = fixnum.
+
+(defmode graded-ring
+	 (arg (ordered-set coef)
+	      (ring1 coef)
+	      (ordered-set weight)
+	      (monoid weight)
+	      (fcns (coef (// coef coef))))
+	 (mode free-module (var weight sum gr rsum rgr)
+	       (var weight same-var? same-weight? lead-var order sum gr))
+	 (mode ringc1 (elt gr quo-rem qrg))
+	 (mode monoid (elt gr))				;Non-commutative case
+	 (ret-check (ordered-set gr) (ring1 gr) (module coef gr))
+	 (tdeclare (gr g g1 g2 g3) (weight w w1 w2) (coef c c1 c2)
+		   (term term term1 term2) (*integer* n) (rgr rout)
+		   (*fixnum* i))
+
+
+ (comment Basic Routines)
+
+
+;Stick in PRIN1?
+
+ (defun red (g) gr [rest g])
+
+ (constant 1 gr [gr :coef:[1]])
+
+ (defun z->r (n) gr [gr :coef:[z->r n]])
+
+;Works for 0:
+ (defun coef? (g) *boolean* (or [0? g] (and [0? [red g]] [1? [order g]])))
+
+ (defun 1? (g) *boolean* (and [coef? g] [not [0? g]] [1? [lead-coef g]]))
+
+ (defun gr (c) gr [single [term [1] c]])
+
+
+;Increase efficiency of various routines by making clobbering +, -, *, etc.,
+;and be careful about unclobberable results?
+
+
+ (comment Multiplicative Structure)
+
+
+ (defun * (term g) gr
+	(if [1? [weight term]] [* [coef term] g]
+	    (mmap (term1 g) ((rout [empty]
+				   (bind ((c1 <- [* [coef term] [coef term1]]))
+					 (if [0? c1] rout
+					     [ttf [term [* [weight term]
+							   [weight term1]]
+							c1]
+						  rout]))))
+		  [nreverse rout])))
+
+;Use Wave-front or Tourney-merge multiplication?
+ (defun * (g1 g2) gr
+     ;not bound in do because of complr bug:
+	(bind ((g <- [single :term~nil]) c1 c2 w1 w2 g3)
+	      (mmap (term1 g1) () nil
+     ;[REST P] can still be EMPTY [coefring not a domain]:
+		    (_ g3 g
+		       w1 [weight term1]
+		       c1 [coef term1])
+		    (mmap (term2 g2) () nil
+			  (_ c2 [* c1 [coef term2]])
+			  (cond ([not [0? c2]]
+				 (_ w2 [* w1 [weight term2]])
+
+  (do ()
+      ([empty? [red g3]]
+       (_ [red g3] [single [term w2 c2]]
+	  g3 [rest g3]))
+      (cond ([< [order [rest g3]] w2] (_ g3 [rest g3]))
+	    ([= [order [rest g3]] w2]
+	     (_ c2 [+ c2 [lead-coef [rest g3]]])
+	     (if [0? c2] (_ [rest g3] [rest [rest g3]])
+		 (_ [lead-coef [rest g3]] c2
+		    g3 [rest g3]))
+	     (return nil))
+	    ([true]
+	     (push [term w2 c2] [rest g3])
+	     (_ g3 [rest g3])
+	     (return nil))))))))
+
+	      [rest g]))
+
+ (defun ^ (g i) gr				;COMMUTATIVE exponentiation
+	(cond ([0? g] [0])
+	      ([0? [red g]]
+	       [single [term [^ [order g] i] [^ [lead-coef g] i]]])
+	      ([true] [binom-expand [single [lead-term g]] [red g] i])))
+
+ (defun // (g c) gr
+	(if [1? c] g [hom (funarg (bfcn (coef (// coef coef))) * c) g]))
+
+ (defun monicize (g) gr		;Clobbers - beware, and G non-zero
+	(bind ((c <- [lead-coef g]))
+	      (mmap (term g) () nil
+		    (_ [coef term] [// [coef term] c])))
+	(_ [lead-coef g] [1])
+	g))
+
+(comment UPOLY Mode)
+
+
+;Should UPOLY be changed to allow non-fixnum exponents, or perhaps a UPOLYE
+;mode should be created, which would just contain some division and derivative
+;stuff?  Also, should the exponents increase or decrease?
+
+(defmode upoly
+	 (arg (ordered-set coef) (ring1 coef) (fcn (any (var-prin1))))
+	 (mode fixnum (fixnum expon) (fixnum expon))
+	 (mode ringc1 (elt coef quo-rem qrc))
+	 (arg (fcns (qrc (divide coef coef))
+		    (coef (// coef coef)
+			  (exact-// coef coef)
+			  (unit-normal coef)
+			  (gcd coef coef))
+		    (*boolean* (simpler? coef coef))))
+	 (mode graded-ring (rgr rpoly qrg qrp)
+	       (order degree same-weight? same-expon? weight expon gr poly
+		prin1 nil)
+	       (reverse-order weight expon) (abelian weight expon)
+	       (reverse-order gr poly))
+	 (struct n-poly *fixnum* poly)
+	 (mode list (elt n-poly list ln-poly rlist rln-poly))
+	 (struct e-poly expon poly)
+	 (mode list (elt e-poly list le-poly rlist rle-poly))
+	 (mode sort (elt coef list lc rlist rlc) (< simpler?))
+	 (mode two-lists (elt1 term list1 poly elt2 coef list2 lc))
+	 (ret-check (ordered-set poly) (ring1 poly) (module coef poly))
+	 (no-ret remcmf new-h)
+	 (tdeclare (poly p p1 p2 q) (expon e e1 e2) (coef c c1 c2 lc coef)
+		   (term term term1 term2) (*integer* n) (rpoly rout) (qrp qrp)
+		   (*fixnum* i) (*boolean* wrong-sign?) (ln-poly lnp)
+		   ((subr poly poly poly) gcd-fcn))
+
+
+ (defun prin1 (p) any
+	(cond ([0? p] (princ 0))
+	      ((and [empty? [rest p]]
+		    (or [0? [degree p]]
+			(and [1? [degree p]]
+			     [1? [lead-coef p]])))
+	       [prin1 [first p]])
+	      (t
+	       (princ '|(|)
+	       (mmap (term p) () nil
+		     [prin1 term]
+		     (if [not [empty? [rest p]]] (princ '| + |)))
+	       (princ '|)|))))
+
+ (defun prin1 (term) any
+	(cond ([0? [expon term]] [prin1 [coef term]])
+	      (t
+	       (cond ([not [1? [coef term]]]
+		      [prin1 [coef term]]
+		      (princ '| |)))
+	       [var-prin1]
+	       (cond ([not [1? [expon term]]]
+		      (princ '|^|)
+		      [prin1 [expon term]])))))
+
+;+, -, * repeated for efficiency:
+ (cldef + (p1 p2) poly
+	(do ((rout [empty]) (c))
+	    ([false])
+	    (cond ([0? p1] (return [nreconc rout p2]))
+		  ([0? p2] (return [nreconc rout p1]))
+		  ([> [degree p1] [degree p2]] (push (pop p1) rout))
+		  ([> [degree p2] [degree p1]] (push (pop p2) rout))
+		  ([true]
+		   (_ c [+ [lead-coef p1] [lead-coef p2]])
+		   (if [not [0? c]] (push [term [degree p1] c] rout))
+		   (_ p1 [rest p1] p2 [rest p2])))))
+
+ (cldef - (p1 p2) poly
+	(do ((rout [empty]) (c))
+	    ([false])
+	    (cond ([0? p2] (return [nreconc rout p1]))
+		  ([0? p1] (return [nreconc rout [- p2]]))
+		  ([> [degree p1] [degree p2]] (push (pop p1) rout))
+		  ([> [degree p2] [degree p1]]
+		   (push [term [degree p2] [- [lead-coef p2]]] rout)
+		   (_ p2 [rest p2]))
+		  ([true]
+		   (_ c [- [lead-coef p1] [lead-coef p2]])
+		   (if [not [0? c]] (push [term [degree p1] c] rout))
+		   (_ p1 [rest p1] p2 [rest p2])))))
+
+;Use better algorithm?:
+ (cldef * (p1 p2) poly
+     ;not bound in do because of complr bug:
+	(bind ((p <- [single :term~nil]) c1 c2 e1 e2 q)
+	      (mmap (term1 p1) () nil
+     ;[REST P] can still be EMPTY [COEFring not a domain]:
+		    (_ q p
+		       e1 [expon term1]
+		       c1 [coef term1])
+		    (mmap (term2 p2) () nil
+			  (_ c2 [* c1 [coef term2]])
+			  (cond ([not [0? c2]]
+				 (_ e2 [+ e1 [expon term2]])
+
+  (do ()
+      ([empty? [rest q]]
+       (_ [rest q] [single [term e2 c2]]
+	  q [rest q]))
+      (cond ([< e2 [degree [rest q]]] (_ q [rest q]))
+	    ([= e2 [degree [rest q]]]
+	     (_ c2 [+ c2 [lead-coef [rest q]]])
+	     (if [0? c2] (_ [rest q] [rest [rest q]])
+		 (_ [lead-coef [rest q]] c2 q [rest q]))
+	     (return nil))
+	    ([true]
+	     (push [term e2 c2] [rest q])
+	     (_ q [rest q])
+	     (return nil))))))))
+
+	      [rest p]))
+
+;***Create HOM mode?
+
+ (defun subst (c p) coef
+	(cond ([0? p] [0])
+	      ([0? c] [coef [ass [0] p]])
+	      ([true]
+	       (do ((c1 [lead-coef p]
+			[+ [lead-coef p]
+			   [* [^ c [*fixnum* [- e [degree p]]]] c1]])
+		    (p [rest p] [rest p])
+		    (e [degree p] [degree p]))
+		   ([empty? p] (if [0? e] c1 [* [^ c [*fixnum* e]] c1]))))))
+
+
+ (comment Division and Pseudo-Division)
+
+
+;***Use Wave-front division?
+
+;For division and pseudo-division, it is assumed that the coefficient ring is
+;commutative, and that the leading coefficient of the divisor is not a
+;zero-divisor.  The fact that x#0 => x/y#0 is often used.  The divisor should
+;never be 0:  even divide-checks may do strange things.  Currently implemented
+;are:
+;
+;DIVIDE:  works over a field, or [more generally] when the leading coefficient
+;	  of the divisor is known [or assumed, as in divide-checks] to divide
+;	  the leading coefficients of the quotient and the intermediate
+;	  results,
+;
+;WEAK-DIVIDE:  (QUO . REM) where we are working over a ring, and
+;
+;PSREM:  PSEUDO-REMAINDER of two UPOLYs [does not assume COEF a domain].
+
+;There are few 1? checks because in real life UPOLYs come from MPOLYs, so are
+;never COEFs [??].
+
+;One could actually make all this more efficient by splitting up the cases of
+;exact-quotient and divide-check, and being a little more careful about not
+;calculating unnecessary quantities throughout.  It doesn't seem worth it.
+
+ (defun exact-// (p1 p2) poly
+	(cond ([0? p2] [qbz-err])
+	      ([0? p1] [0])
+	      ([< [degree p1] [degree p2]] [qne-err])
+	      ([true]
+	       [exact-// [lead-coef p1] [lead-coef p2]]
+	       (bind ((qrp <- [divide p1 p2]))
+		     (if [0? [rem qrp]] [quo qrp] [qne-err])))))
+
+ (defun divide (p1 p2) qrp
+	(if [0? p2] [qbz-err]
+	    (do ((rout [empty]) (lc [lead-coef p2]) (e [degree p2])
+		 (q [rest p2]))
+		((or [0? p1] [< [degree p1] e]) [quo-rem [nreverse rout] p1])
+		(push [term [- [degree p1] e] [// [lead-coef p1] lc]] rout)
+		(_ p1 [- [red p1] [* [first rout] q]]))))
+
+ (defun weak-divide (p1 p2) qrp
+	(tdeclare (rpoly quo rem) (qrc qrc))
+	(if [0? p2] [qbz-err]
+	    (do ((quo [empty]) (rem [empty])
+		 (lc [lead-coef p2]) (e [degree p2]) (q [red p2]) (qrc))
+		((or [0? p1] [< [degree p1] e])
+		 [quo-rem [nreverse quo] [nreconc rem p1]])
+		(_ qrc [divide [lead-coef p1] lc])
+		(if [not [0? [rem qrc]]]
+		    (push [term [degree p1] [rem qrc]] rem))
+		(cond ([not [0? [quo qrc]]]
+		       (push [term [- [degree p1] e] [quo qrc]] quo)
+		       (_ p1 [- [red p1] [* [first quo] q]]))
+		      ([true] (_ p1 [red p1]))))))
+
+ (defun // (p1 p2) poly [quo [divide p1 p2]])
+
+ (defun psrem (p1 p2) poly
+	(if [0? p2] [qbz-err]
+	    (do ((lc [lead-coef p2]) (e [degree p2]) (q [red p2])
+		 (e1 [max [1+ [- [degree p1] [degree p2]]] [0]]
+		     [1- e1]))
+		([0? p1] [0])
+		(if [< [degree p1] e]
+		    (return (if [0? e1] p1 [* [^ lc [*fixnum* e1]] p1])))
+		(_ p1
+		   [- [* lc [red p1]]
+		      [* [term [- [degree p1] e] [lead-coef p1]] q]]))))
+
+ (comment Polynomial Differentiation)
+
+
+;Simple derivative w.r.t. var - no dependencies, etc.
+ (defun deriv (p) poly
+	[mapcan (nfn (term) poly
+		     (cond ([0? [expon term]] [0])
+			   ([1? [expon term]] [poly [coef term]])
+			   ([true]
+			    (bind ((c <- [* [*fixnum* [expon term]]
+					    [coef term]]))
+				  (if [0? c] [0]
+				      [single [term [1- [expon term]] c]])))))
+		p])
+
+ (comment GCD Stuff)
+
+
+;All GCD and CONTENT routines, both for POLLYs and COEFs return UNIT-NORMAL
+;frobs.  [Create UNION-Types for COEFs and POLYs for UNIT-NORMAL and other
+;guys?]
+ 
+;GCD over a field, corresponding to Brown's Algorithm U:
+ (defun gcdf (p1 p2) poly
+	(cond ([0? p1] p2)
+	      ([0? p2] p1)
+	      ((or [coef? p1] [coef? p2]) [1])
+	      ([true]
+	       (if [< [degree p1] [degree p2]] (swap p1 p2))
+	       (_ p1 [copy1 p1] p2 [copy1 p2])
+	       (do ((p1 p2 p2)
+		    (p2 [remcmf p1 [monicize p2]] [remcmf p1 [monicize p2]]))
+		   ([0? p2] p1)
+		   (if [coef? p2] (return [1]))))))
+
+;Clobbering remainder over a field with monic divisor,
+;[degree p1] >= [degree p2], p1 # 0:
+ (defun remcmf (p1 p2) poly
+	(do ((q p1) (e [- [degree p1] [degree p2]]) (c [- [lead-coef p1]])
+	     (p2 [red p2]) (e1) (e2) (c1))
+	    ([0? p2] [red q])
+	    (_ e1 [degree [red p1]]
+	       e2 [+ e [degree p2]])
+	    (cond ([> e1 e2] (_ p1 [red p1]))
+		  ([< e1 e2]
+		   (_ [red p1] [ttf [term e2 [* c [coef (pop p2)]]] [red p1]]
+		      p1 [red p1]))
+		  ([= e1 e2]
+		   (_ c1 [+ [lead-coef [red p1]] [* c [coef (pop p2)]]])
+		   (if [0? c1] (_ [red p1] [red [red p1]])
+		       (_ p1 [red p1] [lead-coef p1] c1))))))
+
+;***Put in DENSE mode for PRS over a field [clobbering]?
+
+;ONLY takes NON-ZERO, PRIMITIVE args, returning a NON-PRIMITIVE answer:
+ (defun reduced-gcd (p1 p2) poly
+	(if [< [degree p1] [degree p2]] (swap p1 p2))
+	(prog (p e)
+	      (_ e [0])
+	 loop (_ p [psrem p1 p2])
+	      (if [0? p] (return p2))
+	      (if [coef? p] (return [1]))
+	      (_ p [// p [^ [lead-coef p1] [*fixnum* e]]]
+		 e [1+ [- [degree p1] [degree p2]]]
+		 p1 p2
+		 p2 p)
+	      (go loop)))
+
+;Debug Hearn's stuff or implement improved SUBRES?
+
+;See Algorith 1 [p. 4] of Brown's latest [unpublished] paper for the following
+;- DRB:
+;Only takes NON-ZERO, NON-COEF, PRIMITIVE args, returning a NON-PRIMITIVE
+;answer:
+ (defun subres-gcd (p1 p2) poly
+	(if [< [degree p1] [degree p2]] (swap p1 p2))
+	(prog (c e p)
+	      (_ p [psrem p1 p2])
+	      (if [0? p] (return p2))
+	      (if [coef? p] (return [1]))
+	      (_ c [1]
+		 e [- [degree p1] [degree p2]])
+	 loop (_ p1 p2
+		 p2 p
+		 p [psrem p1 p2])
+	      (if [0? p] (return p2))
+	      (if [coef? p] (return [1]))
+	      (_ c [new-h p1 e c]
+		 e [- [degree p1] [degree p2]]
+		 p [// [// p [lead-coef p1]] [^ c [*fixnum* e]]])
+	      (go loop)))
+
+ (defun new-h (p e c) coef
+	(if [pos? [1- e]]
+	    [// [^ [lead-coef p] [*fixnum* e]] [^ c [*fixnum* [1- e]]]]
+	    [^ [lead-coef p] [*fixnum* e]]))
+
+ (defun content (p) coef				;P # 0
+	(tdeclare (lc lcs))
+	(bind ((lcs <- [sort [mapcar (bfcn coef) p]]))
+	      (if [empty? [rest lcs]] [unit-normal [first lcs]]
+		  (do ((c (pop lcs) [gcd c (pop lcs)]))
+		      ((or [empty? lcs] [1? c]) c)))))
+
+ (defun unit-normal (p) poly
+	(if [0? p] [0]
+	    (bind ((c <- [unit-normal [lead-coef p]]))
+		  (if [= c [lead-coef p]] p
+		      [ttf [term [degree p] c]
+			   [* [// c [lead-coef p]] [red p]]]))))
+
+ (defun primitive-part (p) poly (if [0? p] [0] [// p [content p]]))
+
+ (defun low-order (p) expon [degree [last p]])
+
+ (defun order-0 (p) poly (if [0? p] p [shift p [- [low-order p]]]))
+
+ (defun shift (p e) poly
+	(if [0? e] p
+	    (mmap (term p)
+		  ((rout [empty]
+			 [ttf [term [- [expon term] e] [coef term]] rout]))
+		  [nreverse rout])))
+
+;Improve?:
+ (defun gcd (p1 p2 gcd-fcn) poly
+ 	(cond ([0? p1] [unit-normal p2])
+	      ([0? p2] [unit-normal p1])
+	      ([true]
+	       (bind ((e <- [min (make-order-0 p1) (make-order-0 p2)]) c1 c2)
+		     [unit-normal [shift	;UNIT-NORMAL may be unnecessary
+
+  (cond ((or [coef? p1] [coef? p2])
+	 [poly [content [append p1 p2]]])  ;Note not a sorted POLLY
+	([true]
+	 (_ c1 [content p1] c2 [content p2]
+	    p1 [// p1 c1] p2 [// p2 c2]
+	    c1 [gcd c1 c2] c2 [gcd [lead-coef p1] [lead-coef p1]]
+	    p1 (call gcd-fcn p1 p2))
+	 (if [coef? p1] [poly c1]
+	     [* c1 [primitive-part [// [* c2 p1] [lead-coef p1]]]])))
+  e]]))))
+
+ (comment SQFR Stuff)
+
+
+;Assumes CHAR > DEGREE, Q copied [***???]:
+;***Assumes ???:
+ (defun sqfr (q gcd-fcn) ln-poly
+	(do ((p1 q [// p1 p])
+	     (p2 [deriv q] [// p2 p])
+	     (i [0] [1+ i])
+	     (p [0])
+	     (lnp [empty]))
+	    ([0? [degree p1]] lnp)		;p1 # 0
+	    (cond ([0? p]			;first time through
+		   (_ p (call gcd-fcn p1 p2))
+		   (if [0? [degree p]] (return [single [n-poly [1] p1]])))
+		  ([true]
+		   (_ p2 [- p2 [deriv p1]]
+		      p (call gcd-fcn p1 p2))
+		   (and [> [degree p] [0]]
+			(push [n-poly i p] lnp)))))))
+
+(comment SIGNED-GRADING Mode)
+
+
+;Come up with a better name:
+(defmode signed-grading
+	 (arg (ordered-set coef)
+	      (ring1 coef)
+	      (ordered-set weight)
+	      (fcns (coef (// coef coef))))
+	 (struct signed-weight (sign *compare*) weight)
+	 (arg (signed-monoid weight signed-weight))
+	 (mode free-module (var weight sum gr rsum rgr)
+	       (sum gr var weight same-var? same-weight? lead-var order))
+	 (mode monoid (elt gr) (r-s^ ^))		;Non-commutative ^
+	 (ret-check (ordered-set gr) (ring1 gr) (module coef gr))
+	 (tdeclare (gr g g1 g2 g3) (weight w w1 w2) (coef c c1 c2)
+		   (term term term1 term2) (*integer* n) (rgr rout)
+		   (*fixnum* i) (signed-weight sw))
+
+
+ (comment Basic Routines)
+
+
+;Stick in PRIN1?
+
+ (defun red (g) gr [rest g])
+
+ (constant 1 gr [gr :coef:[1]])
+
+ (defun z->r (n) gr [gr :coef:[z->r n]])
+
+;Works for 0:
+ (defun coef? (g) *boolean* (or [0? g] (and [0? [red g]] [1? [order g]])))
+
+ (defun 1? (g) *boolean* (and [coef? g] [not [0? g]] [1? [lead-coef g]]))
+
+ (defun gr (c) gr [single [term [1] c]])
+
+
+;Increase efficiency of various routines by making clobbering +, -, *, etc.,
+;and be careful about unclobberable results?
+
+ (comment Multiplicative Structure)
+
+
+;Use Wave-front or Tourney-merge multiplication?
+ (defun * (g1 g2) gr
+     ;not bound in do because of complr bug:
+	(bind ((g <- [single :term~nil]) c1 c2 w1 w2 sw g3)
+	      (mmap (term1 g1) () nil
+     ;[REST P] can still be EMPTY [coefring not a domain]:
+		    (_ g3 g
+		       w1 [weight term1]
+		       c1 [coef term1])
+		    (mmap (term2 g2) () nil
+			  (_ sw [* w1 [weight term2]])
+			  (cond ([not [=? [sign sw]]]
+				 (_ c2 [* c1 [coef term2]])
+				 (cond ([not [0? c2]]
+					(if [<? [sign sw]] (_ c2 [- c2]))
+					(_ w2 [weight sw])
+
+  (do ()
+      ([empty? [red g3]]
+       (_ [red g3] [single [term w2 c2]]
+	  g3 [rest g3]))
+      (cond ([< [order [rest g3]] w2] (_ g3 [rest g3]))
+	    ([= [order [rest g3]] w2]
+	     (_ c2 [+ c2 [lead-coef [rest g3]]])
+	     (if [0? c2] (_ [rest g3] [rest [rest g3]])
+		 (_ [lead-coef [rest g3]] c2
+		    g3 [rest g3]))
+	     (return nil))
+	    ([true]
+	     (push [term w2 c2] [rest g3])
+	     (_ g3 [rest g3])
+	     (return nil))))))))))
+
+	      [rest g]))
+
+ (defun // (g c) gr
+	(if [1? c] g [hom (funarg (bfcn (coef (// coef coef))) * c) g]))
+
+ (defun monicize (g) gr		;Clobbers - beware, and G non-zero
+	(bind ((c <- [lead-coef g]))
+	      (mmap (term g) () nil
+		    (_ [coef term] [// [coef term] c])))
+	(_ [lead-coef g] [1])
+	g))
+
+;***random from here on:
+;(comment Polynomial Substitution Routines)
+
+;Substitutions are ALWAYS done in PARALLEL.
+
+;***Assumes expon=*integer*:
+;(defun (csubst coef) (c p)	;substitute a COEF for the VAR in a UPOLY
+;	(tdeclare (coef ans))
+;	(cond ([coef? p] :p:coef)
+;	      ([0? c]
+;	       (bind ((term <- [ass [0] p]))
+;		     (if term :term:coef [0])))
+;	      ([true]
+;	       (do ((ans :p:coef [+ :p:coef [* [^ c [- e :p:expon]] ans]])
+;		    (p [red p] [red p])
+;		    (e :p:expon :p:expon))
+;		   ([0? p] (if [0? e] ans [* [^ c e] ans]))))))
+
+;***Assumes expon=*integer*:
+;(defun (subst upoly) (p1 p2)		;subst P1 in for VAR in P2
+;	(tdeclare (upoly ans))
+;	(cond ([coef? p2] p2)
+;	      ([0? p1]
+;	       (bind ((term <- [ass [0] p2]))
+;		     (if term [single term] [0])))
+;	      ([true]
+;	       (do ((ans [upoly :p2:coef]
+;			 [+ [upoly :p2:coef] [* [^ p1 [- e :p2:expon]] ans]])
+;		    (p2 [red p2] [red p2])
+;		    (e :p2:expon :p2:expon))
+;		   ([0? p2] (if [0? e] ans [* [^ p1 e] ans]))))))
+
+;(comment Multiplicative Structure)
+
+;***Have ((* coef upoly) upoly) check for c1?.
+
+;Also, all quo-rem's created by divide-type functions are assumed clobberable.
+
+;***random from here on:
+
+;	(1)  In the special case, exponents are non-negative fixnums.
+
+;***Currently assumed that EXPON = FIXNUM.
+;Allowable primitive operations for the mode UPOLY are:
+;
+;Random things defined for REP [a LIST Mode], SELECT1 [#'S, EXPON, COEF],
+;0, COEF, TERM, 0?, COEF?, LEAD-TERM, RED, and ASS.
+;
+;0 creates 0, COEF creates a UPOLY of degree 0, TERM creates a monomial,
+;0? checks for 0, COEF? checks for degree = 0, LEAD-TERM gets the leading
+;TERM of a UPOLY, RED gets the reductum [ P - LEAD-TERM(P) ] of a UPOLY,
+;and ASS gets the term of a specified degree.
+;
+;Random things defined for TERM:  SELECT1 [EXPON, COEF] and CREATE, both
+;inherited for the REP for TERM [ (STRUCT (EXPON EXPON) (COEF COEF)) ].
+
+;sparse, with no algebraic relations, weights or truncations:
+			;make expon=fixnum a special case
+
+;		      (subst upoly upoly)
+;	       (coef (csubst coef upoly))
+
+;(tdeclare (expon e1 e2) (coef c2 coef) (term term2))
+
+(stlunchar)
+
+(global-close)

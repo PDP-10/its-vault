@@ -1,0 +1,746 @@
+;-*-lisp-*-
+;***********************************************************************
+;**************** System Modes for the New Mode Package ****************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This file contains the definitions of basic modes using the new mode package
+;[NMODE].  Included are: ***.
+
+(declare (eval (read)))
+(or (memq 'mode (status features)) (load '((dsk sca) nmode)))
+
+(declare (eval (read)) (eval (read)) (eval (read)))
+(setq *hard-assed* nil)	;because this is a system file [uses LISP a lot]
+(setq read-*-eval-print nil)		;because PRIN1 isn't defined for
+(setq read-eval-*-print nil)		;anything yet
+
+(global-open modes)
+
+(declare (@define defsmac |MACRO|)
+	 (@define defmode |PACKAGE|)
+	 (@define mode |USAGE|)
+	 (@define algebra |ALGEBRA|)
+	 (@define constant |CONSTANT|)
+	 (@define cldef |EXPR|)
+	 (@define clobber-def |EXPR|))
+
+(scachar)
+
+(declare (mapex t)
+	 (genprefix scamds))
+
+(comment ALGEBRA Definitions)
+
+
+(algebra type (t1)
+	 (fcn (any (prin1 t1))))
+
+(algebra set (t1)
+	 (type t1)
+	 (fcn (*boolean* (= t1 t1))))
+
+(algebra ordered-set (t1)
+	 (set t1)
+	 (fcns (*boolean* (< t1 t1) (> t1 t1))
+	       (*compare* (compare t1 t1) (rcompare t1 t1))
+	       (t1 (max t1 t1) (min t1 t1))))
+
+(mapping reverse-order (t1 t2)
+	 (t1 t2)
+	 ((*boolean* (< t1 t1)) >
+	  (*boolean* (> t1 t1)) <
+	  (*boolean* (max t1 t1)) min
+	  (*boolean* (min t1 t1)) max
+	  (*compare* (compare t1 t1)) rcompare
+	  (*compare* (rcompare t1 t1)) compare))
+
+;= must work for BASEs:
+(algebra based-set (t1)
+	 (set t1)
+	 (fcns (t1 base)
+	       (*boolean* (base? t1))))
+
+;***Put in data structure stuff - e.g. SORTED-BAG [insert, delete, etc.].
+
+(algebra semi-group (t1)
+	 (set t1)
+	 (fcns (t1 (* t1 t1) (^ t1 *fixnum*))))		;sometimes *INTEGER*
+
+(algebra monoid (t1)
+	 (semi-group t1)	 
+	 (fcns (t1 1)
+	       (*boolean* (1? t1))))
+
+(algebra signed-monoid (t1 t2)
+	 (set t1)
+	 (fcns (t2 (* t1 t1))
+	       (t1 1)
+	       (*boolean* (1? t1))))
+
+(algebra group (t1)
+	 (monoid t1)
+	 (fcn (t1 (// t1))))
+
+(algebra abelian-group (t1)
+	 (set t1)
+	 (fcns (t1 0 (- t1) (+ t1 t1) (- t1 t1) (* *integer* t1))
+	       (*boolean* (0? t1))))
+
+;BEWARE:  ^ to * funny because arg order and *fixnum*/*integer* switched:
+(mapping abelian (t1 t2)
+	 (t1 t2)
+	 ((t1 1) 0
+	  (*boolean* (1? t1)) 0?
+	  (t1 (// t1)) -
+	  (t1 (// t1 t1)) -
+	  (t1 (* t1 t1)) +
+	  (t1 (^ t1 *fixnum*)) *))
+
+;Not necessarily commutative, or with unity:
+;Put in Z->R, UNIT?, INV, //, EXACT-//, DIVIDE [how?], etc.?:
+(algebra ring (t1)
+	 (abelian-group t1)
+	 (semi-group t1))
+
+(algebra ring1 (t1)
+	 (ring t1)
+	 (fcns (t1 1 (z->r *integer*))
+	       (*boolean* (1? t1))))
+
+;Commutative ring with unity:
+(algebra ringc1 (t1)
+	 (ring1 t1))
+
+(algebra ordered-ringc1 (t1)
+	 (ringc1 t1)
+	 (ordered-set t1))
+
+(algebra module (t1 t2)
+	 (ring1 t1)
+	 (abelian-group t2)
+	 (fcn (t2 (* t1 t2))))
+
+(algebra field (t1)
+	 (ringc1 t1)
+	 (fcns (t1 (// t1) (// t1 t1))))
+
+(algebra algebra (t1 t2)
+	 (module t1 t2)
+	 (ring1 t2))
+
+(algebra diff-ring (t1)
+	 (ringc1 t1)
+	 (fcn (t1 (deriv t1))))
+
+(algebra partial-diff-ring (r v)
+	 (ringc1 r)
+	 (set v)
+	 (fcn (r (part-deriv r v))))
+
+
+(rassoc max min + * ttf wedge)
+
+(comment *BOOLEAN* Mode)
+
+
+(defmode boolean
+	 (tdeclare (*boolean* x y))
+	 (defun = (x y) *boolean* (eq x y))
+	 (constant true *boolean* t)
+	 (constant false *boolean* nil)
+	 (defun not (x) *boolean* (not x))
+	;AND and OR are not included since they should be FSUBRs.
+	 (defun prin1 (x) any (princ (if x 'TRUE 'FALSE))))
+
+(mode *boolean* boolean)
+
+
+(defsmac if (pred f1 . f2)		;f2 is optional
+	 (cond ((null f2) `(cond (,pred ,f1)))
+	       (t `(cond (,pred ,f1) ([true] @f2)))))
+
+(comment *COMPARE* Mode)
+
+
+;It is absolutely not true that this mode was inspired by Arithmetic IFs of
+;FORTRAN:
+(defmode compare
+	 (tdeclare (compare c))
+	 (defun switch (c) compare (caseq c (< [>]) (= [=]) (> [<])))
+	 (constant < compare '<)
+	 (constant = compare '=)
+	 (constant > compare '>)
+	 (defun <? (c) *boolean* (eq c '<))
+	 (defun =? (c) *boolean* (eq c '=))
+	 (defun >? (c) *boolean* (eq c '>))
+	 (defun prin1 (c) any (prin1 c)))
+
+(mode *compare* compare (compare *compare*))
+
+
+(defmode ordered-set-from-compare
+	 (arg (set elt) (fcn (*compare* (compare elt elt))))
+	 (ret-check (ordered-set elt))
+	 (tdeclare (elt x y))
+	 (defun < (x y) *boolean* [<? [compare x y]])
+	 (defun > (x y) *boolean* [>? [compare x y]])
+	 (defun max (x y) elt (if [< x y] y x))
+	 (defun min (x y) elt (if [< x y] x y))
+	 (defun rcompare (x y) *compare* [compare y x]))
+
+(defmode ordered-set
+	 (arg (set elt) (fcn (*boolean* (< elt elt))))
+	 (ret-check (ordered-set elt))
+	 (tdeclare (elt x y))
+	 (defun > (x y) *boolean* [< y x])
+	 (defun max (x y) elt (if [< x y] y x))
+	 (defun min (x y) elt (if [< x y] x y))
+	 (defun compare (x y) *compare*
+		(cond ([= x y] [=])
+		      ([< x y] [<])
+		      (t [>])))
+	 (defun rcompare (x y) *compare* [compare y x]))
+
+(comment LISP Number Modes)
+
+
+(defmode fixnum
+	 (fixnum fixnum)
+	 (mode ordered-set (elt fixnum) (> nil))
+	 (ret-check (ordered-ringc1 fixnum))
+	 (tdeclare (fixnum i j) (*fixnum* e *i*) (*integer* n))
+	 (defun prin1 (i) any (prin1 i))
+	 (defun = (i j) *boolean* (= i j))
+	 (defun < (i j) *boolean* (< i j))
+	 (defun > (i j) *boolean* (> i j))
+	 (constant 0 fixnum 0)
+	 (defun 0? (j) *boolean* (= j 0))
+	 (defun - (j) fixnum (- j))
+	 (defun + (i j) fixnum (+ i j))
+	 (defun - (i j) fixnum (- i j))
+;BEWARE, BEWARE, BEWARE!!!!!! - (* *INTEGER* FIXNUM) returns FIXNUM!!!!!!:
+	 (defun * (n i) fixnum (* n i))
+	 (defun pos? (j) *boolean* (> j 0))	;use plusp instead?
+	 (defun neg? (j) *boolean* (< j 0))	;use minusp instead?
+	 (defun abs (j) fixnum (abs j))
+	 (constant 1 fixnum 1)
+	 (defun 1? (j) *boolean* (= j 1))
+	 (defun * (i j) fixnum (* i j))
+	 (defun // (i j) fixnum (// i j))
+	 (defun rem (i j) fixnum (\ i j))
+	 (defun ^ (i e) fixnum (^ i e))
+	 (defun gcd (i j) fixnum (\\ i j))
+	;put in fast ODDP?
+	 (defun 1+ (j) fixnum (1+ j))
+	 (defun 1- (j) fixnum (1- j))
+	 (defun z->r (n) fixnum :fixnum~n)
+	 (defun fixnum (*i*) fixnum :fixnum~*i*)
+	 (defun *fixnum* (j) *fixnum* :*fixnum*~j))
+
+(defmode flonum
+	 (flonum flonum)
+	 (mode ordered-set (elt flonum) (> nil))
+	 (ret-check (ordered-set flonum) (field flonum))
+	 (tdeclare (flonum r s) (*fixnum* e) (*integer* n) (*flonum* *r*))
+	 (defun prin1 (r) any (prin1 r))
+	 (defun = (r s) *boolean* (= r s))
+	 (defun < (r s) *boolean* (< r s))
+	 (defun > (r s) *boolean* (> r s))
+	 (constant 0 flonum 0.0)
+	 (defun 0? (r) *boolean* (= r 0.0))
+	 (defun - (r) flonum (-$ r))
+	 (defun + (r s) flonum (+$ r s))
+	 (defun - (r s) flonum (-$ r s))
+	 (defun * (n r) flonum (times n r))
+	 (defun pos? (r) *boolean* (> r 0.0))	;use plusp instead?
+	 (defun neg? (r) *boolean* (< r 0.0))	;use minusp instead?
+	 (defun abs (r) flonum (abs r))
+	 (constant 1 flonum 1.0)
+	 (defun 1? (r) *boolean* (= r 1.0))
+	 (defun * (r s) flonum (*$ r s))
+	 (defun ^ (r e) flonum (^$ r e))
+	 (defun // (r) flonum (//$ r))
+	 (defun // (r s) flonum (//$ r s))
+	;ODDP undefined for flonums.
+	 (defun 1+ (r) flonum (1+$ r))
+	 (defun 1- (r) flonum (1-$ r))
+	 (defun sqrt (r) flonum (sqrt r))
+	 (defun exp (r) flonum (exp r))
+	 (defun log (r) flonum (log r))
+	 (defun sin (r) flonum (sin r))
+	 (defun cos (r) flonum (cos r))
+	 (defun atan (r s) flonum (atan r s))
+	 (defun z->r (n) flonum :flonum~n)
+	 (defun flonum (*r*) flonum :flonum~*r*)
+	 (defun *flonum* (r) *flonum* :*flonum*~r))
+
+(defmode lisp-number
+	 (mode fixnum)
+	 (mode flonum)
+	 (mode ordered-set (elt integer) (> nil))
+	 (mode ordered-set (elt lisp-number) (> nil))
+	 (sub-types integer fixnum bignum)
+	 (sub-types lisp-number flonum integer)
+	 (ret-check (ordered-ringc1 integer))
+;Following commented out because :*LISP-NUMBER*:[0] [and [1] and Z->R] are
+;ambiguous:
+;	 (ret-check (ordered-ringc1 *lisp-number*))
+	 (tdeclare (lisp-number x y) (integer m n) (*integer* k *n*)
+		   (*fixnum* e) (flonum r) (*lisp-number* *x*))
+	 (defun prin1 (x) any (prin1 x))
+	 (defun = (x y) *boolean* (equal x y))
+	 (defun < (x y) *boolean* (*less x y))
+	 (defun > (x y) *boolean* (*great x y))
+	 (defun 0? (x) *boolean* (zerop x))
+	 (defun - (n) integer (- n))
+	 (defun - (x) lisp-number (minus x))
+	 (defun + (m n) integer (*plus m n))
+	 (defun + (x y) lisp-number (*plus x y))
+	 (defun - (m n) integer (*dif m n))
+	 (defun - (x y) lisp-number (*dif x y))
+	 (defun * (k n) integer (*times k n))
+	 (defun * (k x) lisp-number (*times k x))
+	 (defun pos? (x) *boolean* (plusp x))
+	 (defun neg? (x) *boolean* (minusp x))
+	 (defun abs (n) integer (abs n))
+	 (defun abs (x) lisp-number (abs x))
+	 (defun simpler? (m n) *boolean* [< [abs m] [abs n]])
+	 (defun 1? (n) *boolean* (equal n 1))
+	 (defun 1? (x) *boolean*
+		(if [flonum? x] [1? :flonum~x] [1? :integer~x]))
+	 (defun * (m n) integer (*times m n))
+	 (defun * (x y) lisp-number (*times x y))
+	 (defun // (m n) integer (*quo m n))
+	 (defun // (x y) lisp-number (*quo x y))
+	 (defun rem (m n) integer (remainder m n))
+	 (defun ^ (n e) integer (expt n e))
+	 (defun ^ (x e) lisp-number (expt x e))
+	 (defun gcd (m n) integer (gcd m n))
+	 (defun unit-normal (n) integer [abs n])
+	 (defun odd? (n) *boolean* (oddp n))
+	 (defun even? (n) *boolean* [not [odd? n]])
+	 (defun 1+ (n) integer (add1 n))
+	 (defun 1+ (x) lisp-number (add1 x))
+	 (defun 1- (n) integer (sub1 n))
+	 (defun 1- (x) lisp-number (sub1 x))
+	 (defun integer (x) integer (fix x))
+	 (defun integer (n) integer n)
+	 (defun flonum (x) flonum (float x))
+	 (defun flonum (r) flonum r)
+	 (defun integer? (x) *boolean* (fixp x))
+	 (defun flonum? (x) *boolean* (floatp x))
+	 (defun fixnum? (x) *boolean* (eq (typep x) 'fixnum))
+	 (defun bignum? (x) *boolean* (bigp x))
+	 (defun z->r (*n*) integer [integer *n*])
+	 (defun integer (*n*) integer :integer~*n*)
+	 (defun lisp-number (*x*) lisp-number :lisp-number~*x*)
+	 (defun *integer* (n) *integer* :*integer*~n)
+	 (defun *lisp-number* (x) *lisp-number* :*lisp-number*~x))
+
+(defmode *lisp-number*
+	 (mode lisp-number
+	       (fixnum *fixnum* bignum *bignum* integer *integer*
+		flonum *flonum* lisp-number *lisp-number* qri *qri*)
+	       (fixnum nil flonum nil integer nil lisp-number nil
+		*fixnum* nil *flonum* nil *integer* nil *lisp-number* nil)))
+
+(mode *lisp-number* *lisp-number*)
+
+
+(defsmac repeat (index limit . body)
+	 `(do ,index [0] [1+ ,index] [= ,index ,limit] @body))
+
+(defsmac repeat1 (index limit . body)
+	 `(do ,index [1] [1+ ,index] [> ,index ,limit] @body))
+
+(defsmac >= (x y) `[not [< ,x ,y]])
+
+(defsmac <= (x y) `[not [> ,x ,y]])
+
+(defsmac sign (x) `[compare ,x [0]])
+
+
+(defsmac err-catch (form tag)
+	 `(bind ((:*boolean*~,tag <- [true])) (catch ,form ,tag)))
+
+(defsmac err-throw (val tag . messages)
+	 `(if :*boolean*~,tag (throw ,val ,tag)
+	      :(union)~(mode-err @messages)))		;change to call ERROR?
+
+(comment PAIR Mode)
+
+
+(defmode pair
+	 (arg (set head) (set tail))
+	 (ret-check (set pair))
+	 (tdeclare (head x) (tail y) (pair p p1 p2))
+	 (defun head (p) head (car p))
+	 (defun tail (p) tail (cdr p))
+	 (defun pair (x y) pair (cons x y))
+	 (defun xpair (y x) pair (xcons y x))
+	 (defun copy (p) pair [pair [head p] [tail p]])
+	 (defun = (p1 p2) *boolean*
+		(and [= [head p1] [head p2]]
+		     [= [tail p1] [tail p2]]))
+	;Have PRIN1 use a (princ '| . |) ?:
+	 (defun prin1 (p) any
+		(princ '/() [prin1 [head p]] (princ '| |) (princ '/))))
+
+
+(comment LIST Modes)
+
+
+(defsmac push l `(_ ,(car (last l)) [ttf @l]))
+(defsmac pop (stack) `(prog1 [first ,stack] (_ ,stack [rest ,stack])))
+(defsmac make-list frobs `[ttf @frobs [empty]])
+
+(defsmac mmap ((elt-var list-var . list) steps ret-form . body)
+	 `(do ((,list-var ,(if list (car list) list-var) [rest ,list-var])
+	       (,elt-var) @steps)
+	      ([empty? ,list-var] ,ret-form)
+	      (_ ,elt-var [first ,list-var])
+	      @body))
+
+;Put in macros for MMAP [change above name?], MMAPC, MMAPLIST, MMAPCAR,
+;MMAPCON, and MMAPCAN?
+
+(defmode list0
+	 (arg (type elt))
+	 (mode pair
+	       (head elt tail list pair list)
+	       (head first tail rest pair ttf xpair xttf
+		copy nil = nil prin1 nil))
+	 (ret-check (type list))
+	 (tdeclare (list l) (elt e e1 e2) (*boolean* lb?))
+	 (constant empty list nil)
+	 (defun empty? (l) *boolean* (null l))
+	 (defun single (e) list (ncons e))
+	 (defun second (l) elt [first [rest l]])
+
+ (defun prin1 (l) any
+	(cond ((and (eq [first l] 'quote)
+		    [not [empty? [rest l]]]
+		    [empty? [rest [rest l]]])
+	       (princ '|'|)
+	       [prin1 [second l]])
+	      ([true]
+	       (bind ((lb? <- (eq [first l] 'left-bracket)))
+		     (if lb? (_ l [rest l]))
+		     (princ (if lb? '|[| '|(|))
+		     (mmap (e l) () nil
+			   [prin1 e]
+			   (if [not [empty? [rest l]]] (princ '| |)))
+		     (princ (if lb? '|]| '|)|))))))
+
+ (defun double (e1 e2) list (list e1 e2)))
+
+
+(defmode two-lists
+	 (args (type elt1) (type elt2))
+	 (tdeclare (elt1 e) (list1 l l1)
+		   ((subr elt2 elt1) eefn) ((subr elt2 list1) elfn)
+		   ((subr list2 elt1) lefn) ((subr list2 list1) llfn))
+    ;make into LSUBRs?:
+	 (defun mapcar (eefn l) list2 (mapcar (fn (e) (call eefn e)) l))
+	 (defun maplist (elfn l) list2 (maplist (fn (l1) (call elfn l1)) l))
+	 (defun mapcan (lefn l) list2 (mapcan (fn (e) (call lefn e)) l))
+	 (defun mapcon (llfn l) list2 (mapcon (fn (l1) (call llfn l1)) l)))
+
+(defmode rlist
+	 (args (type elt))
+	 (tdeclare (list l) (rlist r) (elt e))
+	 (defun reverse (l) rlist (reverse l))
+	 (defun nreverse (r) list (nreverse r))
+	 (defun nreconc (r l) list (nreconc r l))
+	 (defun repend (r l) list	;written in lisp to avoid LIST0
+		(do () ((null r) l) (lpush (lpop r) l))))
+
+(defmode list
+	 (arg (ordered-set elt))
+	 (mode list0)
+	 (mode list0 (list rlist))
+	 (mode rlist)
+	 (mode rlist (list rlist rlist list))
+	 (mode two-lists (elt1 elt list1 list elt2 elt list2 list))
+	 (ret-check (set list) (type rlist))
+    ;SUBST1, DEL, DELN, and SUBLIST are non-clobbering:
+	 (tdeclare (list l l1 l2) (rlist rout) (elt e e1 e2) (*fixnum* i n)
+		   ((subr *boolean* elt) pred) ((subr elt *fixnum*) elt-fcn))
+	 (defun nfrobs (n e) list
+		(bind ((l <- [empty]))
+		      (repeat i n (push e l))
+		      l))
+	 (defun length (l) *fixnum* (length l))
+	 (defun copy1 (l) list (append l nil))
+	 (defun = (l1 l2) *boolean*
+		(do ((l1 l1 [rest l1]) (l2 l2 [rest l2]))
+		    ([empty? l1] [empty? l2])
+		    (if (or [empty? l2] [not [= [first l1] [first l2]]])
+			(return [false]))))
+	 (defun n0th (n l) elt [first [nrests n l]])
+	 (defun nrests (n l) list (repeat i n (setq l [rest l])) l)
+	 (defun last (l) list (last l))
+	 (defun append (l1 l2) list (*append l1 l2))
+	 (defun nconc (l1 l2) list (*nconc l1 l2))
+	 (defun subst1 (e1 e2 l) list (mapcar (fn (e) (if [= e e2] e1 e)) l))
+	 (defun mem (e l) list		;note does NOT return a *BOOLEAN*
+		(mmap (e1 l) () [empty]
+		      (if [= e1 e] (return l))))
+	 (defun del (e l) list
+		(mapcan (fn (e1) (if [= e e1] nil (ncons e1))) l))
+	 (defun deln (e l n) list
+		(if [0? n] l
+		    (mmap (e1 l) ((rout [empty])) [nreverse rout]
+			  (cond ([= e1 e]
+				 (_ n [1- n])
+				 (if [0? n] (return [nreconc rout [rest l]])))
+				(t
+				 (push e1 rout))))))
+	 (defun sublist (l pred) list
+		(mapcan (fn (e) (if (call pred e) (ncons e) nil)) l))
+	 (defun and-mapc (pred l) *boolean*
+		(mmap (e l) () [true]
+		      (if [not (call pred e)] (return [false]))))
+	 (defun gen-list (elt-fcn n) list
+		(do ((n [1- n] [1- n])
+		     (l [empty] [ttf (call elt-fcn n) l]))
+		    ([< n [0]] l))))
+
+;Ordered lists, allowing repetitions:
+(defmode sort
+	 (arg (ordered-set elt))
+	 (mode list)
+	 (mode ordered-set (elt list))
+	 (ret-check (ordered-set list))
+	 (tdeclare (elt e e1 e2) (list s s1 s2) (*fixnum* n) (rlist rout)
+		   (list l))			;L not really sorted
+
+
+ (defun < (s1 s2) *boolean*
+	(do ((s1 s1 [rest s1])
+	     (s2 s2 [rest s2]))
+	    ([empty? s2] [false])
+	    (cond ([empty? s1] (return [true]))
+		  ([< [first s1] [first s2]] (return [true]))
+		  ([< [first s2] [first s1]] (return [false])))))
+
+ (clobber-def subst1 (e1 e2 s) list
+	      (mmap (e s1 s) ((rout [empty])) s
+		    (cond ([< e e2] (push e rout))
+			  ([= e e2]
+			   (push e1 rout)
+			   (return (mmap (e s1 [rest s1]) () [nreverse rout]
+					 (if [= e e2] (push e1 rout)
+					     (return [nreconc rout s1])))))
+			  (t (return s)))))
+
+ (clobber-def mem (e s) list
+	      (mmap (e1 s) () [empty]
+		    (cond ([= e1 e] (return s))
+			  ([< e e1] (return [empty])))))
+
+ (clobber-def del (e s) list
+	      (mmap (e1 s1 s) ((rout [empty])) s
+		    (cond ([< e1 e] (push e1 rout))
+			  ([= e1 e]
+			   (return (mmap (e1 s1 [rest s1]) () [nreverse rout]
+					 (if [not [= e1 e]]
+					     (return [nreconc rout s1])))))
+			  (t (return s)))))
+
+ (clobber-def deln (e s n) list
+	      (mmap (e1 s1 s) ((rout [empty])) s
+		    (cond ([< e1 e] (push e1 rout))
+			  ([= e1 e]
+			   (return (mmap (e1 s1) ((n n [1- n])) [nreverse rout]
+					 (if (or [0? n] [not [= e1 e]])
+					     (return [nreconc rout s1])))))
+			  (t (return s)))))
+
+ (defun insert (e s) list
+	(mmap (e1 s1 s) ((rout [empty])) [nreconc rout [single e]]
+	      (if [< e1 e] (push e1 rout)
+		  (return [nreconc rout [ttf e s1]]))))
+
+ (defun elt-of? (e s) *boolean* [not [empty? [mem e s]]])
+
+;The following works because the COMPLR is smart enough to make **MODE-NETW**
+;special, since the BFCN < is a [LISP] function of 3 args, not 2:
+ (defun sort (l) list (sort l (fn (e1 e2) [< e1 e2]))))	;BEWARE - clobbers!
+
+(comment SET Mode)
+
+
+(defmode set
+	 (arg (ordered-set elt))
+	 (mode sort
+	       (list set rlist rset)
+	       (length size sublist subset deln nil prin1 nil))
+	;DELN makes no sense here, since no repetitions.
+	 (ret-check (ordered-set set))
+	 (tdeclare (set s s1 s2 l) (rset rout) (elt elt elt1 elt2 e e1 e2)
+		   (*fixnum* n) (*boolean* b1 b2 b3))
+
+ (clobber-def insert (e s) set
+	      (mmap (elt s1 s) ((rout [empty])) [nreconc rout [single e]]
+		    (cond ([< elt e] (push elt rout))
+			  ([= elt e] (return s))
+			  (t (return [nreconc rout [ttf e s1]])))))
+
+ (defun setify (l) set		;clobbers, so beware!
+	(if [empty? l] [empty]
+	    (bind ((rout <- [nreverse [sort l]]) s)
+		  (_ s [single (pop rout)])
+		  (mmap (elt rout) () s
+			(if [not [= elt [first s]]] (push elt s))))))
+
+ (defun rel? (s1 s2 b1 b2 b3) *boolean*
+	(do ()
+	    ([empty? s1] (or [empty? s2] b2))
+	    (cond ([empty? s2] (return b1))
+		  ([not (cond ([< [first s1] [first s2]] (_ s1 [rest s1]) b1)
+			      ([< [first s2] [first s1]] (_ s2 [rest s2]) b2)
+			      (t (_ s1 [rest s1] s2 [rest s2]) b3))]
+		   (return [false])))))
+
+ (defun subset? (s1 s2) *boolean* [rel? s1 s2 [false] [true] [true]])
+ (defun disjoint? (s1 s2) *boolean* [rel? s1 s2 [true] [true] [false]])
+
+;Add a more general MERGE that takes functions, rather than *BOOLEAN*s, as
+;arguments [?]:
+ (defun merge (s1 s2 b1 b2 b3) set
+	(do ((rout [empty]))
+	    ([empty? s1] (if b2 [nreconc rout s2] [nreverse rout]))
+	    (cond ([empty? s2]
+		   (return (if b1 [nreconc rout s1] [nreverse rout])))
+		  ([< [first s1] [first s2]]
+		   (if b1 (push [first s1] rout))
+		   (setq s1 [rest s1]))
+		  ([< [first s2] [first s1]]
+		   (if b2 (push [first s2] rout))
+		   (setq s2 [rest s2]))
+		  (t
+		   (if b3 (push [first s1] rout))
+		   (setq s1 [rest s1] s2 [rest s2])))))
+
+ (defun intersect (s1 s2) set [merge s1 s2 [false] [false] [true]])
+ (defun union (s1 s2) set [merge s1 s2 [true] [true] [true]])
+ (defun complement (s1 s2) set [merge s1 s2 [false] [true] [false]])
+ (defun difference (s1 s2) set [complement s2 s1])
+ (defun symmdifference (s1 s2) set [merge s1 s2 [true] [true] [false]])
+
+;Continuation of SET Mode:
+
+ (defun prin1 (s) any
+	(princ '/{)
+	(mmap (e s) () nil
+	      [prin1 e]
+	      (if [not [empty? [rest s]]] (princ '/ )))
+	(princ '/})))
+
+
+(comment ALIST Mode)
+
+
+(defmode alist					;***currently a lousy mode
+	 (arg (set tag))
+	 (struct pair tag object)
+	 (mode list (elt pair list alist rlist ralist))
+	 (tdeclare (tag tag) (object obj) (alist a) (ralist ra) (pair p p1 p2))
+	 (defun add (tag obj a) alist [ttf [pair tag obj] a])
+	 (defun ass (tag a) object		;***TAG must be found in A
+		(mmap (p a) () (error)
+		      (if [= [tag p] tag] (return [object p]))))
+	 (defun rem (tag a) alist		;***TAG must be found in A
+		(mmap (p a) ((ra [empty] [ttf p ra])) (error)
+		      (if [= [tag p] tag] (return [nreconc ra [rest a]])))))
+
+(comment Ring Modes)
+
+
+(declare (special quotient-not-exact))
+(setq quotient-not-exact nil)		;must be in an in-core file
+
+;Commutative ring with unity:
+(defmode ringc1
+	 (arg (ringc1 elt) (fcn (elt (exact-// elt elt))))
+	;STRUCT not used so that printing will win:
+	 (mode pair (head elt tail elt pair quo-rem)
+	       (head quo tail rem pair quo-rem xpair nil copy nil = nil))
+	 (mode list)
+	 (tdeclare (elt x y) (*fixnum* i n) (*boolean* quotient-not-exact))
+
+;Binom-expand should take the small arg first (X smaller than Y), and N is a
+;*FIXNUM* >= 0:
+ (defun binom-expand (x y n) elt
+	(tdeclare (elt powres ans) (list powl) (*integer* bincoef))
+	(if [0? n] [1]
+	    (bind ((powl <- [single x]))
+		  (repeat i [1- n] (push [* x [first powl]] powl))
+		  (do ((powres y [* y powres])
+		       (powl [rest powl] [rest powl])
+		       (ans [first powl]
+			    [+ [* bincoef [first powl] powres] ans])
+	;The step-forms for I and BINCOEF each get calculated once extra:
+		       (i 1 [1+ i])
+		       (bincoef n [// [* [- n i] bincoef] [1+ i]]))
+		      ([empty? powl] [+ powres ans])))))
+
+ (defun divide-check (x y) *boolean*
+	[not :*boolean*~(eq (err-catch [exact-// x y] quotient-not-exact)
+			    'error)])
+
+ (defun qne-err () (union)
+	(err-throw 'error quotient-not-exact '|Quotient Not Exact|))
+
+ (defun qbz-err () (union) :(union)~(mode-err '|Error - quotient by zero|)))
+
+
+;Change to hold for INTEGER, not *INTEGER*?:
+(defmode *integer*
+	 (mode ringc1 (elt *integer* quo-rem *qri*))
+	 (tdeclare (*integer* m n))
+	;change to not calculate quotient twice [i.e., don't call REM]?:
+	 (defun divide (m n) *qri* [quo-rem [// m n] [rem m n]]))
+
+(mode *integer* *integer*)
+
+
+(defmode *lfix*
+	 (mode list (elt *fixnum* list *lfix* rlist *rlfix*)))
+
+(mode *lfix* *lfix*)	;used for ARRAYDIMS, e.g.
+
+;***Put in modes *SYMBOL*, PLIST, *CHAR*, *STRING*, ARRAY [?], and HASH [?].
+
+
+(defsmac *hunk* args `:*hunk*~(hunk @args))
+
+(defmode sexp
+	 (mode pair (head any tail any pair *pair*))
+	 (mode list (elt any list *list* rlist *rlist*))
+	 (tdeclare (any x y) (any foo) (*fixnum* i n) (*hunk* h))
+
+ (defun lisp-number? (x) *boolean* (numberp x))
+
+ (defun size (h) *fixnum* (hunksize h))
+ (defun make-hunk (n) *hunk* (makhunk n))
+ (defun cxr (n h) any (cxr n h))
+
+ (defun = (x y) *boolean* (equal x y))			;OK for ARRAYs?
+
+ (defun prin1 (foo) any (pretty-prin1 foo)))		;OK for ARRAYs?
+
+(mode *sexp* sexp)
+
+
+(setq read-*-eval-print 'mode-r*ep read-eval-*-print 'mode-re*p
+      prin1 'mode-prin1 *prin1* 'mode-prin1)
+
+(scaunchar)
+
+(global-close)

@@ -1,0 +1,340 @@
+(DECLARE (SPECIAL XLL YLL XUR YUR RES TTYSEE-FUNCTION TV-FN TV-SWITCH TV-CHAR-FN FTV-FUNCTIONS
+                  :ECHOLINES TVTYOX TVTYOY TVCHSZ IOR #THRESHOLDS #SAMPLES
+                  TV-SCREEN-HEIGHT TV-SCREEN-WIDTH)
+         (FIXNUM  XLL YLL XUR YUR :ECHOLINES TVTYOX TVTYOY TVCHSZ IOR #THRESHOLDS TV-SWITCH
+                  TV-SCREEN-HEIGHT TV-SCREEN-WIDTH)
+         (FLONUM  RES #SAMPLES))
+
+(DECLARE (*LEXPR TVSEE TVSEE1)
+         (ARRAY* (FIXNUM TV 2. TVCHAR 2.)))
+
+(DECLARE (FIXNUM (TVSEE-FN FIXNUM FIXNUM)))
+(DEFUN TVSEE-FN (X Y)
+       (COND ((= TV-SWITCH 1) (SUBRCALL FIXNUM TV-FN X Y))
+             ((= TV-SWITCH 2) (ARRAYCALL FIXNUM TV-FN X Y))
+             ((= TV-SWITCH 3) (FUNCALL TTYSEE-FUNCTION X Y))))
+
+(DEFINE TVSEE ("OPTIONAL" W) 
+	(PROG (CHAR THRESH) 
+	 LOOP (COND ((SETQ TV-FN (GET TTYSEE-FUNCTION 'SUBR))
+                     (COND ((EQ (GET TTYSEE-FUNCTION 'NCALL) 'YES)
+                            (SETQ TV-SWITCH 1))
+                           ((EQ (GET TTYSEE-FUNCTION 'NCALL) 'NO)
+                            (SETQ TV-SWITCH 3))
+                           ((Q 'CAN TTYSEE-FUNCTION '(BE NCALLED))
+                            (PUTPROP TTYSEE-FUNCTION 'YES 'NCALL)
+                            (SETQ TV-SWITCH 1))
+                           ((PUTPROP TTYSEE-FUNCTION 'NO 'NCALL)
+                            (SETQ TV-SWITCH 3))))
+                    ((GET TTYSEE-FUNCTION 'EXPR)
+                     (SETQ TV-SWITCH 3))
+                    ((SETQ TV-FN (GET TTYSEE-FUNCTION 'ARRAY))
+                     (SETQ TV-SWITCH 2))
+                    (T (P '(I DO NOT RECOGNIZE THE TYPE OF) TTYSEE-FUNCTION)
+                       (P '(GIVE ME ANOTHER TTYSEE-FUNCTION (NB: NOT EVALED)))
+                       (SETQ TTYSEE-FUNCTION (READ))
+                       (GO LOOP)))
+              (OR W (SETQ W (GET-FTV-WINDOW)))
+	      (DSETQ :ECHOLINES 4.)
+	      (SETQ CHAR (GET-TVFONT)
+                    THRESH (GET-THRESHOLDS W)
+                    RES (MAX$ 1.0
+                             (//$ (FLOAT (* (- XUR XLL) TVCHSZ))
+                                  (FLOAT TV-SCREEN-WIDTH))
+			     (//$ (FLOAT (* (- YUR YLL) TVCHSZ))
+                                  (FLOAT (- TV-SCREEN-HEIGHT (* :ECHOLINES 12.)))))
+                    TVTYOX 0
+                    TVTYOY 0)
+              (CLEAR-TV-SCREEN)
+              (CURSORPOS 'C)
+              (SMALLSCREEN :ECHOLINES)
+              (DRAWMODE IOR)
+              (TV-SUBR THRESH CHAR)))
+
+(DEFUN GET-FTV-WINDOW ()
+     (PROG (FTV SIZE) 
+     TOP   (COND ((EQ (TYPEP TTYSEE-FUNCTION) 'ARRAY)
+                  (P '(YOU GAVE ME THE ARRAY POINTER/, I NEED THE ARRAY NAME))
+                  (P '(WHAT IS IT? (NB: NOT EVALED)))
+                  (SETQ TTYSEE-FUNCTION (READ))
+                  (GO TOP))
+                 ((AND (NOT (GETL TTYSEE-FUNCTION '(EXPR SUBR))) (GET TTYSEE-FUNCTION 'ARRAY))
+                  (SETQ SIZE (CDR (ARRAYDIMS TTYSEE-FUNCTION)))
+                  (RETURN (LIST '(0. 0.) (LIST (1- (CAR SIZE)) (1- (CADR SIZE))))))
+                 ((EQ (GET TTYSEE-FUNCTION 'FTV-FUNCTION) 'YES)
+                  (GO TAG1))
+                 ((EQ (GET TTYSEE-FUNCTION 'FTV-FUNCTION) 'NO)
+                  (GO TAG2))
+                 ((Q 'IS TTYSEE-FUNCTION '(AN FTV-FUNCTION))
+                  (PUTPROP TTYSEE-FUNCTION 'YES 'FTV-FUNCTION)
+                  (GO TAG1))
+                 (T (PUTPROP 'TTYSEE-FUNCTION 'NO 'FTV-FUNCTION)
+                    (GO TAG2)))
+     TAG1  (COND ((SETQ FTV (STATUS-FTV))
+                  (RETURN FTV))
+                 (T (P '(ENTER FTV FILE SPECS (NB: NOT EVALED)))
+                    (ERRSET (EVAL (CONS 'SSTATUS-FTV (READ))))
+                    (GO TAG1)))
+     TAG2  (P '(A WINDOW IS NEEDED/, PLEASE ENTER ONE (NB: EVALED)))
+           (RETURN (EVAL (READ)))))
+
+(DEFUN GET-TVFONT ()
+       (PROG ()
+        LOOP (P '(STANDARD TV FONT IS BKPH/'S 3X3 18. LEVEL FONT))
+             (COND ((Q '(/	SHALL I USE IT?)) (RETURN (BKPH-FONT))))
+             (P '(HOW ABOUT LAVIN/'S 4X4 16. LEVEL FONT))
+             (COND ((Q '(/	SHALL I USE THAT?)) (RETURN (LAVIN-FONT))))
+             (P '(THAT/'S ALL THERE IS /././.))
+             (GO LOOP)))
+ 
+(DEFUN GET-THRESHOLDS (W)
+	(DECLARE (FIXNUM I V STEP) (FLONUM RX RY X$ Y$))
+        (PROG (RX RY MIN MAX STEP THRESHOLDS) 
+	      (SETQ XLL (CAAR W)
+                    YLL (CADAR W)
+                    XUR (CAADR W)
+                    YUR (CADADR W)
+                    RX (//$ (FLOAT (- XUR XLL)) #SAMPLES) 
+		    RY (//$ (FLOAT (- YUR YLL)) #SAMPLES)
+	            MAX (TVSEE-FN XLL YLL)
+		    MIN MAX)
+	      (HELPER 5.(P '(SCANNING SAMPLES)))
+	      (DO ((X$ (FLOAT XLL) (+$ X$ RX)) (Y$ (FLOAT YLL) (+$ Y$ RY)) (V))
+		  ((> X$ (FLOAT XUR)))
+		  (SETQ V (TVSEE-FN (ROUND X$) (ROUND Y$)))
+		  (COND ((> V MAX) (SETQ MAX V))
+			((< V MIN) (SETQ MIN V))))
+	      (P '(MINIMUM VALUE IS:) MIN '(/, MAXIMUM VALUE IS:) MAX)
+	      (COND ((Q '(DO YOU WANT TO CHANGE THESE VALUES))
+                     (P 'MAX/ =/ )
+                     (SETQ MAX (EVAL (READ)))
+                     (P 'MIN/ =/ )
+                     (SETQ MIN (EVAL (READ)))))
+	      (SETQ STEP (ROUND (//$ (FLOAT (- MAX MIN)) (FLOAT (1+ #THRESHOLDS)))))
+	      (DO ((I 1 (1+ I)) (N (+ MIN STEP) (+ N STEP)))
+		  ((> I #THRESHOLDS))
+		  (SETQ THRESHOLDS (CONS N THRESHOLDS)))
+	      (SETQ THRESHOLDS (NREVERSE THRESHOLDS))
+	      (HELPER 5. (P '(THRESHOLDS ARE:) (NCONS THRESHOLDS)))
+	      (RETURN THRESHOLDS)))
+
+
+(DEFINE TVSEE1 (X Y "OPTIONAL" (RESOLUTION 1)) 
+       (PROG (DX DY W) 
+	     (DSETQ :ECHOLINES 4. TVCHSZ 3.)
+             (SETQ W (GET-FTV-WINDOW)
+                   DX (LSH (* RESOLUTION (// TV-SCREEN-WIDTH TVCHSZ)) -1) 
+		   DY (LSH (* RESOLUTION (// (- TV-SCREEN-HEIGHT (* :ECHOLINES 12.))
+                                      TVCHSZ)) -1))
+             (TVSEE (LIST (LIST (MAX2 (CAAR W) (- X DX)) (MAX2 (CADAR W) (- Y DY)))
+                          (LIST (MIN2 (CAADR W) (+ X DX)) (MIN2 (CADADR W) (+ Y DY)))))))
+
+(DEFUN TV-SUBR (THRESH CHAR) 
+       (DECLARE (FIXNUM X Y) (FLONUM X$ Y$ XLL$ YLL$))
+       (PROG (XLIST YLIST XLL$ YUR$)
+             (SETQ XLL$ (FLOAT XLL)
+                   YUR$ (FLOAT YUR))
+	     (DO X$ (FLOAT XUR) (-$ X$ RES) (< X$ XLL$)
+                 (SETQ XLIST (CONS (ROUND X$) XLIST)))
+             (DO Y$ (FLOAT YLL) (+$ Y$ RES) (> Y$ YUR$)
+                 (SETQ YLIST (CONS (ROUND Y$) YLIST)))
+             (MAPC '(LAMBDA (Y)
+                      (MAPC '(LAMBDA (X) (SUBRCALL NIL TV-CHAR-FN X Y THRESH CHAR))
+                            XLIST)
+                      (SETQ TVTYOX 0 TVTYOY (+ TVTYOY TVCHSZ)))
+                   YLIST)))
+
+
+(DEFUN PRINT-BKPH-TV-CHAR (X Y THRESH CHAR)
+       (DECLARE (FIXNUM V))
+       ((LAMBDA (V)
+                (DO ((TH THRESH (CDR TH))
+                     (CH CHAR (CDR CH)))
+                    ((OR (< V (CAR TH)) (NULL (CDR TH)))
+                     (GREY9 TVTYOX TVTYOY (CAR CH))
+                     (SETQ TVTYOX (+ TVTYOX TVCHSZ)))))
+        (TVSEE-FN X Y)))
+
+(DEFUN PRINT-LAVIN-TV-CHAR (X Y THRESH CHAR) 
+       (DECLARE (FIXNUM V))
+       ((LAMBDA (V)
+                (DO ((TH THRESH (CDR TH))
+                     (CH CHAR (CDR CH)))
+                    ((OR (< V (CAR TH)) (NULL (CDR TH)))
+                     (TVTYO (CAR CH)))))
+        (TVSEE-FN X Y)))
+
+(DEFUN GET-CHARACTERS (FONT)
+       ((LAMBDA (CHAR)
+                (COND ((EQ (GET TTYSEE-FUNCTION 'TTYSEE-INVERTING) 'YES)
+                       (REVERSE CHAR))
+                      ((EQ (GET TTYSEE-FUNCTION 'TTYSEE-INVERTING) 'NO)
+                       CHAR)
+                      ((Q 'DOES TTYSEE-FUNCTION '(INVERT INTENSITY))
+                       (PUTPROP TTYSEE-FUNCTION 'YES 'TTYSEE-INVERTING)
+                       (REVERSE CHAR))
+                      (T (PUTPROP TTYSEE-FUNCTION 'NO 'TTYSEE-INVERTING)
+                         CHAR)))
+        (COND ((EQ FONT 'BKPH)
+               (SETQ #THRESHOLDS 18.
+                     TV-CHAR-FN (GET 'PRINT-BKPH-TV-CHAR 'SUBR))
+               '(0 1 2 3 4 5 6 7 8 9 10. 11. 12. 13. 14. 15. 16. 17. 18.))
+              ((EQ FONT 'LAVIN)
+               (SETQ #THRESHOLDS 16.
+                     TV-CHAR-FN (GET 'PRINT-LAVIN-TV-CHAR 'SUBR))
+               '(0 1 2 3 4 5 6 7 8. 9. 10. 11. 12. 13. 14. 15. 16.)))))
+
+(DEFUN TVTYO (C)
+       (DECLARE (FIXNUM X Y J POSN))
+       ((LAMBDA (X POSN)
+                (DO ((Y TVTYOY (1+ Y))
+                     (J 0 (1+ J)))
+                    ((= J TVCHSZ))
+                    (STORE (TV Y X) (LSH (TVCHAR C J) POSN))))
+        (LSH TVTYOX -5)
+        (- 36. (\ TVTYOX 32.) TVCHSZ))
+       (SETQ TVTYOX (+ TVTYOX TVCHSZ)))
+
+
+;;;INSTALL BKPH'S 3X3 FONT
+(DEFUN BKPH-FONT ()
+       (SETQ TVCHSZ 3.)
+       (GET-CHARACTERS 'BKPH))
+
+;;;INSTALL LAVIN'S 4X4 FONT
+(DEFUN LAVIN-FONT ()
+       (ARRAY TVCHAR FIXNUM 17. 4.)
+       (FILLARRAY 'TVCHAR '(0   0   0   0
+                            0   2   0   0
+                            0   4   2   0
+                            0   6   2   0
+                            0   6   6   0
+                            0   6   6   4
+                            2   6   6   4
+                            2   6   7   4
+                            2   14. 7   4
+                            2   14. 7   6
+                            6   14. 7   6
+                            6   15. 7   6
+                            6   15. 15. 6
+                            7   15. 15. 6
+                            7   15. 15. 14.
+                            15. 15. 15. 14.
+                            15. 15. 15. 15.))
+       (SETQ TVCHSZ 4.)
+       (GET-CHARACTERS 'LAVIN))
+
+
+
+
+(LAP CLEAR-TV-SCREEN SUBR)
+(ARGS CLEAR-TV-SCREEN (NIL . 0))
+	(MOVE A (SPECIAL SET)) 
+	(CALL 1 'DRAWMODE) 
+	(MOVSI TT -17776)
+G0002	(SETZM 0 @ (ARRAY TV))
+	(AOBJN TT G0002)
+	(CALL 1 'DRAWMODE) 
+	(MOVEI A 'T)
+	(POPJ P)
+NIL 
+
+
+(LAP GREY9 SUBR)
+(ARGS GREY9 (NIL . 3))
+	(MOVE TT 0 A)
+	(MOVE D 0 B)
+	(MOVE R 0 C)
+        (MOVEI T 0 TT)
+	(XORI T 0 D)
+	(TRNE T 1)
+        (AOS 0 R)
+	(ASH R -1)
+	(JUMPLE R G0002)
+	(SKIPL 0 TT)
+	(SKIPGE 0 D)
+	(JRST 0 G0002)
+	(AOS 0 TT)
+	(AOS 0 D)
+	(CAIGE TT 1077)
+	(CAIL D 705)
+	(JRST 0 G0002)
+	(PUSH FXP TT)
+	(PUSH FXP D)
+	(PUSH FXP R)
+
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(SOS 0 -1 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(AOS 0 -1 FXP)
+	(AOS 0 -2 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(AOS 0 -1 FXP)
+	(SOS 0 -2 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(SOS 0 -1 FXP)
+	(SOS 0 -2 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(SOS 0 -1 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(AOS 0 -2 FXP)
+	(AOS 0 -2 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(AOS 0  -1 FXP)
+	(AOS 0  -1 FXP)
+	(CALL 2 'GREYDOT)
+	(SOSG 0 0 FXP)
+	(JRST 0 G0001)
+
+	(SOS 0 -2 FXP)
+	(SOS 0 -2 FXP)
+	(CALL 2 'GREYDOT)
+G0001	(SUB FXP (% 0 0 3 3))
+G0002	(POPJ P)
+NIL
+
+(LAP GREYDOT SUBR)
+(ARGS GREYDOT (NIL . 2))
+	(MOVE D -2 FXP)
+	(MOVEI T 0 D)
+	(LSH T -5)
+        (MOVE TT -1 FXP)
+	(IMULI TT 18.)
+	(ADDI TT 0 T)
+	(ANDI D 37) 
+	(MOVNI D 0 D)
+	(MOVSI R 400000) 
+	(LSH R 0 D) 
+	(MOVEM R @ (ARRAY TV)) 
+	(POPJ P)
+NIL 
+
+
+(DSETQ TV-SCREEN-HEIGHT 454.
+       TV-SCREEN-WIDTH 576.
+       TTYSEE-FUNCTION 'NVFIX
+       FTV-FUNCTIONS '(NVFIX INFIX VIDICON)
+       #SAMPLES 50.0)
+
+

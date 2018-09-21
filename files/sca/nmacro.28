@@ -1,0 +1,375 @@
+;-*-lisp-*-
+;***********************************************************************
+;*************** New Macro Package for Extending Maclisp ***************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This is the new Macro Package for extending MACLISP.  It contains various
+;macro definitions, as well as the basic mode package.  It is to be used
+;primarily in conjunction with the New Mode package, NMODE, which INCLUDEs
+;this file.  For more documentation than appears here, see SCA;MODMEM >.
+
+
+;***revise:
+;These are general macros for extending MACLISP.  The major ones are `,
+;MACRO-EXPAND, DEFSMAC, MACRODEF, BIND, ERLIST, and CASE.  The ` gives a
+;MUDDLE-like syntax for quoting expressions:  it works like ', except that
+;items preceded by "," (comma) are not quoted, and items preceded by "@"
+;(at-sign) are also not quoted, and their values are APPEND'ed into the list.
+;MACRO-EXPAND will expand all macros in a form.  DEFSMAC allows macros to
+;be defined using a pattern-matching type description of the argument.
+;MACRODEF allows MACRO's to be defined much like EXPR's are with DEFUN.  BIND
+;is a shorthand for LAMBDA, where the values which arguments are bound to are
+;listed at the beginning of the form, rather than at the end.  ERLIST is a
+;macro which outputs an error message and signals an error.  CASE expands into
+;a COND, with several special features.  Finally, _ is a sort of generalized
+;setq, which accepts non-atomic first arguments.
+;
+;These macros and many minor ones are defined and further documented below.
+;This file (actually SCA;MACROS FASL) should be FASLOAD'ed into any file which
+;uses it by:
+;
+;(DECLARE (EVAL (READ)))
+;(LOAD '((DSK SCA) MACROS FASL))
+;
+;Also, the file SCA;MFCNS FASL should be loaded into a lisp, as it contains
+;definitions of expr's which these macros may expand into.
+
+(declare (mapex t)
+	 (genprefix scamac)
+	 (macros t)
+	 (special compiler-state *sca-chars* *sca-ibase* *sca-base*
+		  *sca-*nopoint* macros *displace* ibase base *nopoint
+		  *modes-file* *mode-break*)
+	 (fixnum *sca-chars*)
+	 (*lexpr sfuncall mode-err))
+
+;Since they are not yet fully implemented:
+(declare (defun caseq macro (l) (cons 'case (cdr l))))
+(defun caseq macro (l) (rplaca l 'case))
+(declare (defun @define macro (l) t))
+(defun @define macro (l) t)
+
+(declare (@define defsmac |MACRO|)
+	 (@define defmode |MODE|))
+
+(sstatus feature mmacro)
+
+(comment 1.  Character Macros)
+
+
+;Macros and functions which should both be known by the compiler and come
+;through to the final file are preceded by a "%".  [For macros, one needs a
+;(declare (macros t)) also.]  This is given a character-macro property:  a
+;no-op for the interpreter, and the correct meaning for the compiler.  Things
+;only for the compiler (unless not compiled) should be preceded by a "#".
+
+(defun scachar macro (l)
+       (setsyntax '/% 'macro '(lambda () (eval-and-compile (read))))
+       (setsyntax '/` 'macro
+		  '(lambda ()
+			   ((lambda (readtable) (qexpander (read)))
+			    (get 'muddle-quote-readtable 'array))))
+       (setsyntax '/: 'macro 'make-type-note)
+       (setsyntax '/~ 'macro '(lambda () '/~))
+       (setsyntax '/[ 'macro 'left-bracket-read)
+       (setsyntax '/] 'macro '(lambda () '/]))
+       (cond ((= *sca-chars* 0)
+	      (setq *sca-base* base
+		    *sca-ibase* ibase
+		    *sca-*nopoint* *nopoint)))
+       (setq base 10. ibase 10. *nopoint t)
+       (setq *sca-chars* (1+ *sca-chars*))
+       t)
+
+(defun scaunchar macro (l)
+       (setq *sca-chars* (1- *sca-chars*))
+       (cond ((= *sca-chars* 0)
+	      (setsyntax '/% 'macro nil)		;right method?
+	      (setsyntax '/` 'macro nil)
+	      (setsyntax '/: 'macro nil)
+	      (setsyntax '/[ 'macro nil)
+	      (setsyntax '/] 'macro nil)
+	      (setq base *sca-base*
+		    ibase *sca-ibase*
+		    *nopoint *sca-*nopoint*)))
+       (signp ge *sca-chars*))
+
+(declare (setq *sca-chars* 0))
+(setq *sca-chars* 0)
+
+(scachar)
+
+(declare
+ (defun eval-and-compile (f)
+	(cond ((and (boundp 'compiler-state)
+		    compiler-state
+		    (not (eq compiler-state 'toplevel)))
+	       ((lambda (compiler-state) (eval f)) nil) f)
+	      (t f))))
+
+(defun eval-and-compile (f)
+       (cond ((and (boundp 'compiler-state)
+		   compiler-state
+		   (not (eq compiler-state 'toplevel)))
+	      ((lambda (compiler-state) (eval f)) nil) f)
+	     (t f)))
+
+%(*array 'muddle-quote-readtable 'readtable)
+
+%((lambda (readtable)
+	  (setsyntax '/, 'macro '(lambda () (cons '/, (read))))
+	  (setsyntax '/@ 'macro '(lambda () (cons '/@ (read))))
+	  (scachar)
+	  (setq *sca-chars* (1- *sca-chars*))
+	  (cond ((= *sca-chars* 0)
+;***check this [make sure base does not go to 10. when mode fasl is loaded]
+		 (setq base *sca-base*
+		       ibase *sca-ibase*
+		       *nopoint *sca-*nopoint*))))
+  (get 'muddle-quote-readtable 'array))
+
+%(defun qexpander (m)
+	(prog (x y)
+	      (cond ((atom m) (return (list 'quote m)))
+		    ((eq (car m) '/,) (return (cdr m)))
+		    ((and (not (atom (car m)))
+			  (eq (caar m) '/@))
+		     (cond ((cdr m)
+			    (return
+			     (list 'append (cdar m) (qexpander (cdr m)))))
+			   (t (return (cdar m))))))
+	      (setq x (qexpander (car m))
+		    y (qexpander (cdr m)))
+	      (and (not (atom x))
+		   (not (atom y))
+		   (eq (car x) 'quote)
+		   (eq (car y) 'quote)
+		   (eq (cadr x) (car m))
+		   (eq (cadr y) (cdr m))
+		   (return (list 'quote m)))
+	      (return (list 'cons x y))))
+
+;:<type>:<frob> becomes (TYPE-MUST-BE <type> <frob>)
+;:<type>~<frob> becomes (TYPE-WILL-BE <type> <frob>)
+%(defun make-type-note ()
+	(prog (type char)
+	      (setq type (read) char (tyi))
+	      (return `(,(cond ((= char 58.) 'type-must-be)	;|:|
+			       ((= char 126.) 'type-will-be)	;|~|
+			       (t (mtn-err char type)))
+			,type ,(read)))))
+
+%(defun left-bracket-read ()
+	(do ((l (cons (no-num (read)) (list 'left-bracket))
+		(cons (read) l)))
+	    ((eq '/] (car l)) (nreverse (cdr l)))))
+
+%(defun pretty-exploden (frob)
+	((lambda (base *nopoint) (exploden frob)) 10. t))
+
+%(defun no-num (frob)
+	(cond ((numberp frob) (implode (pretty-exploden frob)))
+	      (t frob)))
+
+(comment 2.  DEFSMAC Macro - SAPPLY Sugar)
+
+
+;The key to DEFSMAC is SAPPLY, which allows generalized lambda-expressions
+;like (lambda ((a b nil c) ((d nil e) . f) . g) <body>).  It binds the formal
+;parameters to the arguments in the obvious pattern-matching way.  It only
+;handles cons's (no hunks or arrays).  Arguments which correspond to NIL slots
+;are ignored.
+
+(defun defsmac macro (def)			;SMAC stands for Sugar-MACro
+       (and (boundp '*modes-file*) *modes-file* (print-sexp def *modes-file*))
+       `(defun ,(cadr def) macro (l)
+	       (displace l (sapply '(lambda @(cddr def)) (cdr l)))))
+
+;A master function, which clobbers the call by the product of the call:
+%(defun displace (x y)
+	(cond ((or (atom y) (and (boundp '*displace*) (null *displace*))) y)
+	      (t (rplaca x (car y)) (rplacd x (cdr y)))))
+
+%(defun sfuncall nargs
+	(sapply (arg 1) (listify (- 1 nargs))))
+
+%(defun sapply (f args)
+	(cond ((or (atom f) (not (eq (car f) 'lambda))) (apply f args))
+	      (t
+	       ((lambda (l)
+			(apply
+			 `(lambda ,(mapcar (function car) l) @(cddr f))
+			 (mapcar (function cdr) l)))
+		(s-list (cadr f) args)))))
+
+%(defun s-list (bvl args)
+	(do ((rout nil))
+	    ((null bvl) (nreverse rout))
+	    (cond ((atom bvl) (return (nreconc rout (list (cons bvl args)))))
+;next 5 lines unnecessary except for efficiency:
+		  ((null (car bvl)) (setq bvl (cdr bvl) args (cdr args)))
+		  ((atom (car bvl))
+		   (setq rout (cons (cons (car bvl) (car args)) rout)
+			 bvl (cdr bvl)
+			 args (cdr args)))
+		  (t
+		   (setq rout (nreconc (s-list (car bvl) (car args)) rout)
+			 bvl (cdr bvl)
+			 args (cdr args))))))
+
+(defsmac alias (name real-name)			;make it work for modes?
+	 `(defsmac ,name l (cons ',real-name l)))
+
+(comment 3.  Random Macros)
+
+
+(defsmac prog1 frobs `(prog2 nil @frobs))
+
+(defsmac lcopy (l) `(subst nil nil ,l))		;won't work for hunks, arrays
+
+(defsmac lcopy1 (l) `(append ,l nil))
+
+(defsmac delet (x y . frobs) `(delete ,x (lcopy1 ,y) @frobs))
+
+(defsmac lpush (x pdl) `(setq ,pdl (cons ,x ,pdl)))
+
+(defsmac lpop (pdl) `(prog1 (car ,pdl) (setq ,pdl (cdr ,pdl))))
+
+(defsmac exch (a b) `(setq ,a (prog1 ,b (setq ,b ,a))))
+
+(defsmac repeat (index limit . body)
+	 `(do ,index 0 (1+ ,index) (= ,index ,limit) @body))
+
+(defsmac repeat1 (index limit . body)
+	 `(do ,index 1 (1+ ,index) (> ,index ,limit) @body))
+
+(defsmac while (pred . body) `(do () ((not ,pred)) @body))
+
+(defsmac logor frobs `(boole 7 @frobs))
+
+(defsmac logand frobs `(boole 1 @frobs))
+
+(defsmac logxor frobs `(boole 6 @frobs))
+
+(defsmac evenp (x) `(not (oddp ,x)))
+
+(defsmac maplac (f l)		;l is evaluated, but f is not
+	 `(do l1 ,l (cdr l1) (null l1) (rplaca l1 (,f (car l1)))))
+
+(defsmac maploc (f l)		;l is evaluated, but f is not
+	 `(do l1 ,l (cdr l1) (null l1) (rplaca l1 (,f l1))))
+
+(defsmac >= (x y) `(not (< ,x ,y)))
+
+(defsmac <= (x y) `(not (> ,x ,y)))
+
+(defsmac fn (bvl . body) `(function (lambda ,bvl @body)))
+
+(defsmac if (pred f1 . f2)		;f2 is optional
+	 (cond ((null f2) `(cond (,pred ,f1)))
+	       (t `(cond (,pred ,f1) (t @f2)))))
+
+(defsmac lttf (item . stack)
+	 (if (null stack) item `(cons ,item (lttf @stack))))
+
+(defsmac caddddr (frob) `(car (cddddr ,frob)))
+(defsmac cdddddr (frob) `(cdr (cddddr ,frob)))
+
+;ERR-CATCH and ERR-THROW are alternatives to catch and throw which may be used
+;when an error may be likely due to a throw without a matching catch.  One must
+;(declare (special <tag>)) in every file where it is used, and must
+;(setq <tag> nil) for initialization somewhere.
+
+;***Apparently, lisp already checks for throws without matching catches, and
+;since it doesn't handle ERR from compiled code correctly, one is better off
+;with throw and catch than err-throw and err-catch!  (As of 8/25/77.)
+;[***However, lisp seems to do ok for ERROR, unlike ERR.]
+
+(defsmac err-catch (form tag) `(bind ((,tag <- t)) (catch ,form ,tag)))
+
+(defsmac err-throw (val tag . messages)
+	 `(if ,tag (throw ,val ,tag)
+	      (mode-err @messages)))		;change to call ERROR?
+
+;***Next 4 items still used?
+%(defun compiling ()
+	(and (boundp 'compiler-state)
+	     compiler-state
+	     (not (eq compiler-state 'toplevel))
+	;***talk JONL into implementing:
+	     (not (eq compiler-state 'declare))))
+
+(defsmac if-compiling (f1 f2)	;checks compiler-state at EXPAND time
+	 (if (compiling) f1 f2))
+
+%(defun macret (l) (if (and (compiling) macros) `(progn ,l) t))
+
+%(defun al-desugar (x) (if (and x (atom x)) (ncons x) x))
+
+(defsmac bind (bindings . body)
+	 (nconc (list 'do
+		      (mapcar (fn (q)
+				  (cond ((atom q) (list q))
+					((memq (cadr q) '(|<-| |_|))
+					 (list (car q) (caddr q)))
+					(t q)))
+			      bindings)
+		      nil)
+		(maplist (fn (x)
+			     (if (cdr x) (car x) `(return @x)))
+			 body)))
+
+;erlist (see below) was originally a hack to avoid creating new atoms (see
+;erlist1).  It is unnecessary if vertical bars are used to delimit strings.
+
+(defsmac erlist (message)
+	 (if (or (atom message) (not (eq (car message) 'quote)))
+	     `(erlist1 ,message)
+	     (and (not (atom (setq message (cadr message))))
+		  (setq message (mapcar (fn (y)
+					    `(| | @(explodec y)))
+					message)
+			message (maknam (cdr (apply 'nconc message)))))
+	     `(progn (princ ',message) (error))))
+
+(comment 4.  Error Messages)
+
+
+%(defun mode-err nargs
+	(declare (fixnum nargs i))
+	(terpri tyo)
+	(repeat i nargs (mprinc (arg (1+ i))) (terpri tyo))
+	(bind ((*mode-break* <- t)) (break mode-err))
+	(if (and (boundp '*mode-break*) *mode-break*) (error)
+	    (throw nil mode-err)))
+
+%(defun mprinc (exp)		;EXP an atom or list, elts same
+	(cond ((atom exp) (princ exp tyo))
+	      ((and (eq (car exp) 'quote) (cdr exp) (null (cddr exp)))
+	       (princ '|'| tyo)
+	       (mprinc (cadr exp)))
+	      (t
+	       (bind ((lb? <- (eq (car exp) 'left-bracket)))
+		     (if lb? (setq exp (cdr exp)))
+		     (princ (if lb? '|[| '|(|) tyo)
+		     (map (fn (l)
+			      (mprinc (car l))
+			      (if (cdr l) (princ '| | tyo)))
+			  exp)
+		     (princ (if lb? '|]| '|)|) tyo)))))
+
+%(defun mtn-err (char type)
+	(mode-err '|: read-macro error - bad character encountered:|
+		  char '|TYPE was:| type))
+
+(scaunchar)
+
+(declare (unspecial compiler-state *sca-chars* *sca-ibase* *sca-base*
+		    *sca-*nopoint* macros *displace* ibase base *nopoint
+		    *modes-file* *mode-break*)
+	 (notype *sca-chars*)
+	 (macros nil))

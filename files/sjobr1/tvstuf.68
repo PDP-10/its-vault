@@ -1,0 +1,514 @@
+;;; -*-LISP-*-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+(comment	    TV Support Package			)
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(declare (setq ibase 8. base 8.)
+	 (mapex t)
+	 (expr-hash t))
+
+;;; IMPORTANT NOTE!!
+;;; The file TVLISP; TVOUT FASL must be loaded before this file
+;;; is, in order to properly satisfy the array references to
+;;; "TV".  Therefore, when this file is loaded, TVOUT is loaded
+;;; automatically.
+
+(let ((fasload nil))
+     (princ '|;Loading TVLISP; TVOUT FASL ...|)
+     (load '((TVLISP) TVOUT FASL))
+     (terpri))
+
+;;; The following are from TVLISP's tv hacking stuff, modified
+;;; to my own naming conventions.  There is some additional stuff
+;;; as well.  All LAP-coded functions are NCALL'able.
+
+;;; Remember:  All coordinates are in the TV system, where the top left
+;;;            corner is (0,0), and the bottom right is (453.,575.).
+
+;;; Index:
+;;;	CURRENT-DRAWMODE - returns as a fixnum the current TV drawmode.
+;;;	TVBIT - returns setting of given tv bit.
+;;;     TVDOT - writes a point in the current DRAWMODE at the
+;;;  		given tv coords.
+;;;	TVLINE - draws a line (in current DRAWMODE) between two
+;;;		tv coords.
+;;;	TVCLEAR - clears all or a portion of the screen.
+;;;	TV-CURSOR-DOT - puts up a flashing DOT cursor at the coords
+;;;		given, and waits for tty input.
+;;;	TV-CURSOR-CROSS - puts up a small flashing CROSS cursor at
+;;;		given coords, and waits for tty input.
+;;;	TV-BOX - draws a box (outline) around the given coords.
+;;;	TV-FILLED-BOX - draws a filled box around the given coords.
+;;;	TVREAD - runs BKPH's TVREAD program and image file.
+;;;	TVWRIT - runs BKPH's TVWRIT program to create an image file from
+;;;		what is on the tv screen.
+;;;	OPEN-12-BIT-TTY - opens the tty is 12-bit input mode.
+;;;	CLOSE-12-BIT-TTY - reopns the tty as normal terminal.
+;;;	TYI12 - special TYI function for reading 12-bit characters.
+
+;;; Functions and variables defined in TVLISP; TVOUT FASL
+
+(declare (fixnum (DRAWMODE fixnum))
+	 (special ANDC SETZ COMP EQV SAME XOR AND SETO IOR SET)
+	 (fixnum  ANDC SETZ COMP EQV SAME XOR AND SETO IOR SET))
+
+;;; Functions defined below.  LAP coded functions are so indicated.
+
+(declare (fixnum (CURRENT-DRAWMODE)
+		 (TVBIT fixnum fixnum))				;LAP function
+	 (notype (TVDOT fixnum fixnum)				;LAP function
+		 (TVLINE fixnum fixnum fixnum fixnum)		;LAP function
+		 (TV-CURSOR-DOT fixnum fixnum)
+		 (TV-CURSOR-CROSS fixnum fixnum)
+		 (TV-BOX fixnum fixnum fixnum fixnum)
+		 (TV-FILLED-BOX fixnum fixnum fixnum fixnum)
+		 (OPEN-12-BIT-TTY)
+		 (CLOSE-12-BIT-TTY)
+	 (*lexpr TVCLEAR TVREAD TVWRIT))
+
+(defun CURRENT-DRAWMODE ()
+       (boole 1. 776_33 (TV 455. 2.)))
+
+(comment LAP Functions)
+
+;;; (TVBIT x y) returns 0 if the bit at TV coords (x,y) is off,
+;;; 1 if on, and -1 if (x,y) is out of range.
+
+(LAP TVBIT SUBR) 
+(ARGS TVBIT (NIL . 2)) 
+	(PUSH P (% 0 0 FIX1))	;NCALL'able
+	(PUSHJ P VALIDATE-COORDS)	;check range of coords
+	(IMULI R 18.)		;gives location of first word in line y
+	(MOVEI TT 0 D)		;copy x to TT
+	(LSH TT -5)		;divide by 32. to get word in line
+	(ADDI TT 0 R)		;now gives word in array
+	(MOVE T @ (ARRAY TV))	;fetch the word in the array
+	(ANDI D 37)		;x mod 32. to get bit number
+	(LSH T -35. D)		;shift so low bit is one desired
+	(ANDI T 1)		;mask it so it is alone
+	(MOVE TT T)		;copy result
+	(POPJ P)		;return the value
+
+;;; VALIDATE-COORDS is an internal subroutine used to validate the range
+;;; of the coords passed in accumulators A and B (x-coord and y-coord resp.)
+;;; If either is out of range, NIL is returned (with -1 in TT for those functions
+;;; which NCALL'ed), and control goes not to the routine which called VALIDATE-
+;;; COORDS, but to its caller.  If both are in range, returns the value x in
+;;; D and the value y in R.
+
+VALIDATE-COORDS
+	(SKIPL D 0 A)			;check if x<0, ERR if so; moves it to D
+	(SKIPGE R 0 B)			;check if y<0, ERR if so; moves it to R
+	  (JRST 0 ERR)
+	(CAIGE D 576.)			;check if x>575., ERR if so
+	(CAIL R 454.)			;check if y>453., ERR if so
+	  (JRST 0 ERR)
+	(HRRI A 'T)			;set up A to return T
+	(POPJ P)
+ERR	(SETO TT)			;set TT to -1
+	(MOVEI A 'NIL)			;return NIL
+	(SUB P (% 0 0 1 1))		;pop back to caller's caller
+	(POPJ P)
+
+;;; (TVDOT x y) writes a point in the current DRAWMODE
+;;; at tv coords (x,y).  As above, returns -1 if (x,y)
+;;; out of range, or 0 if successful.
+
+(ENTRY TVDOT SUBR) 
+(ARGS TVDOT (NIL . 2)) 
+	(PUSHJ P VALIDATE-COORDS)	;check range of coords
+	(MOVEI F 0 TT)		;store routine address
+	(IMULI R 18.)		;points to first word of line y
+	(MOVEI TT 0 D)		;copy x
+	(LSH TT -5)		;divide x by 32. to get word in line
+	(ADDI TT 0 R)		;gives word in array
+	(ANDI D 37)		;x mod 32. gives bit in word
+	(MOVNI D 0 D)		;negate number of bit in word
+	(MOVSI T 400000)	;set sign bit only
+	(LSH T 0 D)		;shift it proper number of bits
+	(MOVEM T @ (ARRAY TV))	;write bit
+	(POPJ P)		;return
+
+;;; (TVLINE x1 y1 x2 y2) draws a line from tv coords (x1,y1) to
+;;; (x2,y2).  Returns NIL if either set of coords is out of range,
+;;; or T if successful.
+
+(ENTRY TVLINE SUBR) 
+(ARGS TVLINE (NIL . 4)) 
+(DEFSYM FREEAC 13)
+	(PUSHJ P VALIDATE-COORDS)	;validate x1 and y1
+					;  and put them in D and R resp.
+	(MOVEI T 0 D)			;copy x1
+	(MOVEI TT 0 R)			;copy y1
+	(EXCH A C)
+	(EXCH B AR1)
+	(PUSHJ P VALIDATE-COORDS)	;validate x2 and y2
+					;  and put in D and R resp.
+	(EXCH D R)			;(we want them in R and D resp.)
+	(CAMG T R)			;compare x1 with x2
+	  (JRST 0 (* 3))		;take if x1 <= x2
+	(EXCH R T)			;otherwise, exchange x1,x2 and y1,y2
+	(EXCH D TT)			;  so that x1 < x2
+		;At this point,
+		; (T)  = x1  (may not be the original x1)
+		; (TT) = y1  ( "   "   "  "     "     y1)
+		; (R)  = x2  ( "   "   "  "     "     x2)
+		; (D)  = y2  ( "   "   "  "     "     y2)
+		;and x1 <= x2 is guaranteed (that is, we will be writing
+		;left to right across the screen).
+	(SUB D TT)			;form y2-y1 difference
+	(JUMPE D HORIZONTAL-LINE)	;got a horizontal line
+
+	(SUB R T)			;form x2-x1 difference (non-negative), call it DX
+	(PUSH FXP R)			;  and save for later.
+	(MOVEI F 18.)			;this is the step increment for y, YSTEP
+	(SKIPG 0 D)			;if y2 < y1, then YSTEP = -18.
+	  (MOVNI F 0 F)
+	(MOVMS 0 D)			;magnitude of y2-y1; call it DY
+	(PUSH FXP D)			;save it
+
+	(IMULI TT 18.)			;calculate index of first word in line:
+	(MOVEI R 0 T)			;  x1
+	(LSH T -5)			;  x1/32.
+	(ADD TT T)			;  (18.*y1) + x1/32.
+	(ANDI R 37)			;x1 mod 32.
+	(MOVNI R 0 R)			;  negative shift count
+	(HRLZI T 400000)
+	(LSH T 0 R)			;mask for first bit to be written
+	(SKIPE 0 -1 FXP)		;check if x1 = x2 (difference is 2nd element on FXP)
+	  (JRST 0 DIAGONAL-LINE)	;line is diagonal
+
+VERTICAL-LINE
+		;At this point, 
+		; (T)  = bit mask		(0 FXP) = DY
+		; (TT) = index of first word	(-1 FXP) = DX (zero)
+		; (F) = YSTEP (+18 or -18)
+	(MOVE D 0 FXP)			;number of points - 1 to do
+VLOOP	(MOVEM T @ (ARRAY TV)) 		;write point
+	(ADD TT F)			;next line index
+	(SOJGE D VLOOP)			;continue for all points
+	(JRST 0 DONE)			;finished
+
+HORIZONTAL-LINE
+		;At this point,
+		; (T) = x1, (R) = x2, (TT) = y1 = (D) = y0
+	(PUSH FXP R)			;save x2
+	(IMULI TT 18.)			;calculate index of first word
+	(MOVE D T)			;copy x1
+	(LSH D -5)			;  x1/32.
+	(ADDI TT 0 D)			;addr of first word in line
+	(AOJ D)				;next word in line
+	(LSH D 5)			;first bit of next word in line
+					;(to be used as loop limit)
+	(ANDI T 37)			;x1 mod 32.
+	(MOVNI T 0 T)			;negative
+
+	(MOVEI R 1)			;Let b = x1 mod 32.  This sequence of
+	(SETO F)			;  instructions creates a mask in R
+	(ROTC R 35. T)			;  which is b zero bits on the left, and
+	(TRZ R 17)			;  32-b one bits on the right (the low
+					;  four bits are zero).
+	(MOVE T 0 FXP)			;x2
+	(ANDI T 37)			;x2 mode 32.
+	(MOVNI T 0 T)			;negative
+	(MOVSI F 400000)		;Let b = x2 mod 32.  This sequence of
+	(SETO FREEAC)			;  instructions creates a mask in F which
+	(ROTC F 0 T)			;  is b+1 one bits on left, all zeros on right.
+H-LINE1
+	(CAMLE D 0 FXP)			;The following loop is done until D (which
+	  (JRST 0 H-LINE2)		;  contains no. of bit in next word) exceeds
+					;  the last bit to do, x2.
+	(MOVE T R)			;bit mask to be written
+        (MOVEM T @ (ARRAY TV)) 
+	(MOVE R (% -20))		;all ones (except low four bits) which forms
+					;  the continuation mask for line
+	(ADDI D 32.)			;now gives bit number of next+1 word
+	(AOJA TT H-LINE1)		;bump word-in-line index and continue loop
+H-LINE2
+	(AND R F)			;mask for last word in line (takes care of case
+					;  when x1 and x2 in same word)
+	(MOVE T R)			;bit mask to be written
+        (MOVEM T @ (ARRAY TV)) 		;write it
+	(SUB FXP (% 0 0 1 1))		;clean up stack
+	(POPJ P)			;exit
+
+DIAGONAL-LINE
+		;At this point,
+		; (T) = bit mask for first word
+		; (TT) = index of first word in array
+		; (F) = YSTEP (+18 or -18)
+		; (D) = (0 FXP) = DY (positive)
+		; (-1 FXP) = DX (positive)
+	(CAMLE D -1 FXP)		;compare DY with DX
+	  (JRST 0 DIAGONAL-STEEP)	;take if DY > DX
+
+DIAGONAL-NOT-STEEP			;DX >= DY
+	(MOVN D -1 FXP)			;negative DX
+	(SOJ D)				;number of points to do
+	(HRL TT D)			;form counter in left half of TT
+	(MOVE D -1 FXP)			;DX
+	(LSH D -1)			;initial error is 1/2 DX
+DNS1
+        (MOVEM T @ (ARRAY TV)) 		;write bit
+	(JUMPGE TT DONE)		;done when DX+1 points written
+	(ADD TT (% 0 0 0 1))		;bump point counter
+	(LSH T -1)			;advance bit marker
+	(TRNN T 17)			;check if bit overflows to next word
+	  (JRST 0 DNS2)			;no, still in same word
+	(HRLZI T 400000)		;first bit in next word
+	(AOJ TT)			;advance word counter
+DNS2
+	(ADD D 0 FXP)			;adjust error value by DY
+	(CAMG D -1 FXP)			;big enough to advance line number?
+	  (JRST 0 DNS1)			;not yet
+	(ADD TT F)			;increment/decrement line number
+	(SUB D -1 FXP)			;adjust error downward
+	(JRST 0 DNS1)			;continue loop
+
+DIAGONAL-STEEP				;DX < DY
+	(MOVN D 0 FXP)			;negative DY
+	(SOJ D)				;number of points to do
+	(HRL TT D)			;form counter in left half of TT
+	(MOVE D 0 FXP)			;DY
+	(LSH D -1)			;initial error is 1/2 DY
+DS1
+        (MOVEM T @ (ARRAY TV)) 		;write bit
+	(JUMPGE TT DONE)		;done when DY+1 points written
+	(ADD TT (% 0 0 0 1))		;bump point counter
+	(ADD TT F)			;advance line number
+	(ADD D -1 FXP)			;adjust error value by DX
+	(CAMG D 0 FXP)			;big enough to advance bit mask?
+	  (JRST 0 DS1)			;not yet
+	(LSH T -1)			;advance bit marker
+	(TRNN T 17)			;check if bit overflows to next word
+	  (JRST 0 DS2)			;no, still in same word
+	(HRLZI T 400000)		;first bit in next word
+	(AOJ TT)			;advance word counter
+DS2
+	(SUB D 0 FXP)			;adjust error downward
+	(JRST 0 DS1)			;continue loop
+	
+DONE	(SUB FXP (% 0 0 2 2))		;clean up stack
+	(POPJ P)			;exit
+NIL 
+
+
+(comment TVCLEAR)
+;;; (TVCLEAR) clears the entire tv screen.
+;;; (TVCLEAR x y) clears the screen above and to the right of the
+;;;	point (in tv coords) (x,y).
+;;; (TVCLEAR x1 y1 x2 y2) clears the screen in the box with lower
+;;;	left (x1,y1) and upper right (x2,y2).
+
+(declare (notype (FASTTVCLEAR)))
+
+(defun TVCLEAR nargs
+       (declare (fixnum xl yl xu yu))
+       (drawmode
+	(cond ((= nargs 0)
+	       (prog2 nil (drawmode SET)
+		          (cursorpos 'z)
+			  (sleep 0.5)	;wait for cursor to move
+			  (FASTTVCLEAR)))
+	      (t
+	       (prog2 nil
+		(drawmode ANDC)		;set to CLEAR mode
+		(prog (xl yl xu yu)
+		     (cond ((= nargs 4) (setq xl (arg 1) yl (arg 2)
+					      xu (arg 3) yu (arg 4)))
+			   ((= nargs 2) (setq xl (arg 1) yl (arg 2)
+					      xu 575. yu 0)))
+		     (do ((y yu (1+ y)))
+			 ((> y yl))
+			 (tvline xl y xu y)))))))
+       nil)
+
+(LAP FASTTVCLEAR SUBR)
+(ARGS FASTTVCLEAR (NIL . 0))
+	(HRLZI TT -8172.)	;number of TV words to clear
+	(MOVE D (% SETZM 0 @ (ARRAY TV)))	;set up instruction loop
+	(MOVE R (% AOBJN TT D))		;in regsiters for speed
+	(MOVE F (% POPJ P))
+	(JRST 0 D)		;begin loop and return to caller
+() 
+
+
+(comment TV-CURSOR's)
+;;; (TV-CURSOR-DOT x y) puts up a blinking DOT at tv coords (x,y), while
+;;;	awaiting tty input.  It does not gobble the input.
+
+(defun TV-CURSOR-DOT (X Y)
+       (drawmode
+	(prog2 nil
+	       (drawmode XOR)
+	       (do nil
+		   ((> (listen t) 0))
+		   (tvdot x y)
+		   (sleep 0.5)
+		   (tvdot x y)
+		   (sleep 0.5))))
+       nil)
+
+;;; (TV-CURSOR-CROSS x y) does the same thing as TV-CURSOR-DOT, but
+;;;	puts up a CROSS instead (3 points by 3 points).
+
+(defun TV-CURSOR-CROSS (x y)
+       (drawmode
+	(prog2 nil
+	       (drawmode XOR)
+	       (do nil
+		   ((> (listen t) 0))
+		   (tvdot x y)
+		   (tvdot (1+ x) y)
+		   (tvdot (1- x) y)
+		   (tvdot x (1+ y))
+		   (tvdot x (1- y))
+		   (sleep 0.5)
+		   (tvdot x y)
+		   (tvdot (1+ x) y)
+		   (tvdot (1- x) y)
+		   (tvdot x (1+ y))
+		   (tvdot x (1- y))
+		   (sleep 0.5))))
+       nil)
+
+(comment Miscellaneous functions)
+
+(defun TV-BOX (xll yll xur yur)
+       ;; Draws a box with lower left (xll,yll) to upper right (xur,yur).
+       ;; Doesn't do the corners more than once, since in XOR mode they
+       ;; would be left out entirely.
+       (declare (fixnum xll yll xur yur))
+       (TVLINE xll yll (1- xur) yll)
+       (TVLINE xur yll xur (1+ yur))
+       (TVLINE xur yur (1+ xll) yur)
+       (TVLINE xll yur xll (1- yll)))
+
+(defun TV-FILLED-BOX (xll yll xur yur)
+       (declare (fixnum xll yll xur yur line))
+       (do line yur (1+ line) (> line yll)
+	   (TVLINE xll line xur line)))
+
+
+(comment READING IN AND WRITING OUT THE TV SCREEN)
+
+;;; The following functions allow use from LISP of BKPH's
+;;; TVWRIT and TVREAD programs.
+;;;	 (TVWRIT <file> <tv-no>)
+;;; writes out the contents of tv number <tv-no> as the file given
+;;; by <file> in new image file format.  <tv-no> may be omitted to
+;;; mean use the LISP job's tv.  <file> is either a namestring or
+;;; a namelist, and cannot be open.  If <file> is nil, a default
+;;; name of DSK;<hsname>;SCREEN > is used.
+;;;
+;;;	 (TVREAD <file> <res> <tv-no>)
+;;; reads in an image file and puts in on tv number <tv-no>.
+;;; Omitting <tv-no> means to put it on the LISP job's tv.  If
+;;; <file> is nil, the default is DSK:<hsname>;SCREEN >.  <res> is
+;;; the expansion factor with will ONLY be used if the image is to
+;;; be passed on to the XGP because a <rubout> was typed after
+;;; the image was displayed.  Since the TVREAD program is actually
+;;; run, the user is expected to type a character after the image
+;;; is displayed.  This includes <space> to flush the picture and exit,
+;;; <cr> to redisplay and wait for another character, and <rubout>
+;;; to call ZAP to record the image in XGP scan file format.
+
+(defun TVWRIT nargs
+       (let ((file (namestring
+		    (cond ((or (zerop nargs) (null (arg 1)))
+			   (cons (car defaultf) '(SCREEN >)))
+			  (t (arg 1)))))
+	     (screen-number (cond ((and (> nargs 1) (fixp (arg 2)))
+				   (append '(/) '(T) (explodec (arg 2)))))))
+	    (valret (maknam (append (explodec '|:BKPH;TVWRIT |)
+				     (explodec file) '(32.) screen-number
+				     (list '/
+'/ '/: '/V '/P '/ ))))
+	    'done))
+
+(defun TVREAD nargs
+       (let ((file (namestring
+		    (cond ((or (zerop nargs) (null (arg 1)))
+			   (cons (car defaultf) '(SCREEN >)))
+			  (t (arg 1)))))
+	     (res (cond ((and (> nargs 1) (fixp (arg 2))) (arg 2))
+			(t 1)))
+	     (screen-number (cond ((and (> nargs 2) (fixp (arg 3)))
+				   (append '(/) '(T) (explodec (arg 3)))))))
+	    (valret (maknam (append (explodec '|:BKPH;TVREAD |)
+				     (explodec file)
+				     '(32. 47.)  ;space and slash
+				     (explodec res) screen-number
+				     (list '/
+'/ '/: '/V '/P '/ ))))
+	    'done))
+
+
+(comment 12-BIT CHARACTER INPUT FROM KNIGHT KEYBOARDS)
+
+;;; (OPEN-12-BIT-TTY)
+;;; Reopens the input tty in 12-bit mode for Knight keyboards.  After
+;;; this, calls to TYI will return a 12-bit character.  The function TYI12
+;;; will read and return as a fixnum the next character, but will convert
+;;; it to upper case and strip off the bucky bits.  The global variables
+;;; %CTRL %META %SHIFT %SHIFT-LOCK %TOP will be set T or NIL depending
+;;; on whether the corresponding bits were set in the character.
+;;;
+;;; (CLOSE-12-BIT-TTY)
+;;; Reopens the input tty as a normal ASCII terminal.
+
+(declare (special %CTRL %META %SHIFT %SHIFT-LOCK %TOP)
+	 (array* (notype (%%12-BIT-TTYINT-FNS 40))))
+
+(defun OPEN-12-BIT-TTY ()
+       (declare (fixnum CH))
+       (cond ((= (status ttytype) 5)    ;must be a Knight pdp-11 TV
+	      (array %%12-BIT-TTYINT-FNS t 40)
+	      (do ch 0 (1+ ch) (= ch 40) ;save ttyint functions
+		  (store (%%12-BIT-TTYINT-FNS ch) (status ttyint ch)))
+	      ((lambda (scan-function)
+		       (open tyi '(tty in single fixnum))
+		       (sstatus ttycons tyi tyo)
+		       (sstatus ttyscan scan-function)
+		       (do ch 0 (1+ ch) (= ch 40)
+			   (cond ((fixp (%%12-bit-ttyint-fns ch))
+				  (sstatus ttyint ch
+					   (+ (%%12-bit-ttyint-fns ch) 4400000200)))
+				 	   ;require CTRL key, forbid META and TOP.
+				 (t (sstatus ttyint ch (%%12-bit-ttyint-fns ch))))))
+	       (status ttyscan))
+	      '12-BIT-TTY-OPEN)
+	     (t 'NOT-A-KNIGHT-TV)))
+
+(defun CLOSE-12-BIT-TTY ()
+       (declare (fixnum ch))
+       ((lambda (scan-function)
+		(open tyi '(tty in single ascii))
+		(sstatus ttycons tyi tyo)
+		(sstatus ttyscan scan-function)
+		(do ch 0 (1+ ch) (= ch 40)
+		    (sstatus ttyint ch (%%12-BIT-TTYINT-FNS ch))))
+	(status ttyscan))
+       '12-BIT-TTY-CLOSED)
+
+(defun TYI12 ()
+       ;; Reads one 12-bit character from the Knight keyboard, and
+       ;; sets global variables according to the status of the CTRL,
+       ;; META, SHIFT, SHIFT-LOCK, and TOP keys.  Returns a 7-bit
+       ;; fixnum character, which is the Lisp equivalent character
+       ;; read (without bucky bits, and upper case).  NOTE:  If TYI
+       ;; isn't open for 12-bit input, just does a case convert.
+       (declare (fixnum x Lisp-char Bits))
+       (let* ((x (tyi))
+	      (Lisp-char (bit-and x (mask 7 right)))
+	      (Bits (lsh x -7)))
+	     (cond ((and (> Lisp-char 137) (< Lisp-char 177))
+		    (setq Lisp-char (- Lisp-char 40))))
+	     (setq %CTRL (oddp Bits)
+		   %META (oddp (setq Bits (lsh Bits -1)))
+		   %SHIFT (oddp (setq Bits (lsh Bits -1)))
+		   %SHIFT-LOCK (oddp (setq Bits (lsh Bits -1)))
+		   %TOP (oddp (setq Bits (lsh Bits -1))))
+	     Lisp-char)))

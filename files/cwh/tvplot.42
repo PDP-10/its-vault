@@ -1,0 +1,405 @@
+;  TVPLOT function package					-*-LISP-*-
+
+(declare (setq &loadprint t)
+	 (cond ((status feature mc) (load '|mc:cwh;lspenv fasl|))
+	       ((status feature ai) (load '|ai:vsdb;cwhlsp fasl|)))
+	 (&compile-message))
+
+(declare (read)) (read)
+(&load-message-macro)
+
+(sstatus feature tvplot)
+
+(declare (special xmin-view-value xmax-view-value
+		  ymin-view-value ymax-view-value
+		  deltax-view-value deltay-view-value
+		  xmin-view xmax-view ymin-view ymax-view
+		  deltax-view deltay-view slope-xo slope-yo
+		  xmin-plot xmax-plot ymin-plot ymax-plot
+		  deltax-plot deltay-plot
+		  xmin-plot-value xmax-plot-value
+		  ymin-plot-value ymax-plot-value
+		  deltax-plot-value deltay-plot-value
+		  step step-value)
+	 (flonum  xmin-view-value xmax-view-value
+		  ymin-view-value ymax-view-value
+		  deltax-view-value deltay-view-value
+		  xmin-view xmax-view ymin-view ymax-view
+		  deltax-view deltay-view
+		  x-cursor y-cursor
+		  slope-xo slope-yo
+		  xmin-plot xmax-plot ymin-plot ymax-plot
+		  deltax-plot deltay-plot
+		  xmin-plot-value xmax-plot-value
+		  ymin-plot-value ymax-plot-value
+		  deltax-plot-value deltay-plot-value
+		  step step-value x-temp y-temp
+		  x-hold y-hold x-origin y-origin time))
+
+(declare (special screen-size) (unspecial num count)
+	 (fixnum screen-size num count))
+
+(declare (special init-flag *init-refresh
+		  *viewport-set-echo-area  viewport-clear
+		  *refresh-border *refresh-data
+		  *graph-refresh *graph-axis version
+		  primitives1 primitives2 optional-primitives
+		  plot-functions trajectory-functions
+		  paramplot-functions paramtrajectory-functions))
+
+(declare (notype (xrange flonum) (yrange flonum)
+		 (vline notype notype notype)
+		 (intersect-side flonum flonum flonum flonum)
+		 (border) (refresh) (zap) (primitives)
+		 (init notype) (inita) (initb)
+		 (step-size notype)
+		 (plot1 notype)
+		 (trajectory1 notype notype notype)
+		 (paramplot1 notype notype notype notype)
+		 (paramtrajectory1 notype notype notype notype notype notype)
+		 (equalscale) (graph)
+		 (xrange-plot flonum) (yrange-plot flonum)))
+
+(declare (flonum  (xlocation flonum) (ylocation flonum)
+		  (xlength flonum) (ylength flonum)))
+
+(declare (*lexpr axis plot trajectory paramplot paramtrajectory remove))
+
+(setq primitives
+      '((viewport window point line clear test complement border axis zap)
+	(plot trajectory paramplot paramtrajectory equalscale)
+	(echo-area)))
+
+(mapc '(lambda (x) (or (boundp (car x)) (set (car x) (cdr x))))
+      '((*optimize . nil)
+	(*viewport-set-echo-area . t) (viewport-clear . t)
+	(*clear-border . t) (*clear-garbage . t)
+	(#increments . 40.)))
+
+(*array 'tv2 'fixnum 576. 18.)
+
+(defun &princ args (mapc 'princ (listify args)))
+(defun &error args (terpri) (mapc 'princ (listify args)) (ascii 0))
+
+(defun tvplot-init ()
+       (let (*viewport-clear)
+	    (viewport 0. 575. 136. 453.)
+	    (window -10. 10. -10. 10.)
+	    (clear)))
+
+(defun viewport
+       (x1 x2 y1 y2)
+       (cond ((or (lessp x1 0) (lessp y1 0)
+		  (greaterp x2 575.) (greaterp y2 453.))
+	      (&error '|viewport:  0<x<575.  0<y<453.|))
+	     ((greaterp x1 x2) (&error '|viewport:  incorrect x values.|))
+	     ((greaterp y1 y2) (&error '|viewport:  incorrect y values.|))
+	     (t (setq xmin-view-value (float x1) xmax-view-value (float x2)
+		      ymin-view-value (float y1) ymax-view-value (float y2)
+		      deltax-view-value (-$ xmax-view-value xmin-view-value)
+		      deltay-view-value (-$ ymax-view-value ymin-view-value))
+		(*rearray 'tv2 'fixnum (- 456. (fix ymin-view-value)) 18)
+		(if *viewport-set-echo-area
+		    (echo-area (1- (fix (//$ ymin-view-value 12.0)))))
+		(if viewport-clear (clear)))))
+
+(defun window
+       (x1 x2 y1 y2)
+       (cond ((greaterp x1 x2) (&error '|window:  incorrect x values.|))
+	     ((greaterp y1 y2) (&error '|window:  incorrect y values.|))
+	     (t (setq xmin-view (float x1) xmax-view (float x2)
+		      ymin-view (float y1) ymax-view (float y2)
+		      deltax-view (-$ xmax-view xmin-view)
+		      deltay-view (-$ ymax-view ymin-view)))))
+
+(defun xlocation (x)
+       (+$ xmin-view-value
+	   (*$ deltax-view-value (//$ (-$ x xmin-view) deltax-view))))
+
+(defun ylocation (y)
+       (+$ ymin-view-value
+	   (*$ deltay-view-value (//$ (-$ y ymin-view) deltay-view))))
+
+(defun xlength (x) (*$ deltax-view-value (//$ x deltax-view)))
+
+(defun ylength (y) (*$ deltay-view-value (//$ y deltay-view)))
+
+(defun xrange (x) (not (or (< x xmin-view-value) (> x xmax-view-value))))
+
+(defun yrange (y) (not (or (< y ymin-view-value) (> y ymax-view-value))))
+
+(defun point n
+       (cond ((= (remainder n 2) 1) (&error '|point:  odd number of points.|))
+	     (t (do ((x (listify n) (cddr x)))
+		    ((not x))
+		    (point1 (car x) (cadr x))))))
+
+(defun point1 (x y)
+       (setq x (xlocation (float x)) y (ylocation (float y)))
+       (cond ((and (xrange x) (yrange y)) (set-point x y) t)))
+
+(defun line n
+       (cond ((= (remainder n 2) 1) (&error '|line:  odd number of points.|))
+	     (t (do ((x (listify n) (cddr x)))
+		    ((null (cddr x)))
+		    (line1 (car x) (cadr x) (caddr x) (cadddr x))))))
+
+(defun line1
+       (x1 y1 x2 y2)
+       (setq x1 (xlocation (float x1)) y1 (ylocation (float y1))
+	     x2 (xlocation (float x2)) y2 (ylocation (float y2)))
+       (cond ((and (xrange x1) (yrange y1) (xrange x2) (yrange y2))
+	      (vector x1 y1 x2 y2) t)
+	     ((and (xrange x1) (yrange y1))
+	      (intersect-side x1 y1 x2 y2) t)
+	     ((and (xrange x2) (yrange y2))
+	      (intersect-side x2 y2 x1 y1) t)))
+ 
+(defun intersect-side (xi yi xo yo)
+       (setq slope-xo
+	     (cond ((equal yo yi) 10000.0) (t (//$ (-$ xo xi) (-$ yo yi)))))
+       (setq slope-yo
+	     (cond ((equal xo xi) 10000.0) (t (//$ (-$ xo xi) (-$ yo yi)))))
+       (cond ((and (greaterp xo xmax-view-value)
+		   (greaterp slope-yo (//$ (-$ ymin-view-value yi)
+					   (-$ xmax-view-value xi)))
+		   (lessp slope-yo (//$ (-$ ymax-view-value yi)
+					(-$ xmax-view-value xi))))
+	      (setq xo xmax-view-value
+		    yo (+$ yi (*$ slope-yo (-$ xmax-view-value xi)))))
+	     ((and (lessp xo xmin-view-value)
+		   (lessp slope-yo (//$ (-$ ymin-view-value yi)
+					(-$ xmin-view-value xi)))
+		   (greaterp slope-yo (//$ (-$ ymax-view-value yi)
+					   (-$ xmin-view-value xi))))
+	      (setq xo xmin-view-value
+		    yo (+$ yi (*$ slope-yo (-$ xmin-view-value xi)))))
+	     ((greaterp yo ymax-view-value)
+	      (setq yo ymax-view-value
+		    xo (+$ xi (*$ slope-xo (-$ ymax-view-value yi)))))
+	     ((lessp yo ymin-view-value)
+	      (setq yo ymin-view-value
+		    xo (+$ xi (*$ slope-xo (-$ ymin-view-value yi))))))
+       (vector xi yi xo yo))
+
+
+(defun test (x y)
+       (and (xrange (xlocation (float x)))
+	    (yrange (ylocation (float y)))
+	    (equal (get-tv-bit (fix (xlocation (float x)))
+			       (- 453. (fix (ylocation (float y))))) 1)))
+
+(defun axis num
+ (prog (upper-tic lower-tic deltax-tic deltay-tic
+		  x-origin-value y-origin-value) 
+       (setq x-origin-value
+	     (cond ((xrange (xlocation 0.0)) (xlocation 0.0))
+		   (t xmin-view-value))
+	     y-origin-value
+	     (cond ((yrange (ylocation 0.0)) (ylocation 0.0))
+		   (t ymin-view-value)))
+       (vector x-origin-value ymin-view-value x-origin-value ymax-view-value)
+       (vector xmin-view-value y-origin-value xmax-view-value y-origin-value)
+       (cond ((> num 0) 
+	      (setq upper-tic
+		    (cond ((= y-origin-value ymax-view-value) ymax-view-value)
+			  (t (+ (fix y-origin-value) 2)))
+		    lower-tic
+		    (cond ((= y-origin-value ymin-view-value) ymin-view-value)
+			  (t (- (fix y-origin-value) 2)))
+		    deltax-tic (xlength (float (arg 1))))
+	      (do x xmin-view-value (+$ x deltax-tic) (> x xmax-view-value)
+		  (vector x upper-tic x lower-tic))))
+       (cond ((> num 1)
+	      (setq upper-tic
+		    (cond ((= x-origin-value xmax-view-value) xmax-view-value)
+			  (t (+ (fix x-origin-value) 2)))
+		    lower-tic
+		    (cond ((= x-origin-value xmin-view-value) xmin-view-value)
+			  (t (- (fix x-origin-value) 2)))
+		    deltay-tic (ylength (float (arg 2))))
+	      (do y ymin-view-value (+$ y deltay-tic) (> y ymax-view-value)
+		  (vector upper-tic y lower-tic y))))))
+
+
+(defun garbage ()
+       (&princ '|viewport:  | xmin-view-value '|<x<| xmax-view-value 
+	       '|  | ymin-view-value '|<y<| ymax-view-value
+	       '|   window:  | xmin-view '|<x<| xmax-view
+	       '|  | ymin-view '|<y<| ymax-view)
+       (ascii 0))
+
+(defun clear ()
+       (clear-screen)
+       (and *clear-border (border))
+       (and *clear-garbage (garbage))
+       (ascii 0))
+	
+(defun zap ()
+       (tyo 7)
+       (cond ((equal (tyi) 32.)
+	      (valret '|:bkph;tvwrit/î:vp/î|)
+	      (terpri)
+	      (&princ '|zap:  writing screen into | (namestring '|screen >|)))
+	     (t (terpri) (princ '|zap:  flushed.|))))
+
+(defun primitives ()
+       (clear-echo-area)
+       (princ (car primitives))
+       (print (cadr primitives))
+       (caddr primitives))
+
+(defun complement
+       (x y)
+       (drawmode xor)
+       (set-tv-bit (fix (xlocation (float x)))
+		   (- 453. (fix (ylocation (float y)))))
+       (drawmode ior))
+
+(defmacro defplot (name body flag)
+	  (cond ((eq flag 'funcall) `(defun !name @(eval body)))
+		((eq flag 'subrcall) `(defun !name @(subst 'subrcall 'funcall (eval body))))))
+
+(setq plot '((function xmin xmax)
+	     (prog (deltax)
+		   (setq deltax (//$ (-$ xmin xmax) (float #increments)))
+		   (do ((x xmin next-x)
+			(y (funcall function xmin) next-y)
+			(next-x (+$ xmin deltax) (+$ next-x deltax))
+			(next-y (funcall function (+$ xmin deltax))
+				(funcall function (+$ next-x deltax))))
+		       ((= x xmax))
+		       (line1 x y next-x next-y)))))
+
+(defplot plot1 plot funcall)
+(defplot plot1-subr plot subrcall)
+
+(defun trajectory1 (function x0 y0)
+       (prog (deltax)
+	     (setq deltax (quotient deltax-view #increments) x0 (float x0) y0 (float y0))
+	     (cond ((< x0 xmax-view)
+		    (do ((xmin x0 xmax)
+			 (ymin y0 ymax)
+			 (xmax (+$ x0 deltax) (+$ xmax deltax))
+			 (ymax (+$ y0 (*$ deltax (float (funcall function x0 y0))))
+			       (+$ ymax (*$ deltax (float (funcall function xmax ymax))))))
+			((> xmin xmax-view))
+			(line1 xmin ymin xmax ymax))))
+	     (cond ((> x0 xmin-view)
+		    (do ((xmin x0 xmax)
+			 (ymin y0 ymax)
+			 (xmax (-$ x0 deltax) (-$ xmax deltax))
+			 (ymax (-$ y0 (*$ deltax (float (funcall function x0 y0))))
+			       (-$ ymax (*$ deltax (float (funcall function xmax ymax))))))
+			((< xmin xmin-view))
+			(line1 xmin ymin xmax ymax))))))
+
+(defun trajectory1 (function x0 y0)
+       (prog (deltax)
+	     (setq deltax (quotient deltax-view #increments))
+	     (cond ((< x0 xmax-view)
+		    (do ((xmin x0 xmax)
+			 (ymin y0 ymax)
+			 (xmax (+$ x0 deltax) (+$ xmax deltax))
+			 (ymax (+$ y0 (*$ deltax (subrcall function x0 y0)))
+			       (+$ ymax (*$ deltax (subrcall function xmax ymax)))))
+			((> xmin xmax-view))
+			(line1 xmin ymin xmax ymax))))
+	     (cond ((> x0 xmin-view)
+		    (do ((xmin x0 xmax)
+			 (ymin y0 ymax)
+			 (xmax (-$ x0 deltax) (-$ xmax deltax))
+			 (ymax (-$ y0 (*$ deltax (subrcall function x0 y0)))
+			       (-$ ymax (*$ deltax (subrcall function xmax ymax)))))
+			((< xmin xmin-view))
+			(line1 xmin ymin xmax ymax))))))
+
+(defun paramplot1 (xfunction yfunction tmin tmax)
+       (prog (deltat)
+	     (setq tmin (float tmin) tmax (float tmax) 
+		   deltat (quotient (-$ tmax tmin) #increments))
+	     (do ((time tmin (+$ time deltat))
+		  (xmin (funcall xfunction tmin) xmax)
+		  (ymin (funcall yfunction tmin) ymax)
+		  (xmax (funcall xfunction (+$ tmin deltat))
+			(funcall xfunction (+$ time deltat)))
+		  (ymax (funcall yfunction (+$ tmin deltat))
+			(funcall yfunction (+$ time deltat))))
+		 ((> time tmax))
+		 (line1 xmin ymin xmax ymax))))
+
+(defun paramplot1 (xfunction yfunction tmin tmax)
+       (prog (deltat)
+	     (setq deltat (quotient (-$ tmax tmin) #increments))
+	     (do ((time tmin (+$ time deltat))
+		  (xmin (subrcall xfunction tmin) xmax)
+		  (ymin (subrcall yfunction tmin) ymax)
+		  (xmax (subrcall xfunction (+$ tmin deltat))
+			(subrcall xfunction (+$ time deltat)))
+		  (ymax (subrcall yfunction (+$ tmin deltat))
+			(subrcall yfunction (+$ time deltat))))
+		 ((> time tmax))
+		 (line1 xmin ymin xmax ymax))))
+
+(defun paramtrajectory1 (xfunction yfunction tmin tmax x0 y0)
+       (prog (deltat)
+	     (setq tmin (float tmin) tmax (float tmax) x0 (float x0) y0 (float y0)
+		   deltat (quotient (-$ tmax tmin) #increments))
+	     (do ((time tmin (+$ time deltat))
+		  (xmin x0 xmax)
+		  (ymin y0 ymax)
+		  (xmax (+$ x0 (*$ deltat (float (funcall xfunction (+$ tmin deltat)))))
+			(+$ xmax (*$ deltat (float (funcall xfunction (+$ time deltat))))))
+		  (ymax (+$ y0 (*$ deltat (float (funcall yfunction (+$ tmin deltat)))))
+			(+$ ymax (*$ deltat (float (funcall yfunction (+$ time deltat)))))))
+		 ((> time tmax))
+		 (line1 xmin ymin xmax ymax))))
+
+(defun paramtrajectory1 (xfunction yfunction tmin tmax x0 y0)
+       (prog (deltat)
+	     (setq deltat (quotient (-$ tmax tmin) #increments))
+	     (do ((time tmin (+$ time deltat))
+		  (xmin x0 xmax)
+		  (ymin y0 ymax)
+		  (xmax (+$ x0 (*$ deltat (subrcall xfunction (+$ tmin deltat))))
+			(+$ xmax (*$ deltat (subrcall xfunction (+$ time deltat)))))
+		  (ymax (+$ y0 (*$ deltat (subrcall yfunction (+$ tmin deltat))))
+			(+$ ymax (*$ deltat (subrcall yfunction (+$ time deltat))))))
+		 ((> time tmax))
+		 (line1 xmin ymin xmax ymax))))
+
+(defun plot fexpr (x) (mapc 'plot1 x))
+
+(defun trajectory fexpr (x)
+       (cond ((not (oddp (length x))) (&error '|trajectory:  initial points do not match.|))
+	     (t (do ((z (cdr x) (cddr z)))
+		    ((null z))
+		    (trajectory1 (car x) (eval (car z)) (eval (cadr z)))))))
+
+(defun paramplot fexpr (x)
+       (cond ((not (zerop (remainder (length x) 4))) 
+	      (&error '|paramplot:  functions and domains do not match.|))
+	     (t (do ((z x (cddddr z)))
+		    ((null z))
+		    (paramplot1 (car z) (cadr z) (eval (caddr z)) (eval (cadddr z)))))))
+
+(defun paramtrajectory fexpr (x)
+       (cond ((oddp (length x)) (&error '|paramtrajectory:  initial points do not match.|))
+	     (t (do ((z (cddddr x) (cddr z)))
+		    ((null z))
+		    (paramtrajectory1 (car x) (cadr x) (eval (caddr x)) (eval (cadddr x))
+				      (eval (car z)) (eval (cadr z)))))))
+
+(defun equalscale ()
+       (prog (xside-ratio yside-ratio increase)
+	     (setq xside-ratio (//$ deltax-view-value deltay-view-value)
+		   yside-ratio (//$ deltay-view-value deltax-view-value))
+	     (cond ((< deltay-view deltax-view)
+		    (setq increase (//$ (-$ (*$ deltax-view yside-ratio) deltay-view) 2.0))
+		    (setq ymin-view (-$ ymin-view increase)
+			  ymax-view (+$ ymax-view increase)))
+		   (t (setq increase (//$ (-$ (*$ deltay-view xside-ratio) deltax-view) 2.0))
+		      (setq xmin-view (-$ xmin-view increase)
+			    xmax-view (+$ xmax-view increase))))
+	     (window xmin-view xmax-view ymin-view ymax-view)))
+ 

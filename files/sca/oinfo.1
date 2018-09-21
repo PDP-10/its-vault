@@ -1,0 +1,140 @@
+
+	Presently unfinished.
+	This file (nrat;info >) describes the new rational function
+package, RAT4.  It should be up-dated as needed.
+	The rational function package is designed to handle expressions
+composed largely of numbers ("constants"), variables, and the so-called
+"field operations":  addition, subtraction, multiplication, and
+division.  It can perform many basic operations on these expressions,
+including the four field operations already defined.  A complete listing
+of functions which can be called on these expressions may be obtained
+from the beginnings of the files on this directory, where they are
+defined.  Also, on these files should be stored information for cross-
+referencing purposes, and other useful items, so that subpackages
+designed to do specific tasks may be easily created.
+	The expressions are of the form
+		((MRAT SIMP avl-pointer) . rat).
+The "avl-pointer" is a pointer to the context (AVL tree) in which the
+expression is to be interpreted.  (An AVL tree is merely a kind of
+balanced binary tree - See Knuth 6.2.3.  This particular representation
+is neither important nor final.  In fact, we might be able to use some
+advice here.)  This context contains information such
+as whether the coefficients are integers, floating point numbers, or
+something else, whether polynomials are stored in factored form, what
+algebraic relations exist, etc.  Two expressions are "compatible" if
+their contexts are identical, i.e. their avl-pointers are eq.  Only
+compatible expressions should be combined by the built-in operations;
+however incompatible expressions may be first "coerced" to
+representations in a unique context.
+	The actual context information is stored in some representation
+of a partially ordered set, i.e. a tree.  The nodes correspond to
+"levels" - each level being a "structure", possibly with one or more
+"kernels" and "sub-levels" associated with it.  A structure may be
+INTEGER, POLYNOMIAL, TAYLOR SERIES, RATIONAL FUNCTION, ALGEBRAIC NUMBER,
+etc, for example.  A kernel corresponds to a variable, thus POLYNOMIAL
+IN X, TAYLOR SERIES IN Z, etc.  However, the only operations are
+addition, subtraction, multiplication, division, and possibly
+exponentiation (though this will no doubt be extended), so anything
+"non-rational" [i.e., EXP(X), LOG(1+Z), SIN(THETA), etc.] must be
+considered a new variable, or kernel.  Thus we can have a POLYNOMIAL IN
+EXP(X), etc.  Finally, sub-levels are recursively defined as any new
+level, less than the original structure in the partial ordering (i.e.,
+lower on the tree, or whatever), for instance coefficients (and possibly
+exponents) of polynomials and power series.
+	The actual form of each level is
+		(((levelnum . structurenum) kernel-list . info)
+		 . sub-levels)
+(more or less).  "Levelnum" is a fixnum indicating the level (greater
+than all levelnums of lower levels).  "Structurenum" is a fixnum
+indicating the structure.  "Kernel-list" is a list of the kernels (in
+general representation) in that level, possibly nil.  "Info" is random
+info needed by that structure (probably in the internal rational
+function package representation), i.e. actual algebraic relations,
+truncation levels, etc., again possibly nil.  "Sub-levels" is a
+collection of pointers to sub-levels (in some form yet to be decided
+upon).  A complete listing of possible structures may be found at the
+beginning of the appropriate files on this directory.
+	Back to the actual expressions.  A "rat" is an actual
+generalized rational function.  It is of the form
+		((levelnum . structurenum) . tail)
+or
+		((levelnum . structurenum) . (info . tail)).
+The car of the rat is eq to the caar of the level as defined above (and
+the cadr of the second form of the rat is eq to the cddar of the level).
+The tail of a rat is by far its longest part.  It contains all the real
+information, which the structurenum and info tell how to interpret.
+Thus if the structure is POLYNOMIAL, the tail might consist of a list of
+exponents (integers) and coefficients (recursively defined as rats at
+lower levels).
+	The fundamental hack is that only "essential" levels are
+referenced from inside a rat.  Thus if the levels are POLY IN X WITH
+COEFS [POLYS IN Y WITH COEFS [POLYS IN X WITH COEFS [INTEGERS]]]], then
+Y^2+1 is stored not as a poly in X of degree 0 with leading coefficient
+a poly in Y of degree 2 with leading coefficient a poly in Z of degree
+0, etc. ("dense" representation), but rather as simply a polynomial in Y
+with coefficients INTEGERS.  The "missing levels" are "implied", but not
+actually present (one can actually get one's hands on missing levels
+through the avl-pointer in the header, of course). Notice that levels
+with certain structures may be "essential", even though they are not
+actually present in an expression.  For instance, the polynomial X^2+Y,
+under a FULLY FACTORED structure, is self-contained as a polynomial in X
+and Y, but in order to store the information that it is fully factored,
+and that if it is combined with another polynomial, say by
+multiplication, then the answer should also be fully factored, it seems
+reasonable to store the FULLY FACTORED level with the actual rat.
+	When performing an operation on two expressions, say addition,
+the actual internal routine works somewhat as follows.  First the two
+expressions are checked to see if they are compatible.  If not, an error
+is signalled.  THERE IS NO AUTOMATIC COERCION, NOT EVEN "TRIVIAL"
+CHANGES.  If they are compatible, then the routine for addition of two
+"rats" is called.  It first compares the levelnums of the two arguments.
+If they are the same, then the appropriate addition routine (determined
+by the structurenums and a dispatch table) is called on the two tails,
+or (info . tail)'s.  If they are different, due to the presence of
+"implied" levels (or lack of presence), then the lower-level argument is
+coerced up to the other level (the implied level is made explicit,
+rather than implicit), and then they are added by the appropriate
+routine (actually there may be faster hacks used).
+	Following is a list of current goals, ideas, features, and
+differences from the old rational function package (RAT3):
+
+1)  There are no more gensyms, varlists, or genvars.  Thus two
+    compatible expressions will have eq representations for the same
+    levels (kernels in the old scheme), making them truly "compatible".
+2)  Properties are stored locally to expressions, rather than in global
+    flags or variables.  For instance, if a polynomial in X is created
+    with coefficients in {integers mod 3}, then those coefficients will
+    stay in that domain, no matter what the global flags (e.g., MODULUS)
+    are set to. Similarly, algebraic relations are local properties of
+    expressions, rather than global ones.  Basically, we now think of an
+    expression having associated to it its own local context, rather
+    than having a global "current context", which everything gets
+    coerced to.
+3)  The AVL trees will contain every kernel ever seen (ordered by GREAT,
+    or some user-defined ordering function).  Thus if you create
+    zillions of random kernels which will never be used again, call the
+    appropriate "garbage collection" routines (which are provided) to
+    clean up after yourself.
+4)  We are trying to keep things modular and easily extendable; please
+    try and cooperate by not getting too clewgy.  Additions and changes
+    should be well documented, for instance.  Also, it is important that
+    only specified functions for public consumption be used; please
+    don't munge.  Thank you.
+5)  There is a general philosophy that to do normal stuff, a user should
+    have things fly, and that the possibility of perhaps infrequently-
+    used complex structures should screw one in space and time only if
+    they are used.  This is accomplished by a) The JPG SPLITFILE scheme,
+    which cuts down on wasted space from unused code, and b) The RZ
+    DISPATCH scheme, where functions are called through dispatch tables,
+    which eliminates the need for order-n checks for n different
+    possible structures.  These schemes seem eminently applicable to
+    MACSYMA in general.
+6)  Expressions will no longer print nicely.  Therefore, when debugging,
+    or for some other reason printing on either the TTY or disk, one
+    should use the special printing routines provided.  Also, since we
+    do depend on large subexpressions being EQ, we have a special set
+    of routines for saving on disk.  (Or we will, when this gets
+    written.)
+7)  Questions, comments, and suggestions are more than welcome (they are
+    highly solicited).  Please address them to DRB@MC, RZ@MC, or BMT@MC.
+    Thank you.

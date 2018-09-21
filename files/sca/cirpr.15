@@ -1,0 +1,210 @@
+;-*-lisp-*-
+;***********************************************************************
+;***************** Circular Printing Stuff for MACLISP *****************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This is the Circular/Shared Printing Package for extending/debugging-in
+;MACLISP.
+
+
+(declare (eval (read)) (eval (read)))
+(or (memq 'mode (status features)) (load '((sca) nmode)))
+(setq *hard-assed* nil)
+
+(declare (mapex t)
+	 (genprefix scacrpr))
+
+(scachar)
+
+;This is stuff for printing and reading circular, hunk, and array stuff.
+;It uses a hash array, partly because marking cells [by clobbering] will not
+;work for pure stuff.
+
+;***Stuff of type RANDOM is dangerous - MAKNUM may not read
+
+;Watch out for FILE objects, whose TYPE[p] is ARRAY!
+
+;***Change cir-PRIN1 and cir-READ to use character stuff [#C, #L, #A, #H] ?
+
+(declare (special *hash-array* *cnum* *lnum* *anum* *hnum* *displace*
+		  ibase base *nopoint)
+	 (fixnum *cnum* *lnum* *anum* *hnum*)
+	 (*lexpr cir-prin1 cir-read mode-err))
+
+%(defun cir-prin1 nargs
+	(bind ((arg1 <- (cir-form (arg 1)))
+	       (arg2 (and (= nargs 2) (arg 2))))
+	      (prin1 arg1 arg2)))
+
+%(defun cir-read nargs (cir-unform (apply (function read) (listify nargs))))
+
+%(defun pretty-prin1 nargs
+	(bind ((arg1 <- (cir-form (arg 1)))
+	       (arg2 (and (= nargs 2) (arg 2))))
+	      (sprinter arg1)
+	      (if arg2 (prin1 arg1 arg2))))
+
+%(defun cir-form (e)
+	(bind ((*hash-array* <- (array nil t 250)))
+	      (cir-get-nums e)
+	      (cir-form1 e)))
+
+%(defun cir-get-nums (e)
+	(declare (fixnum n m i))
+	(prog (n m l)
+	 loop (if (and (atom e)
+		       (or (not (eq (typep e) 'array))
+			   (eq (car (arraydims e)) 'file)))
+		  (return nil))
+	      (setq n (maknum e)
+		    m (\ n 250)
+		    l (arraycall t *hash-array* m))
+	      (cond ((do ((l l (cdr l)))
+			 ((null l) t)
+			 (cond ((eq (caar l) e)
+				(rplacd (car l) t)
+				(return nil))))
+		     (store (arraycall t *hash-array* m)
+			    (cons (cons e nil) (arraycall t *hash-array* m)))
+	;can't use CASEQ because then a GO inside a DO:
+		     (cond ((eq (typep e) 'array)
+	;actually, LISTARRAY is inefficient [CONSes up a list]:
+			    (mapc (function cir-get-nums) (listarray e)))
+			   ((eq (typep e) 'list)
+			    (cir-get-nums (car e))
+			    (setq e (cdr e))
+			    (go loop))
+			   ((memq (typep e)
+				  '(hunk4 hunk8 hunk16 hunk32 hunk64 hunk128))
+			    (repeat i (hunksize e)
+				    (cir-get-nums (cxr i e)))))))))
+
+%(defun cir-form1 (e)
+	(declare (fixnum n m))
+	(if (and (atom e)
+		 (or (not (eq (typep e) 'array))
+		     (eq (car (arraydims e)) 'file))
+		 (or (not (eq (typep e) 'random))
+		     (eq (subr (maknum e)) '?)))
+	    e
+	    (bind ((n <- (maknum e)) l m)
+		  (setq m (\ n 250)
+			l (arraycall t *hash-array* m))
+		  (or (do ((l l (cdr l)))
+			  ((null l) nil)		;will never happen?
+			  (and (eq (caar l) e)
+			       (return (cond ((null (cdar l)) nil)
+					     ((eq (cdar l) 't)
+					      (rplacd (car l) 'done)
+					      `(define ,n ,(cir-form2 e)))
+					     (t
+					      `(previous ,n))))))
+		      (cir-form2 e)))))
+
+%(defun cir-form2 (e)
+	(declare (fixnum i n))
+	(caseq (typep e)
+	;can't happen ? :
+	       ((fixnum flonum bignum symbol string) e)
+	       (random
+		(bind ((name <- (subr (maknum e))))
+		      (cond ((eq (get name 'subr) e) `(subr ,name))
+			    ((eq (get name 'lsubr) e) `(lsubr ,name))
+			    (t e))))
+	       (array
+		`(array ,(arraydims e)
+			@(mapcar (function cir-form1) (listarray e))))
+	;The following prints hunks out CXR 0 last, like the losing lisp
+	;printer:
+	       ((hunk4 hunk8 hunk16 hunk32 hunk64 hunk128)
+	;Count up to get cir-FORM1's done in correct order:
+		`(hunk @(do ((i 1 (1+ i))
+			     (n (hunksize e))
+			     (l nil (cons (cir-form1 (cxr i e)) l)))
+			    ((= i n)
+			     (nreconc l (list (cir-form1 (cxr 0 e))))))))
+	;Is the effort needed to make the following iterative really worth it?:
+	       (list
+		(bind ((car-form <- (cir-form1 (car e))) cdr-form)
+		      (setq cdr-form (cir-form1 (cdr e)))
+		      (if (or (null cdr-form)
+			      (and (not (atom cdr-form))
+				   (not (memq (car cdr-form)
+					      '(define previous array
+						       hunk cons)))))
+			  `(@(and (memq car-form
+					'(define previous array
+						 hunk cons list))
+				  '(list))
+			    ,car-form
+			    @(if (and (not (atom cdr-form))
+				      (eq (car cdr-form) 'list))
+				 (cdr cdr-form)
+				 cdr-form))
+			  `(cons ,car-form ,cdr-form))))))
+
+%(defun cir-unform (e)
+	(bind ((*hash-array* <- (array nil t 250)))
+	      (cir-unform1 e)))
+
+%(defun cir-unform1 (e)
+	(declare (fixnum i n m))
+	(if (atom e) e
+	    (caseq (car e)
+		   (subr (or (get (cadr e) 'subr) (nsbr-err (cadr e))))
+		   (lsubr (or (get (cadr e) 'lsubr) (nsbr-err (cadr e))))
+		   (array
+	;Moses forgive me for using EVAL:
+		    (bind ((arr <- (eval `(array nil @(cadr e)))))
+			  (fillarray arr (mapcar (function cir-unform1)
+						 (cddr e)))))
+		   (hunk
+		    (apply 'hunk (mapcar (function cir-unform1) (cdr e))))
+		   (list (mapcar (function cir-unform1) (cdr e)))
+		   (cons (cons (cir-unform1 (cadr e)) (cir-unform1 (caddr e))))
+		   (previous
+		    (bind ((n <- (cadr e)))
+			  (do ((l (arraycall t *hash-array* (\ n 250))
+				  (cdr l)))
+			      ((null l) (error))	;isn't possible?
+			      (if (= (caar l) n) (return (cdar l))))))
+		   (define
+		    (bind ((n <- (cadr e)) (form <- (caddr e)) m frob)
+			  (setq frob
+				(if (atom form) form	;impossible?
+				    (caseq (car form)
+					   ((cons list) (cons nil nil))
+					   (hunk (makhunk (length (cdr form))))
+					   (array
+					    (eval
+					     `(array nil @(cadr form)))))))
+			  (setq m (\ n 250))
+			  (store (arraycall t *hash-array* m)
+				 (cons (cons n frob)
+				       (arraycall t *hash-array* m)))
+			  (and (not (atom form))	;impossible?
+			       (caseq (car form)
+
+  (cons
+   (rplaca frob (cir-unform1 (cadr form)))
+   (rplacd frob (cir-unform1 (caddr form))))
+  (list
+   (rplaca frob (cir-unform1 (cadr form)))
+   (rplacd frob (mapcar (function cir-unform1) (cddr form))))
+  (array (fillarray frob (mapcar (function cir-unform1) (cddr form))))
+  (hunk (do ((i 1 (1+ i))
+	     (form (cdr form) (cdr form)))
+	    ((null (cdr form)) (_ (cxr 0 frob) (cir-unform1 (car form))))
+	    (_ (cxr i frob) (cir-unform1 (car form)))))))
+
+			  frob)))))
+
+(scaunchar)
+
+(declare (unspecial *hash-array* *cnum* *lnum* *anum* *hnum* *displace*
+		    ibase base *nopoint)
+	 (notype *cnum* *lnum* *anum* *hnum*))

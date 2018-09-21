@@ -1,0 +1,259 @@
+;-*-lisp-*-
+;***********************************************************************
+;****************** General Printing Stuff for NMODE *******************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;This is the General Printing Package for supporting the New Mode Package.
+
+;It includes routines for printing and reading circular, hunk, and array
+;objects.  A hash array is used, partly because marking cells [by clobbering]
+;will not work for pure stuff.
+
+;Objects of type RANDOM and File-arrays lose.
+
+(declare (eval (read)) (eval (read)))
+(or (memq 'mode (status features)) (load '((sca) nmode)))
+(setq *hard-assed nil)
+
+(declare (mapex t)
+	 (genprefix scagpr))
+
+(sstatus feature genpr)
+
+(scachar)
+
+(declare (eval (read)))
+(setq base 8. ibase 8. *nopoint nil)
+
+;;;
+;;;		Format of S-EXPRESSIONs in a file:
+;;;
+
+;  First word for each expression:  size of EQ-TABLE
+;
+;  Rest of expression:
+;    Bit 4.9 - Read, but then ignore
+;    Bit 4.8 - Add to EQ-TABLE
+;    Bits 4.7 - 4.1:
+;	0 - Hash Elt, index RH
+;	1 - Fixnum
+;	2 - Flonum
+;	3 - Bignum, RH = # of words to follow, 3.1 = sign
+;	4 - Symbol, RH = [# of chars]/5,
+;		3.1 - 3.2:  0 normal, 1 no-intern, 2 SUBR, 3 LSUBR
+;	5 - List, RH = length [no clobbering]
+;	6 - LTTF, RH = # elts tacked on [no clobbering]
+;	7 - Hunk, RH = hunksize [use for clobbering CONS]
+;	8 - Array [READ arraydims, elts]
+
+
+;Local macros:
+
+(defsmac ignore? (x) `(not (= (logand ,(lsh 1 43) ,x) 0)))
+
+(defsmac add-eq? (x) `(not (= (logand ,(lsh 1 42) ,x) 0)))
+
+(defsmac op (x) `(logand (lsh ,x -33) 77))
+
+(defsmac get-arg (x) `(logand (lsh ,x -22) 777))
+
+(defsmac rh (x) `(logand 777777 ,x))
+
+(declare (special *file* *eq-table* *eq-table-index*)
+	 (fixnum *eq-table-index*)
+	 (*lexpr mode-err))
+
+(defun read-sexp (*file*)				;FILEPOS already set
+       (declare (fixnum n))
+       (bind ((n <- (in *file*)) *eq-table* (*eq-table-index* <- 0))
+	     (if (> n 0) (setq *eq-table* (*array nil t n)))
+	     (rs1)))
+
+(defun rs1 ()
+       (declare (fixnum input op arg rh i j p))
+       (bind ((input <- (in *file*)) op arg rh out)
+	     (setq op (op input) arg (get-arg input) rh (rh input)
+		   out
+		   (caseq op
+			  (0 (arraycall t *eq-table* rh))
+			  (1 (in *file*))
+			  (2 (fsc (in *file*) 0))
+			  (3 
+			   (do ((l nil (cons (in *file*) l))
+				(i rh (1- i)))
+			       ((= i 0) (bncons (nreverse l) (> arg 0)))))
+			  (4
+			   (do ((i rh (1- i)) (l nil))
+			       ((= i 0)
+				(setq l (nreverse l))
+				(caseq arg
+				       (0 (implode l))
+				       (1 (maknam l))
+		;change to work for uncompiled code [use dummy SUBRs]:
+				       (2 (or (get (implode l) 'subr)
+					      (nsbr-err (implode l))))
+				       (3 (or (get (implode l) 'lsubr)
+					      (nsbr-err (implode l))))
+				       (t (int-err))))
+			       (do ((j 5 (1- j))
+				    (p (in *file*) (// p 200)))
+				   ((or (= j 0) (= p 0)))
+				   (lpush (\ p 200) l))))
+			  (5 (nreverse (rsrev rh)))
+			  (6 (nreconc (rsrev rh) (rs1)))
+			  (7 (makhunk rh))
+			  (8. (eval `(array nil @(rs1))))))
+	     (cond ((add-eq? input)
+		    (store (arraycall t *eq-table* *eq-table-index*) out)
+		    (setq *eq-table-index* (1+ *eq-table-index*))))
+	     (caseq op
+		    (7
+		     (do i 1 (1+ i) (= i rh) (_ (cxr i out) (rs1)))
+		     (rplacd out (rs1)))
+		    (8.
+		     (fillarray
+		      out
+		      (nreverse (rsrev (apply (function *)
+					      (cdr (arraydims out))))))))
+	     (if (ignore? input) (rs1) out)))
+
+(defun rsrev (n)
+       (declare (fixnum n))
+       (do ((n n (1- n))
+	    (l nil (cons (rs1) l)))
+	   ((= n 0) l)))
+
+(declare (unspecial *file* *eq-table* *eq-table-index*)
+	 (notype *eq-table-index*))
+
+
+(declare (special *hash-array* *eq-table-index* *file*)
+	 (fixnum *eq-table-index*))
+
+(defsmac hash-size () 250)
+
+(defun print-sexp (e *file*)				;FILEPOS is already set
+       (bind ((*hash-array* <- (*array nil t (hash-size)))
+	      (*eq-table-index* <- 0))
+	     (gen-get-nums e)
+	     (out *file* *eq-table-index*)
+	     (setq *eq-table-index* 0)
+	     (ps1 e)
+	     (force-output *file*)))			;since buffered
+
+(defun gen-get-nums (e)
+       (declare (fixnum n m i))
+       (prog (n m p)
+	loop (setq n (maknum e)
+		   m (\ n (hash-size))
+		   p (assq e (arraycall t *hash-array* m)))
+	     (cond (p
+		    (if (null (cdr p))
+			(setq *eq-table-index* (1+ *eq-table-index*)))
+		    (rplacd p t))
+		   (t
+		    (store (arraycall t *hash-array* m)
+			   (cons (cons e nil) (arraycall t *hash-array* m)))
+	;can't use CASEQ because then a GO inside a DO:
+		    (cond ((or (and (eq (typep e) 'random)
+				    (eq (subr (maknum e)) '?))
+			       (and (eq (typep e) 'array)
+				    (eq (car (arraydims e)) 'file)))
+			   (mode-err '|PRINT-SEXP error - random object:| e))
+			  ((eq (typep e) 'array)
+	;actually, LISTARRAY is inefficient [CONSes up a list]:
+			   (mapc (function gen-get-nums) (listarray e)))
+			  ((eq (typep e) 'list)
+			   (gen-get-nums (car e))
+			   (setq e (cdr e))
+			   (or (null e) (go loop)))
+			  ((hunkp e)
+			   (do i 1 (1+ i) (= i (hunksize e))
+			       (gen-get-nums (cxr i e)))
+			   (gen-get-nums (cdr e))))))))
+
+;E can't be string, random [other than [L]SUBR-POINTER], or file array [but
+;checks anyway]:
+(defun ps1 (e)
+       (declare (fixnum add-eq op arg rh i n))
+       (bind ((type <- (typep e))  ;must be done first because
+				   ;of QNCOMPLR bug [fixed?]
+	      (p <- (assq e (arraycall t *hash-array*
+				       (\ (maknum e) (hash-size)))))
+	      (add-eq <- 0) (op <- 0) (arg <- 0) (rh <- 0)
+	      (num-data <- nil) (frob-data <- nil))
+	     (setq add-eq (if (eq (cdr p) t) (lsh 1 42) 0)
+		   op (cond ((numberp (cdr p)) (setq rh (cdr p)) 0)
+			    (t
+
+  (cond ((cdr p)
+	 (rplacd p *eq-table-index*)
+	 (setq *eq-table-index* (1+ *eq-table-index*))))
+  (if (eq type 'random)
+      (bind ((name <- (subr (maknum e))))
+	    (cond ((eq (get name 'subr) e) (setq arg (lsh 2 22)))
+		  ((eq (get name 'lsubr) e) (setq arg (lsh 3 22))))
+	    (or (= arg 0) (setq e name type 'symbol))))
+  (cond ((eq type 'fixnum) (lpush e num-data) 1)
+	((eq type 'flonum) (lpush (lsh e 0) num-data) 2)
+	((eq type 'bignum)
+	 (if (minusp e) (setq arg (lsh 1 22)))
+	 (setq rh (length (cdr e)) num-data (cdr e)) ;bind CDR to T interpreted
+	 3)
+	((eq type 'symbol)
+	 (do ((i 0 (1+ i))
+	      (l (exploden e))
+	      (out 0 0))
+	     ((null l) (setq rh i num-data (nreverse num-data)))
+	     (do ((n 0 (+ n 7)))
+		 ((or (null l) (= n 43)) (lpush out num-data))
+		 (setq out (logor out (lsh (lpop l) n)))))
+	 4)
+
+	((eq type 'list)
+	 (do ((n 0 (1+ n))
+	      (exp e (cdr exp)))
+	     ((null exp) (setq rh n frob-data e) 5)
+	     (if (or (not (eq (typep exp) 'list))
+		     (cdr (assq exp (arraycall t *hash-array*
+					       (\ (maknum exp) (hash-size))))))
+		 (return (cond ((= n 0)
+				(setq rh 2
+				      frob-data (list (car e) (cdr e)))
+				7)
+			       (t
+				(setq rh n
+				      frob-data (nreconc frob-data (list exp)))
+				6)))
+		 (lpush (car exp) frob-data))))
+	((hunkp e)
+	 (setq rh (hunksize e))
+     ;CXR 0 printed last, like losing LISP:
+	 (do ((n 1 (1+ n))
+	      (l nil (cons (cxr n e) l)))
+	     ((= n rh) (setq frob-data (nreconc l (ncons (cdr e))))))
+	 7)
+	((and (eq type 'array)
+	      (not (eq (car (arraydims e)) 'file)))
+	 (setq frob-data (cons (arraydims e) (listarray e)))
+	 8.)
+	(t (mode-err '|PRINT-SEXP error - random data:| e))))))
+
+	     (out *file* (logor add-eq (lsh op 33) arg rh))
+	     (mapc (fn (n) (out *file* n)) num-data)
+	     (mapc (function ps1) frob-data)))
+
+
+(defun open-file (f mode)
+       (open f (cons mode '(block fixnum))))
+
+(defun nsbr-err (n) (mode-err '|READ-SEXP error:| n '|not an [L]SUBR|))
+
+(declare (unspecial *hash-array* *eq-table-index* *file*)
+	 (notype *eq-table-index*))
+
+(scaunchar)

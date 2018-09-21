@@ -1,0 +1,229 @@
+;-*-lisp-*-
+;***********************************************************************
+;************** Finite Ordered Set [SET] Routines for SCA **************
+;****** (c) copyright 1978 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+;This file contains the routines for manipulating finite ordersd sets for SCA.
+;They are contained in the mode SET.
+
+;This file is heavily commented because it is being used as a prototype for
+;introducing people to the new mode package.
+
+(declare (eval (read)))
+(load '((dsk sca) nmode))
+
+(declare (@define defsmac |MACRO|)
+	 (@define defmode |MODE|))
+
+(scachar)	;This sets up some special character macros ["`", "[", etc.],
+		;and does a (setq base 10. ibase 10. *nopoint t).
+
+(declare (macros t)
+	 (mapex t)
+	 (genprefix scaset))
+
+(comment subtitle BOOLEAN Mode)
+
+;The following is the definition of the BOOLEAN mode.  In the future, there
+;will probably be one global mode called *BOOLEAN*, so that people won't have
+;to "re-create" the mode [build the necessary trees, etc.] every time they use
+;it.
+(defmode boolean
+	 (arg ())	;This means that there are no "argument" data-types or
+			;functions.  In the language of CLU, we have an
+			;"un-parameterized" cluster.
+	 (new-type boolean)	;A DATA-TYPE is created with name BOOLEAN.
+
+;The next clause specifies the "OUTPUT" [or EXPFUN, as MRG would say] of the
+;mode BOOLEAN.  Notice the difference between the MODE of BOOLEAN and the
+;DATA-TYPE named BOOLEAN.  The MODE is a "function" which takes some
+;data-types and mappings between them as arguments, and returns some
+;[different] data-types and mappings between them as a value, while the
+;DATA-TYPE is simply a passive single data-type.
+
+	 (ret (boolean)		;The MODE of BOOLEAN returns a single DATA-TYPE
+				;called BOOLEAN,
+	      (boolean (= boolean boolean)	;a function "=" which takes two
+			;elements of the data-type BOOLEAN as arguments, and
+			;returns a third element of the data-type BOOLEAN
+			;[hereafter we will simply say "a function '=' of two
+			;BOOLEANs which returns a BOOLEAN", keeping the
+			;distinction between modes and data-types in mind],
+		       (true)	;a function TRUE of no arguments which returns
+				;a BOOLEAN,
+		       (false)	;a function FALSE of no arguments which returns
+				;a BOOLEAN,
+		       (not boolean)	;a function NOT of one BOOLEAN which
+				;returns a BOOLEAN,
+		       (and boolean boolean) (or boolean boolean)))	;etc.
+	 (tdeclare (boolean x y))	;declares X and Y to be variables which
+			;take on values in the DATA-TYPE of BOOLEAN.
+	 (defun (= boolean)	;define the function = which returns a BOOLEAN
+		(x y)		;it takes two args, which a BOOLEANs
+		(eq x y))	;body of function definition
+	 (defun (true boolean) () t)		;similar
+	 (defun (false boolean) () nil)
+	 (defun (not boolean) (x) (not x))
+	 (defun (and boolean) (x y) (and x y))
+	 (defun (or boolean) (x y) (or x y)))
+
+;The following are two macros which may go away or be improved.  _ stands for
+;assignment [in this case, SETQ], TTF stands for Tack-To-Front [in this case,
+;CONS], DEFSMAC is a simple macro definer, (PROG1 ...) is like (PROG2 NIL ...),
+;FIRST is CAR here, REST is CDR here, and "`" is like "'", except that items
+;preceded by a "," are not quoted, and items preceded by an "@" are not quoted,
+;and are APPENDed into the list.  [Don't worry too much about these two
+;definitions - they just push and pop items on and off of lists.]
+
+(defsmac push (item stack) `(_ ,stack [ttf ,item ,stack]))
+(defsmac pop (stack) `(prog1 [first ,stack] (_ ,stack [rest ,stack])))
+
+(comment subtitle SET Mode)
+
+(defmode set	;This is the definition of the mode SET, which is used for
+		;handling finite sets over an ordered class.  The sets are
+		;stored as ordered lists without repetitions.
+	 (arg-sub (boolean ())	;***This says that a BOOLEAN mode is passed as
+		  (boolean)	;"argument" to the SET mode.  If BOOLEAN were a
+		  = true false not and or)	;global mode this would be
+				;unnecessary.
+	 (arg (elt)	;SET also takes a data-type of ELT as an argument [the
+			;data-type for elements of the sets],
+	      (boolean (= elt elt)	;a function "=" of two ELTs, which
+					;returns a boolean,
+		       (< elt elt)))	;and a function "<" of two ELTs, which
+					;returns a boolean.
+	 (new-type list)	;A data-type for an [unordered] list of elts is
+				;created.
+	 (new-type rset)	;A data-type for a reverse-set [list ordered
+				;backwards] is created.
+	 (new-type set)		;The data-type for SETs is created.
+
+	 (ret-mode	;The mode SET returns:
+	  (set)		;the data-type SET,
+	  (set (intersect set set)	;a function INTERSECT of two SETs that
+					;returns a SET,
+	       (union set set) (complement set set) (difference set set)
+	       (symmdifference set set))	;etc.,
+	  (boolean (= set set)	;a function "=" of two SETs which returns a
+				;BOOLEAN,
+		   (subset? set set) (disjoint? set set)))	;etc.
+	 (tdeclare (set s s1 s2)	;DECLARE S, S1, S2 to be SETs,
+		   (list l)		;L to be a LIST, 
+		   (rset rout) (elt elt elt1 elt2))	;etc.
+
+;***subset, sublist must be implemented:
+;(DEFUN SUBLIST (A F)
+;   (DO ((A A (CDR A))
+;        (X))
+;       ((NULL A) (NREVERSE X))
+;       (COND ((FUNCALL F (CAR A))
+;              (SETQ X (CONS (CAR A) X))))))
+
+;***SETP, CANONLT, ATOMLT have been flushed.
+
+;***kludges since stuff isn't implemented yet:
+ (defun (empty-rset rset) () nil)		;Normally these functions would
+ (defun (empty? boolean) (s) (null s))		;be created by sub-modes, using
+ (defun (nreverse set) (rout) (nreverse rout))	;the mode LIST, but LIST isn't
+ (defun (first elt) (s) (car s))		;currently implemented.
+ (defun (first elt) (rout) (car rout)) 
+ (defun (rest set) (s) (cdr s))			;Remember the syntax:
+ (defun (rest rset) (rout) (cdr rout))		;A FCN named REST which returns
+						;an RSET, given an RSET [ROUT]
+						;as an argument.
+ (defun (nreconc set) (rout s) (nreconc rout s))
+ (defun (empty? boolean) (l) (null l))
+ (defun (empty-set set) () nil)
+;***sorted-rset shouldn't work because < a fcn of three args [?] :
+ (defun (sorted-rset rset) (l) (sort l (fn (elt1 elt2) [< elt2 elt1])))
+		;[< elt2 elt1] will expand into something like:
+		;(SUBRCALL NIL (CAR (CXR 2 *TFCN-TREE*)) ELT1 ELT2
+		;	       (CDR (CXR 2 *TFCN-TREE*)))
+		;*TFCN-TREE* is actually a second argument to SORTED-RSET, put
+		;in by the mode package.  Apparently the compiler makes this
+		;variable special, which causes SORT to win. [??]
+ (defun (copy1 list) (l) (lcopy1 l))	;LCOPY1 = GOOD OLD (APPEND L NIL)
+ (defun (singleton-set set) (elt) (list elt))
+ (defun (ttf set) (elt s) (cons elt s))
+ (defun (ttf rset) (elt rout) (cons elt rout))
+;*** use = for LISTs for = for SETs [ignore this comment, students]:
+ (defun (= boolean) (s1 s2)		;A real function at last!!  Notice
+	(do ((s1 s1 [rest s1])		;that functions defined inside of
+	     (s2 s2 [rest s2]))		;DEFMODEs are called using "[" and "]".
+	    ([empty? s1] [empty? s2])
+	    (if [or [empty? s2] [not [= [first s1] [first s2]]]]
+		(return [false]))))
+
+;Actually, all the functions that follow should be easily understandable.  Just
+;remember that _ is like SETQ [at least in the cases here], and you should be
+;o.k.  For a look at what the forms in this file expand into, when all the
+;macros are eliminated, see SCA;SET EXPAND.  Please send me any comments,
+;questions, or suggestions.  Thank you very much.  - DRB@MC
+
+ (defun (setify set) (l)
+	(if [empty? l] [empty-set]
+	    (bind ((rout <- [sorted-rset [copy1 l]]) s)	;BIND is a macrr which
+				;is a lot like LAMBDA, except that the
+				;arguments appear at the beginning of the form.
+				;This form should be clear enough, I hope.
+		  (_ s [singleton-set (pop rout)])
+		  (mapc (fn (elt) (if (not [= elt [first s]]) (push elt s)))
+			rout)
+		  s)))
+
+ (defun (subset? boolean) (s1 s2)
+	(do ()
+	    ([empty? s1] [true])
+	    (cond ([empty? s2] (return [false]))
+		  ([< [first s1] [first s2]] (return [false]))
+		  ([< [first s2] [first s1]] (_ s2 [rest s2]))
+		  (t (_ s1 [rest s1] s2 [rest s2])))))
+
+ (defun (disjoint? boolean) (s1 s2)
+	(do ()
+	    ((or [empty? s1] [empty? s2]) [true])
+	    (cond ([< [first s1] [first s2]] (_ s1 [rest s1]))
+		  ([< [first s2] [first s1]] (_ s2 [rest s2]))
+		  (t (return [false])))))
+
+ (defun (intersect set) (s1 s2)
+	(do ((rout [empty-rset]))
+	    ([or [empty? s1] [empty? s2]] [nreverse rout])
+	    (cond ([= [first s1] [first s2]]
+		   (push (pop s1) rout) (_ s2 [rest s2]))
+		  ([< [first s1] [first s2]] (_ s1 [rest s1]))
+		  (t (_ s2 [rest s2])))))
+
+ (defun (union set) (s1 s2)
+	(do ((rout [empty-rset]))
+	    ([empty? s1] [nreconc rout s2])
+	    (cond ([empty? s2] (return [nreconc rout s1]))
+		  ([< [first s1] [first s2]] (push (pop s1) rout))
+		  ([< [first s2] [first s1]] (push (pop s2) rout))
+		  (t (push (pop s1) rout) (_ s2 [rest s2])))))
+
+ (defun (complement set) (s1 s2)
+	(do ((rout [empty-rset]))
+	    ([empty? s1] [nreconc rout s2])
+	    (cond ([empty? s2] (return [nreverse rout]))
+		  ([< [first s1] [first s2]] (_ s1 [rest s1]))
+		  ([< [first s2] [first s1]] (push (pop s2) rout))
+		  (t (_ s1 [rest s1] s2 [rest s2])))))
+
+ (defun (difference set) (s1 s2) [complement s2 s1])
+
+ (defun (symmdifference set) (s1 s2)
+	(do ((rout [empty-rset]))
+	    ([empty? s1] [nreconc rout s2])
+	    (cond ([empty? s2] (return [nreconc rout s1]))
+		  ([< [first s1] [first s2]] (push (pop s1) rout))
+		  ([< [first s2] [first s1]] (push (pop s2) rout))
+		  (t (_ s1 [rest s1] s2 [rest s2])))))
+
+ )
+
+(scaunchar)

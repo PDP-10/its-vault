@@ -1,0 +1,131 @@
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;      TVDRVR ---   GRAPHICS PACKAGE FOR PDP11 TV TERMINALS.		      ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+First some general information about the TV Screen Memory:
+
+;; TV'S HAVE 455. HORIZONTAL LINES OF 576.  DOTS EACH (262080.  BITS OUT 'O 262144). 
+;; [However, the last (bottom-most line) is not visible on the screen].
+
+SO:	Coordinates will be relative to lower left-hand corner. 
+		X runs from 0 (left) to 575. (right) and
+		Y runs from 0 (bottom) to 454. (top).
+
+To get the package of TV Screen graphics functions, do (FASLOAD TVDRVR FASL DSK BKPH)
+
+
+(TVINIT)	Sets up the page-table entries and creates the LISP
+		array called TV. This is executed automatically on loading.
+
+;; [THE ARRAY "TV" IS REALLY YOUR TV BUFFER! DOING (STORE (TV <LINE> <COLUMN>) <BITS>)
+;; ACTUALLY CAUSES THE BITS TO APPEAR ON YOUR SCREEN.  THINGS TO REMEMBER: KEEP THE
+;; LAST 4 LOW ORDER BITS CLEAR, AND COORDINATES RUN TOP TO BOTTOM (if you use this
+;; array directly that is) AND  LEFT TO RIGHT].
+
+;; It is however MUCH more convenient to use the following functions:
+
+
+(POINT X Y)	Write a dot at the point (X, Y).
+		[Returns T if point specified lies on the screen, returns
+		NIL if the coordinates specify a point off the screen].
+
+(TESTP X Y)	Test if dot at (X, Y) on the screen is on. Returns T if so.
+		[The function returns NIL if the coordinates specify a
+		point off the screen]. 
+		
+(LINE X1 Y1 X2 Y2)	Draw line from (X1, Y1) to (X2, Y2).
+		[Horizontal lines are faster than vertical lines, which
+		in turn are faster than oblique lines.]
+
+(CONNECT X Y)	If pen is down, draw line from previous point to (X Y).
+		If pen is up, put it down and write a point at (X, Y).
+		Previous point may be remembered as result of using
+		CONNECT, LINE or POINT. Pen is normally down.
+
+(PENUP)		Pick pen up. Sets flag, so next CONNECT writes a point,
+		not a line.
+
+(CIRCLE X Y R) 	Draw a circle of radius R, centered on point (X, Y).
+
+NOTE: 	A special variable, MODFLG controls mode of access to the TV Screen.
+
+	If MODLFG = 1. writing is done in IOR mode -- turn dots on.
+	If MODFLG = 0. writing is done in XOR mode -- complement dots.
+	If MODFLG = -1. writing is done in ANDC mode -- turn dots off.
+
+	Setting MODFLG = 0, that is updating the screen in XOR-mode,
+	is very useful for superimposing cursors on existing information,
+	since the cursor can be removed simple by drawing it a second
+	time in the same place. The original information will then
+	re-appear, and the cursor can be drawn in a new position.
+
+NOTE:	A special variable, TV-DISABLE prevents writing on TV Screen if non-NIL.
+	This variable is initially NIL if the user is at a TV console,
+	and T otherwise. [In this mode the current point is still remembered
+	for use by CONNECT -- only the actually output is disabled].
+
+;;; The following functions manipulate the TV channel memory as a whole:
+
+(CLEAR)		Rapidly clears the screen.
+
+(COMPLEM)	Rapidly complements the bits on the screen.
+		[This actually modifies the contents of your TV channel
+		memory, unlike the next function, TVFLIP.]
+
+(TVFLIP <ARG>)	If the argument is non-NIL, this will set the bit in the
+		TV memory that causes zeros to appear white. If the
+		argument is NIL, this causes ones to appear as white.
+		With no argument the state of the bit is complemented
+		[This is like typing ESCAPE C.]
+
+(TVSCROLL N)	Sets the last word in TV memory so that your TV display
+		monitor sees the data in your channel memory shifted by
+		N lines, This scrolling effect is not very useful.
+
+(TVWRITE)	Calls BKPH; TS TVWRITE to record screen as binary image file.
+		Use BKPH; TS TVREAD to read it back onto the TV Screen.
+
+
+;;; THE FOLLOWING FUNCTIONS ARE FOR MAKING PSEUDO-GREY DISPLAYS AND ARE
+;;; NOT AFFECTED BY THE SETTING OF MODFLG -- THEY ALWAYS USE IOR MODE.
+
+(GREY9 X Y N)	Make a 3 x 3 block for dithered pseudo-grey intensity levels.
+		The block is placed at (X, Y) and N/2 of its dots
+		are turned on. [N is incremented first for those dots for
+		which X + Y is odd.]
+
+(GREY12 X Y N)	Make a 12 element cross for hexagonal tesselation
+		pseudo-grey intensity levels. N/2 of the dots are
+		turned on and the cross is placed at (X, Y).
+		[N is incremented first for those dots for which
+		X + Y is odd.]
+
+(GREY16 X Y N)	Make a 4 x 4 block for half-tone dot intensity levels.
+		The block is placed at (X, Y), and N/2 of its dots
+		are turned on. [N is incremented first for those dots
+		for which X/4 + Y/4 is odd.]
+
+Further esoterica:
+
+;; [MEMORY IS ORGANIZED AS 9 64.-BIT WORDS (EQUIV TO 18.  32.-BIT WORDS) PER LINE. 
+;; THE PDP10 ACCESSES HALF OF SUCH A WORD (OR TWO 16.-BIT CHUNKS) AT ONCE.  THESE 32. 
+;; BITS ARE PACKED LEFT JUSTIFIED INTO THE 36.  BITS. THE LAST FOUR BITS MUST BE ZERO.]
+;; [The last (bottom-most) line can be written into and read from, but is not
+;; mapped out onto the video and does not appear on the screen].
+
+;; [CHARACTERS ARE 10. LINES HIGH AND 5 POINTS WIDE (RIGHT AND TOP JUSTIFIED).
+;; LINE-PITCH IS 12.  TV-LINES, CHARACTER-PITCH IS 6 TV-POINTS.
+;; THATS 96.  CHRS/LINE EXACTLY AND 37.  AND 11./12.  LINES (TOTAL = 3552.  CHRS).]
+
+;; [TVEND (OR THE LAST WORD OF THE TV-MEMORY) HAS TWO FUNCTIONS:
+;; BIT 200000 WHEN ON, COMPLEMENTS THE BLACK/WHITE OUTPUT.
+;; BITS 177760 ARE A WORD-COUNTER FOR WHICH 64.-BIT WORD THE FRAME IS TO START ON.
+;; FOR WINNAGE THE NUMBER OUGHT TO BE A MULTIPLE OF 9.]
+
+
+
+
+
+

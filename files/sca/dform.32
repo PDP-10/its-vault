@@ -1,0 +1,137 @@
+;-*-stl-*-
+;***********************************************************************
+;************* Differential Form [DFORM] Routines for SCA **************
+;****** (c) copyright 1977 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((dsk stl) base)))
+
+(global-open ((sca) dform))
+
+(global-read ((sca) upoly))
+
+(stlchar)
+
+(declare (mapex t) (genprefix scadform))
+
+(defmode diff-form
+	 (arg (ordered-set fcn-coef)
+	      (ring1 fcn-coef)
+	      (partial-diff-ring fcn-coef basis-elt)
+	      (ordered-set basis-elt))
+	 (mode set (elt basis-elt set ext-monom rset rext-monom) (prin1 nil))
+	 (arg (fcn (ext-monom lbasis-elts)))
+	 (struct signed-ext-monom (sign *compare*) ext-monom)
+	 (mode signed-grading
+	       (coef fcn-coef weight ext-monom signed-weight signed-ext-monom
+		gr p-form rgr rp-form term monom)
+	       ((signed-weight (* weight weight)) wedge weight ext-monom
+		same-weight? same-ext-monom? lead-weight lead-ext-monom
+		term monom lead-term lead-monom ass-term ass-monom gr p-form))
+	 (mode fixnum (fixnum weight) (fixnum weight))
+	 (mode graded-ring		;use UPOLY for efficiency instead?
+	       (coef p-form gr diff-form rgr rdiff-form term homog-term)
+	       (coef p-form lead-coef lead-p-form (gr (* gr gr)) wedge
+		prin1 nil))
+	 (ret-check (module fcn-coef diff-form)
+		    (fcns (diff-form (wedge diff-form diff-form)
+				     (ext-deriv diff-form))))
+	 (tdeclare (fcn-coef f f1) (diff-form w) (basis-elt b) (monom m)
+		   (homog-term h) (p-form pf pf1) (rp-form rpf)
+		   (ext-monom xm xm1 xm2) (*compare* sign sign1))
+
+
+;***compiler bugs on (PRINC 0) and (PRINC 1) in following 2 fcns:
+ (defun prin1 (w) any
+	(cond ([0? w] (princ 0))
+	      ([empty? [rest w]] [prin1 [lead-p-form w]])
+	      ([true]
+	       (princ '|(|)
+	       (mmap (h w) () nil
+		     [prin1 [p-form h]]
+		     (if [not [empty? [rest w]]] (princ '| + |)))
+	       (princ '|)|))))
+
+ (defun prin1 (xm) any
+	(cond ([empty? xm] (princ 1))
+	      ([true]
+	       (or [empty? [rest xm]] (princ '|(|))
+	       (mmap (b xm) () nil
+		     (princ '|d|)	;***a hack - make vars differentials?
+		     [prin1 b]
+		     (if [not [empty? [rest xm]]] (princ '| ^ |)))
+	       (or [empty? [rest xm]] (princ '|)|)))))
+
+ (constant 1 ext-monom [empty])
+
+ (defun 1? (xm) *boolean* [empty? xm])
+
+;At [almost] all times, the answer in the following equals
+;[* SIGN [^ SIGN1 [SIZE XM1]] [NRECONC SEG1 [WEDGE XM1 XM2]]]:
+ (defun wedge (xm1 xm2) signed-ext-monom
+	(tdeclare (rext-monom seg1))
+	(do ((sign [>]) (sign1 [>]) (seg1 [empty]))
+	    ([empty? xm1] [signed-ext-monom sign [nreconc seg1 xm2]])
+	    (cond ([empty? xm2]
+		   (return
+		    [signed-ext-monom (if (or [>? sign1] [even? [size xm1]])
+					  sign [switch sign])
+				      [nreconc seg1 xm1]]))
+		  ([= [first xm1] [first xm2]]
+		   (return [signed-ext-monom [=] [1]]))
+		  ([< [first xm1] [first xm2]]
+		   (if [<? sign1] (_ sign [switch sign]))
+		   (push (pop xm1) seg1))
+		  ([true] (_ sign1 [switch sign1]) (push (pop xm2) seg1)))))
+
+ (defun * (f w) diff-form
+	[hom (funarg (bfcn (p-form (* fcn-coef p-form))) f *) w])
+
+ (defun wedge (b xm) signed-ext-monom
+	(tdeclare (rext-monom seg1))
+	(do ((sign [>] [switch sign])
+	     (seg1 [empty] [ttf [first xm] seg1])
+	     (xm xm [rest xm]))
+	    ((or [empty? xm] [< b [first xm]])
+	     [signed-ext-monom sign [nreconc seg1 [ttf b xm]]])
+	    (if [= b [first xm]] (return [signed-ext-monom [=] [1]]))))
+
+;Following so named because MED spells the Russian word for honey, as in
+;mead:
+ (defun monom-ext-deriv (m) p-form
+	(tdeclare (ext-monom lbasis-elts) (rext-monom seg1))
+	(mmap (b lbasis-elts [lbasis-elts])
+	      ((sign [>])
+	       (seg1 [empty])
+	       (f [coef m])
+	       (xm [ext-monom m])
+	       (rpf [empty]))
+	      [nreverse rpf]
+	      (if (or [empty? xm] [not [= [first xm] b]])
+		  (bind ((f1 <- [part-deriv f b]))
+			(if [not [0? f1]]
+			    (push [monom [repend seg1 [ttf b xm]]
+					 (if [>? sign] f1 [- f1])]
+				  rpf)))
+		  (_ sign [switch sign]
+		     seg1 [ttf b seg1]
+		     xm [rest xm]))))
+
+ (defun ext-deriv (w) diff-form
+	[mapcan (nfn (h) diff-form
+		     (bind ((pf <- [ext-deriv [p-form h]]))
+			   (if [0? pf] [empty]
+			       [single [term [1+ [weight h]] pf]])))
+		w])
+
+ (defun ext-deriv (pf) p-form
+	(mmap (m pf) ((pf1 [0] [+ [monom-ext-deriv m] pf1])) pf1)))
+
+
+(stlunchar)
+
+(global-close)

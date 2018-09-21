@@ -1,0 +1,117 @@
+;;; -*-LISP-*-
+
+(setq *oldbase* base
+      *oldibase* ibase 
+      base 8.
+      ibase 8.)
+
+(defun send-string (arg-lst)
+       (mapc '(lambda (code) (+tyo code graphic-output))
+	     arg-lst))
+
+(defun set-position (xin yin)
+       ;; perform strange translations on coords. low order bits in x1, y1,
+       ;; high order in x2, y2.
+       (let ((x (* 2 xin)) (y (* 2 yin)))
+	    (let ((x1 (+ (lsh (boole 1 (abs x) 37) 1)
+			 (cond ((minusp x) 1) (t 0))
+			 100))
+		  (x2 (+ (boole 1 (lsh (abs x) -5) 37)
+			 100))
+		  (y1 (+ (lsh (boole 1 (abs y) 37) 1)
+			 (cond ((minusp y) 1) (t 0))
+			 100))
+		  (y2 (+ (boole 1 (lsh (abs y) -5) 37)
+			 100)))
+		 (send-string `(235 ,x1 ,x2 ,y1 ,y2)))))
+
+(defun draw-vector (xin yin)
+       ;; perform strange translations on coords. low order bits in x1, y1,
+       ;; high order in x2, y2.
+       (let ((x (* 2 xin)) (y (* 2 yin)))
+	    (let ((x1 (+ (lsh (boole 1 (abs x) 37) 1)
+			 (cond ((minusp x) 1) (t 0))
+			 100))
+		  (x2 (+ (boole 1 (lsh (abs x) -5) 37)
+			 100))
+		  (y1 (+ (lsh (boole 1 (abs y) 37) 1)
+			 (cond ((minusp y) 1) (t 0))
+			 100))
+		  (y2 (+ (boole 1 (lsh (abs y) -5) 37)
+			 100)))
+		 (send-string `(236 ,x1 ,x2 ,y1 ,y2)))))
+
+(defun setup-graphics ()
+       (setq graphic-output (open '|tty:| '(out image tty))))
+
+(defun line (1x 1y  2x 2y)
+       (set-position 1x 1y)
+       (draw-vector (- 2x 1x) (- 2y 1y)))
+
+
+(defun line-step (line-list)
+       (let ((ox (car line-list))			;old positions
+	     (oy (cadr line-list))
+	     (nx (caddr line-list))			;new positions
+	     (ny (cadddr line-list)))
+	    (draw-vector (- nx ox) (- ny oy))))
+
+(defun lines (line-list)
+       (set-position (car line-list) (cadr line-list))
+       (do ((line-coords line-list (cddr line-coords)))
+	   ((null (cddr line-coords)) nil)
+	   (line-step line-coords)))
+
+
+(defun clear-screen ()
+       (cursorpos 'C))
+
+(defun top-screen ()
+       (bottom-screen)
+       (down-screen))
+
+(defun bottom-screen ()
+       (cursorpos 'Z))
+
+(defun forward-screen ()
+       (cursorpos 'F ()))
+
+(defun backward-screen ()
+       (cursorpos 'B))
+
+(defun up-screen ()
+       (cursorpos 'U))
+
+(defun down-screen ()
+       (cursorpos 'D))
+
+(defun erase-rest-screen ()
+       (cursorpos 'E))
+
+(defun erase-line-screen ()
+       (cursorpos '/] ))
+
+(defun rubout-screen ()
+       (cursorpos 'X))
+
+(defun inverse-video-screen ()
+       (+tyo 227 graphic-output))
+
+(defun reset-video-screen ()
+       (+tyo 230 graphic-output))
+
+(setq base *oldbase*
+      ibase *oldibase*)
+      
+      
+;================================================================
+
+(setup-graphics)
+
+(defun start-line (x)
+       (cursorpos x 0)
+       (erase-line-screen)
+       (cursorpos x 0))
+
+(comment  For more info SEE |KLE; TVPLOT INFO|)
+

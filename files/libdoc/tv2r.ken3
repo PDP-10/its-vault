@@ -1,0 +1,239 @@
+;;-*-lisp-*-
+;;this file is for reading from the tv to make a R-insertable file
+;;you need to use LIBDOC;VTV2R R2XGP to define macros for reading the files produced into R
+
+;;a simple example of its use
+;;         <<load llogo;tvrtle and draw picture>>
+;;         (tv2r '(foo pict))
+
+;;then to use it R
+;;            .dv xgp
+;;            .fo 0 31vg (n) define whatever fonts you want here
+;;            .fo D fonts2;turt1 {ai:fonts2;turt1 kst} so that other machines know where it is
+;;            .fo F fonts2;turt3 {ai:fonts2;turt3 kst}
+;;            .so libdoc;tv2r r2xgp  read in needed R macros
+;;            some text up here
+;;            .read_picture "foo pict" 500 1 indent 500 mils and use 1 xgp point per tv point
+;;            some more text
+;;            .read_picture "bar pict" 1000 3 indent an inch and blow it up three times
+
+;;this was taken from llogo;tvrtle and modified mostly to be readable from R
+;;also so that it works in different sizes (1 2 or 3 xgp points to a tv point)
+;;it also makes use of R's horizontal space command and avoids all the control characters
+;;Henry's original code is in UPPER case and my modifications are in lower (except comments)
+
+;;if you don't use the tv turtle then you will need to write your own versions of
+;;run-forward, rectangle-spec (see llogo;tvrtle > for them) to read the tv-screen
+
+;;this will not currently work in LLOGO since it uses NEWIO and LLOGO currently is oldio
+
+;;if you don't use R
+;;if you use tj6 then you can try using R loading in r;tj6 rmac 
+;;and most of tj6 will be simulated
+;;if you use PUB then you probably will lose because it uses ;vsp <n> while this
+;;expects ;lsp 0  
+;;(if you change pub's output then this will work but your line spacing will be off)
+
+
+(include |ai:ken;declare >|)
+
+(defcomment tv2r) ;;for tags
+
+(DECLARE (NOTYPE (tv2r-TYO FIXNUM notype))
+	 (notype
+	  (tv2r-PRINT-CHARACTERS FIXNUM FIXNUM FIXNUM FIXNUM notype notype notype notype)))
+
+
+;;TV2R is the only function that you need worry about 
+;;(unless you want to xgp a picture that is bigger (pointwise) than the tv)
+;;the first arg is a newio file specification (eg (tv2r '|ken;first pict|))
+;;the xgp-arglist is an optional and follows llogo's (confusing)
+;;convention for specifying an area (<center-x> <center-y> <horizontal-size> <vertical-size>)
+;;if two numbers are given then the center-x and center-y are taken from the turtle's
+;;current position,
+;;if one number is given then horizontal-size is assumed to equal vertical-size
+;;no args takess the entire tvsize region
+
+;;NOTE: unlike llogo's version my includes the boundary outline in the picture
+;;(setq :outline nil) before drawing anything  will remove it so this is not a problem
+;;also Tv2r is an Lsubr so you must quote the second arg (which should be a list)
+
+
+(define-form (tv2r file (xgp-arglist nil))
+;;eg (tv2r '(foo pict))
+	     (tv2r-internal file (RECTANGLE-SPEC 'XGP (MAPCAR 'eval XGP-ARGLIST))))
+;;rectangle-spec is a Tvrtle function
+
+(define-form (tv2r-internal FILE RECTANGLE)
+ (let-files ;;like let but unwind-protects the open file and closes it at then end
+  (((TOP-Y BOTTOM-Y LEFT-X RIGHT-X) RECTANGLE)
+   (*NOPOINT T)
+   (file-object (open file 'out)))
+  (linel file-object 0) ;;I'll do my own terpris
+  (tv2r-PRINT-CHARACTERS (1- LEFT-X) (1+ RIGHT-X) (1- TOP-Y) (1+ BOTTOM-Y) file-object
+			 'tyo 'princ 'terpri)))
+
+(define-form (tv2r-list (xgp-arglist))
+ ;;this returns a list of the characters that would normally go the file (as above)
+ ;;its useful for combining pictures 
+	     (tv2r-list-internal (RECTANGLE-SPEC 'XGP (MAPCAR 'eval XGP-ARGLIST)))) 
+
+
+(define-form (tv2r-list-internal RECTANGLE)
+       (LET (((TOP-Y BOTTOM-Y LEFT-X RIGHT-X) RECTANGLE))
+	    (nreverse
+	     (rest
+	      (tv2r-PRINT-CHARACTERS LEFT-X RIGHT-X TOP-Y (1- BOTTOM-Y) ;;fence post patch
+				     (list 'for-r-eventually)
+				     'tv2r-tyo-to-list
+				     'tv2r-princ-to-list
+				     'tv2r-terpri-to-list)))))
+
+;;XGP printout uses a run length encoded font.  Outputs ascii characters which are
+;;printed in a font consisting of runs from 27 to 126. in black and uses R macro for white
+
+(SETQ RUN-MAX 100.) ;;was 64. Maximum run length,
+
+(DECLARE (SPECIAL RUN-MAX)
+	 (FIXNUM TRAVEL-X TRAVEL-Y NEW-TRAVEL-X RUN-TYPE RUN-LENGTH
+		 RUN-LENGTH-REMAINING LINE-Y RUN-MAX RUN-TYPE-SHIFT THIS-RUN)
+	 (NOTYPE
+	  (tv2r-PRINT-LINE FIXNUM FIXNUM FIXNUM notype notype notype notype)
+	  (tv2r-RUN-OUT FIXNUM FIXNUM notype notype notype)))
+
+(define-form (tv2r-PRINT-CHARACTERS LEFT-X RIGHT-X TOP-Y BOTTOM-Y where tyo-f princ-f terpri-f)
+ (unwind-protect
+  (progn (valret '|:gag 0/
+p|) ;;don't want to get messages messing up the screen
+	 (DO ((TRAVEL-Y TOP-Y (1+ TRAVEL-Y)))
+	     ((> TRAVEL-Y BOTTOM-Y) where)
+	     ;;Print a line of characters, then carriage return.
+	     (tv2r-PRINT-LINE LEFT-X TRAVEL-Y RIGHT-X where tyo-f princ-f)
+	     (funcall terpri-f where)))
+  (valret '|:gag 1/
+p|))) ;;resume messages
+
+(define-form (tv2r-PRINT-LINE START-X LINE-Y STOP-X file-object tyo-f princ-f)
+       ;;Prints one line of XGP characters.
+       (DO ((RUN-TYPE -1. (- -1. RUN-TYPE))
+	    ;;Alternate between runs of zeros & ones.
+	    (THIS-RUN)
+	    (TRAVEL-X START-X NEW-TRAVEL-X)
+	    ;;Is this off by 1?
+	    (NEW-TRAVEL-X))
+	   ((> (SETQ THIS-RUN (RUNAWAY-FORWARD TRAVEL-X LINE-Y RUN-TYPE) 
+		     ;;Compute run length, and end of run.
+		     NEW-TRAVEL-X (+ TRAVEL-X THIS-RUN))
+	       ;;Is end of run past right edge of area to print?
+	       STOP-X)
+	    ;;I do the following even if zero's so that merging is easier
+	    (tv2r-run-out RUN-TYPE (- STOP-X TRAVEL-X -1.) file-object tyo-f princ-f))
+	   ;;Output the current run.
+	   (cond ((zerop this-run)) ;;just started with white
+		 (t (tv2r-RUN-OUT RUN-TYPE THIS-RUN file-object tyo-f princ-f)))))
+
+(define-form (tv2r-RUN-OUT RUN-TYPE RUN-LENGTH file-object tyo-f princ-f)
+       ;;Output RUN-LENGTH bits of black.  Chunks of maximum run length
+       ;;successively output until exhausted.
+ (cond ((zerop run-type) ;;blank so use hs
+	(funcall princ-f '|h(| file-object)
+	(funcall princ-f run-length file-object) ;;had better be base=10.
+	(funcall tyo-f #(getcharn '|)| 1) file-object))
+       (t
+	(DO ((RUN-LENGTH-REMAINING RUN-LENGTH (- RUN-LENGTH-REMAINING RUN-MAX)))
+	    ((< RUN-LENGTH-REMAINING RUN-MAX)
+	     (OR (ZEROP RUN-LENGTH-REMAINING)
+		 (tv2r-tyo RUN-LENGTH-REMAINING file-object tyo-f))
+	     T)
+	    (tv2r-tyo RUN-MAX file-object tyo-f)))))
+
+(define-form (tv2r-TYO xgp-character file-object tyo-f)
+ (let ((character (+ xgp-character 26))) ;;to avoid all the control characters
+      (cond ((or (= character #(getcharn '/\ 1))
+		 (= character #(getcharn '/. 1))
+		 (= character #(getcharn '/' 1))
+		 (= character #(getcharn '| | 1)))
+	     (funcall tyo-f #(getcharn '/ 1) file-object)));;control-q to protect \ and .
+      (funcall tyo-f character file-object)))
+
+
+(define-form (tv2r-terpri-to-list list)
+ (tv2r-tyo-to-list 13. list)
+ (tv2r-tyo-to-list 10. list))
+
+(define-form (tv2r-princ-to-list thing list)
+ (replace-rest list (nconc (nreverse (exploden thing)) (rest list))))
+
+(define-form (tv2r-tyo-to-list ascii list)
+ (replace-rest list (cons ascii (rest list))))
+
+(define-form (tv2r-merge-picture-lists list-of-list-of-lists file)
+ ;;eg (merge-picture-lists '(((<upper left>) (<upper right>))
+ ;;                          ((<lower left>) (<lower left>))))
+ ;;for merging four quadrants
+ (let-files ((file-object (open file 'append)))
+	    (linel file-object 0) ;;I'll do my own terpris
+	    (mapc
+	     (function
+	      (lambda (list-of-lists)
+		      (tv2r-merge-picture-lists-horizontally list-of-lists file-object)))
+	     list-of-list-of-lists)))
+
+(define-form (tv2r-merge-picture-lists-horizontally list-of-lists file-object)
+ ;;"reads" a list until its "carriage return" then reads the next and so on
+ (let ((current-positions (append list-of-lists nil))) ;;top level copy to clobber
+      (do ((i current-positions (cond ((rest i))
+				      (t ;;end of that line so
+				       (terpri file-object)
+				       current-positions))))
+	  ((null (first (first i))))
+	  (replace-first i (tv2r-print-til-carriage-return (first i) file-object)))))
+
+(define-form (tv2r-print-til-carriage-return list file-object)
+ ;;tyos until it finds a 13. then returns the rest of the rest (skipping the 10.)
+ (do ((i list (rest i)))
+     ((null i) nil)
+     (cond ((= (first i) 13.)
+	    (return (rest (rest i))))
+	   (t (tyo (first i) file-object)))))
+
+(define-form (tv2r-big x-dimension y-dimension redisplay-form file)
+ ;;this runs tv2r-list on each section
+ ;;dimensions should integers --- if its 2 and 3 then a 2x3 picture is taken 
+ (let ((:outline nil) ;;don't want borders inside of this
+       ((width height) (turtlesize))
+       ((tv-width tv-height) (tvsize)))
+      (clip) ;;nothing else makes sense
+      (close (open file 'out)) ;;create empty file to append to within merge-picture-lists
+      (unwind-protect
+       (progn (cond ((> x-dimension y-dimension)
+		     (princ '|Its dumb to have the x-dimension be greater than the y|)
+		     (break |Why don't you try again?|))
+		    (t (tvsize tv-width
+			       (fix
+				(*$ (float tv-height)
+				    (//$ (float x-dimension) (float y-dimension)))))))
+	      (scale (float y-dimension)) ;;scale the world appropriately
+	      (do ((y 1 (1+ y)))
+		  ((> y y-dimension))
+		  (do ((x 1 (1+ x))
+		       (segments nil))
+		      ((> x x-dimension) (tv2r-merge-picture-lists (list segments) file))
+		      (let ((new-x-home
+			     (*$ (tv2r-normalize-coordinate (float (1- x)) (float x-dimension))
+				 width .5))
+			    (new-y-home
+			     (*$ (tv2r-normalize-coordinate (float (1- y)) (float y-dimension))
+				 height .5)))
+			   (unwind-protect
+			    (progn (sethome new-x-home new-y-home)
+				   (clearscreen)
+				   (eval redisplay-form)
+				   (push (tv2r-list) segments))	
+			   (sethome (-$ new-x-home) (-$ new-y-home)))))))
+       (scale (//$ (float y-dimension))) ;;restore scale
+       (tvsize tv-width tv-height)))) ;;restore original dimensions
+
+(define-form (tv2r-normalize-coordinate coordinate max)
+ (*$ (-$ coordinate (*$ (-$ max 1.0) .5))
+     (//$ 2.0 max)))

@@ -1,0 +1,257 @@
+;-*-stl-*-
+;***********************************************************************
+;*********************** Matrix Routines for SCA ***********************
+;****** (c) copyright 1977 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;These are the routines for handling Matrices and Vectors for SCA.
+
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((dsk stl) base)))
+
+(global-open ((sca) matrix))
+
+(global-read ((sca) algebr))
+
+(stlchar)
+
+(declare (mapex t) (genprefix scamat))
+
+(defmode vector
+	 (args (algebra scalar coord))
+	 (mode list (elt coord list vector rlist rvector) (mapcar hom))
+	 (ret-check ;(module scalar vector) - can't do [no 0 constant]
+		    (fcns (coord (dot vector vector))
+			  (vector (hom (subr coord coord) vector))))
+	 (tdeclare (vector v v1 v2) (rvector rv) (*integer* n) (coord c)
+		   (*fixnum* dim))
+
+
+ (defun 0 (dim) vector [nfrobs dim [0]])
+
+ (defun 0? (v) *boolean* [and-mapc (bfcn 0?) v])
+
+ (defun + (v1 v2) vector
+	(do ((v1 v1 [rest v1])
+	     (v2 v2 [rest v2])
+	     (rv [empty] [ttf [+ [first v1] [first v2]] rv]))
+	    ([empty? v1] [nreverse rv])))
+
+ (defun - (v1 v2) vector
+	(do ((v1 v1 [rest v1])
+	     (v2 v2 [rest v2])
+	     (rv [empty] [ttf [- [first v1] [first v2]] rv]))
+	    ([empty? v1] [nreverse rv])))
+
+ (defun - (v) vector [hom (bfcn -) v])
+
+ (defun * (n v) vector [hom (funarg (bfcn *) n *) v])
+
+ (defun * (c v) vector [hom (funarg (bfcn *) c *) v])
+
+ (defun dot (v1 v2) coord
+	(do ((v1 v1 [rest v1])
+	     (v2 v2 [rest v2])
+	     (c [0] [+ [* [first v1] [first v2]] c]))
+	    ([empty? v1] c))))
+
+(defmode array2						;2-dim arrays
+	 (tdeclare (array a) (*fixnum* m n))
+
+ (defun array (m n) array
+	:array~(array nil t m n))
+
+ (defun elt (a m n) elt
+	:elt~(arraycall t a m n))
+
+ (defun dims (a) *lfix*
+	:*lfix*~(cdr (arraydims a)))
+
+ (defun nrows (a) *fixnum*
+	[first [dims a]])
+
+ (defun ncols (a) *fixnum*
+	[second [dims a]])
+
+ (defun swap-rows (a m n) array
+	(tdeclare (*fixnum* k))
+	(repeat k [ncols a]
+		(swap [elt a m k] [elt a n k]))
+	a)
+
+ (defun swap-cols (a m n) array
+	(tdeclare (*fixnum* k))
+	(repeat k [nrows a]
+		(swap [elt a k m] [elt a k n]))
+	a))
+
+(defmode matrix
+	 (args (algebra scalar elt) (field elt))
+	 (mode vector (coord elt vector row rvector rrow))
+	 (mode vector
+	       (coord row vector matrix rvector rmatrix)
+	       (0 nil (coord (* coord coord)) nil prin1 nil))
+	 (mode two-lists (elt1 row elt2 elt list1 matrix list2 row))
+	 (mode array2)
+	 (struct solform array *lfix*)			;Output of GAUSS nxn+1,
+							;list of bad rows     
+	;Can't RET-CHECK because 0 a fcn, not constant.
+	 (tdeclare (*fixnum* nrows ncols nrow ncol i j k n)
+		   (elt e e1) (matrix m m1 m2)
+		   (rmatrix rm) (row row) (rrow rrow) ((subr elt elt) elt-hom)
+		   (array a)
+		   ((subr elt *fixnum* *fixnum*) elt-fcn))
+
+
+ (defun prin1 (m) any
+	(terpri)
+	(princ '|(|)
+	(mmap (row m) () t
+	      [prin1 row]
+	      (cond ([not [empty? [rest m]]]
+		     (terpri)
+		     (princ '| |))
+		    ([true]
+		     (princ '|)|)
+		     (terpri)))))
+
+ (defun prin1 (a) any [prin1 [matrix a]])
+
+ (defun array (m) array
+	(do ((nrow [0] [1+ nrow])
+	     (a [array [nrows m] [ncols m]])
+	     (row))
+	    ([empty? m] a)
+	    (_ row (pop m))
+	    (do ((ncol [0] [1+ ncol]))
+		([empty? row])
+		(_ [elt a nrow ncol] (pop row)))))
+
+ (defun matrix (a) matrix
+	[gen-mat (funarg (bfcn elt)
+			 a * *)
+		 [nrows a] [ncols a]])
+
+ (defun 0 (nrows ncols) matrix [nfrobs nrows [0 ncols]])
+
+ (defun * (m1 m2) matrix
+	(mmap (row m1) ((rm [empty] [ttf [* row m2] rm])) [nreverse rm]))
+
+ (defun * (row m) row
+	(_ m [copy1 m])
+	(do ((rrow [empty]
+		   [ttf (mmap (e row)
+			      ((m m [rest m])
+			       (e1 [0] [+ [* e (pop [first m])] e1]))
+			      e1)
+			rrow]))
+	    ([empty? [first m]] [nreverse rrow])))
+
+ (defun nrows (m) *fixnum* [length m])
+ (defun ncols (m) *fixnum* [length [first m]])
+
+ (defun transpose (m) matrix
+	(_ m [copy1 m])
+	(do ((rm [empty]
+		 [ttf (do ((m m [rest m])
+			   (rrow [empty] [ttf (pop [first m]) rrow]))
+			  ([empty? m] [nreverse rrow]))
+		      rm]))
+	    ([empty? [first m]] [nreverse rm])))
+
+ (defun copy-mat (m) matrix [hom (bfcn copy1) m])
+
+ (defun hom (elt-hom m) matrix [hom (funarg (bfcn hom) elt-hom *) m])
+
+ (defun set-elt (nrow ncol m e) any
+	(_ [first [nrests ncol [n0th nrow m]]] e))
+
+ (defun nth-row (nrow m) row [n0th nrow m])
+ (defun nth-col (ncol m) row [mapcar (funarg (bfcn n0th) ncol *) m])
+
+ (defun emat (nrows ncols e nrow ncol) matrix
+	(bind ((m <- [0 nrows ncols]))
+	      [set-elt nrow ncol m e]
+	      m))
+
+ (defun gen-mat (elt-fcn nrows ncols) matrix
+	[gen-list (funarg (nfn (elt-fcn nrow ncols) row
+			       [gen-list (funarg elt-fcn nrow *) ncols])
+			  elt-fcn * ncols)
+		  nrows])
+
+ (defun gauss (a n) solform
+    (tdeclare (*boolean* pivot)
+	      (*lfix* l))
+    (do ((i [0] [1+ i])					;Pivoting on ith col
+	 (l [empty])					;List of bad cols
+	 (pivot [false] [false]))
+	([= i n]
+	 [solform a l])
+       (do ((j i [1+ j]))
+	   ([= j n])
+	  (cond ([not [0? [elt a j i]]]			;Found non-zero elt
+		 (if [not [= i j]]
+		     [swap-rows a i j])
+		 (return (_ pivot [true])))))
+       (if [not pivot]
+	   (mmap (j l) ()
+		 (_ l [ttf i l])
+		 (cond ([not [0? [elt a j i]]]
+			[swap-rows a i j]
+			(return (_ pivot [true]))))))
+       (cond
+	(pivot					;If elt to pivot on
+	 (do ((j n [1- j]))
+	     ([< j i])
+	     (_ [elt a i j] [// [elt a i j] [elt a i i]]))
+	 (do ((k [0] [1+ k]))
+	     ([= k n]) 
+	     (cond ((and [not [= k i]]
+			 [not [0? [elt a k i]]])
+		    (do ((j n [1- j]))
+			([< j i])
+		      (_ [elt a k j] [- [elt a k j]
+					[* [elt a k i] [elt a i j]]]))))))))))
+
+(defmode sq-mat				;SQUARE MATRICES
+	 (args (algebra scalar elt) (fcn (*fixnum* dim)))	;DIM >= 1
+	 (mode matrix)
+	 (mode monoid (elt matrix) (r-s^ ^))
+	 (ret-check (ring1 matrix))
+	 (tdeclare (row row row1 row2) (matrix m) (elt e) (*fixnum* nrow ncol)
+		   (*integer* n))
+
+
+ (constant 0 matrix [0 [dim] [dim]])
+
+ (defun diag-mat (e) matrix		;don't recompute 0 elt?
+	(do ((row1 [nfrobs [1- [dim]] [0]] [rest row1])
+	     (row2 [empty] [ttf [0] row2])
+	     (m [empty] [ttf [append row1 [ttf e row2]] m]))
+	    ([empty? row1] [ttf [append row1 [ttf e row2]] m])))
+ 
+ (constant 1 matrix [diag-mat [1]])
+
+ (defun z->r (n) matrix [diag-mat [z->r n]])
+
+ (defun 1? (m) *boolean*
+	(_ m [copy1 m])
+	(mmap (row m) () [true]
+	      (or (and [1? [first row]]
+		       [0? [rest row]]
+		       (do ((m [rest m] [rest m]))
+			   ([empty? m] [true])
+			   (or [0? (pop [first m])] (return [false]))))
+		  (return [false]))))
+
+)
+
+
+(stlunchar)
+
+(global-close)

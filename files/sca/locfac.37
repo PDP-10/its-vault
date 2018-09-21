@@ -1,0 +1,189 @@
+;-*-stl-*-
+;***********************************************************************
+;*********** Localization and Factored Form Routines for SCA ***********
+;****** (c) copyright 1977 Massachusetts Institute of Technology *******
+;***********************************************************************
+;********************* Do not modify this file !!! *********************
+;***********************************************************************
+
+
+;These are the routines for handling localization of a module by a
+;multiplicative system [multiplicatively closed subset containing 1] of the
+;associated ring.  This includes quotient fields of UFDs or more general
+;integral domains, possibly stored in factored form.
+
+;***?:
+;There are currently these cases implemented:
+;
+;FRACTION:  A QF of a UFD, with the numerator and denominator of any fraction
+;kept relatively prime.  One may want to allow only certain "standard"
+;associates of any given element of the UFD to be legal denominators.  It is
+;required that every element have at least one standard associate, and that the
+;total set of standard elements be a multiplicative system [contains 1 and is
+;multiplicatively closed].  Special cases occur when 1 is the only standard
+;unit [i.e., its only standard associate is itself], and when every element
+;has exactly one standard associate.  This is used for the rational numbers,
+;Gaussians, rational functions over Z, rational functions over a field, etc.,
+;when not in factored form.
+;
+;FF [for Factored Fraction or Factored Form]:  A QF of a UFD, with a unique
+;standard associate for every ***
+
+(declare (eval (read)))
+(or (memq 'stl (status features)) (load '((stl) base)))
+
+(global-open ((sca) locfac))
+
+(global-read ((sca) algebr))
+
+(stlchar)
+
+(declare (mapex t)
+	 (genprefix scaloc))
+
+(comment Localization)
+
+
+(defmode module-loc
+	 (args (module den num)		;actually DEN is a mult. sys.
+	       (ringc1 den)		;DEN must be commutative
+	       (fcns (*boolean* (ann? num))))
+	 (struct fraction num den)
+	 (ret-check (module den fraction))
+	 (tdeclare (fraction f f1 f2) (*integer* n) (den d))
+
+ (defun = (f1 f2) *boolean*
+	[ann? [- [* [den f2] [num f1]] [* [den f1] [num f2]]]])
+ (constant 0 fraction [fraction [0] [1]])
+ (defun 0? (f) *boolean* [ann? [num f]])
+ (defun - (f) fraction [fraction [- [num f]] [den f]])
+;Combine next two?: 
+ (defun + (f1 f2) fraction
+	[fraction [+ [* [den f2] [num f1]] [* [den f1] [num f2]]]
+		  [* [den f1] [den f2]]])
+ (defun - (f1 f2) fraction
+	[fraction [- [* [den f2] [num f1]] [* [den f1] [num f2]]]
+		  [* [den f1] [den f2]]])
+ (defun * (n f) fraction [fraction [* n [num f]] [den f]])
+ (defun * (d f) fraction [fraction [* d [num f]] [den f]])
+ (defun prin1 (f) any [prin1 [num f]] (princ '//) [prin1 [den f]]))
+
+
+(defmode ring-loc
+	 (args (ringc1 ring)		;actually DEN is a mult. sys.
+	       (fcns (*boolean* (ann? ring))))
+	 (mode module-loc (num ring den ring))
+	 (ret-check (module ring fraction)
+		    (field fraction))	;actually only if RING a domain
+	 (tdeclare (fraction f f1 f2) (*fixnum* e) (*integer* n))
+
+ (constant 1 fraction [fraction [1] [1]])
+ (defun z->r (n) fraction [fraction [z->r n] [1]])
+ (defun 1? (f) *boolean* [ann? [- [num f] [den f]]])
+ (defun * (f1 f2) fraction
+	[fraction [* [num f1] [num f2]] [* [den f1] [den f2]]])
+ (defun ^ (f e) fraction [fraction [^ [num f] e] [^ [den f] e]])
+ (defun // (f) fraction [fraction [den f] [num f]])
+ (defun // (f1 f2) fraction
+	[fraction [* [num f1] [den f2]] [* [den f1] [num f2]]]))
+
+(comment QF-UFD Mode)
+
+
+;The following mode is for the Quotient Field of a Unique Factorization Domain,
+;not stored in factored form.  It is assumed that every elt has a unique
+;unit-normal associate, that the set of unit-normal elements forms a
+;multiplicative system [i.e., is multiplicatively closed and contains 1], that
+;denominators are unit-normal, and that fractions are stored in lowest terms.
+;Also, GCD returns unit-normal answers.  REDUCE of a fraction will return its
+;GCD, clobbering the two parts to their co-factors.  [Thus if REDUCE is passed
+;a fraction with a unit-normal denominator, it will clobber the fraction to one
+;with a unit-normal denominator, and will return a unit-normal frob.]  These
+;assumptions, among other things, guarantee a canonical form.
+
+
+;***Make UNIT-NORMAL ring elts and fractions sub-types?:
+(defmode qf-ufd
+	 (args (ringc1 ring)
+	       (fcns (ring (gcd ring ring)
+			   (// ring ring)
+			   (reduce fraction))))
+	 (struct nr-u
+		 (nr ring)			;unit-normal RING elt
+		 (unit ring))			;[non-normal] unit
+	 (arg (fcn (nr-u (unit-normal ring))))	;ARG = NR / UNIT
+	 (mode ring-loc () (ann? 0?))
+	 (ret-check (module ring fraction) (field fraction))
+	 (tdeclare (fraction f f1 f2 g) ((subr ring ring ring) +-)
+		   (*integer* n) (ring r) ((subr ring ring) deriv)
+		   (nr-u nr-u))
+
+
+ (cldef = (f1 f2) *boolean* (and [= [num f1] [num f2]] [= [den f1] [den f2]]))
+
+ (defun +- (f1 f2 +-) fraction
+	(bind ((f <- [fraction [den f1] [den f2]]) g r)
+	      (_ r [reduce f]
+		 g [fraction (call +-
+				   [* [den f] [num f1]]
+				   [* [num f] [num f2]])
+			     r])
+	      [reduce g]
+	      (_ [den g] [* [den g] [num f] [den f]])
+	      g))
+
+ (cldef + (f1 f2) fraction [+- f1 f2 (bfcn +)])
+ (cldef - (f1 f2) fraction [+- f1 f2 (bfcn -)])
+
+ (cldef * (n f) fraction [* :ring:[z->r n] f])
+
+ (cldef * (r f) fraction
+	(bind ((f1 <- [fraction r [den f]]))
+	      [reduce f1]
+	      (_ [num f1] [* [num f1] [num f]])
+	      f1))
+
+ (cldef 1? (f) *boolean* (and [1? [num f]] [1? [den f]]))
+
+ (cldef // (f) fraction [unit-normal [fraction [den f] [num f]]])
+
+ (defun unit-normal (f) fraction			;clobbers
+	(bind ((nr-u <- [unit-normal [den f]]))
+	      (_ [den f] [nr nr-u]
+		 [num f] [* [unit nr-u] [num f]])
+	      f))
+
+ (cldef * (f1 f2) fraction
+	(bind ((f1 <- [fraction [num f1] [den f2]])
+	       (f2 <- [fraction [num f2] [den f1]]))
+	      [reduce f1]
+	      [reduce f2]
+	      (_ [num f1] [* [num f1] [num f2]]
+		 [den f1] [* [den f1] [den f2]])
+	      f1))
+
+ (cldef // (f1 f2) fraction [* f1 [// f2]])
+
+;Assumes DERIV of elts in the ring stays in the ring:
+ (defun deriv (f deriv) fraction
+	(bind ((f1 <- [fraction (call deriv [den f]) [den f]]) r)
+	      (_ r [reduce f1]
+		 [num f1] [- [* (call deriv [num f]) [den f1]]
+			     [* [num f] [num f1]]])
+	      (swap r [den f1])
+	      [reduce f1]		;could just take content for polys
+	      (_ [den f1] [* [den f1] r r])
+	      f1))
+
+ (defun integral? (f) *boolean* [1? [den f]]))
+
+
+;***what about INF, MINF, <=> ?
+;***what about rationalizing algebraic denominators?
+;***add mingenerators
+;***change to allow pseudo-ufd's:  algebraic relations
+
+
+(stlunchar)
+
+(global-close)

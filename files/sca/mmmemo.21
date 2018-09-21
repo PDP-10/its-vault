@@ -1,0 +1,722 @@
+
+						INTEROFFICE MEMORANDUM
+
+TO:  MATHLAB Group				DATE:  9/28/77
+						FROM:  David R. Barton
+						DEPT:  MATHLAB
+						EXT:  x3-2081
+						LOC/MAIL STOP:  NE43-836A
+
+SUBJ:  User's Manual for the MODE Package for SCA.
+       [***Unfinished.]
+
+
+
+I.  Introduction
+
+	Modes may be thought of as "data abstractions."  Their general purpose
+may best be illustrated by an example:  Suppose we have defined the lisp
+notions of CAR, CDR, and CONS, by implementing the mode CONS, and we wish to
+implement the mode LIST.  Well, a list is either empty, in which case it can
+only be NIL [we denote this by saying it is of mode (QUOTE NIL)], or it is
+non-empty, and is a CONS.  We could state this by:
+
+(DEFMODE LIST1 ()
+	 (UNION (EMPTY (QUOTE NIL))
+		(NON-EMPTY CONS)))
+
+Moreover, we can recognize the EMPTY condition with the predicate NULL.  Thus:
+
+(DEFMODE LIST2 ()
+	 (DISJ (EMPTY (QUOTE NIL) NULL)
+	       (NON-EMPTY CONS)))
+
+Notice we have replaced UNION with DISJ, for disjoint union, which implies that
+we have a predicate for distinguishing LIST's of type EMPTY from those of type
+NON-EMPTY [the predicate, of course, is NULL].
+
+	At this point, one might wonder what all this is buying us.  The answer
+depends on the definitions of the modes we defined LIST in terms of, namely
+DISJ [or UNION], QUOTE, and CONS.  Actually, all these modes are defined by
+the mode package itself [in fact, so is LIST, but we will ignore that for now].
+DISJ, for example, gives us an MMACRO [or Mode-MACRO] of MCASE, which can be
+used as follows:
+
+(MCASE \LIST2\L (EMPTY (DO-THIS)) (NON-EMPTY (DO-THAT)))
+
+The \LIST2\L declares this occurrence of the variable L to be of mode LIST2,
+which is information that MCASE must know in order to expand correctly, in
+this instance into:
+
+(COND ((NULL L) (DO-THIS))
+      (T (DO-THAT)))
+
+							Memo from David Barton
+							       9/28/77
+								p. 2
+
+
+	The mechanism by which this happens is rather complicated.  First of
+all, MCASE is an MMACRO of type 1, meaning that it keys off of the mode of its
+first argument.  In this case the argument is \LIST2\L, so the mode is LIST2.
+MCASE, however, is only defined for the modes TAG and DISJ [and whatever new
+modes the user may define it for], but it is not defined for the mode LIST2.
+It therefore must try to simplify LIST2 into a mode that it is defined for.
+In this case, LIST2 = (DISJ (EMPTY (QUOTE NIL) NULL) (NON-EMPTY CONS)) [by
+the mode definition or DEFMODE for LIST2], and this is a special case of the
+mode DISJ, which MCASE can handle.  The mmacro MCASE is then passed this mode
+[(DISJ (EMPTY ... ) ... )] and the form being expanded [(MCASE \LIST2\L ... )],
+and it returns the final answer [(COND ((NULL L) ... ) ... )].  [MMACRO's are
+further discussed in section III below.]
+
+	Let us return to our definition of the mode LIST.  We could improve it
+by elaborating on the (NON-EMPTY CONS).  This CONS has two parts, which we call
+FIRST and REST, for FIRST element of the LIST, and REST of the elements of the
+LIST.  The REST, or CDR of the CONS, is itself a LIST, and for convenience in
+creating LIST's we may give it a default of NIL:
+
+(DEFMODE LIST3 ()
+	 (DISJ (EMPTY (QUOTE NIL) NULL)
+	       (NON-EMPTY (CONS FIRST (REST LIST3 NIL)))))
+
+But what about the mode of the FIRST part of the list?  Well, it depends on
+whether we are creating a LIST of APPLES, INTEGERS, or HONEST-POLITICIANS [in
+which case the NON-EMPTY clause becomes superfluous] - i.e., it depends on the
+mode of the ELEMENTS of the LIST, which we call ELTS-MODE:
+
+(DEFMODE LIST4 (ELTS-MODE)
+	 (DISJ (EMPTY (QUOTE NIL) NULL)
+	       (NON-EMPTY (CONS (FIRST ELTS-MODE)
+				(REST (LIST4 ELTS-MODE) NIL)))))
+
+We now have a "parameterized mode", meaning that LIST4 is not really a mode at
+all, but rather an infinite family of possible modes, depending on the
+ELTS-MODE.  To be technical, we should call LIST4 a MODE TYPE.  However, we
+still refer to LIST4 occasionally as a mode, by abuse of notation, as a
+short-hand for (LIST4 NIL), where NIL denotes the structureless, or
+unrestricted mode.  [When we need to be technical, one should note that a mode
+type is always an atomic symbol, and that a mode is either NIL, or a dotted
+pair of a mode type and a list of arguments.  The mode NIL is considered to be
+of mode type NIL.]
+
+							Memo from David Barton
+							       9/28/77
+								p. 3
+
+
+	Having defined lists, we now have many MMACRO's on which to call, given
+to us by the component modes in terms of which LIST4 was defined.  Thus:
+
+\LIST4\(CREATE EMPTY) = (QUOTE NIL)	; creates the empty list
+					; [ = means "expands into"]
+
+\LIST4\(CREATE NON-EMPTY (CREATE FIRST 'X)) = (CONS (QUOTE X) NIL)
+					; creates the list whose FIRST element
+					; is denoted by 'X, and whose REST
+					; defaults to NIL
+
+:\LIST4\L:REST:FIRST = (CAR (CDR L))	; get the FIRST element of the REST of
+					; the list L
+
+	Here follows a fairly complete listing of the current features of the
+mode package, divided into three groups:  Macros [defined in SCA;MACROS >],
+Basic Features [defined in SCA;MODEB >], and System Modes [defined in
+SCA;MODE >].  Each feature is only summarized here:  for a complete
+description, implementational details, and examples of use, the reader is
+encouraged to consult these actual files, and especially the last.  Also, I
+welcome all questions [and comments and suggestions!].
+
+							Memo from David Barton
+							       9/28/77
+								p. 4
+
+
+II.  Macros
+
+	There are a number of macros which are provided for your use.  Many of
+these were used in defining the mode package itself.
+
+
+A.  SCACHAR and SCAUNCHAR
+
+	SCACHAR is a macro which gives special syntaxes to several characters
+[% [percent-sign], # [sharp-sign], ` [back-quote], \ [back-slash], : [colon],
+[ [left-bracket], ] [right-bracket], and , [comma] and @ [at-sign] after a `
+[as explained below]] and sets the radix to decimal when it expands.  SCAUNCHAR
+undoes the effects of an SCACHAR.  The important characters are:
+
+	` [back-quote] gives a MUDDLE-like syntax for quoting expressions:  it
+works just like ' [quote] except that items in the next form preceded by a
+, [comma] are not quoted, and items preceded by an @ [at-sign] are not quoted,
+and are APPEND-ed into the list.  [This is often useful, especially in writing
+macros.]
+
+	\ [back-slash] declares the mode of an item:  \<MODE>\<ITEM> is
+equivalent to <ITEM>, but also tells the mode package that this occurence of
+<ITEM> is of mode <MODE>.
+
+	: [colon] expands into the SELECT macro.
+
+Examples:
+
+(SCACHAR) = T
+
+`X = (QUOTE X)
+
+`(A ,B) = (CONS (QUOTE A) (CONS B (QUOTE NIL)))
+
+`((A @B) ,C (D @E F) . G) =
+	(CONS (CONS (QUOTE A) B)
+	      (CONS C (CONS (CONS (QUOTE D) (APPEND E (QUOTE (F))))
+			    (QUOTE G))))
+
+\POLY\P = (MODE-NOTE POLY P) = P
+
+:\(CONS A B)\C:A = (SELECT (MODE-NOTE (CONS A B) C) A) = (CAR C)
+
+[See descriptions of MODE-NOTE and SELECT below.]
+
+							Memo from David Barton
+							       9/28/77
+								p. 5
+
+
+B.  MACRO-EXPAND, MACRO-EXPAND-T, and MACRO-EXPAND-T1
+
+	MACRO-EXPAND is a function which will expand all the macro's in a form
+[as long as there aren't any strange FSUBR's around].  MACRO-EXPAND-T will only
+expand the top level [continue until the form is atomic, or its CAR is not a
+macro].  MACRO-EXPAND-T1 will only expand the form once.  These functions are
+especially useful for debugging macros.
+
+Examples:
+
+(MACRO-EXPAND-T1 '(SELECT (MODE-NOTE (CONS A B) C) A)) =>
+	(SELECT1 (MODE-NOTE (CONS A B) C) A)
+
+(MACRO-EXPAND-T '(SELECT (MODE-NOTE (CONS A B) C) A)) =>
+	(CAR (MODE-NOTE (CONS A B) C))
+
+(MACRO-EXPAND '(SELECT (MODE-NOTE (CONS A B) C) A)) =>
+	(CAR C)
+
+[ => means "evaluates into" or "has a value of"]
+
+
+C.  DEFUN-SMAC, SFUNCALL, and SAPPLY
+
+	SFUNCALL and SAPPLY [for "Sugar-ed" FUNCALL, etc.] are versions of
+FUNCALL and APPLY respectively that allow the use of "pattern matching
+LAMBDA-expressions", such as (LAMBDA ((A . B) NIL ((C)) . D) ...).  The
+non-NIL atoms in the bound variable list are pattern-matched against the list
+of arguments in the obvious way.  Notice that this is upward-compatible with
+normal LAMBDA-expressions.
+
+	DEFUN-SMAC is a macro that allows one to define other macros using this
+syntax.  Instead of expansion occuring by APPLY-ing the macro to a list 
+containing a single s-expression [the form to be expanded], the macro is
+SAPPLY-ed to the CDR of [list of arguments to the macro in] the form being
+expanded.  [If this is unclear, see the examples.]
+
+Examples:
+
+(SFUNCALL '(LAMBDA ((A . B) NIL ((C)) . D) (LIST A B C D))
+	  '(1 2 3) '(4 5 6) '((7 8)) '(9) '(10 11)) =>
+	(1 (2 3) 7 ((9) (10 11)))
+
+(SAPPLY '(LAMBDA ((A . (NIL . B))) (PLUS A B)) '((1 . ((2) . 3)) 4)) => 4
+
+(DEFUN LPUSH MACRO (L)			;PUSHes an object onto a List
+       `(SETQ ,(CADDR L) (CONS ,(CADR L) ,(CADDR L))))
+
+(LPUSH 'FOO STACK) = (SETQ STACK (CONS (QUOTE FOO) STACK))
+
+(DEFUN-SMAC LPUSH (OBJ PDL)		;equivalent definition
+	    `(SETQ ,PDL (CONS ,OBJ ,PDL)))
+
+(LPUSH 'FOO STACK) = (SETQ STACK (CONS (QUOTE FOO) STACK))
+
+							Memo from David Barton
+							       9/28/77
+								p. 6
+
+
+D.  MACRODEF, OMACRODEF, and ALIAS
+
+	MACRODEF allows one to define MACROs using the same syntax as for EXPRs
+defined by DEFUN.  [Errors may be introduced if the order in which the
+arguments are evaluated is important, so beware!]  OMACRODEF [for Old MACRODEF]
+is a mixture of MACRODEF and DEFUN-SMAC.  It differs from MACRODEF in that it
+can use the syntax of SAPPLY, etc. in its bound variable list, and it is
+basically syntactic rather than semantic.  That is, it does staight
+substitution of arguments for variables in the form, and doesn't worry about
+evaluating an argument twice, etc.  [This should be clear from the examples.]
+ALIAS allows one to give an existing function [or macro] a different name.
+
+Examples:
+
+(ALIAS POLY$ZERO? NULL)
+
+(POLY$ZERO? P) = (NULL P)
+
+(OMACRODEF POLY$ZERO? (P)	;equivalent definition
+	   (NULL P))
+
+(POLY$ZERO? P) = (NULL P)
+
+(MACRODEF POLY$ZERO? (P)	;equivalent definition
+	  (NULL P))
+
+(POLY$ZERO? P) = (NULL P)
+
+(OMACRODEF PROG1 FROBS			;couldn't be done with MACRODEF because
+	   (PROG2 NIL . FROBS))		;bound variable "list" is not a list
+
+(SETQ X (PROG1 Y (SETQ Y X))) = (SETQ X (PROG2 NIL Y (SETQ Y X)))
+
+(MACRODEF FN2 (X) (LIST X X))
+
+(FN2 (HAIRY-COMPUTATION)) = ((LAMBDA (G0003) (LIST G0003 G0003))
+			     (HAIRY-COMPUTATION))
+
+(OMACRODEF FN2 (X) (LIST X X))
+
+(FN2 (HAIRY-COMPUTATION)) = (LIST (HAIRY-COMPUTATION) (HAIRY-COMPUTATION))
+	;This shows why OMACRODEF is more syntactic and in some cases worse:
+	;(HAIRY-COMPUTATION) will get performed twice, which might be
+	;inefficient, and have double side-effects.
+
+							Memo from David Barton
+							       9/28/77
+								p. 7
+
+
+E.  CASE
+
+	Originally written by GLS and improved by others, this is a complicated
+type of COND with many special features.  If it were an FSUBR, its description
+might be:  The first argument is evaluated.  It must evaluate to either a
+SYMBOL, FIXNUM, or FLONUM.  The rest of the arguments are "clauses", and are
+scanned left-to-right until one which the first argument "satisfies" is found.
+If none are found, then NIL is returned.  Each clause is like a COND clause,
+in that it consists of a predicate and a list of forms to evaluate if the
+predicate is satisfied.  The predicates, however, are unusual.  A predicate is
+supposed to be a list of simple predicates, but if the list has only one
+element, and that element is atomic, then that atom [simple predicate] may be
+used instead of the list.  Also, a simple predicate of T cannot be put into a
+list.  A list of simple predicates is satisfied if any member of the list is
+satisfied [they are scanned left-to-right].  There are three types of simple
+predicates, corresponding to the possible types of the first argument.  All
+predicates in a given CASE form must be of the same type, the type of the
+value of the first argument.
+
+	The simple predicates of type SYMBOL are T and <ATOM>, where <ATOM>
+is some symbol.  T is always "satisfied", and <ATOM> is satisfied if the value
+of the first argument is EQ to <ATOM> [notice that the first argument is
+evaluated, but predicates are not].  The simple predicates of type FIXNUM are
+similar, except that = is used instead of EQ to check for equality, and one may
+also use the form (<LOW> <HIGH>), which is satisfied if <LOW> <= X <= <HIGH>,
+where X is the value of the first argument.  Finally, predicates of type FLONUM
+are analogous to those of type FIXNUM, except that the interval condition is
+<LOW> < X < <HIGH>.
+
+	If this has confused you, maybe the examples below will help.
+
+Examples:
+
+(CASE X (1 (FOO)) (2) (3 A B) (T C)) =
+
+(COND ((= X (QUOTE 1)) (FOO))
+      ((= X (QUOTE 2)))
+      ((= X (QUOTE 3)) A B)
+      (T C))
+
+(CASE X ((A B) (F1)) (C (F2)) ((D E T) (F3)) (T (F4))) =
+
+(COND ((OR (EQ X (QUOTE A)) (EQ X (QUOTE B))) (F1))
+      ((EQ X (QUOTE C)) (F2))
+      ((OR (EQ X (QUOTE D)) (EQ X (QUOTE E)) (EQ X (QUOTE T))) (F3))
+      (T (F4)))
+
+(CASE (FOO) (1.3 (F1)) (((1.5 1.7)) (F2))) =
+
+((LAMBDA (G0004)
+	 (COND ((= G0004 (QUOTE 1.3)) (F1))
+	       ((AND (> G0004 1.5) (< G0004 1.7)) (F2))))
+ (FOO))
+
+							Memo from David Barton
+							       9/28/77
+								p. 8
+
+
+F.  Random Macros
+
+	There are many simpler macros defined for your use, which are too
+numerous to explain here.  They include PROG1, FN, LCOPY, LCOPY1, DELET,
+LPUSH, LPOP, EXCH, REPEAT, WHILE, LOGOR, LOGAND, LOGXOR, EVENP, >=, <=, IF,
+COMPILING, BIND, ERLIST, and a few others.  Many of these were originally
+written by other people, and have been incorporated into this one package.
+If you have any that you wish to add or have written, please let me know.
+Thanks.
+
+							Memo from David Barton
+							       9/28/77
+								p. 9
+
+
+III.  Basic Features
+
+	These are the basic constructs used in defining both system modes
+[see section IV below] and user-defined modes.
+
+
+A.  Declaring Modes
+
+	One may declare modes of variables and functions [and macros] in an
+analogous way to declarations of LISP data-types, except using MDECLARE
+instead of DECLARE, and MDEFUN instead of DEFUN when there are local
+definitions present [inside the function definition].  MUNDECLARE will undo
+the effects of an MDECLARE.  Alternatively, one can declare the mode of a
+particular occurence of a form by using MODE-NOTE [see \ [back-slash] under
+SCACHAR above].  (MODE-NOTE <MODE> <FORM>) is equivalent to <FORM>, except
+that this occurrence of it is also declared to be of mode <MODE>.  MODE is an
+EXPR [1 arg] which returns the mode of a given form.
+
+	[Implementational note:  declarations of the form
+(MDECLARE (<MODE> (<FN> <MODE1> <MODE2> ...))) will currently declare <FN> to
+return values of mode <MODE>, but will NOT declare its arguments to be of mode
+<MODE1>, <MODE2>, etc.]
+
+Examples:
+
+(MDECLARE ((LIST CONS) LC (LCMAKE)))
+		;declare the variable LC to take on values, and the function
+		;LCMAKE to return values, which are LISTs of CONSes
+
+(MODE 'LC) => (LIST CONS)
+
+(MODE '(LCMAKE X Y)) => (LIST CONS)
+
+(MUNDECLARE ((LIST CONS) (LCMAKE)))
+
+(MODE '(LCMAKE X Y)) => NIL
+
+(MDEFUN FOO (LC)
+	(MDECLARE (BOOLEAN LC))
+	(BOOLEAN$TRUE? LC))
+
+(MODE 'LC) => (LIST CONS)		;local declaration has no effect here
+
+(MODE '(MODE-NOTE FIXNUM N)) => (FIXNUM)
+
+(MODE-NOTE FIXNUM N) = N
+
+							Memo from David Barton
+							       9/28/77
+								p. 10
+
+
+B.  DEFMODE, SIMP-MODE, MCONSTRs, and DEFMCONSTR
+
+	One defines new mode types by using DEFMODE.  [Recall that a MODE TYPE
+is an atomic symbol [NIL being the arbitrary type], and that a MODE is either
+NIL [the structureless mode, with mode type of NIL], or a dotted pair of a
+non-NIL mode type and a list of "arguments".  In what follows, we frequently
+speak of the MODE TYPE and ARGUMENTS of a given mode, which are no more than
+the CAR and CDR of the mode.]
+(DEFMODE <MODE-TYPE> <PARAM-LIST> <IMP-MODE> . <OPTIONS>) defines the mode type
+<MODE-TYPE>, with a parameter list of <PARAM-LIST>, and an implementational
+mode of <IMP-MODE>.  <OPTIONS> is a list of defmode options, described in
+section D below.  [It may be the empty list.]
+
+	The purpose of <PARAM-LIST> and <IMP-MODE> is that they allow modes of
+type <MODE-TYPE> to be re-expressed as other, more low-level, modes.  SIMP-MODE
+is in fact a function of one argument, a mode, which returns a lower-level
+version of the same mode, obtained by substituting the arguments of the mode
+[i.e., the items in the CDR of the mode] for the formal parameters [the items
+in the parameter list, <PARAM-LIST>] of the mode type [the CAR of the MODE] in
+the implementational mode [<IMP-MODE>] of that mode type.  Thus in the example
+in section I above, LIST4 is given a parameter list of (ELTS-MODE), and an
+implementational mode of (DISJ (NON-EMPTY ...)).  (SIMP-MODE '(LIST4 FIXNUM))
+simply substitutes FIXNUM for ELTS-MODE in the implementational mode, obtaining
+
+(DISJ (EMPTY (QUOTE NIL) NULL)
+      (NON-EMPTY (CONS (FIRST FIXNUM) (REST (LIST4 FIXNUM) NIL))))
+
+The <PARAM-LIST> does not have to be a list of parameters.  It will be
+associated to the list of arguments to a mode in the same way that SAPPLY
+associates the bound variable "list" to the list of arguments [see section II
+above for the definition of SAPPLY].  Also, as a special case,
+(SIMP-MODE NIL) => NIL.
+
+	Actually, SIMP-MODE does recognize still one other case:  if <IMP-MODE>
+has a CAR of EVAL, which is not a legal mode type [by proclamation], then the
+following function will be created:  `(LAMBDA ,<PARAM-LIST> @(CDR <IMP-MODE>)),
+it will be SAPPLYed to the arguments [i.e., CDR] of the mode, and this result
+will be returned.  Thus if we do
+
+(DEFMODE ARRAY (ELTS-MODE)
+	 (EVAL (COND ((EQ ELTS-MODE 'FIXNUM) 'FIXNUM-ARRAY)
+		     ((EQ ELTS-MODE 'FLONUM) 'FLONUM-ARRAY)
+		     (T NIL))))
+
+and call SIMP-MODE, the function
+
+(LAMBDA (ELTS-MODE) (COND ((EQ ELTS-MODE 'FIXNUM) 'FIXNUM-ARRAY)
+			  ((EQ ELTS-MODE 'FLONUM) 'FLONUM-ARRAY)
+			  (T NIL)))
+
+will be created.  For example, (SIMP-MODE '(ARRAY FLONUM)) => (FLONUM-ARRAY).
+
+							Memo from David Barton
+							       9/28/77
+								p. 11
+
+
+	Sometimes one wants certain side-effects to happen every time a new
+mode type is created which is a special case of a given mode type.  [A mode
+BAR is a special case of the mode type of FOO if either BAR's mode type is FOO,
+or if (SIMP-MODE BAR) is a special case of the mode type of FOO.  A mode type
+of BAZ is a special case of the mode type FOO if the mode represented by BAZ,
+i.e. the mode with mode type BAZ and arguments NIL, is a special case of the
+mode type of FOO.]  For example, suppose you have created the mode type of
+WEIRDO, and you wish to know if anyone ever defines a new mode type which is a
+special case of WEIRDO.  If anyone ever does, you want to automatically mail a
+message to yourself telling you the name of the new mode type.  [This is a
+screwy example, but more interesting ones are harder to explain.]
+
+	This can be accomplished through the use of MCONSTRs.  If a mode type
+of A is also an MCONSTR [implementationally this means it has an MCONSTR
+property], then whenever a new mode type B which is a special case of A is
+defined using defmode, the MCONSTR property of A is SFUNCALLed on three
+arguments:  the mode equivalent to B which is of mode type A, the top-level
+<PARAM-LIST> for B, and the atomic symbol B.  One can define MCONSTRs by
+either using DEFMCONSTR, with a syntax like DEFUN, or by using the DEFMODE
+option of MCONSTR [see section D below].
+
+Examples:
+
+(DEFMODE FOO (X)
+	 (LIST X))
+
+(SIMP-MODE '(FOO FIXNUM)) => (LIST FIXNUM)
+
+(DEFMCONSTR FOO (MODE BVL NAME)
+	    (PUTPROP NAME T 'FOO))
+
+(DEFMODE BAR L
+	 (EVAL (LIST 'FOO (TYPEP (CAR L)))))
+
+(GET 'BAR 'FOO) => T
+
+(SIMP-MODE '(BAR 3.0)) => (FOO FLONUM)
+
+							Memo from David Barton
+							       9/28/77
+								p. 12
+
+
+C.  MMACROS
+
+	One can define a GENERIC OPERATOR to be an operator which works over
+a class of domains [or in our case, modes], but perhaps differently depending
+on the particular domain.  Thus there are many PLUS functions, corresponding to
+different algebraic structures [FIXNUMs, FLONUMs, integers, polynomials, etc.],
+there are many implementations of PUSH, depending on the implementation of a
+stack [LIST, ARRAY, etc.], and so on.  Also, one may want special cases to be
+treated specially [for instance, LISTs can be considered as CONSes, but one
+may want them to PRINT differently].  If the particular domain will be known
+at compile time, one can implement a generic operator as an MMACRO, which is
+a macro which expands differently depending either on the mode of a particular
+argument, or on the expected mode of the result.
+
+	We call this mode, which controls the expansion of the mmacro, the
+DOMAIN.  The domain of a particular use of an mmacro is determined by the TYPE
+of the mmacro, which is either:
+
+1.  RETURN [or RET], which means the domain is the expected mode of the result,
+2.  0, which means that the domain will actually appear as the first argument
+to the mmacro,
+3.  A positive integer, say N, which means that the domain is the mode of the
+N-th argument, or
+4.  A negative integer, say -N, which means that the domain is the mode of the
+N-th argument from the last [i.e., just count backwards].
+
+Each mmacro also has a set of modes types which it knows about.  SIMP-MODE is
+repeated called on the domain until one of these mode types is produced.  The
+mmacro is then SFUNCALLed on three arguments:  the form to be expanded, the
+mode with the mode type that the mmacro recognized, and a list of the modes
+that have been considered so far.  [This last argument is usually not needed,
+and because of the sfuncall sugar, usually does not even appear in the bound
+variable list of the mmacro.]  If the result of this call is NIL, then the
+mmacro is considered to be saying that it really doesn't recognize this mode
+after all [this option is necessary in some cases], the domain will be
+SIMP-MODEd again, and the process is continued.  If the result is non-NIL,
+then it will be returned as the expansion of the macro.
+
+	One may define mmacros by using the DEFMODE option of MMACRO [see
+section D below], or by using DEFMMACRO.
+(DEFMMACRO <NAME> <TYPE> <DOMAIN> <BVL> . <BODY>) defines the mmacro <NAME>
+of type <TYPE>.  <DOMAIN> is either an atomic symbol [including NIL], in which
+case this definition of the mmacro will be used for modes of that mode type,
+or it is a list of mode types, and this definition of the mmacro will be used
+for modes with mode type a member of that list.  <BVL> is the bound variable
+list, which will be pattern-matched against the form, mode, and modes-so-far
+[the arguments to the mmacro], as explained above, and <BODY> is the set of
+forms to evaluate when the mmacro is called.
+
+	The last fine point about mmacros concerns the special mode type of
+UNION.  If, while trying to expand a form involving a particular mmacro, a mode
+of type UNION is generated, then all the possible sub-modes [arguments to the
+union, as explained in section IV below] will be searched in the effort to
+generate a mode which the mmacro recognizes.
+
+							Memo from David Barton
+							       9/28/77
+								p. 13
+
+
+Examples:
+
+;Define a Mode-keying PLUS for the mode INTEGER:
+(DEFMMACRO MPLUS 1 INTEGER ((NIL X Y))
+	;[(NIL X Y) corresponds to the form to be expanded, and the mode and
+	;modes-so-far are ignored]
+	   `\INTEGER\(PLUS \INTEGER\,X \INTEGER\,Y))
+
+(MPLUS \INTEGER\2 3) = (MODE-NOTE INTEGER (PLUS (MODE-NOTE INTEGER 2)
+						(MODE-NOTE INTEGER 3)))
+	    = (PLUS 2 3)
+	    => 5
+
+;Define a MEMBER function for Lists, which is like LISP's MEMBER except that
+;if the elements are of mode SYMBOL then MEMQ is used instead:
+(DEFMMACRO LMEMBER 2 LIST ((NIL ITEM L) M)
+	;M looks like (LIST <ELTS-MODE>).  ITEM is of mode <ELTS-MODE>, and
+	;L is of mode M.
+	   `\,M\(,(COND ((OR (EQ (CADR M) 'SYMBOL)
+			     (AND (NOT (ATOM (CADR M)))
+				  (EQ (CAADR M) 'SYMBOL))) 'MEMQ)
+			(T 'MEMBER))
+		 \,(CADR M)\,ITEM
+		 \,M\,L))
+
+(MDECLARE ((LIST SYMBOL) L1) (LIST L2))
+
+(LMEMBER X L1) = (MODE-NOTE (LIST SYMBOL)
+			    (MEMQ (MODE-NOTE SYMBOL X)
+				  (MODE-NOTE (LIST SYMBOL) L1)))
+	       = (MEMQ X L1)
+
+(LMEMBER X L2) = (MODE-NOTE (LIST)
+			    (MEMBER (MODE-NOTE NIL X)
+				    (MODE-NOTE (LIST) L2)))
+	       = (MEMBER X L2)
+
+;Mmacros will search union's, looking for a recognizable mode type:
+(LMEMBER X \(UNION (B (BUCKET)) (L (LIST SYMBOL)))\L) = (MEMQ X L)
+
+;Extend MPLUS to work for RATNUMs [rational numbers], assuming that there
+;exists a function for adding RATNUMs called RATNUM$PLUS:
+(DEFMMACRO MPLUS 1 RATNUM ((NIL X Y))
+	   `\RATNUM\(RATNUM$PLUS \RATNUM\,X \RATNUM\,Y))
+
+(MPLUS \RATNUM\R1 R2) = (MODE-NOTE RATNUM
+				   (RATNUM$PLUS (MODE-NOTE RATNUM R1)
+						(MODE-NOTE RATNUM R2)))
+		      = (RATNUM$PLUS R1 R2)
+
+;Unions can be confusing, however:
+(MPLUS \(UNION (I INTEGER) (R RATNUM))\R1 R2)
+     = Cannot expand (MPLUS (MODE-NOTE (UNION (I INTEGER) (R RATNUM)) R1) R2)
+
+							Memo from David Barton
+							       9/28/77
+								p. 14
+
+
+D.  DEFMODE Options
+
+	Any argument to DEFMODE after the third [<IMP-MODE>] should be a
+non-atomic form whose CAR is a legal defmode option, i.e. one of the following:
+DEFUN, MDEFUN, ADEFUN, EXPR, FEXPR, LEXPR, FUNCTION, COMPILER-FUNCTION [or
+CFUNCTION], BOTH-FUNCTION [or BFUNCTION], MACRO, SMAC, MACRODEF, OMACRODEF,
+ALIAS, INHERIT, MMACRO, MCONSTR, PROPERTY [or PROP], and OTHER.  The use of
+these options allows the user to implement "CLUSTERs".  A CLUSTER is an
+abstract data-type, complete with a total list of all the operations that can
+be performed on that data-type.  By convention, the names of these operations
+usually begin with the name of the cluster, followed by a $.  [These ideas are
+all directly stolen from the CLU system.]
+
+	For example, a DEFUN clause is treated just like a top-level defun,
+except that the function name has the name of the mode type followed by a $
+tacked onto its front.  E.g., in
+
+(DEFMODE GERM ()
+	 (UNION (ALIVE (CONS NIL (QUOTE T)))
+		(DEAD (CONS NIL (QUOTE NIL))))
+	 (DEFUN KILL (G) (RPLACD G NIL)))
+
+the defun clause has the same effect as a top-level
+
+(DEFUN GERM$KILL (G)
+       (RPLACD G NIL))
+
+The MDEFUN, ADEFUN [a type of defun need by SCA - the Subsystem for
+Computational Algebra], MACRODEF, OMACRODEF, and ALIAS clauses work
+analogously.  The EXPR, FEXPR, LEXPR, and MACRO clauses work similarly, i.e.
+(<CLAUSE-TYPE> <NAME> . <BODY>) = (DEFUN <NAME> <CLAUSE-TYPE> . <BODY>) as
+defmode clauses, where <CLAUSE-TYPE> is either EXPR, FEXPR, LEXPR, or MACRO.
+FUNCTION, COMPILER-FUNCTION, and BOTH-FUNCTION are all identical to DEFUN,
+except that only the compiler [or interpreter if the code is not compiled]
+learns about COMPILER-FUNCTIONs [usually functions which help expand macros],
+and both the compiler and final LISP that the FASL file is loaded into will
+learn about BOTH-FUNCTIONs.  SMAC is used like a top-level DEFUN-SMAC, except
+once again the macro name has the mode type name and a $ tacked onto the front.
+Finally, INHERIT is used to turn mmacros into macros.  The CDR of an INHERIT
+clause should be a list of atomic symbols [names of mmacros].  For each mmacro
+there will be created an associated macro, with the same name except for the
+ever-present mode type name and $ tacked onto the front.  These macros are
+defined to simply expand into their respective mmacros.  ***mmacros of type 0
+
+DEFUN, MDEFUN, ADEFUN, EXPR, FEXPR, LEXPR, FUNCTION, COMPILER-FUNCTION [or
+CFUNCTION], BOTH-FUNCTION [or BFUNCTION], MACRO, SMAC, MACRODEF, OMACRODEF,
+ALIAS, INHERIT, MMACRO, MCONSTR, PROPERTY [or PROP], and OTHER.
+
+
+
+	[_]
+
+
+***  To use the package, do:
+
+(declare ((lambda (macros) (eval (read))) nil))
+(load '((mc sca) mode fasl))
+
+*** (scachar)
+
+There are many reasons that a mode package such as this one can be
+useful.  Primary among these is that it allows a user to deal with
+"abstractions", rather than their implementations.  For example,
+:\LIST\L:FIRST is simply more mnemonic than (CAR L).  Also, mmacros may be
+defined to work similarly for many modes, which makes code independent of
+which particular mode is used.  Generally, allowing one to think abstractly
+makes code both easier to write and read, since it is generally clearer.  One
+can also make a data structure truly abstract by putting all the
+implementation-dependent operations which act on it in the definition of the
+mode, and then only accessing the structure through those operations.  If the
+underlying representation is then changed, only the mode definition [including
+those operations] need be changed.  [This has actually been done for the mode
+POLY in SCA - see SCA;POLY >.]  Finally, there is no loss of run-time
+efficiency because of using modes.
+
+	Work is currenly being planned on implementing run-time disambiguation
+of modes, compile-time type-checking, and run-time type-checking as a debugging
+feature.  I would like to thank Alex Doohovskoy, Mike Genesereth, Bob Kerns,
+David Moon, Alan Snyder, Guy Steele, Barry Trager, Rich Zippel, and the CLU
+and ECL groups for many ideas [and actual code]!  It should be noted that Joel
+Moses thought the idea a total waste and didn't stop me anyway.
+***mfcns
+
+Document on-line:  MMMEMO > sca; - will be updated as needed.
