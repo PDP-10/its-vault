@@ -1,0 +1,550 @@
+;; -*-midas-*-
+
+title program running demon
+
+zr=0
+a=1
+b=2
+c=3
+d=4
+e=5
+f=6
+g=7
+
+x=13
+y=14
+z=15
+
+p=17
+
+dski==10
+dsko==11
+usri==12
+usro==13
+erri==14
+
+bufsiz==300
+pdlsiz==40
+
+define princ &string&
+	move x,[440700,,[ascii string]]
+	movei y,.length string
+	.call csioto
+	 .lose 1000
+termin
+
+define search *str*,escape,\label
+label:
+irpc ch,,[str]
+	ildb x,a
+	jumpe x,escape
+	caie x,"ch
+	 jrst label
+termin
+termin
+
+
+go:	.suset [.roption,,a]	;get the option word
+	tlnn a,optcmd		;test for jcl
+	 jrst die		;if none, die
+	.break 12,[..rjcl,,buffer]	;get the jcl
+go1:	move p,[-pdlsiz,,pdl-1]
+	move a,[440700,,buffer]	;make sure there is someone to answer to.
+	search /Iam:/,dumpit
+go2:	.call [	setz
+		sixbit /open/
+		[.uao,,dsko]
+		[sixbit /dsk/]
+		[sixbit /_runpg/]
+		[sixbit /output/]
+		setz [sixbit /.mail./]]
+	 .lose 1400
+	princ /FROM-JOB:RUNPGM
+SENT-BY:RUNPGM
+HEADER-FORCE:RFC733
+TO:(/
+toloop:	ildb b,a
+	cain b,^M
+	 jrst todone
+	.iot dsko,b
+	jrst toloop
+todone:	princ /)
+SUBJECT:/
+	move a,[440700,,buffer]	;find program to run
+	search /Yourun:/,nojob
+jobhak:	pushj p,jobred		;go read the job spec
+	 jumpn a,bdjspc		;a non-zero is error return (bad job spec)
+	pushj p,pjname		;print the job name
+	pushj p,pjcl		;print the jcl
+	princ /
+TEXT;-1
+/
+
+	pushj p,opnusr		;open the user device and load job
+	 jumpn a,toobad 
+	pushj p,opndsk		;open the disk file for tty output
+	 jumpn a,toobad
+	.call [	setz
+		sixbit /tranad/
+		[200002,,usro]	;job and inferiors, output only
+		[-4,,trnfrm]
+		setz [-4,,tranto]]
+	 .lose 1000
+	.call [	setz
+		sixbit /tranad/
+		[200001,,usro]	;job and inferiors, input only
+		[-4,,trnfrm]	;tty input
+		setz [-4,,trnnul]]	;comes from the nul: device!!
+	 .lose 1000
+	pushj p,gojob
+	 skipe a
+	  pushj p,bdjret	;bad job return
+	pushj p,getout		;go get the output
+toobad:	pushj p,finish		;finish things
+die:	skipe debug
+	 .value
+	.logout 1,
+	.break 16,160000
+	.value
+
+jobred:				;read a job spec from byte pointer in a
+	push p,a
+	ildb x,a
+	pop p,a			;get it back
+	cain x,<" >
+	 jrst [ ibp a ? jrst jobred]
+	skipe x			;null is bad
+	 cain x,^M		;so is a return
+	  jrst [setoi a, ? popj p,]	;set error return (a non-zero) and return
+	movei y,[movei f,<" > ? popj p,]
+	cain x,"[
+	 movei y,[movei f,"] ? ibp a ? popj p,]
+	pushj p,(y)
+	pushj p,redfil		;read a filename
+	skipn fname2
+	 pushj p,[move x,fname1 ? movem x,fname2 ? move x,[sixbit /ts/]
+		  movem x,fname1 ? popj p,]
+	skipe dirnam
+	 jrst opntry
+	movei x,[sixbit /sys   sys1  sys2  sys3  / ? 0]
+jobre2:	move a,(x)
+	jumpe a,jobre4
+	movem a,dirnam
+	aos x
+	push p,x
+	pushj p,opntry
+	pop p,x
+	jumpn a,jobre2
+	popj p,
+
+jobre4:	setoi a,
+	popj p,
+
+
+redfil:	move b,[sixbit /dsk/]
+	movem b,devnam
+	setzm fname1
+	setzm fname2	
+	trz zr,1
+fnr1:	move c,[440600,,b]
+	setzi b,
+fnrnxt:	ildb d,a
+	cain d,":
+	 jrst [	jumpe b,fnr1
+		movem d,devnam
+		jrst fnr1]
+	cain d,";
+	 jrst [	jumpe b,fnr1
+		movem b,dirnam
+		jrst fnr1]
+	camn d,f		;test for end character
+	 jrst fnend
+	caie d,<" >
+	 cain d,^I
+	  jrst fnrfn
+	caie d,^M
+	 cain d,0
+	  jrst fnend
+	caig d,40
+	 jrst fnrnxt
+	tlnn c,770000
+	 jrst fnrnxt
+	cail d,"a
+	 caile d,"z
+	  subi d,40
+	idpb d,c
+	jrst fnrnxt
+
+fnrfn:	jumpe b,fnr1
+	trce zr,1
+	 jrst [	movem b,fname2
+		jrst fnr1]
+	movem b,fname1
+	jrst fnr1
+
+fnend:	jumpe b,fnend1
+	trce zr,1
+	 jrst [	movem b,fname2
+		jrst fnend1]
+	movem b,fname1
+
+fnend1:	setzm jcllen
+	setzm jclbuf
+	setzm jclp
+	caie d,^M
+	 cain d,0
+	  popj p,
+	cain d,<"]>
+	 jrst [ildb d,a ? jrst fnend1]
+	setom jclp		;there is jcl
+	move b,[440700,,jclbuf]
+fnend3:	ildb d,a
+	idpb d,b
+	aos jcllen
+	caie d,^M
+	 cain d,0
+	  popj p,
+	jrst fnend3
+
+opntry:	setzi a,
+	.call [	setz
+		sixbit /open/
+		[.uii,,dski]
+		devnam
+		fname1
+		fname2
+		setz dirnam]
+	 setoi a,
+	popj p,
+
+opnusr:	movei x,4		;four tries
+	move y,fname1
+	camn y,[sixbit /ts/]
+	 move y,fname2
+
+opnus1:	.call [	setz
+		sixbit /open/
+		[10+.uii,,usri]
+		[sixbit /usr/]
+		movei 0
+		setz y]
+	 jrst opnus2
+	.close usri,
+	aos y
+	sojg x,opnus1
+	
+opnus2:	.call [	setz
+		sixbit /open/
+		[.uio,,usro]
+		[sixbit /usr/]
+		movei 0
+		setz y]
+	 jrst [	princ /Program hit a snag -- please try again
+/
+		jrst includ]
+	.call [	setz
+		sixbit /open/
+		[.uii,,usri]
+		[sixbit /usr/]
+		movei 0
+		setz y]
+	 .lose 1000
+
+	.call [	setz
+		sixbit /load/
+		movei usro
+		setzi dski]
+	 jrst [	.close dski,
+		princ /Opened file but couldn't load it -- weird -- please try again
+/
+		jrst includ]
+	.iot dski,strt		;get the start instruction
+	hrrzs strt		;flush random pc flags
+	.close dski,
+	setzi a,
+	popj p,
+
+opndsk:	.call [	setz
+		sixbit /open/
+		[.uao,,erri]
+		tranto
+		tranto+1
+		tranto+2
+		setz tranto+3]
+	 jrst [	princ /Couldn't open a temporary file for anticipated tty output -- please try again/
+		jrst includ]
+	.call [	setz
+		sixbit /rfname/
+		movei erri
+		movem tranto
+		movem tranto+1
+		movem tranto+2
+		setzm tranto+3]
+	 jrst [	princ /RFNAME got error?? No comprendo. Please try again.
+/
+		jrst includ]
+	.close erri,
+	popj p,
+
+
+gojob:	.uset usri,[.supc,,strt]	;set the starting address
+	.uset usri,[.rintb,,intbit]	;find the interrupt bit for this job
+	skipe jclp		;if jcl available
+	 .uset usri,[.soption,,[optcmd,,]]	;tell it
+
+	movei a,60.		;allow 60 snoozes
+gojob2:	.uset usri,[.sustp,,[0]]	;GO!!!
+	movei 30.*5
+	.sleep			;5 second snooze
+	sojl a,gojob9		;ran too long, go stop it
+	.uset usri,[.rrunt,,b]
+	caml b,[250.*1000.*30.]	;30 seconds of runtime
+	 jrst gojob9		;too much, kill for this reason too
+	skipa
+gojob3:	pushj p,[.uset usri,[.sustp,,[0]]	;make the job runable
+		 movei 4	;4/30's of a second
+		 .sleep		;sleep it off
+		 popj p,]
+	.suset [.rifpir,,b]	;get the inferior interrupt bits
+	tdzn b,intbit
+	 jrst gojob2
+	.suset [.sifpir,,b]	;clear my bit
+	.uset usri,[.rpirqc,,b]	;we may use this later
+	.uset usri,[.rsv40,,c]	;get the instruction that was executed
+	ldb d,[331100,,c]	;get the opcode
+	ldb e,[270400,,c]	;get the ac field
+	cain d,<.break_-33>	;was it a .break?
+	 jrst gojob4
+	caie d,<.logout_-33>
+	 jrst gojob9		;too fatal for us, go kill
+	jumpe e,gojob9		;.logout 0, is also too fatal for us to deal with
+	jrst gojob8		;die quietly
+gojob4:	caie e,12		;break 12,?
+	 jrst [	cain e,16	;break 16,?
+		 jrst gojob8	;die nicely
+		jrst gojob9]	;dir horribly
+	.access usri,c		;point to effective address of instruction
+	.iot usri,c		;get command word
+	ldb d,[221100,,c]
+	caie d,5		;jcl related?
+	 jrst gojob9		;nope, die badly
+	.uset usri,[.sapirqc,,[%pibrk]]	;turn off the interrupt, we can handle it
+	jumpl c,[setzm jclp	;if type=write, no jcl from no on
+		 .uset usri,[.roption,,c]
+		 tlz c,optcmd
+		 .uset usri,[.roption,,c]
+		 jrst gojob3]	;start the job up again
+	skipn jclp
+	 jrst gojob3		;if no jcl, ignore the request
+
+	move b,jcllen
+	movei d,jclbuf
+	.access usri,c
+	.access usro,c
+gojob5:	.iot usri,c
+	jumpn c,gojob3
+	.iot usro,(d)
+	aos d
+	subi b,5
+	jumpg b,gojob5
+	jrst gojob3
+
+gojob8:	.uclose usri,
+	.uclose usro,
+	setzi a,
+	popj p,
+
+gojob9:	.uclose usri,
+	.uclose usro,
+	setoi a,
+	popj p,
+
+
+getout:				;get the output from the job
+	.call [	setz
+		sixbit /open/
+		[.uai,,dski]
+		tranto
+		tranto+1
+		tranto+2
+		setz tranto+3]
+	 jrst [princ /
+**ERROR** couldn't retrieve tty output. error:
+/
+		pushj p,erprnt
+		popj p,]
+nxtblk:	move x,[440700,,buffer]
+	movei y,bufsiz*5
+	.call csioti
+	 .lose 1000
+	move x,[440700,,buffer]
+	jumpn y,lstblk
+	movei y,bufsiz*5
+	.call csioto
+	 .lose 1000
+	jrst nxtblk
+lstblk:	subi y,bufsiz*5
+	movn y,y
+	.call csioto
+	 .lose 1000
+	popj p,
+
+erprnt:		.call [	setz
+		sixbit /open/
+		[.uai,,erri]
+		[sixbit /err/]
+		movei 4
+		setz ercode]
+	 .lose 1000
+erprt1:	.iot erri,x
+	cain x,^L
+	 jrst [	.close erri,
+		jrst includ]
+	.iot dsko,x
+	jrst erprt1
+
+finish:	.call [	setz
+		sixbit /delewo/
+		setzi dski]
+	 jfcl
+	.close dski,
+	.call [	setz
+		sixbit /renmwo/
+		movei dsko
+		[sixbit /mail/]
+		setz [sixbit />/]]
+	 .lose 1000
+	.close dsko,
+	popj p,
+
+
+
+bdjspc:	princ /Your request
+TEXT;-1
+I couldn't find the job you wanted run.
+/
+	jrst includ
+
+nojob:	princ /Your request
+TEXT;-1
+I couldn't figure out what program you wanted.
+/
+includ:	princ /
+Here is your message as I recieved it:
+
+/
+	move a,[440700,,buffer]
+	setzi y,
+incld0:	ildb b,a
+	skipe b
+	 aoja y,incld0
+	move x,[440700,,buffer]
+	.call csioto
+	 .lose 1000
+	pushj p,finish
+	jrst die
+
+bdjret:	princ /The program did not stop normally. Obtained output follows:
+/
+	popj p,
+
+
+
+
+dumpit:	.call [	setz
+		sixbit /open/
+		[.uao,,dsko]
+		[sixbit /dsk/]
+		[sixbit /runpgm/]
+		[sixbit /die/]
+		setz [sixbit /dcp/]]
+	 .lose 1400
+	move x,[440700,,buffer]
+	movei y,bufsiz*5
+	.call csioto
+	 .lose 1000
+	.close dsko,
+	jrst die
+
+pjname:	.iot dsko,[" ]
+	.iot dsko,["[]
+	move b,devname
+	pushj p,6type
+	.iot dsko,[":]
+	.iot dsko,[40]
+	move b,dirnam
+	pushj p,6type
+	.iot dsko,[";]
+	.iot dsko,[40]
+	move b,fname1
+	pushj p,6type
+	.iot dsko,[40]
+	move b,fname2
+	pushj p,6type
+	.iot dsko,["]]
+	popj p,
+
+;;;Print out the sixbit in B.
+6type:	move y,[360600,,b]
+6type1:	ldb x,y
+	addi x,40
+	.iot dsko,x
+	lsh b,6
+	jumpn b,6type1
+	popj p,
+
+pjcl:	skipn jclp
+	 popj p,
+	.iot dsko,[" ]
+	move x,[440700,,jclbuf]
+	move y,jcllen
+	.call csioto
+	 .lose 1000
+	.iot dsko,[12]
+	popj p,
+
+
+debug:	0			;-1 <==> debugging
+ercode:	0
+
+strt:	0			;the start instruction of the job
+devnam:	0			;file job gets loaded from
+dirnam:	0
+fname1:	0
+fname2:	0
+
+trnfrm:	sixbit /tty/
+	0 ? 0 ? 0
+tranto:	sixbit /dsk/
+	sixbit /.temp./
+	sixbit />/
+	sixbit /.temp./
+
+trnnul:	sixbit /nul/
+	0 ? 0 ? 0
+
+csioti:	setz
+	sixbit /siot/
+	movei dski
+	move x
+	setz y
+
+csioto:	setz
+	sixbit /siot/
+	movei dsko
+	move x
+	setz y
+
+
+
+constants
+variables
+
+pdl:	block pdlsiz
+buffer:	block bufsiz
+jclbuf:	block 100
+jcllen:	0
+jclp:	0
+intbit: 0
+
+	end go

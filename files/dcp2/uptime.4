@@ -1,0 +1,115 @@
+
+title UPTIME -- Polls various CHAOS sites for their uptime
+
+irps ac,,nil a b c d e f g t tt w x y z p
+ac==.irpcnt ? termin
+
+chaosi==1
+chaoso==2
+ttyo==3
+
+lpdl==40
+.vector pdl(lpdl)
+
+.insrt system;chsdef >
+
+define syscal name,args
+ .call [setz ? sixbit/name/ ? args ((setz))]
+termin
+
+define princ &string&
+	move t,[440700,,[asciz string]]
+	movei tt,.length string
+	syscal siot,[movei ttyo ? t ? tt]
+	  .lose 1000
+termin
+
+go:	move p,[-lpdl,,pdl-1]
+	syscal open,[[.uao,,ttyo] ? ['tty,,]]
+	  .lose 1400
+	movei a,[	[asciz "PLASMA"],,00500
+			[asciz "PFCTST"],,03621
+			[asciz "PFCV80"],,03641
+			[asciz "MIT-VX"],,03120
+			[asciz "FOOBAR"],,00530
+			[asciz "MICWAV"],,00402
+			[asciz "MATH  "],,07770
+			[asciz "CIPG  "],,16260
+			[asciz "DSPG  "],,16240
+			0,,0
+		]
+	princ /
+ Site   dd:hh:mm:ss/
+goloop:	hlr b,(a)
+	princ /
+/
+	jumpe b,die
+	hrli b,440700
+	skipa
+	.iot ttyo,t
+	ildb t,b
+	jumpn t,.-2
+	princ /: /
+	movei b,[	.byte 16.
+			%corfc_8 ? 6
+			0 ? 0 ? 0 ? 0 ? 0 ? 0
+			.byte 8
+			irpc ch,,[UPTIME]
+			"ch ? termin	;"
+			.byte]
+	hrr c,(a)
+	dpb c,[$cpkda (b)]
+	syscal chaoso,[movei chaosi ? movei chaoso ? movei 1]
+	 .lose 1000
+	syscal pktiot,[movei chaoso ? b]
+	 .lose 1000
+	movei t,30.*5
+	syscal netblk,[movei chaoso ? movei %csrfs ? t ? movem tt]
+	 .lose 1000
+	caie tt,%cscls
+	 jrst [	princ /Timed out while trying to get connected./
+		aoja a,goloop]
+.vector ipkt(128.)
+	syscal pktiot,[movei chaosi ? movei ipkt]
+	 .lose 1000
+	ldb tt,[$cpkop ipkt]
+	caie tt,%coans
+	 jrst [	princ /Did not get ANS packet./
+		aoja a,goloop]
+	ldb tt,[$cpkop ipkt]
+	caie tt,%coans
+	 jrst [	princ /Connection closed -- /
+		move t,[440800,,ipkt+%cpkdt]
+		ldb tt,[$cpknb ipkt]
+		syscal siot,[movei ttyo ? t ? tt]
+		 jfcl
+		aoja a,goloop]
+	setzi b,
+	move c,[440800,,ipkt+%cpkdt]
+	repeat 4,[ildb t,c ? lsh t,.rpcnt*8 ? add b,t ? ]
+	idivi b,60.
+	irps div,,[60. 60. 24.]
+	  idivi b,div ? push p,c ? termin
+	push p,b
+	movei b,4
+golp2:	pop p,c
+	idivi c,10.
+	addi c,"0		;"
+	addi d,"0		;"
+	.iot ttyo,c
+	.iot ttyo,d
+	sose b
+	 .iot ttyo,[":]		;["]
+	jumpn b,golp2
+	aoja a,goloop
+
+die:	.logout 1,
+	.break 16,160000
+	.value
+
+end go
+
+;;; local modes:
+;;; mode:midas
+;;; compile command: :midas dcp;ts uptime_1 /e î
+;;; end:

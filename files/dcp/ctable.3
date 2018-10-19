@@ -1,0 +1,341 @@
+
+title CTABLE -- Create tables for brute force cube position generation
+
+irps ac,,nil a b c d e f g t tt w x y z zz p
+ac=.irpcnt
+termin
+
+lpdl==30
+
+dski==1
+dsko==2
+ttyi==10
+ttyo==11
+
+call=pushj p,
+return=popj p,
+
+define syscal name,args
+	.call [setz ? sixbit /name/ ? args ((setz))]
+termin
+
+
+
+ltable==:<2048.+2187.+8*7*6*5+12.*11.*10.>*12./3
+
+npages==<ltable+1777>/2000
+
+.vector pdl(lpdl)
+
+go:	move p,[-lpdl,,pdl-1]
+	move a,[-npages,,<table/2000>]
+	syscal corblk,[movei %cbred+%cbwrt ? movei %jself ? a ? movei %jsnew]
+	 .lose 1000
+	setzm table
+	move a,[table,,table+1]
+	blt a,table+ltable-1	;just to make sure
+	call do$eo		;do the edge   orientations
+	call do$co		;do the corner orientations
+	call do$cp		;do the corner positions
+	call do$ep		;do the edge   positions
+	syscal open,[[.bio,,dsko] ? ['dsk,,] ? ['ctable] ? ['ctable]]
+	 .lose
+	move a,[-ltable,,table]
+	.iot dsko,a
+	.close dsko,
+.break 16,
+	.logout 1,
+	.break 16,160000
+	.value
+
+irp a,,[[f u r],[b d l]]
+ irps c,,[a]b,,[301400 141400 001400]
+  byt%!c==b
+  byt%!c!p==b
+ termin
+termin
+
+
+
+%temp0==4000
+%temp1==0
+irp a,,[[fl lf],[fu uf],[fr rf],[fd df],[bl lb],[bu ub],[br rb],[bd db],[lu ul],[ld dl],[ru ur],[rd dr]]
+ irps b,,a
+  %eo!b==%temp0
+  %ep!b==%temp1
+ termin
+%temp0==%temp0_-1
+%temp1==%temp1+1
+termin
+
+define $eo side,q,r,s,t,gen,grp
+	move d,c
+	trz d,%eo!side!q\%eo!side!r\%eo!side!s\%eo!side!t
+irps from,,[q r s t]to,,[r s t q]
+	trnn c,%eo!side!!from
+	 tro d,%eo!side!!to
+termin
+	trz d,1_11.
+	dpb d,[byt%!gen,,eo%!grp(b)]
+termin
+
+do$eo:	movei a,1_11.		;11 bit vector to calculate
+	setzi b,
+do$eo2:				;make 12 bit parity even
+	move c,b
+repeat 11.,[
+	trne c,1_.rpcnt
+	 trc c,1_11.
+	]
+
+	$eo f,l,u,r,d,f,fur
+	$eo f,l,d,r,u,fp,pfur
+	$eo b,l,d,r,u,b,bdl
+	$eo b,l,u,r,d,bp,pbdl
+	$eo l,f,d,b,u,l,bdl
+	$eo l,f,u,b,d,lp,pbdl
+	$eo r,f,u,b,d,r,fur
+	$eo r,f,d,b,u,rp,pfur
+	$eo u,f,l,b,r,u,fur
+	$eo u,f,r,b,l,up,pfur
+	$eo d,f,r,b,l,d,bdl
+	$eo d,f,l,b,r,dp,pbdl
+
+	aoj b,
+	sojg a,do$eo2
+	return
+
+
+
+%temp==0
+irps x,,[f b]
+ irps y,,[u r d l]z,,[r d l u]
+  irps w,,x!!y!z x!!z!y y!!x!!z y!z!!x z!!x!!y z!y!!x
+   %co!w==020000*%temp0+000200
+   %cp!w==%temp0
+  termin
+ %temp0==%temp0+1
+ termin
+termin
+
+define $co side,q,r,s,t,dir,gen,grp,\temp
+	move d,c
+temp==dir
+irps from,,[q r s t]to,,[r s t q]toto,,[s t q r]
+	ldb e,[%co!side!!from!to,,c]
+	addi e,temp
+	idivi e,3
+	dpb f,[%co!side!!to!toto,,d]
+temp==3-temp
+termin
+	setzi f,
+repeat 7,[
+	imuli f,3
+	idivi d,4
+	add f,e
+	]
+	dpb f,[byt%!gen,,co%!grp(b)]
+termin
+
+do$co:
+	movei a,<repeat 7,[3*]1>
+	setzi b,
+do$co2:
+	setzi c,
+	move d,[<020000*7+000200>,,c]
+	movei e,7*3
+	move t,b
+repeat 7.,[
+	idivi t,3
+	idpb tt,d
+	sub e,tt
+	]
+	idivi e,3
+	dpb f,[<020000*7+000200>,,c]
+
+	$co f,l,u,r,d,0,f,fur
+	$co f,l,d,r,u,0,fp,pfur
+	$co b,l,d,r,u,0,b,bdl
+	$co b,l,u,r,d,0,bp,pbdl
+	$co l,f,d,b,u,1,l,bdl
+	$co l,f,u,b,d,2,lp,pbdl
+	$co r,f,u,b,d,1,r,fur
+	$co r,f,d,b,u,2,rp,pfur
+	$co u,f,l,b,r,1,u,fur
+	$co u,f,r,b,l,2,up,pfur
+	$co d,f,r,b,l,1,d,bdl
+	$co d,f,l,b,r,2,dp,pbdl
+
+	aoj b,
+	sojg a,do$co2
+
+	return
+
+
+
+define $cp side,q,r,s,t,gen,grp
+	move d,c
+	move f,cpblt1
+	blt f,cptbl+7
+irps from,,[q!r r!s s!t t!q]to,,[r!s s!t t!q q!r]
+	movei e,%cp!side!!to
+	movem e,%cp!side!!from+cptbl
+termin
+	move e,[<060000*4+000600>,,d]
+repeat 4,[
+	ildb f,e
+	move f,cptbl(f)
+	dpb f,e
+	]
+	setzi e,
+repeat 4,[
+	imuli e,.rpcnt+5
+	ldb f,[<060000*<3-.rpcnt>+000600>,,d]
+	add e,f
+ ifn 3-.rpcnt,[
+  repeat 3-.rpcnt,[
+	ldb g,[<060000*.rpcnt+000600>,,d]
+	caml f,g
+	 soj e,
+	]]]	
+	dpb e,[byt%!gen,,cp%!grp(b)]
+termin
+
+.vector cptbl(8+1)
+
+cpblt0:	repeat 8,[<cptbl+1,,cptbl>+<1,,1>*.rpcnt ?]
+cpblt1:	[repeat 8,[  .rpcnt ?]],,cptbl
+cpblt2:	[repeat 8,[7-.rpcnt ?]],,cptbl
+
+do$cp:
+	movei a,8*7*6*5
+	setzi b,	
+do$cp2:
+	move d,b
+	setzi c,
+
+	move f,cpblt1
+	blt f,cptbl+7
+repeat 4,[
+	idivi d,8-.rpcnt
+	move f,cptbl(e)
+	dpb f,[<060000*.rpcnt+000600>,,c]
+	move f,(e)cpblt0
+	blt f,cptbl+8
+	]
+
+	$cp b,l,d,r,u,b,bdl
+	$cp b,l,u,r,d,bp,pbdl
+	$cp f,l,u,r,d,f,fur
+	$cp f,l,d,r,u,fp,pfur
+	$cp u,f,l,b,r,u,fur
+	$cp u,f,r,b,l,up,pfur
+	$cp d,f,r,b,l,d,bdl
+	$cp d,f,l,b,r,dp,pbdl
+	$cp l,f,d,b,u,l,bdl
+	$cp l,f,u,b,d,lp,pbdl
+	$cp r,f,u,b,d,r,fur
+	$cp r,f,d,b,u,rp,pfur
+
+	aoj b,
+	sojg a,do$cp2
+
+	return
+
+
+
+define $ep side,q,r,s,t,gen,grp
+	move d,c
+	move f,epblt1
+	blt f,eptbl+11.
+irps from,,[q r s t]to,,[r s t q]
+	movei e,%ep!side!!to
+	movem e,%ep!side!!from+eptbl
+termin
+	move e,[<060000*3+000600>,,d]
+repeat 3,[
+	ildb f,e
+	move f,eptbl(f)
+	dpb f,e
+	]
+	setzi e,
+repeat 3,[
+	imuli e,.rpcnt+10.
+	ldb f,[<060000*<2-.rpcnt>+000600>,,d]
+	add e,f
+ ifn 2-.rpcnt,[
+  repeat 2-.rpcnt,[
+	ldb g,[<060000*.rpcnt+000600>,,d]
+	caml f,g
+	 soj e,
+	]]]
+	dpb e,[byt%!gen,,ep%!grp(b)]
+termin
+
+.vector eptbl(12.+1)
+
+epblt0:	repeat 12.,[<eptbl+1,,eptbl>+<1,,1>*.rpcnt ?]
+epblt1:	[repeat 12.,[    .rpcnt ?]],,eptbl
+epblt2:	[repeat 12.,[11.-.rpcnt ?]],,eptbl
+
+do$ep:
+	movei a,12.*11.*10.
+	setzi b,
+do$ep2:
+	move d,b
+	setzi c,
+
+	move f,epblt1
+	blt f,eptbl+11.
+repeat 3,[
+	idivi d,12.-.rpcnt
+	move f,eptbl(e)
+	dpb f,[<060000*.rpcnt+000600>,,c]
+	move f,(e)epblt0
+	blt f,eptbl+12.
+	]
+
+	$ep b,l,d,r,u,b,bdl
+	$ep b,l,u,r,d,bp,pbdl
+	$ep f,l,u,r,d,f,fur
+	$ep f,l,d,r,u,fp,pfur
+	$ep u,f,l,b,r,u,fur
+	$ep u,f,r,b,l,up,pfur
+	$ep d,f,r,b,l,d,bdl
+	$ep d,f,l,b,r,dp,pbdl
+	$ep l,f,d,b,u,l,bdl
+	$ep l,f,u,b,d,lp,pbdl
+	$ep r,f,u,b,d,r,fur
+	$ep r,f,d,b,u,rp,pfur
+
+	aoj b,
+	sojg a,do$ep2
+
+	return
+
+
+
+...lit:	constants
+...var::variables
+	0
+table==:<.+1777>&<-2000>
+
+;;; tables are FUR FURp BDL BDLp
+
+irps a,,[eo% co% cp% ep%]b,,[table eo% co% cp%]c,,[0 2048. 2187. 1680.]d,,[2048. 2187. 1680. 1320.]
+a==:b+c*4
+  irps e,,fur pfur bdl pbdl
+	a!!e=:a+d*.irpcnt
+  termin
+termin
+
+freem==:table+npages*2000
+
+end go
+
+;;; local modes:
+;;; mode:midas
+;;; auto fill mode:
+;;; fill column:70
+;;; compile command: :midas dcp;ts ctable_1 î
+;;; end:
