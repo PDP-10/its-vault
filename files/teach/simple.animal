@@ -1,0 +1,209 @@
+;;; -*- LISP -*-
+;;;
+;;; This file contains a simple ANIMAL game in Lisp.
+
+(DECLARE (SPECIAL *MEMORY* *NEW*))
+
+(SSTATUS FEATURE NOLDMSG) ; Turn off autoload messages
+
+(COMMENT Data Structure)
+
+;;; Database structure
+;;;
+;;; <Node> is a <Question-Node> or a <Terminal-Node>
+;;;
+;;; <Question-Node> has components QUESTION, NO-BRANCH, YES-BRANCH, AUTHOR
+;;; <Terminal-Node> has components TERMINAL, AUTHOR
+;;;
+;;; There are EXTRACT-<component> operators for all components.
+;;;
+;;; The predicates QUESTION-NODE? and TERMINAL-NODE? may be applied to any
+;;; node to find its type. 
+;;;
+
+(DEFUN CONSTRUCT-QUESTION (QUES NO YES) (LIST QUES NO YES))
+(DEFUN CONSTRUCT-TERMINAL (TERM)        (LIST TERM))
+
+(DEFUN EXTRACT-QUESTION   (NODE) (CAR   NODE))
+(DEFUN EXTRACT-TERMINAL   (NODE) (CAR   NODE))
+(DEFUN EXTRACT-NO-BRANCH  (NODE) (CADR  NODE))
+(DEFUN EXTRACT-YES-BRANCH (NODE) (CADDR NODE))
+
+(DEFUN TERMINAL-NODE? (NODE)      (ATOM (CAR NODE)))
+(DEFUN QUESTION-NODE? (NODE) (NOT (ATOM (CAR NODE))))
+
+
+(COMMENT General Utilities)
+
+;;; (INTERSECT x y)
+;;; Returns T if the list X has any elements which are EQ to any
+;;;  elemens in Y else NIL.
+
+(DEFUN INTERSECT (X Y)
+       (DO ((L X (CDR L)))
+	   ((NULL L) NIL)
+	   (COND ((MEMQ (CAR L) Y) (RETURN T)))))
+
+;;; (COPY x)
+;;; Does a full copy of a piece of S-Expression
+
+(DEFUN COPY (X) (SUBST NIL NIL X))
+
+
+(COMMENT Main Program Stuff)
+
+;;; (DISPLAY stuff)
+;;; Types a newline and then all the atoms in stuff, separating them
+;;; with spaces.
+
+(DEFUN DISPLAY (X) (TERPRI) (DISPLAY1 X))
+
+;;; (DISPLAY1 stuff)
+;;; Helper function for DISPLAY
+
+(DEFUN DISPLAY1 (X)
+       (COND ((NULL X) NIL)
+	     ((ATOM (CAR X))
+	      (PRINC (CAR X))
+	      (PRINC '| |)
+	      (DISPLAY1 (CDR X)))
+	     (T
+	      (DISPLAY1 (CAR X))
+	      (DISPLAY1 (CDR X)))))
+
+;;; (ANIMAL)
+;;; Toplevel function. Call this to make things go.
+
+(DEFUN ANIMAL ()
+       (OFFER-INSTRUCTIONS)
+       (DO ((AGAIN (PLAY-AND-OFFER-NEW-ROUND)
+		   (PLAY-AND-OFFER-NEW-ROUND)))
+	   ((NOT AGAIN) 'DONE)))
+
+;;; (OFFER-INSTRUCTIONS)
+;;; This will ask the user if he wants instructions. If he does, 
+;;; it will print them on his terminal.
+
+(SETQ *NEW* T)
+
+(DEFUN OFFER-INSTRUCTIONS ()
+       (COND ((OR *NEW* (QUERY '(Do you want instructions?)))
+	      (SETQ *NEW* NIL)
+	      (DISPLAY '(Think of an animal/. I/'ll try to guess what
+			       it is/. If you beat me/, I/'ll let you
+			       teach me your animal/. Put all input
+			       in parentheses/, and don/'t use *any*
+			       punctuation/. Thanks/.)))))
+
+;;; (PLAY-AND-OFFER-NEW-ROUND)
+;;; Runs one round of animal returning T if the guy wants to play again,
+;;; NIL otherwise.
+
+(DEFUN PLAY-AND-OFFER-NEW-ROUND ()
+       (GUESS-HIS-ANIMAL)
+       (DISPLAY '(Thanks for the game/.))
+       (QUERY '(Another game?)))
+
+;;; (INIT-MEMORY)
+;;; If the database is not initialized, initialize it.
+
+(DEFUN INIT-MEMORY ()
+       (COND ((NOT (BOUNDP '*MEMORY*))
+	      (SETQ *MEMORY* (CONSTRUCT-TERMINAL 'DOG))))
+       *MEMORY*)
+
+;;; (GUESS-HIS-ANIMAL)
+;;; This plays one round, maybe learning a new animal if it loses.
+
+(DEFUN GUESS-HIS-ANIMAL ()
+       (LET ((MEMORY (INIT-MEMORY))
+	     (RESULT NIL))
+	    (COND ((SETQ RESULT (FAIL-TO-GUESS? MEMORY))
+		   (LEARN RESULT)))))
+
+;;; (FAIL-TO-GUESS)
+;;; This tries to guess the guy's animal using a recursive tree walk
+;;; asking questions.
+;;; If the animal is guessed, NIL is returned (we didn't fail).
+;;; If the animal is not guessed, the node that we lost at is returned
+;;;  so that it can be passed to the LEARN routine.
+
+(DEFUN FAIL-TO-GUESS? (MEMORY)
+       (COND ((TERMINAL-NODE? MEMORY)
+	      (FINALLY-GUESS MEMORY))
+	     ((QUERY (LIST (EXTRACT-QUESTION MEMORY) '|...?|))
+	      (FAIL-TO-GUESS? (EXTRACT-YES-BRANCH MEMORY)))
+	     (T
+	      (FAIL-TO-GUESS? (EXTRACT-NO-BRANCH MEMORY)))))
+
+;;; (FINALLY-GUESS x)
+;;; This makes a guess about the actual animal and returns NIL if it 
+;;; wins or the node to be fixed if it loses (see FAIL-TO-GUESS?)
+
+(DEFUN FINALLY-GUESS (X)
+       (LET ((GUESS (EXTRACT-TERMINAL X)))
+	    (COND ((QUERY (LIST '(I bet it/'s) (@ GUESS) GUESS '|...?|)) NIL)
+		  (T X))))
+
+;;; (@ noun) 
+;;; Returns the appropriate determiner for <noun> -- either A or AN
+;;; This is a simple heuristic -- better ones can be devised.
+
+(DEFUN @ (X) (COND ((MEMQ (GETCHAR X 1.) '(A E I O U)) 'AN) (T 'A)))
+
+;;; (QUERY question)
+;;; Ask a question. Read input. If the guy says YES, return T. If he
+;;; says NO, return NIL. If we don't understand, ask again.
+
+(DEFUN QUERY (X)
+       (DISPLAY X)
+       (LET ((ANSWER (READ-SENTENCE)))
+	    (COND ((ATOM ANSWER) (SETQ ANSWER (NCONS ANSWER))))
+	    (COND ((INTERSECT '(YES Y) ANSWER) T)
+		  ((INTERSECT '(NO N NIL) ANSWER) NIL)
+		  (T (DISPLAY '(I/'m sorry/, I don/'t understand/.))
+		     (QUERY X)))))
+
+;;; (READ-NOUN), (READ-SENTENCE)
+;;; These functions read input. They are the ultimate in primitive and
+;;; can be elaborated on a lot...
+
+(DEFUN READ-NOUN ()
+       (LET ((NOUN (READ)))
+	    (TERPRI)
+	    (COND ((ATOM NOUN) NOUN)
+		  ((CDR NOUN)
+		   (DISPLAY '(JUST ONE WORD PLEASE/././.))
+		   (READ-NOUN))
+		  (T (CAR NOUN)))))
+
+
+(DEFUN READ-SENTENCE () (PROG2 () (READ) (TERPRI)))
+
+;;; (LEARN node)
+;;; Grow a node by asking what the guy was thinking of and what question
+;;; we can used to distinguish an <old-animal> from a <new-animal>.
+
+(DEFUN LEARN (X)
+       (DISPLAY '(What animal were you thinking of?))
+       (LET ((NEW-ANIMAL (READ-NOUN)))
+	    (COND ((EQ NEW-ANIMAL (EXTRACT-TERMINAL X))
+		   (DISPLAY
+		    '(That/'s what I just guessed/. Stop fooling around/.)))
+		  (T
+		   (DISPLAY
+		    (LIST '(What yes//no question could I ask to distinguish)
+			  (@ NEW-ANIMAL)
+			  NEW-ANIMAL
+			  'from
+			  (@ (EXTRACT-TERMINAL X))
+			  (EXTRACT-TERMINAL X)
+			  '?))
+		   (LET ((NEW-QUESTION (DELETE '? (READ-SENTENCE)))
+			 (OLD-NODE (COPY X))
+			 (NEW-NODE (CONSTRUCT-TERMINAL NEW-ANIMAL)))
+			(DISPLACE X (CONSTRUCT-QUESTION
+				     NEW-QUESTION
+				     OLD-NODE
+				     NEW-NODE)))))))
+

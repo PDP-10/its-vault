@@ -1,0 +1,96 @@
+(DEFUN PROMPT ()
+       (DISPLAY (GET CURRENT-ROOM 'NAME))
+       (TERPRI)
+       (PRINC '/>)
+       (UPPERCASE-READLINE))
+
+(DEFUN UPPERCASE-READLINE ()
+       (IMPLODE (MAPCAR 'UPPERCASE (EXPLODEN (READLINE)))))
+
+(DEFUN UPPERCASE (X)
+       (COND ((AND (> X 96.) (< X 123.)) (- X 32.))
+	     (T X)))
+
+(DEFUN DEFINE-ROOM FEXPR (X)
+       ((LAMBDA (ROOM NAME WHERE)
+		(PUTPROP ROOM NAME 'NAME)
+		(DO ((L WHERE (CDDR L)))
+		    ((NULL L))
+		    (PUTPROP ROOM (CADR L) (CAR L))))
+	(CAR X) (CADR X) (CDDR X)))
+
+(DEFINE-ROOM OUTSIDE |Back side of house|
+	     IN INSIDE-KITCHEN ; Invokes function
+	     |OPEN WINDOW| OPEN-KITCHEN-WINDOW
+	     |CLOSE WINDOW| CLOSE-KITCHEN-WINDOW
+)
+
+(DEFINE-ROOM KITCHEN |Inside Kitchen|
+	     OUT OUTSIDE-KITCHEN ; Invokes function
+	     WEST 'LIVING-ROOM ; Always works
+	     |OPEN WINDOW| OPEN-KITCHEN-WINDOW
+	     |CLOSE WINDOW| CLOSE-KITCHEN-WINDOW
+)
+
+(SETQ KITCHEN-WINDOW-OPEN NIL)
+
+(DEFUN OPEN-KITCHEN-WINDOW (WHERE-FROM) 
+       (COND (KITCHEN-WINDOW-OPEN
+	      (PRINC '|It's already open.|)))
+       (SETQ KITCHEN-WINDOW-OPEN T))
+
+(DEFUN CLOSE-KITCHEN-WINDOW (WHERE-FROM)
+       (COND ((NOT KITCHEN-WINDOW-OPEN)
+	      (PRINC '|It's already closed.|)))
+       (SETQ KITCHEN-WINDOW-OPEN NIL))
+
+(DEFUN OUTSIDE-KITCHEN (WHERE-FROM)
+       (COND ((EQ WHERE-FROM 'OUTSIDE)
+	      (DISPLAY '|Look around!|))
+	     ((EQ WHERE-FROM 'KITCHEN)
+	      (COND (KITCHEN-WINDOW-OPEN
+		     (DISPLAY '|You clamber easily through the window.|)
+		     (SETQ CURRENT-ROOM 'OUTSIDE))
+		    (T
+		     (DISPLAY '|The window is shut.|))))
+	     (T
+	      (DISPLAY '|I see no way to do that.|))))
+
+(DEFUN INSIDE-KITCHEN (WHERE-FROM)
+       (COND ((EQ WHERE-FROM 'KITCHEN)
+	      (DISPLAY '|Look around!|))
+	     ((EQ WHERE-FROM 'OUTSIDE)
+	      (COND (KITCHEN-WINDOW-OPEN
+		     (DISPLAY '|You clamber easily through the window.|)
+		     (SETQ CURRENT-ROOM 'KITCHEN))
+		    (T
+		     (DISPLAY '|The window is shut.|))))
+	     (T
+	      (DISPLAY '|I see no way to do that.|))))
+
+(DEFINE-ROOM LIVING-ROOM |In living room| EAST 'KITCHEN)
+
+(SETQ CURRENT-ROOM 'OUTSIDE)
+
+(DEFUN ADVENTURE ()
+       (DO () (NIL) (ADVENTURE-AUX)))
+
+(DEFUN ADVENTURE-AUX ()
+       ((LAMBDA (INPUT)
+		((LAMBDA (WHERE-MOVE)
+			 (COND (WHERE-MOVE
+				(COND ((ATOM WHERE-MOVE)
+				       (FUNCALL WHERE-MOVE CURRENT-ROOM))
+				      ((EQ (CAR WHERE-MOVE) 'QUOTE)
+				       (SETQ CURRENT-ROOM (CADR WHERE-MOVE)))
+				      (T
+				       (EVAL WHERE-MOVE))))
+			       (T
+				(DISPLAY '|You can't go there.|))))
+		 (GET CURRENT-ROOM INPUT)))
+	(PROMPT)))
+
+(DEFUN DISPLAY (X)
+       (TERPRI)
+       (PRINC X))
+

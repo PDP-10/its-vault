@@ -1,0 +1,312 @@
+
+SOPHIE@MIT-MC 08/01/77 21:26:01
+To: TEACHER at MIT-MC
+in your lesson list please include a sequence to follow say lesson pred after lesson car   i get confused and dont know which i should do next...i would find it helpful ...thanks
+    
+RWK@MIT-MC 07/20/77 04:49:32 Re: FACT function
+Ignoreing the backspaces, there are three other bug in your FACT program,
+probably a typos (but typo's count with computers!):
+
+(Defun FACT (N)
+       (COND ((= N 0) 1)
+	     ((= N 1) )  ; there should be a 1 before this right-parenthesis
+	     (* N (FACT (-1 N)))))) ; the name of the function is 1-, not -1
+				    ; -1 is negative-1, not an atomic symbol
+				    ; and only atomic symbols can be function
+                                    ; names.
+This is essentially the function you wrote minus the garbage ^H's. (that's
+what a backspace looks like on a display)  everything from a ";" to the end
+of the line is  comment, not part of the program.
+
+so what you wanted to type was:
+
+(d fact (n)
+   (cond ((= n 0) 1)
+	 ((= n 1) 1)
+	 (t (* n (fact (1- n))))))
+
+Or maybe the equivalent
+(d fact (n)
+   (cond ((= n 0) 1)
+	 (t (* n (fact (1- n))))))
+
+(do you see why they are equivalent?)
+Your third bug is:  in the form you wrote, it FACT is not 1 or 0, none of
+the predicates in the COND will ever be true!  So it will get down to the last
+clause, which is not a predicate, really, and return it's value.  It will find
+the thing in the predicate position is the atom * which is defined to have a
+special value (the last thing printed out at top level (that doesn't mean in
+error breaks in my LISP yet).)  That is probably not nil, so the clause will
+probably be executed.  The next form to be evaled is N.  That value will then
+be thrown away, since there is yet another item in that COND clause: 
+(fact (1- n)).  So there are things which it could do, it could return
+NIL, or 1
+
+Note that both of the functions given above come close to looking like your
+function.  So I'm not quite sure whether your parenthisis are unbalenced and
+you didn't see the problem with the ((= n 1) .. ) not working as the last
+clause, or if you really intended it to look kind of liek the first or second
+example, but forgot the (t ....) around the (* n (fact (1- n))) ?
+
+Anyway, give it another try and good luck!
+  
+RWK@MIT-MC 07/20/77 04:25:38
+    SAILOR@MIT-MC 07/19/77 19:50:47
+    To: RWK at MIT-MC
+    THIS IS CONCERNING YOUR LISP TEACHER
+    A) HOW DO YOU GET OUT OF IT (OTHER THAN ^Z)
+
+As is stated in lesson BASIC, you type:
+DONE
+if you are done.  Otherwise ^Z is the standard method of getting out
+of programs
+    B) I TRIED THE FACT FUNCTION BUT IT SOMEHOW DIDN'T WORK
+
+That's because you typed a bunch of garbage backspaces in the middle of your
+function definition.  You MUST learn that line-feeds and backspaces are not
+nice!  people on displays (like me) lose totally with them.  (I had to flush a
+line-feed and a couple of backspaces from your note!)  And LISP just
+interpreted them as another random character to make into an atom, just like
+any other char.
+
+Give it another try without the losing backspaces!
+Use delete to get rid of a character (including spaces) you didn't want.  Use a
+charaige return and TABS and SPACES to get to wherever on the next line.
+
+    C) HOW DO YOU LIST YOUR FUNCTIONS?
+
+Do (GRINDEF FOO) to get a nice listing of your function FOO.  My functions are
+compiled, so they are not printable.
+
+    D) I LIKE THE TEACHING PROGRAM VERY MUCH  WHEN WILL YOU COMPLETE
+        FUNNY-LISP?
+
+It will probably never be completely complete.  I hope to write a few more
+lessons next week.  I also hope to get started on my TUTOR next week.  (The
+tutor will be a much more intellegent program, it will try to analyze the
+programs you give it some and try to give advice based on what you do.  It will
+be a LONG time before THAT is done!)
+
+
+
+   
+MACRAK@MIT-MC 07/18/77 15:41:53 Re: Minima on Lisp machine.
+I rather like using Label when it is appropriate--I consider it an integral
+part of Lisp.  It is certainly a crock that it or some equivalent doesn't
+exist on the Lisp machine.  In any case, rather than take the Label out,
+I would define a Label macro for use with Lisp-machine compilations, which
+would compile the Labelled function separately and make the call to it.
+
+Thus:
+
+(defun leng (x) ((label leng1 (lambda (x n) (cond ((null x) n)
+						  (t (leng1 (cdr x) (1+ n))))))
+		 x 0))
++
+(defun label macro (l)
+    (setq lisss (cons (ttf 'defun (cadr l) (cdaddr l)) lisss))
+(declare (setq lisss nil))
+
+(defun label-bodies macro (l)
+     (ttf 'progn ''compile lisss))
+
+
+(label-bodies)
+
+... I think this is about right, and generally correct.  The only
+place where this might not be quite as good as the actual compilation
+of the Label is with local declarations.  Of course, the label macro
+isn't quite right--it has to gensym etc. and then return (<gensym> ...args...)
+ 
+MACRAK@MIT-MC 06/11/77 19:05:13
+The section "a -- is an atom ATOM
+-- is an atom (A) -- is the list..." is extremely confusing.
+--------
+MACRAK@MIT-MC 06/11/77 19:03:57
+Atoms are ---not---! "variable names"
+--------
+RWK@MIT-MC 06/11/77 19:21:44
+The reasoning for the introduction of quote and setq so early is to give the
+student the ability to actually "DO" something as soon as possible.  How can
+the student ever take the CAR of something unless he/she can prevent LISP from
+trying to evaluate it and losing?  Two means come to mind, one is to give
+something a value, the other is to quote it.  (actually, a couple of
+alternative ways of getting around the problem:  a funny evaluator (in my
+opinion a loss) or to pre-setq things for him.  This last is a possibility
+I will consider further, and maybe try.
+
+I just got winstons book yesterday, and have only had a chance to lightly
+skim.  I disagree with a few things myself, but agree that if possible
+SETQ and QUOTE should be avoided.  However, I am strongly committed to the
+idea that LISP's primary strength for teaching/learning is it's interactive
+aspect, and will maintain that through thick and thin.  The more I think
+about it I like the idea of pre-setqing things for him.  (lesson 1 now
+pre-setq's one thing, and I can arbitrarily execute LISP functions anywhere
+in the text quite invisibly. (in the defun section I go to sleep for 10 seconds
+while the student thinks...)
+--------
+MACRAK@MIT-MC 06/11/77 19:10:04
+"its" not "it's" means "of it".
+Perhaps you should explain the idea of "apply" better before talking
+about Quote.  Also, I think it is easier for most to use ' rather than
+Quote; after all, Quote really isn't a function.  The idea of "evaluate" is
+also not clear to a beginner.
+I think Quote ought to be avoided altogether.
+In my opinion, Setq ought to be left until very late, otherwise people
+think in terms of Fortran.  Support functional thinking from the beginning,
+and the understanding will be much better.  Don't talk about "binding",
+but function application....
+--------
+RWK@MIT-MC 06/13/77 12:57:29 Re:  atoms
+Very good.  I think the essential point I was trying to convey with "variable"
+is the uniqueness, of which much more powerful use is made than in Fortran and 
+most other languages.  I think now that a good explanation of ATOMS is the key
+to a good explanation of EQ, which until now I didn't have much of any idea on
+how to present.  But if it is made clear that every occurance of an atom is EQ
+and thusly every occurance of everything derived from an atom, such as it's
+value, is EQ, but that typing in a LIST gives you a different EQUAL list every
+time.  I think that the presentation could be given pretty much complete at
+the time EQ is presented (or rather just before), and that the initial
+presentation of atoms could be along the lines of "unique symbol" which may be
+given a value.  I haven't yet re-written my first lesson along these lines, but
+I intend to eliminate SETQ altogether (or rather excise it and rewrite it for
+a later lesson).
+
+As for the self-quoting LAMBDA macro, I have long used such a macro for my own
+purposes, I fully agree that it makes things much simpler.  The only problem is
+how to tell them that MACLISP isn't that nice about it, that LAMBDA is only
+valid in an APPLY context, not as an EVAL function name.  It has always seemed
+more than a little inconsistent to me.  I.e. the problem is how to break
+them into the harsh realities of the real world when they are ready to enter
+it.  But I shall use it initially at least.
+  
+MACRAK@MIT-MC 06/13/77 12:15:51
+The problem with calling an Atom a "variable" is that it does not
+give it any separate existence from its function as value-holder.
+I would be much happier with "unique symbol".  As far as the
+beginner is concerned, if you type the same character string to
+the Lisp in two places, you get "the same object", unlike Lists,
+where you get two objects with the same properties, but which are
+not the same object ("eq").  The power of atoms then is the
+ability to associate other things with them, since they are uniquely
+recoverable.  Among those things are value and function properties.
+So at that point you might mention that if you feel like writing
+Fortran in Lisp, you can consider an atom a variable.  What it
+really is, though, in an expression like
+(lambda (x y) (cond ((x y)) (t (f y))))
+is a way of saying that the first x is the same thing as the second
+x.  Assignment of values is secondary.  What is really happening
+is that you are saying "The first argument can be called 'x'; there-
+fore, when 'x' appears again, we are talking about the same object,
+the first argument."
+
+Naturally, this presentation need not be given all at once, or
+even all of it.  But named functions and setq'ed atoms should come
+after lambda-expressions and bound atoms.  The only problem then
+is how to show the user the functional properties of built-in
+functions.  Probably saying something like "let us consider
+a,b,c pre-bound, as if we are within
+((lambda (a b c) ...) <value of a>...)
+; and bound to ....  The way we actually get the values of a,b,c will
+come later.
+
+This will get the student thinking Lisp rather than Fortran.  I know
+it seems rather complicated, but I think it can be presented in
+reasonable pieces.  By the way, you should probably put in a macro
+to have lambda-expressions be self-quoting (even though they really
+should form closures...).
+
+Stavros
+  
+FRAWLE@MIT-MC 07/07/77 08:28:37
+The circular list was deliberate ... and fascinating.  I couldn't believe
+it would print endlessly. I think I understand the difference between 
+NCONC and APPEND.
+
+There is a less-than-one-paragraph description of property lists in the 
+LISP 1.5 PRIMER and a few commandsw follow that.  So I tried them.
+PUT didn't work so I guessed PUTPROP. GET has its arguments in a different
+order from lthat described.That is all I know. Hence  normal vs.
+disembodied property lists means nothing to me yet. 
+
+Thank you for taking note of what i've been doing.  I believe that by taking 
+lessons 1 and 2 I have caught up to you. That's why I was casting about
+for something to hack.
+                                                  Bud
+
+RWK@MIT-MC 12/30/77 08:43:12 Re: previous note
+To: FRAWLE at MIT-MC
+CC: TEACH at MIT-MC
+as suggested by JPG:
+[1] I used occasionally '0 and '0.0 ... the "'" is not needed, since numbers
+evaluate to themselves.  Of course, no harm is done either.
+[2] in top level MACSYMA (i.e. the MACSYMA reader, rather than the LISP reader)
+2. is the same as 2.0
+a ^^ quit in MACSYMA into LISP gets you the LISP reader as well as evaluator.
+   
+FRAWLE@MIT-MC 12/06/77 17:42:59
+DAMN, DAMN. THIS TIMES I HAD SOMETHING I REALLY WANTED YOU TO SEE AND 
+THE "DONE" COMMAND WHICH STORES MY CRUD ON YOUR DISK ISN'T OPERATIVE...
+
+(DEFUN FF (X Y) (LIST 'TIMES X Y)) ==> FF
+
+(FF 3 5) ==> (TIMES 3 5)  AS EXPECTED 
+(FF U V) ==> ;UNBOUND VARIABLE    AS EXPECTED
+
+(DEFUN GG FEXPR (X Y) (LIST 'TIMES X Y)) ==> GG
+
+(GG 3 5) ==> (TIMES (3 5) -5097)  ????
+(GG U V) ==> (TIMES (U V) -5097)  ????
+
+I WAS TRYING TO SEE HOW THE FEXPR OPTION WORKED WITHIN DEFUN AND IT
+LOOKS LIKE IT TRULY DOESN'T TRY TO EVALUATE THE ARGUMENTS BUT
+WHERE DOES THAT RANDOM NUMBER COME FROM ? AND HOW ABOUT THE ARRANGE-
+MENT OF THE PARENTHESES?
+                                                   BUD FRAWLEY
+
+    
+RWK@MIT-MC 12/29/77 22:02:47 Re: BUDSIMP
+To: FRAWLE at MIT-MC, TEACH at MIT-MC
+Also, it doesn't recognize the fact that PLUS and SIMP can take any # of
+arguments, including 0.
+(plus) -> 0
+(times) -> 1
+perhaps what you want to do is to do
+(setq exp (mapcar 'budsimp exp))
+(setq exp (delete '0 (delete '0.0 exp)))
+for sums and similarly for products, then test for length 1, otherwise
+that's your answer...
+
+Question to think about (easy?):  Why should the first expression be done
+first? 
+(you might well nest them as in:)
+(delete 0 (delete 0.0 (mapcar 'budsimp exp)))
+  
+RWK@MIT-MC 12/29/77 21:56:02
+To: BUD at MIT-MC
+CC: TEACH at MIT-MC
+PLUS is a generic operator, meaning that it will work on:
+FIXNUMS (ordinary integers)
+BIGNUMS (integers with an absolute value > what will fit in a PDP-10 machine
+        word) 
+FLONUMS (floating point numbers)
+and any other types that may be introduced later.
+Thus, (EQUAL (CADR EXP) 0)
+will not return T if EXP is 0.0 [FLONUM 0].
+(ZEROP (CADR EXP)) will work for all occurances of PLUS
+BTW, you could change your predicate to check for + as well...
+[instead of (EQ (CAR EXP) 'PLUS) do (MEMQ (CAR EXP) '(PLUS +)) ]
+[BTW, you should use EQ where appropriate (i.e. if you are not comparing
+numbers or list structure (iff you want lists that are identical COPIES of each
+other to be similar, or are comparing numbers, use EQUAL]
+
+Similarly, instead of (equal (cadr exp) 1.), to generalize to the degree that
+PLUS is generalized, you should use:
+(ZEROP (DIFFERENCE (CADR EXP) 1))
+which will convert the 1 to 1.0 if needed, and ZEROP will perform the correct
+test.
+
+[BTW, you will sometimes see a single "." after a number, with no trailing
+digits.  That simply means that it is base 10.  a flonum will always have
+trailing digits, I.e. 1. is a FIXNUM, and 1.0 is a flonum]
+
