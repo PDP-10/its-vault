@@ -1,0 +1,391 @@
+(DEFUN STEP (CONFIG ALT) 
+       (PROG (UCFS SPLITS SPLIT/# VCFS NOMOVEFLAG TEMP TMP FEATURES
+	      ACTIONS ACT STATE STACK * REGS SREGS ARC ARCS HOLD IB
+	      PATH VAL ACONFIG PPATH SUCCESSFLAG) 
+	     (COND (ALT (COND (TRACE (TRACER PAUSEFLAG
+					     (&PRIN1 'STATE/ =/ 
+						     NIL)
+					     (&PRIN1 (ALT/.STATE ALT)
+						     NIL))))
+			(GO ALT)))
+	     (SETQ ACONFIG (CONS STRING (CONS WEIGHT CONFIG)))
+	     (COND (ACF/# (SETQ ACF/# (ADD1 ACF/#))))
+	L0   (SPREADQ (STATE STACK REGS HOLD PATH) CONFIG)
+	L1   (COND ((AND TRACE (NOT (EQ (CAR ARC) 'JUMP)))
+		    (TRACER PAUSEFLAG
+			    (&PRIN1 'ENTERING/ STATE/  NIL)
+			    (&PRIN2 STATE NIL))))
+	     (COND ((AND MAXTIME
+			 (GREATERP (DIFFERENCE (CLOCK 2.) STARTCLOCK)
+				   MAXTIME))
+		    (SETQ BLOCKS (CONS ACONFIG BLOCKS))
+		    (&PRIN1 'MAXTIME/ EXCEEDED T)
+		    (&TERPRI T)
+		    (&PRIN1 'ALTS/ AT/  T)
+		    (&PRINT (LOC ALTS) T)
+		    (SETQ ALTS NIL)
+		    (RETURN NIL)))
+	     (COND ((SETQ TEMP (AND (SYMBOLP LEX) (GET LEX 'LEXARCS)))
+		    (SETQ ARCS (EVAL TEMP)))
+		   ((NULL (SETQ ARCS (GETV STATE)))
+		    (&PRIN1 'UNDEFINED/ STATE/  T)
+		    (&PRINT STATE T)
+		    (GO HELP)))
+	     (COND
+	      ((AND
+		SYSCONJ
+		(CAT CONJ)
+		(NOT LEXMODE)
+		(NOT
+		 (SCAN
+		  ARCS
+		  (FUNCTION (LAMBDA (ARCS) 
+				    (AND (EQ (ARC/.TYPE (CAR ARCS))
+					     'CAT)
+					 (EQ (ARC/.LABEL (CAR ARCS))
+					     'CONJ)))))))
+	       (SETQ ARCS '((CAT CONJ T (SYSCONJ NIL))))
+	       (COND (TRACE (TRACER PAUSEFLAG
+				    (&PRIN1 'INVOKING/ SYSCONJ
+					    NIL)))))
+	      ((AND (EQ MODE 'SPLIT) (CDR ARCS))
+	       (COND (TRACE (TRACER PAUSEFLAG
+				    (&PRIN1 'SPLIT NIL))))
+	       (SETQ SPLITS
+		     (CONS ARCS (CONS ACONFIG (CONS NIL SPLITS))))
+	       (SETQ ARCS NIL)
+	       (COND ((NULL SPLIT/#) (SETQ SPLIT/# 1.)))
+	       (GO END)))
+	L2   (COND (ARCS (SETQ ARC (CAR ARCS)) (SETQ ARCS (CDR ARCS)))
+		   ((OR ALT VCFS SPLITS UCFS SUCCESSFLAG) (GO END))
+		   (MODE (COND (TRACE (TRACER PAUSEFLAG
+					      (&PRIN1 'BLOCKED
+						      NIL))))
+			 (SETQ BLOCKS (CONS ACONFIG BLOCKS))
+			 (COND ((AND MAXBLOCKS
+				     (NOT (LESSP (LENGTH BLOCKS)
+						 MAXBLOCKS)))
+				(&PRIN1 'MAXBLOCKS/ EXCEEDED T)
+				(&TERPRI T)
+				(&PRIN1 'LAST/ ALT/ WAS/  T)
+				(&PRINT (CAAR OLDALTS) T)
+				(SETQ OLDALTS (NCONC ALTS OLDALTS))
+				(SETQ ALTS NIL)
+				(RETURN NIL)))
+			 (GO END))
+		   (T (&PRIN1 'DEAD/ END/ AT/ STATE/  T)
+		      (&PRINT STATE T)
+		      (&PRINT STRING T)
+		      (GO HELP)))
+	L3   (SETQ * LEX)
+	     (SETQ FEATURES NIL)
+	     (SETQ SREGS NIL)
+	     (SETQ NOMOVEFLAG NIL)
+	     (SELECTQ
+	      (ARC/.TYPE ARC)
+	      (CAT (COND ((NOT LEXMODE)
+			  (SETQ TEMP (CATCHECK (ARC/.LABEL ARC) T)))
+			 ((NOT (EQ TRAILTYPE 'CAT)) (GO L2))
+			 ((EQ (ARC/.LABEL ARC) TRAILLABEL)
+			  (SETQ TEMP TRAILVAL))
+			 (T (GO L2)))
+		   (COND (TEMP (SETQ FEATURES (CDR TEMP))
+			       (SETQ * (CAR TEMP))
+			       (SETQ VAL TEMP)
+			       (GO TST))
+			 (T (GO L2))))
+	      (PUSH
+	       (COND (LEXMODE (COND ((NOT (AND (EQ TRAILTYPE
+						   'PUSH)
+					       (EQ TRAILLABEL
+						   (ARC/.LABEL ARC))))
+				     (GO L2)))))
+	       (COND
+		((ARCTEST ARC)
+		 (ALTARCGEN)
+		 (SETQ ACTIONS (ARC/.ACTIONS ARC))
+		 (WHILE (EQ (CAAR ACTIONS) '*)
+			(SETQ ACTIONS (CDR ACTIONS)))
+		 (COND ((EQ (CAAR ACTIONS) '!)
+			(SELECTQ (ACT (CDAR ACTIONS) T)
+				 (*L0 (GO L0))
+				 (*L1 (GO L1))
+				 (*L2 (GO L2))
+				 (*END (GO END))
+				 (*HELP (GO HELP))
+				 (OTHERWISE (SETQ ACTIONS (CDR ACTIONS))))))
+		 (WHILE (SENDACTP (CAR ACTIONS))
+			(EVAL (CAR ACTIONS))
+			(SETQ ACTIONS (CDR ACTIONS)))
+		 (SELECTQ (APPLY* (FUNCTION PUSH) (CADR ARC))
+			  (*L0 (GO L0))
+			  (*L1 (GO L1))
+			  (*L2 (GO L2))
+			  (*END (GO END))
+			  (OTHERWISE 
+			   (PROGN (&PRIN1 'ILLEGAL/ RETURN/ FROM/ PUSH
+					 T)
+				 (&TERPRI T)
+				 (GO HELP)))))
+		(T (GO L2))))
+	      (POP (COND ((AND LEXMODE
+			       (NOT (MEMQ TRAILTYPE
+					  '(POP SPOP))))
+			  (GO L2)))
+		   (COND ((ARCTEST ARC)
+			  (COND ((AND (EQ (CAAAR HOLD) 'MARK)
+				      (EQ (CDAAR HOLD) STRING))
+				 (SETQ HOLD (CDR HOLD))))
+			  (COND ((OR (CAR HOLD)
+				     (AND (NULL STACK) STRING))
+				 (GO L2)))
+			  (ALTARCGEN)
+			  (SELECTQ (POP (EVAL (POPARC/.FORM ARC))
+					(EVAL (POPARC/.FEATURES ARC)))
+				   (*L0 (GO L0))
+				   (*L1 (GO L1))
+				   (*L2 (GO L2))
+				   (*END (GO END))
+				   (*HELP (GO HELP))
+				   (OTHERWISE 
+					  (PROGN (&PRIN1 '(*) T)
+					  (&TERPRI T)
+					  (GO HELP))))
+			  (GO ACT))
+			 (T (GO L2))))
+	      (SPOP
+	       (COND ((AND LEXMODE
+			   (NOT (MEMQ TRAILTYPE '(POP SPOP))))
+		      (GO L2)))
+	       (COND
+		((ARCTEST ARC)
+		 (COND ((AND (EQ (CAAAR HOLD) 'MARK)
+			     (EQ (CDAAR HOLD) STRING))
+			(SETQ HOLD (CDR HOLD))))
+		 (COND ((OR (CAR HOLD) (AND (NULL STACK) STRING))
+			(GO L2)))
+		 (ALTARCGEN)
+		 (COND (TRACE (TRACER PAUSEFLAG
+				      (&PRIN1 'ABOUT/ TO/ SPOP
+					      NIL))))
+		 (SELECTQ
+		  (SPOP (EVAL (POPARC/.FORM ARC))
+			(EVAL (POPARC/.FEATURES ARC)))
+		  (*L0 (GO L0))
+		  (*L1 (GO L1))
+		  (*L2 (GO L2))
+		  (*END (GO END))
+		  (*HELP (GO HELP))
+		  (OTHERWISE 
+		     (PROGN (&PRIN1 'UNDEFINED/ RETURN/ FROM/ SPOP
+				 T)
+			 (&TERPRI T)
+			 (GO HELP)))))
+		(T (GO L2))))
+	      (JUMP
+	       (COND ((ARCTEST ARC)
+		      (ALTARCGEN)
+		      (SETQ PPATH (CONS ARC ACONFIG))
+		      (SETQ VAL NIL)
+		      (SETQ NOMOVEFLAG T)
+		      (SELECTQ (ACT (ARC/.ACTIONS ARC) T)
+			       (*L0 (GO L0))
+			       (*L1 NIL)
+			       (*L2 (GO L2))
+			       (*END (GO END))
+			       (*HELP (GO HELP))
+			       (OTHERWISE 
+				(PROGN (SETQ STATE (ARC/.LABEL ARC))
+				      (SETQ PATH (CONS VAL PPATH))
+				      (SETQ CONFIG
+					    (CDDR (SETQ ACONFIG
+							(LIST STRING
+							      WEIGHT
+							      STATE
+							      STACK
+							      REGS
+							      HOLD
+							      PATH))))
+				      (SETQ ALT NIL))))
+		      (COND (TRACE (TRACER PAUSEFLAG
+					   (&PRIN1 'JUMP/ TO/ 
+						   NIL)
+					   (&PRIN2 STATE NIL))))
+		      (GO L1))
+		     (T (GO L2))))
+	      (VIR (COND ((SETQ TEMP (HOLDSCAN HOLD
+					       (ARC/.LABEL ARC)
+					       (ARC/.TEST ARC)))
+			  (ALTARCGEN)
+			  (SETQ * (CAR TEMP))
+			  (SETQ FEATURES (CDR TEMP))
+			  (SETQ HOLD (KILL TEMP HOLD))
+			  (SETQ NOMOVEFLAG T)
+			  (SETQ ACTIONS (ARC/.ACTIONS ARC))
+			  (SETQ VAL TEMP)
+			  (GO ACT))
+			 (T (GO L2))))
+	      (WRD (COND (LEXMODE (COND ((NOT (MEMQ TRAILTYPE
+						    '(WRD MEM)))
+					 (GO L2)))))
+		   (COND ((EQ * (ARC/.LABEL ARC)) (GO TST))
+			 (T (GO L2))))
+	      (MEM (COND (LEXMODE (COND ((NOT (MEMQ TRAILTYPE
+						    '(WRD MEM)))
+					 (GO L2)))))
+		   (COND ((MEMQ * (ARC/.LABEL ARC)) (GO TST))
+			 (T (GO L2))))
+	      (TST
+	       (COND (LEXMODE (COND ((NOT (AND (EQ TRAILTYPE
+						   'TST)
+					       (EQ TRAILLABEL
+						   (ARC/.LABEL ARC))))
+				     (GO L2)))))
+	       (GO TST))
+	      (SUSPEND
+	       (COND
+		((AND (ARCTEST ARC) ARCS)
+		 (SETQ ACONFIG
+		       (CONS STRING
+			     (CONS (SUSPENDW WEIGHT
+					     (EVAL (ARC/.LABEL ARC)))
+				   CONFIG)))
+		 (SETQ TEMP (CONS 'ALTARC
+				  (CONS TRAIL (CONS ARCS ACONFIG))))
+		 (COND (TRACE (TRACER PAUSEFLAG
+				      (&PRIN1 'SUSPENDING NIL)
+				      (&TERPRI NIL))))
+		 (STORALT TEMP T)
+		 (SETQ ARCS NIL)
+		 (GO END))
+		(T (GO L2))))
+	      (SPLIT (SETQ SPLITS
+			   (CONS (CDR ARC)
+				 (CONS ACONFIG (CONS ARCS SPLITS))))
+		     (SETQ ARCS NIL)
+		     (COND (TRACE (TRACER PAUSEFLAG
+					  (&PRIN1 'SPLIT/ ARC
+						  NIL))))
+		     (COND ((NULL SPLIT/#) (SETQ SPLIT/# 1.)))
+		     (GO END))
+	      (DO (*RPLACA ARC 'TST)
+		  (RPLACD ARC
+			  (CONS 'DO
+				(CONS 'T (CDR ARC))))
+		  (&PRIN1 'CHANGING/ DO/ ARC/ AT/ STATE/  T)
+		  (&PRIN1 STATE T)
+		  (&PRIN1 '/ TO/  T)
+		  (&PRINT ARC NIL)
+		  (GO L3))
+	      (* (GO L2))
+	      (OTHERWISE 
+		(PROGN (&PRIN1 'UNDEFINED/ ARC T)
+		     (&TERPRI T)
+		     (&PRINT ARC T)
+		     (GO HELP))))
+	TST  (COND ((ARCTEST ARC)
+		    (SETQ ACTIONS (ARC/.ACTIONS ARC))
+		    (GO SUCCESS))
+		   (T (GO L2)))
+	SUCCESS
+	     (ALTARCGEN)
+	ACT  (COND (TRACE (TRACER PAUSEFLAG
+				  (&PRIN1 'TAKING/  NIL)
+				  (&PRIN2 (ARC/.TYPE ARC) NIL)
+				  (SPACES 1. NIL)
+				  (&PRIN2 (ARC/.LABEL ARC) NIL)
+				  (&PRIN1 '/ ARC NIL))))
+	     (SETQ PPATH (CONS ARC ACONFIG))
+	     (SELECTQ (ACT ACTIONS NIL)
+		      (*L0 (GO L0))
+		      (*L1 (GO L1))
+		      (*L2 (GO L2))
+		      (*END (GO END))
+		      (*HELP (GO HELP))
+		      (OTHERWISE (GO HELP)))
+	ALT  (SELECTQ
+	      (CAR ALT)
+	      (ALTARC (SPREADQ (TRAIL ARCS
+				      STRING
+				      WEIGHT
+				      STATE
+				      STACK
+				      REGS
+				      HOLD
+				      PATH)
+			       (CDR ALT))
+		      (SETQ LEX (CAR STRING))
+		      (COND (TRAIL (SETQ LEXMODE T)
+				   (SETQ TRAILARC
+					 (PATH/.ARC (CAR TRAIL)))
+				   (SETQ TRAILTYPE
+					 (ARC/.TYPE TRAILARC))
+				   (SETQ TRAILLABEL
+					 (ARC/.LABEL TRAILARC))
+				   (SETQ TRAILVAL
+					 (PATH/.VAL (CAR TRAIL)))))
+		      (SETQ CONFIG
+			    (CDDR (SETQ ACONFIG
+					(ALTARC/.ACONFIG ALT))))
+		      (GO L2))
+	      (ALTCAT (SPREADQ (TEMP ARC
+				     STRING
+				     WEIGHT
+				     STATE
+				     STACK
+				     REGS
+				     HOLD
+				     PATH)
+			       (CDR ALT))
+		      (SETQ LEX (CAR STRING))
+		      (SETQ ARCS NIL)
+		      (COND ((CDR TEMP)
+			     (SETQ ALT (CONS (CAR ALT)
+					     (CONS (CDR TEMP)
+						   (CDDR ALT))))
+			     (STORALT ALT NIL)))
+		      (SETQ * (CAAR TEMP))
+		      (SETQ FEATURES (CDAR TEMP))
+		      (SETQ CONFIG
+			    (CDDR (SETQ ACONFIG
+					(ALTARC/.ACONFIG ALT))))
+		      (GO TST))
+	      (OTHERWISE NIL))
+	HELP (COND ((HELPER S* HELPER) (GO L0)) (T (RETURN VCFS)))
+	END  (COND (UCFS (SPREADQ (ACTIONS *
+					   FEATURES
+					   STRING
+					   WEIGHT
+					   STATE
+					   STACK
+					   REGS
+					   HOLD
+					   PATH)
+				  (CAR UCFS))
+			 (SETQ CONFIG
+			       (CDDR (SETQ ACONFIG (CDDDAR UCFS))))
+			 (SETQ UCFS (CDR UCFS))
+			 (GO ACT))
+		   ((CAR SPLITS)
+		    (SETQ ARC (CAAR SPLITS))
+		    (*RPLACA SPLITS (CDAR SPLITS))
+		    (SETQ CONFIG (CDDR (SETQ ACONFIG (CADR SPLITS))))
+		    (SPREADQ (STATE STACK REGS HOLD PATH) CONFIG)
+		    (SETQ SPLIT/# (ADD1 (LENGTH VCFS)))
+		    (GO L3))
+		   (SPLITS (SETQ CONFIG
+				 (CDDR (SETQ ACONFIG (CADR SPLITS))))
+			   (SPREADQ (STATE STACK REGS HOLD PATH)
+				    CONFIG)
+			   (SETQ ARCS (CADDR SPLITS))
+			   (SETQ SPLITS (CDDDR SPLITS))
+			   (SETQ SPLIT/# (ADD1 (LENGTH VCFS)))
+			   (COND (TRACE (TRACER PAUSEFLAG
+						(&PRIN1 'ENDSPLIT
+							NIL))))
+			   (COND ((OR VCFS SUCCESSFLAG)
+				  (ALTARCGEN)
+				  (GO END)))
+			   (COND ((NULL SPLITS) (SETQ SPLIT/# NIL)))
+			   (GO L2))
+		   (T (RETURN VCFS)))))

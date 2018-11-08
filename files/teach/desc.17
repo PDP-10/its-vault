@@ -1,0 +1,239 @@
+;;; -*- LISP -*- 
+
+;;; Describe LISP
+(declare (special lisp-manual-directory input))
+
+(defun describe-setup ()
+       (do ((input (open '((dsk macind) MACLSP MANDOC) 'in))   ;get file
+	    (ibase 10.))
+	   nil
+	   (filepos input (read input))	   ;Get pointer to directory
+	   (eval (read input))	   ;get the directory
+	   (close input)))	   ;close file until we need it again
+
+
+
+(defun describe fexpr (x)	   ;Just describe them all
+       (cond (x (mapc 'Describe1
+		      x))
+	     (T (Princ '|/
+DESCRIBE takes any number of atomic arguments, and looks them up in the/
+LISP manual.  If a node with that name is found, it is printed, and you/
+may be told of related nodes and be given a chance to print them as well./
+|))))
+
+(defun describe1 (x)		   ;Takes only one atom, ASSQ's it,
+       (do ((descriptor-list (assqlist x   ;and prints the corresponding.
+				       lisp-manual-directory))
+	    (input (open '((dsk MACIND) maclsp mandoc))))
+	   nil
+	   (cond (descriptor-list (mapc 'describe2
+					descriptor-list))
+		 (T (terpri)
+		    (princ X)
+		    (tyo 32.)
+		    (princ '|Not Found|)))
+	   (close input)))
+
+(defun describe2 (descriptor)
+       (cursorpos 'T 't)
+       (filepos input
+		(cadr descriptor))
+       (header-print (cadddr descriptor))
+       (do ((count (caddr descriptor)
+		   (1- count)))
+			     ((= 0 count)
+			      (terpri))
+			     (tyo (tyi input)))
+       (do ((node-list (read input)))
+	   nil
+	   (cond (node-list (subdirectory-list node-list)
+			    (do ((node-to-hack
+				  (prog2 (princ '|/
+/
+Type a node name or NONE:  |)
+					 (read t)
+					 (cond ((= (tyipeek) 32.)
+						(tyi))))
+				  (prog2 (princ '|/
+/
+Type a node name or NONE:  |)
+					 (read t)
+					 (cond ((= (tyipeek) 32.)
+						(tyi))))))
+				((eq node-to-hack
+				     'NONE))
+				(describe1 node-to-hack)
+				(subdirectory-list node-list))))))
+
+
+(defun header-print (x)
+       (terpri)
+       (princ (car x))
+       (tyo 9)
+       (do ((loc (charpos t)
+		 (charpos t)))
+	   ((< 16 loc))
+	   (tyo 9))
+       (mapc (function (lambda (x)
+			       (princ x)
+			       (tyo 32.)))
+	     (cdr x)))
+
+(defun subdirectory-list (list)
+       (terpri)
+       (print '|--------------------|)
+       (terpri)
+       (mapc (function (lambda (x)
+			       (princ (cdr x))
+			       (terpri)))
+	     list))
+
+(defun assqlist (item alist)
+       (do ((alist alist (cdr alist))
+	    (found nil))
+	   ((null alist)
+	    found)
+	   (cond ((eq item
+		      (caar alist))
+		  (setq found
+			(cons (car alist)
+			      found))))))
+
+
+;Return a list of all atoms whose pnames contain A as a substring.
+(defun find fexpr (A)
+       (cond ((or (cdr a)
+		  (not (symbolp (car a)))
+		  (zerop (length a)))
+	      (princ '|/
+FIND takes a single argument which should be a symbol./
+It searchs for all occurrences of this sequence of characters in any/
+symbol name, and prints a list of all such found./
+|))
+	     (t (terpri)
+		(princ '|Found the following:|)
+		(terpri)
+		(do ((test (explodec (car A)))
+		     (list1))
+		    (t (mapatoms (FUNCTION
+				  (LAMBDA (A)
+					  (cond ((and (pnmemq a
+							      test)
+						      (or (boundp a)
+							  (plist a)))
+						 (modprint a))))))))
+		(terpri))))
+
+(defun pnmemq (a test)
+       (do ((i 1 (1+ i))	   ;For all the characters
+	    (c))
+	   ((NULL (SETQ C (GETCHAR A I))) NIL) 
+	   (COND ((AND (eq c (car test))
+		       (do ((i (1+ i) (1+ i))
+			    (test test (cdr test))
+			    (c (getchar a i) (getchar a i)))
+			   ((null test) T)
+			   (cond ((eq c (car test)))
+				 (t (return nil)))))
+		  (RETURN T)))))
+
+(defun APROPOS fexpr (A)
+       (cond ((or (cdr a)
+		  (not (symbolp (car a)))
+		  (zerop (length a)))
+	      (princ '|/
+APROPOS takes a single argument which should be a symbol./
+It searchs for all occurrences of this sequence of characters in any/
+name of any node in the tree-structured LISP manual, and calls describe/
+on any node so found.
+|))
+
+	     (t (do ((test (explodec (car A)))
+		     (list1))
+		    (t (mapc (function
+			      (lambda (A)
+				      (cond ((and (pnmemq (car a)
+							  test)
+						  (or (boundp (car a))
+						      (plist (car a))))
+					     (setq list1
+						   (cons (car a)
+							 list1))))))
+			     LISP-MANUAL-DIRECTORY)
+		       (cond (list1
+			      (do ((atom-to-hack))
+				  (nil)			;explicit return
+				  (cursorpos 'C)	;clear up screen
+				  (terpri)
+				  (princ '|Found the following matches:|)
+				  (terpri)
+				  (cond ((> (length list1)
+					    15)
+					 (mapc 'modprint
+					       list1))
+					(t
+					 (mapc
+					  (function
+					   (lambda (x)
+						   (header-print
+						    (cadddr
+						     (assq x
+							   lisp-manual-directory)))))
+					  list1)))
+				  (terpri)
+				  (princ '|/
+/
+Type a node name or NONE:  |)
+				  (setq atom-to-hack (read))
+				  (cond ((= (tyipeek) 32.)
+					 (tyi)))	;flush trailing space
+				  (cond ((eq atom-to-hack
+					     'none)
+					 (return nil))
+					(t (*catch 'more-flush
+					    (progn
+					     (describe1 atom-to-hack)
+					     (next?)))))))
+			     (t (terpri)
+				(princ '|Not Found.|)
+				(terpri))))))))
+(defun next? nil
+       (terpri)
+       (princ '|--next--|)
+       (cursorpos 'E)
+       (do ((char (tyipeek)))
+	   nil
+	   (cond ((= char 32.)	   ;Space continues
+		  (tyi))
+		 ((= char 127.)	   ;rubout is flushed and flushes
+		  (princ '| Flushed.|)
+		  (tyi)
+		  (*throw 'more-flush nil))
+		 (t (princ '| Flushed.|)
+		    (*throw 'more-flush nil))))) 
+
+(defun modprint (form)		   ;Print in one of 5 columns
+       (cond ((> (charpos t)
+		 48.)
+	      (terpri)))
+       (do ((loc (charpos t)
+		 (charpos t)))
+	   ((= 0
+	       (\ loc 16.))
+	    (prin1 form))
+	   (tyo 9)))
+
+(defun list-all-nodes ()
+       (cursorpoS 'C)
+       (Princ '|--The LISP Documentation has the following nodes:  |)
+       (mapc (function (lambda (x)
+			       (modprint (car x))))
+	     lisp-manual-directory)
+       nil)
+
+
+; and now make all this work
+
+(describe-setup)
+

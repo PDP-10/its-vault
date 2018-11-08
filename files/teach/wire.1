@@ -1,0 +1,169 @@
+; -*- LISP -*-
+
+;;;;;;;;;;;;;;;; File released 3:25pm  Sunday, 4 February 1979
+;;;;;;;;;;;;;;;;          
+;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;
+;;;
+;;; Create wire and gate entities 
+;;; For digital logic pakage
+;;; Saturday, 11 November 1978
+;;;
+;;; Wire knows what output it is connected to,
+;;; list of gates connected to, its state, and its
+;;; name
+
+;;; Data formats:
+;;;    1) State lists        ((<state type 1> <STATE1> <STATE2> ... <STATEn>)
+;;;                           (<state type 2> <STATE1> <STATE2> ... <STATEn>)
+;;;
+;;;                                                 .
+;;;                                                 .
+;;;                                                 .
+;;;
+;;;                           (<state type n> <STATE1> <STATE2> ... <STATEn>))
+;;;
+;;;    2) Pin lists          ((<pin number> . <wire entity connected to>)
+;;;                           (<pin number> . <wire entity connected to>)
+;;;
+;;;                                                 .
+;;;                                                 .
+;;;                                                 .
+;;;
+;;;                           (<pin number> . <wire entity connected to>))
+;;;
+;;;
+;;; 
+
+
+
+;; magic mumbo-jumbo to get macros etc.
+(declare (eval (read)))     ;in the compiler, read and eval next form instead
+			    ;simply copying it to the output file
+			    ;In the interpreter, DECLARE's are ignored.
+			    ;so if we load this source file, the next form will
+			    ;be EVAL'd
+(cond ((null (get 'fn 'macro))				;have we loaded macros?
+       (load '|TEACH;SIMUL MACROS|)))			;no, load them now.
+
+;;;
+;;; The structures themselves
+;;;
+
+(def-struct-unnamed two-input-nand-pins (input-pin-1 nil)
+		    (input-pin-2 nil) (output-pin nil))
+
+(def-struct-unnamed two-input-nand-names (input-pin-1 'input-pin-1)
+		    (input-pin-2 'input-pin-2)
+		    (output-pin  'output-pin))
+
+(def-struct-unnamed two-input-nand-pin-types
+		    (input-pin-1 'input) (input-pin-2 'input)
+		    (output-pin 'output))
+(def-struct-unnamed two-input-nand-pin-states
+		    (input-pin-1 'dont-know)
+		    (input-pin-2 'dont-know)
+		    (output-pin  'dont-know))
+
+;;;
+;;; Makes a transition structure
+;;;
+
+(def-struct transition
+
+	    new-state					;State to give to wire
+	    source)					;master entity from
+
+
+;;;
+;;; makes a wire entity
+;;;
+
+(defun create-wire (name)
+       (declare (special output-connected-to inputs-connected-to state name))
+       (let ((output-connected-to nil)			;Default set-up
+	     (inputs-connected-to nil)			;is no connections
+	     (state 'dont-know)				;and unknown state
+	     (name name))
+	    (entity '(output-connected-to inputs-connected-to state name)
+		    'wire-handler)))
+
+;;;
+;;; makes a master device
+;;;
+
+(defun create-master-device (name function)
+       (declare (special name				;Name of device
+			 pin-struct			;hunk of wires
+			 name-struct			;hunk of names of slots
+			 mode-struct			;hunk of modes (I/O)
+			 state-struct			;hunk of states (t/nil)
+			 function))			;functional entity
+       (let ((pin-struct (e-call function 'get-pin-connections))
+	     (name-struct (e-call function 'get-pin-names))
+	     (mode-struct (e-call function 'get-pin-modes))
+	     (state-struct (e-call function 'get-pin-states)))
+	    (entity '(name
+		      pin-struct			;same idea as above
+		      name-struct
+		      mode-struct
+		      state-struct
+		      function)
+		    'master-device-handler)))
+
+;;;
+;;; Makes a 2 input NAND function
+;;; Functions are entities which perform the individual 
+;;; functions the gates must perform such as logic functions, propagation
+;;; delay, pin names, ect.  
+;;; 
+
+(defun create-two-input-nand-function (prop-delay)
+       (declare (special prop-delay
+			 pin-struct
+			 name-struct
+			 mode-struct
+			 state-struct))
+       (let ((pin-struct  (create two-input-nand-pins))
+	     (name-struct (create two-input-nand-names))
+	     (mode-struct (create two-input-nand-pin-types))
+	     (state-struct (create two-input-nand-pin-states)))
+	    (entity '(prop-delay
+		      pin-struct
+		      name-struct
+		      mode-struct
+		      state-struct)
+		    'two-input-nand-function-handler)))
+
+;;;
+;;; Creation of Indicator device to check on whats propagating
+;;;
+
+(defun create-Indicator (name)
+       (declare (special name))
+       (entity '(name) 'Indicator-handler))
+(defun create-nullq (name)
+       (declare (special name))
+       (entity '(name) 'nullq-handler))
+
+
+
+
+
+(defun ctinf (prop-delay)
+       (create-two-input-nand-function prop-delay))
+;;;
+;;; Deletes an atom from an alist
+;;;
+
+;(defun delassq (atom-to-delete alist)
+;       (do ((alist alist (cdr alist))
+;	    (nalist ()))
+;	   ((null alist) nalist)
+;	   (cond ((not (equal (caar alist) atom-to-delete))
+;		  (setq nalist (append nalist (ncons (car alist))))))))
+
+							
+;; Local Modes: ::
+;; Comment Column:56 ::
+;; End: ::

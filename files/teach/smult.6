@@ -1,0 +1,106 @@
+;fractions.
+
+;Chose a representation.
+
+;dotted pair.  (<num> . <den>)
+
+(defun numerator (fraction-1)
+       (car fraction-1))
+(defun denominator (fraction-1)
+       (cdr fraction-1))
+
+(defun create-frac (numerator denominator)
+       (cons numerator denominator))
+
+; operations:
+; 1) fadd.
+; 2) fsub.
+; 3) fmult.
+; 4) fdiv.
+; 5) fexpt
+
+(defun fadd (fraction-1 fraction-2)
+       (cons (+ (* (numerator fraction-1)
+		   (denominator fraction-2))
+		(* (numerator fraction-2)
+		   (denominator fraction-1)))
+	     (* (denominator fraction-1)
+		(denominator fraction-2))))
+
+(defun fsub (fraction-1 fraction-2)
+       (cons (- (* (numerator fraction-1)
+		   (denominator fraction-2))
+		(* (numerator fraction-2)
+		   (denominator fraction-1)))
+	     (* (denominator fraction-1)
+		(denominator fraction-2))))
+
+(defun fmult (fraction-1 fraction-2)
+       (cons (* (numerator fraction-1)
+		(numerator fraction-2))
+	     (* (denominator fraction-1)
+		(denominator fraction-2))))
+
+(defun fdiv (fraction-numer fraction-denom)
+       (fmult fraction-numer
+	      (cons (denominator fraction-denom)
+		    (numerator fraction-denom))))
+
+(defun fexpt (fraction-1 fixnum)
+       (cons (fixexpt (numerator fraction-1)
+		      fixnum)
+	     (fixexpt (denominator fraction-1)
+		      fixnum)))
+
+
+(defun fixexpt (fixnum-base fixnum-expon)
+       (do ((count 1 (1+ count))
+	    (*result 1 (* *result fixnum-base)))
+	  ((= count (1+ fixnum-expon)) *result)))
+      
+;;; format of a DO
+;;; syntax:
+;;; (DO <steppers> nil|(<end-test> [exit forms]) [body])   ;| for EMAC's sake!
+;;;    <steppers> := ([stepper] <steppers>)
+;;;    <stepper> := (<var> [init] [step])
+;;;      <var> := atom
+;;;      <init> := lisp form to be EVAL'ed
+;;;	 <step> := lisp form to be EVAL'ed
+;;;    <end-test> := lisp predicate
+;;;    <exit forms> := lisp forms to be evaled.
+;;;
+;;; operation:
+;;; on entering the DO, each of the <init>'s are EVAL'ed (or NIL is used if
+;;; a given stepper doesn't have an <init>), and thte values saved.  Then
+;;; it takes all the valuues, and BINDS (as in LAMBDA-binding) each of the
+;;; <var>'s to the value of its corresponding <init>.
+;;; Then the main looping sequence is performed.  The <end-test> (if any) is
+;;; evaluated, and if it returns non-nil, each of the <exit forms> are
+;;; evaluated in turn, with the <var>'s still bound.  The result of the last
+;;; evaluation is returned (which may be the <end-test>, if there are no
+;;; <exit forms>.  Then the items in the body are evaluated one at a time.
+;;; If a (RETURN <form>) is found, <form> is evaluated and it's result is used
+;;; as the value of the DO, which is exited immediately.
+;;; If there was an end-test, [i.e. it wasn't of the form (do (...) () ...) ]
+;;; then the <step>'s are evaluated, and assigned to the <var>'s in parallel
+;;; in the same manner as the <init>'s, and the cycle is repeated.
+
+;;; Thus, (do () (nil) (print 'foo)) has no steppers, and prints infinite
+;;; FOO's.
+;;; (do ((a '(a b c) (cdr a)))
+;;;	((null a) 'baz)
+;;;     (print a))
+;;; would print:
+;;; (A B C)
+;;; (B C)
+;;; (C)
+;;; BAZ ; [ assuming a read-eval-print loop]
+
+;;; (defun boo (list)
+;;;        (do ((list list (cdr list))
+;;;	        (temp nil (cons (car list)
+;;;				temp)))
+;;;	       ((null list) temp)))
+
+
+

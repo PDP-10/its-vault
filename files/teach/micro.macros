@@ -1,0 +1,182 @@
+|| -*- LISP -*- Unix Lisp Macros Package
+
+|| Version not quite ready for release
+
+(progn
+ (princ
+  '\Incredibly\ hairy\ MacLISP\ compatibility\ package\ being\ loaded\.\.\.\î)
+ '-----)
+
+|| (list* thing1 thing2 thing3 ...) = (cons thing1 (cons thing2 ... ))
+
+(defmacro list* (form)
+	  (cond ((null (cddr form))
+		 (cadr form))
+		(t
+		 (displace form (list 'cons
+				      (cadr form)
+				      (cons 'list* (cddr form)))))))
+
+|| (displace <form-to-be-displaced> <replacement>)
+
+(defun displace (x y)
+  (cond ((atom y)
+	 (rplaca x 'progn)
+	 (rplacd x (ncons y)))
+	(t
+	 (rplaca x (car y))
+	 (rplacd x (cdr y)))))
+
+|| (push <val> <var>)
+
+(defmacro push (form)
+  (displace form
+    ((lambda (val stack)
+        (list 'setq stack (list 'cons val stack)))
+     (cadr form)
+     (caddr form))))
+
+|| (pop <var>) or (pop <var> <new-home-for-CAR>)
+
+(defmacro pop (form)
+ (displace form
+  (cond ((null (cddr form))
+	 (list 'prog2 nil
+	       (list 'car (cadr form))
+	       (list 'setq (cadr form) (list 'cdr (cadr form)))))
+	(t
+	 (list 'prog2 nil
+	       (list 'setq (caddr form) (list 'car (cadr form)))
+	       (list 'setq (cadr  form) (list 'cdr (cadr form))))))))
+
+|| (do <bvl> <endstuff> . <body>)
+||  bvl ::= ( <varinfo> <varinfo> ... )
+||  endstuff ::= () or ( <endtest> . <endbody> )     ; () means forever
+||  endtest ::= <form>		  		     ; exits if form true
+||  endbody ::= <form>    			     ; executed on exit
+||  varinfo ::= <var> or (<var>) or (<var> <init>)   ; assignments done in
+||		 or (<var> <init> <incr>)	     ;  parallel
+||  <init> ::= <form>
+||  <incr> ::= <form>
+||  <body> ::= (<form> <form> ...)
+||  <form> ::= any lisp form
+
+(defmacro do (it)
+       (prog (temp vars inits incrs)
+	     (setq temp (cadr it))
+	     (while temp do
+		    (cond ((atom (car temp))
+			   (setq vars  (cons (car temp) vars ))
+			   (setq inits (cons nil        inits))
+			   (setq incrs (cons (car temp) incrs)))
+			  (t
+			   (setq vars  (cons (caar temp) vars ))
+			   (cond ((null (cdar temp))
+				  (setq inits (cons nil         inits))
+				  (setq incrs (cons (caar temp) incrs)))
+				 ((null (cddar temp))
+				  (setq inits (cons (cadar temp) inits))
+				  (setq incrs (cons (caar  temp) incrs)))
+				 (t
+				  (setq inits (cons (cadar temp)       inits))
+				  (setq incrs (cons (car (cddar temp)) incrs))
+				  ))))
+		    (setq temp (cdr temp)))
+	     (setq inits (reverse inits))
+	     (setq incrs (reverse incrs))
+	     (setq vars  (reverse vars))
+	     (setq temp
+		   (cons
+		    (list 'lambda vars
+		      (append
+			'(prog () do-loop-magic-tag)
+			((lambda (exit)
+			   (cond ((not exit) nil)
+				 (t
+				  (list
+				   (list 'cond
+				     (list (car exit)
+					(cond ((or (null exit)
+						   (null (cdr exit)))
+					       '(return nil))
+					      (t
+					       (setq exit (cdr exit))
+					       (cond ((cdr exit)
+						      (list 'return
+							 (cons 'progn exit)))
+						     (t
+						      (cons 'return
+							    exit)))))))))))
+			 (caddr it))
+			(cdddr it)
+			(list (list 'parallel-setq vars incrs))
+			(list '(go do-loop-magic-tag))))
+		    inits))
+	     (rplaca it (car temp))
+	     (rplacd it (cdr temp))
+	     (return it)))
+
+(defmacro let (form)
+  ((lambda (vars body varlist vallist)
+     (while vars do
+	(cond ((atom (car vars))
+	       (push (car vars) varlist)
+	       (push nil vallist))
+	      ((null (cdar vars))
+	       (push (caar vars) varlist)
+	       (push nil vallist))
+	      (t
+	       (push (caar vars) varlist)
+	       (push (cadar vars) vallist)))
+	(pop vars))
+     (list* (list* 'lambda (reverse varlist) body) (reverse vallist)))
+   (cadr form) (cddr form) nil nil))
+
+|| eg, (parallel-setq (a b) (b a))
+||  swaps a with b
+
+(defmacro parallel-setq (form) 
+   (let ((vars (cadr form)) (vals (caddr form)) temp1 temp2 temp3)
+	(while vars do
+	       (push (list 'setq (car vars) (car vals)) temp1)
+	       (pop vars)
+	       (pop vals))
+	(setq temp2 temp1)
+	(while temp2 do
+	       (push (list 'rplaca
+			   (list 'quote (cddar temp2))
+			   (list 'list ''quote (car (cddar temp2))))
+		     temp3)
+	       (pop temp2))
+	(displace form (cons 'progn (append temp3 (reverse temp1))))))
+
+|| (last list)
+
+(defun last (x)
+       (cond ((null (cdr x)) x)
+	     (t (last (cdr x)))))
+
+|| (prog2 thing1 thing-to-return thing3 thing4 ...)
+||
+||(defmacro prog2 (form)
+||   ((lambda (self)
+||     (progn
+||      (rplaca (cdr (caddr self))
+||	      (list 'quote (last self)))
+||      (displace form self)))
+||    (append (list 'progn
+||		  (cadr form)
+||		  (list 'rplaca 'self (list 'list ''quote (caddr form))))
+||	    (cdddr form)
+||	    (list nil))))
+
+(defun prog2 x (cadr x))
+
+|| (aref array sub1 sub2 ...)
+
+(defmacro aref (x) (list 'refarray (cadr x) () () (cons 'list (cddr x))))
+
+|| (aset value array sub1 sub2 ...)
+
+(defmacro aset (x)
+	  (list 'refarray (caddr x) t (cadr x) (cons 'list (cdddr x))))

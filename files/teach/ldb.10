@@ -1,0 +1,110 @@
+; -*- LISP -*- Byte and bit functions for LISPM compatibility and fun.
+
+(eval-when (compile eval load)
+   (defun read-octal ()
+      (let ((ibase 8.))
+	 (read))))
+
+(eval-when (compile eval)
+    (load '|teach;simp fasl|)
+    (setsyntax '/% 'macro 'read-octal))
+
+
+(defun (logand macro) (form)
+   (displace form
+       (simplify1 `(boole 1 ,@(cdr form)))))
+
+(defun (logior macro) (form)
+   (displace form
+       (simplify1 `(boole 7 ,@(cdr form)))))
+
+(defun (logxor macro) (form)
+   (displace form
+       (simplify1 `(boole 6 ,@(cdr form)))))
+
+(defun (logeqv macro) (form)
+   (displace form
+      (simplify1
+       `(do ((first (cadr form))
+	     (another (caddr form) (car form))
+	     (eqvs nil (cons `(boole %11 ,first ,another) eqvs))
+	     (form (cdddr form) (cdr form)))
+	  ((null form)
+	   (cond ((null eqvs) `(boole %11 ,first ,another))  ;simple 2-arg case
+		 (T `(boole 1 (boole %11 ,first ,another) ,@eqvs))))))))
+
+(defun (lognot macro) (form)
+   `(displace form
+       (simplify1 (boole 6 ,(cadr form) -1))))
+
+(defun (lognand macro) (form)
+   (displace form
+     (simplify1
+       (let ((size (length (cdr form))))
+	  (declare (fixnum size))
+	  (cond ((= size 1) `(boole 6 ,(cadr form) -1))
+		((= size 2) `(boole #16 ,@(cdr form)))
+		(T `(boole %16 ,(cadr form)
+			   (boole 1 ,@(cddr form)))))))))
+
+
+(defun (lognor macro) (form)
+   (displace form
+     (simplify1
+       (let ((size (length (cdr form))))
+	  (declare (fixnum size))
+	  (cond ((= size 1) `(boole 6 ,(cadr form) -1))
+		((= size 2) `(boole %10 ,@(cdr form)))
+		((= size 3) `(boole %10 ,(cadr form)
+				    (boole 7 ,@(cddr form)))))))))
+
+(defun (bittest macro) (form)
+   (displace form
+      (simplify1 `(not (zerop (boole 1 ,@(cdr form)))))))
+
+(defun (byte-spec-shift macro) (form)
+   (displace form
+       (simplify1 `(lsh (boole 1 ,(cadr form) %7700) -6))))
+
+(defun (byte-spec-width macro) (form)
+   (displace form
+       (simplify1 `(boole 1 ,(cadr form) %0077))))
+
+(defun (byte-mask macro) (form)
+   (displace form
+     (simplify1
+       `(lsh (lsh -1 (- (byte-spec-width ,(cadr form)) 44))
+	     (byte-spec-shift ,(cadr form))))))
+
+(defun (lbdtest macro) (form)
+   (displace form
+     (simplify1
+       `(not (zerop (boole 1 (byte-mask ,(cadr form))
+			   ,@(cddr form)))))))
+
+(defun (ldb macro) (form)
+   (displace form
+     (simplify1
+       `(lsh (boole 1 (byte-mask ,(cadr form))
+		    ,@(cddr form))
+	     (* -1 (byte-spec-shift ,(cadr form)))))))
+
+(defun (mask-field macro) (form)
+   (displace form
+     (simplify1
+       `(boole 1 (byte-mask ,(cadr form)) ,@(cddr form)))))
+
+(defun (dpb macro) (form)
+   (displace form
+     (simplify1
+       `(boole 7 (boole 2 (byte-mask ,(caddr form))
+			,@(cdddr form))
+	         (boole 1 (lsh ,(cadr form)
+			       (byte-spec-shift ,(caddr form)))
+			  (byte-mask ,(caddr form)))))))
+
+(defun (deposit-field macro) (form)
+   (displace form
+      (simplify1
+       `(boole 7 (boole 2 (byte-mask ,(caddr form)) ,@(cadddr form))
+		 (boole 1 (byte-mask ,(caddr form)) ,(cadr form))))))

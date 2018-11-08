@@ -1,0 +1,60 @@
+:$ Patching COMSAT to run without network code or hardware.
+
+   The basic idea is to fake COMSAT into believing that it is on some
+   net with some random net address (666) and some random name (FOO) and
+   that all other net addresses and names are really just aliases for
+   these.
+
+   You will have to install the file .MAIL.;NAMES > beforehand, because
+   it is needed to initialize COMSAT's databases.  Copy the stuff listed
+   as essential (MAIL-MAINTAINERS, BUG-MAIL, *MSG handling, etc) from
+   the one that came on your tapes.
+
+ $
+
+:$ Make a backup copy first!! $
+$^R .MAIL.;COMSAT LAUNCH, .MAIL.;COMSAT BACKUP
+
+COMSAT$J
+$L .MAIL.;COMSAT LAUNCH
+
+:$ Patch main module of COMSAT, named "NEW" for some forgotten reason $
+NEW$:
+
+:$ Our fake network address $
+OWNHST/ 666
+
+:$ Prevent MYADDR from committing suicide $
+MYADDR/ POPJ P,
+
+:$ Map any network address on any network to our fake address $
+NETALK/   MOVE B,N
+NETALK+1/ AOS (P)
+NETALK+2/ POPJ P,
+
+:$ Any host name maps to our host address.  Change this if you care. $
+HANLYZ/   MOVE A,OWNHST
+HANLYZ+1/ AOS (P)
+HANLYZ+2/ POPJ P,
+
+:$ All hosts are ITS $
+NHITS/   AOS (P)
+NHITS+1/ POPJ P,
+
+:$ No hosts are MULTICS $
+NHMLTX/  POPJ P,
+
+:$ Also need to handle number -> name conversion ... $
+
+
+:$ If you just asembled this COMSAT you will also have to do: $
+XVERS/ 0
+DEBUG/ 0
+
+:$ Dump this out as the system COMSAT $
+$Y .MAIL.;COMSAT LAUNCH
+
+:$ Generate all the binary files $
+MFINIT$G
+
+:$ If all goes well COMSAT will take you by the hand from here on $

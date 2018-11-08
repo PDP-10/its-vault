@@ -1,0 +1,1933 @@
+;READ WOODS;MACROS > IN BEFORE TRYING TO THIS INTERPRETIVELY -*-LISP-*-
+
+(DECLARE (COND ((NULL (MEMQ 'NEWIO (STATUS FEATURES)))
+		(BREAK 'YOU-HAVE-TO-COMPILE-THIS-WITH-QCOMPL T))
+	       ((OR (NULL (GET 'IF-FOR-MACLISP 'MACRO))
+		    (GET 'POP 'MACRO))
+		(LOAD '(MACROS > DSK WOODS)))))
+
+(IF-FOR-LISPM
+(DECLARE (QUOTED-ARGS 
+  FORCE  PUSH  SCANSTACK  SYSCONJ  ADDL  ADDR 
+  CAT  GETF  GETR  JUMP  LIFTR  NULLR 
+  SENDR  SENDRQ  SETR  SETRQ  TO  TODO 
+  WRD  CHECKF  COMPARATIVE  GETROOT  MARKER  NPCHECK 
+  NPREP  PNCHECK  RESUMETAG  RFEAT  SCOMP  VPARTICLE 
+  VPASSIVE  VPREP  VTRANS  HELPER  MAPCV  RENAME 
+  SCANCV  SETQS  THOSEV  EDITD  EDITG  REMEX 
+  CTYPE  PLURAL  COMPFORM  SUPFORM  /#  MEM 
+  PRED  QUANT  SSUNIONF  NEWFRAG  TABFORM))
+);LISPM
+
+(DECLARE  (SPECIAL SEM-TRACE *SPOP *TRAIL REG WHERE *SQ-VAL*)
+	  (*LEXPR CONCAT))
+(DECLARE (*LEXPR APPLY* EVALA)(SPECIAL *LOC*))
+
+(DEFUN DEFINEG-RULES MACRO (X) (CONS 'DEFINEG (CDR X)))
+
+(DECLARE (GENPREFIX NASARU)) 
+
+(DEFINEG-RULES
+ (ADJ:MASS (T T)
+	   ->
+	   (PROGN (SETQ SEM (SUBST '(NPR* X // W)
+				   'DLT
+				   QUANT))
+		  (SETQ QUANT 'DLT)
+		  (SETQ SEM
+			(SUBST (LIST 'QUOTE
+				     (EVAL (CONS 'NPR
+						 '(/# 0. TERM))))
+			       'W
+			       SEM))))
+ (ADJ:SET (ADJ/.NP (MEM 1. SET))
+	  ->
+	  (PROG2 0.
+		 (SETQ SEM (SUBLIS '((FOR . UNION)
+				     (DLT (/# 1. 1. NRULES)))
+				   QUANT))
+		 (SETQ QUANT 'DLT)))
+ (ANY:TERM (T T)
+	   ->
+	   (LIST 'QUOTE
+		 (EVAL (CONS 'NPR '(/# 0. TERM)))))
+ (D:ALL (NP/.DET T)
+	->
+	(QUANT (FOR EVERY X // (/# 0. NRULES) : (/# 0. RRULES) /; DLT)))
+ (D:ALL-PL (NP/.DET (AND (EQU 1. ALL) (EQU 2. PL)))
+	   ->
+	   (PROGN (SUBST 'EVERY 'GEN QUANT)
+		  (QUANT (FOR EVERY
+			      X
+			      //
+			      (/# 0. NRULES)
+			      :
+			      (/# 0. RRULES)
+			      /;
+			      DLT))))
+ (D:ALL\ONES (NP/.DET (EQU 1. ALL))
+	     (NP/.PRO (EQU 1. ONES))
+	     (NP/.PP (EQU 1. OF))
+	     ->
+	     '(/# 3. 2. ALL))
+ (D:ANAPHORA (OR (NP/.PRO (NOT (OR (EQU 1. I)
+				   (EQU 1. YOU)
+				   (EQU 1. ONES))))
+		 (NP/.DET (OR (EQU 1. THIS)
+			      (EQU 1. THAT)
+			      (EQU 1. THESE)
+			      (EQU 1. THOSE))))
+	     (NOT (NP/.PP T))
+	     (NOT (NP/.REL T))
+	     ->
+	     (PROGN (SETQ QVAR (ANTECEDANT '(/# 0. IDENTITY)
+					   NIL))
+		    (MAPC (FUNCTION ANTEQUANT) (SCOPEVARS QVAR))
+		    (ANTEQUANT QVAR)))
+ (D:AND AND (NP/.AND T) -> '(/# 1. 1.))
+ (D:ATLEAST (NP/.DET/.COMP (OR (EQU 1. ATLEAST) (EQU 1. ASMANYAS)))
+	    ->
+	    (QUANT (FOR (EQ N (/# 1. 2.))
+			X
+			//
+			(/# 0. NRULES)
+			:
+			(/# 0. RRULES)
+			/;
+			DLT)))
+)
+(DEFINEG-RULES
+ (D:ATMOST (NP/.DET/.COMP (EQU 1. ATMOST))
+	   ->
+	   (QUANT (NOT (FOR (GREATER N (/# 1. 2.))
+			    X
+			    //
+			    (/# 0. NRULES)
+			    :
+			    (/# 0. RRULES)
+			    /;
+			    DLT))))
+ (D:AVERAGE (T T)
+	    ->
+	    '(SEQL (AVERAGE X // (/# 0. NRULES) : (/# 0. RRULES))))
+ (D:CARDINAL (NP/.DET/.INTEGER T)
+	     ->
+	     (QUANT (FOR (EQ N (/# 1. 1. INTEGER))
+			 X
+			 //
+			 (/# 0. NRULES)
+			 :
+			 (/# 0. RRULES)
+			 /;
+			 DLT)))
+ (D:EACH (NP/.DET (AND (EQU 1. EACH) (EQU 2. SG)))
+	 ->
+	 (QUANT (FOR EVERY
+		     X
+		     //
+		     (/# 0. NRULES)
+		     :
+		     (/# 0. RRULES)
+		     /;
+		     DLT)))
+ (D:EVERY (NP/.DET (AND (EQU 1. EVERY) (EQU 2. SG)))
+	  ->
+	  (QUANT (FOR EVERY
+		      X
+		      //
+		      (/# 0. NRULES)
+		      :
+		      (/# 0. RRULES)
+		      /;
+		      DLT)))
+ (D:EXACTLY (NP/.DET/.COMP (EQU 1. EXACTLY))
+	    ->
+	    (QUANT (FOR (EQ N (/# 1. 2.))
+			X
+			//
+			(/# 0. NRULES)
+			:
+			(/# 0. RRULES)
+			/;
+			DLT)))
+)
+(DEFINEG-RULES
+ (D:HOWMANY (NP/.DET (AND (EQU 1. HOWMANY)
+			  (OR (EQU 2. PL) (EQU 2. SG//PL))))
+	    ->
+	    (QUANT (FOR THE X // (/# 0. NUMBER) : T /; (PRINTOUT X))))
+ (D:LESSTHAN (NP/.DET/.COMP (OR (EQU 1. FEWERTHAN) (EQU 1. LESSTHAN)))
+	     ->
+	     (QUANT (NOT (FOR (EQ N (/# 1. 2.))
+			      X
+			      //
+			      (/# 0. NRULES)
+			      :
+			      (/# 0. RRULES)
+			      /;
+			      DLT))))
+ (D:MASS (NP/.N (OR (MEM 1. MASS)
+		    (EQ (GET (CAR (TERM (CONSTITUENTS (/# 1.))))
+			     'N)
+			'MASS)))
+	 ->
+	 (PROGN (SETQ SEM
+		      (SUBST '(NPR* X // W) 'DLT QUANT))
+		(SETQ QUANT 'DLT)
+		(SETQ SEM (SUBST (LIST 'QUOTE
+				       (TABFORM (/# 0. HEAD)))
+				 'W
+				 SEM))))
+ (D:MAXIMUM (T T)
+	    ->
+	    '(SEQL (MAXIMUM X // (/# 0. NRULES) : (/# 0. RRULES))))
+ (D:MINIMUM (T T)
+	    ->
+	    '(SEQL (MINIMUM X // (/# 0. NRULES) : (/# 0. RRULES))))
+ (D:MORETHAN (NP/.DET/.COMP (EQU 1. MORETHAN))
+	     ->
+	     (QUANT (FOR (GREATER N (/# 1. 2.))
+			 X
+			 //
+			 (/# 0. NRULES)
+			 :
+			 (/# 0. RRULES)
+			 /;
+			 DLT)))
+ (D:NEG (NP/.NEG T) -> (QUANT (NOT (/# 1. 1.))))
+ (D:NIL (NP/.DET (EQU 1. NIL))
+	->
+	(QUANT (FOR GEN X // (/# 0. NRULES) : (/# 0. RRULES) /; DLT)))
+ (D:NO (NP/.DET (EQU 1. NO))
+       ->
+       (QUANT (NOT (FOR SOME
+			X
+			//
+			(/# 0. NRULES)
+			:
+			(/# 0. RRULES)
+			/;
+			DLT))))
+ (D:NOT-SET (T T) -> '(/# 0.))
+ (D:NUMBER (T T)
+	   ->
+	   (SSUNIONF (SEQL (NUMBER X
+				   //
+				   (/# 0. NRULES)
+				   :
+				   (/# 0. RRULES)))))
+ (D:OLDEST (T T)
+	   ->
+	   '(SEQL (OLDEST X // (/# 0. NRULES) : (/# 0. RRULES))))
+)
+(DEFINEG-RULES
+ (D:ORDINAL (NP/.DET/.ART (EQU 1. THE))
+	    (NP/.DET/.POSTART (NUMBERP (EVAL (CADADR (/# 1. TERM)))))
+	    ->
+	    (QUANT (FOR (ORDINAL (/# 2. 1. INTEGER))
+			X
+			//
+			(/# 0. NRULES)
+			:
+			(/# 0. RRULES)
+			/;
+			DLT)))
+ (D:SEMI-ANAPHOR (NP/.PRO (NOT (OR (EQU 1. I)
+				   (EQU 1. YOU)
+				   (EQU 1. ONES))))
+		 (NP/.PP T)
+		 ->
+		 (PROG2 0. (SEMIANAPHOR '(/# 0. IDENTITY))))
+ (D:SET1 (NP/.N (MEM 1. SET))
+	 (NP/.DET (OR (EQU 1. THE) (EQU 1. NIL) (EQU 1. A)))
+	 ->
+	 (PROG2 0.
+		(SETQ SEM (SUBLIS '((FOR . UNION)
+				    (DLT SETLIST
+					 X
+					 //
+					 (/# 0. NRULES)
+					 :
+					 (/# 0. RRULES)
+					 /;
+					 T))
+				  QUANT))
+		(SETQ QUANT 'DLT)))
+ (D:SETOF (NP/.DET (AND (OR (EQU 1. THE) (EQU 1. ALL) (EQU 1. NIL))
+			(EQU 2. PL)))
+	  ->
+	  (PROG2 0.
+		 (SETQ SEM (SUBLIS '((FOR . UNION)
+				     (DLT SETOF
+					  X
+					  //
+					  (/# 0. NRULES)
+					  :
+					  (/# 0. RRULES)
+					  /;
+					  T))
+				   QUANT))
+		 (SETQ QUANT 'DLT)))
+ (D:SOME (NP/.DET (OR (EQU 1. SOME)
+		      (EQU 1. A)
+		      (EQU 1. AN)
+		      (EQU 1. ANY)))
+	 ->
+	 (QUANT (FOR SOME X // (/# 0. NRULES) : (/# 0. RRULES) /; DLT)))
+ (D:SSET (NP/.DET (AND (NOT (EQU 1. WHR))
+		       (NOT (ANAPHORD (/# 1.)))
+		       (OR (EQU 1. EVERY)
+			   (EQU 2. SG//PL)
+			   (EQU 2. PL))))
+	 ->
+	 (QUANT (SSUNION X // (/# 0. NRULES) : (/# 0. RRULES) /; DLT)))
+)
+(DEFINEG-RULES
+ (D:THE-PL (NP/.DET (AND (EQU 1. THE)
+			 (OR (EQU 2. PL) (EQU 2. SG//PL))))
+	   ->
+	   (QUANT (FOR EVERY
+		       X
+		       //
+		       (/# 0. NRULES)
+		       :
+		       (/# 0. RRULES)
+		       /;
+		       DLT)))
+ (D:THE-SG (NP/.DET (AND (OR (EQU 1. THE) (EQU 1. THIS) (EQU 1. THAT))
+			 (EQU 2. SG)))
+	   ->
+	   (QUANT (FOR THE
+		       X
+		       //
+		       (/# 0. NRULES)
+		       :
+		       (/# 0. RRULES)
+		       /;
+		       DLT)))
+ (D:THE-SG2 (NP/.DET (AND (EQU 1. THE) (EQU 2. SG)))
+	    (NP/.N (MEM 1. (NONSPECIFIC)))
+	    ->
+	    (QUANT (FOR EVERY
+			X
+			//
+			(/# 0. NRULES)
+			:
+			(/# 0. RRULES)
+			/;
+			DLT)))
+ (D:WHQ-PL (NP/.DET (AND (OR (EQU 1. WHICH)
+			     (EQU 1. WHAT)
+			     (EQU 1. WHQ)
+			     (EQU 1. WHICHQ))
+			 (EQU 2. PL)))
+	   ->
+	   (PROGN (SUBST 'EVERY 'GEN QUANT)
+		  (QUANT (FOR EVERY
+			      X
+			      //
+			      (/# 0. NRULES)
+			      :
+			      (/# 0. RRULES)
+			      /;
+			      (PRINTOUT X)))))
+ (D:WHQ-SG (NP/.DET (AND (OR (EQU 1. WHQ)
+			     (EQU 1. WHICHQ)
+			     (EQU 1. WHICH)
+			     (EQU 1. WHAT))
+			 (EQU 2. SG)))
+	   ->
+	   (QUANT (FOR THE
+		       X
+		       //
+		       (/# 0. NRULES)
+		       :
+		       (/# 0. RRULES)
+		       /;
+		       (PRINTOUT X))))
+ (D:WHR (NP/.DET (EQU 1. WHR)) -> '(/# 0.))
+)
+(DEFINEG-RULES
+ (NP:NPR (NP/.NPR T)
+	 ->
+	 (PROGN (SETQ SEM
+		      (SUBST '(NPR* X // W) 'DLT QUANT))
+		(SETQ QUANT 'DLT)
+		(SETQ SEM
+		      (SUBST (LIST 'QUOTE
+				   (EVAL (CONS 'NPR
+					       '(/# 1. 1. TERM))))
+			     'W
+			     SEM))))
+ (PR1 (S/.Q-NEG (NOT (LEAFMEMB P
+			       '(WHQ WHICHQ
+				     WHEN
+				     WHERE
+				     WHY
+				     HOW
+				     HOWMANY))))
+      ->
+      (PRED (TEST (/# 0. SRULES))))
+ (PR2 (S/.Q (NOT (LEAFMEMB P
+			   '(WHQ WHICHQ WHEN WHERE WHY HOW HOWMANY))))
+      (NOT (S/.Q-MODAL T))
+      ->
+      (PRED (TEST (/# 0. SRULES))))
+ (PR3 (S/.NEG T) -> (PRED (NOT (/# 0. SRULES))))
+ (PR4 (OR ((S (DCL)) T) ((S (REL)) T) ((S (POSS-ING)) T))
+      ->
+      (PRED (/# 0. SRULES)))
+ (PR5 (S/.IMP T) -> (PRED (DO (/# 0. SRULES))))
+ (PR6 (S/.NP T) (S/.VP T) -> (PRED (/# 0. SRULES)))
+ (R:ADJ AND
+	(NP/.ADJ (NOT (USED? (/# 1.))))
+	(NP/.N T)
+	->
+	(PROG (ANS) 
+	      (COND ((USED? (SETQ ANS (CDR (ASSQ 1. (CAR RVECTOR)))))
+		     (RETURN T)))
+	      (&PRIN1 'I/ DO/ NOT/ UNDERSTAND/  T)
+	      (&PRINT ANS T)
+	      (&PRIN1 'AS/ A/ MODIFIER/ OF/  T)
+	      (&PRINT (CDR (ASSQ 1. (CADR RVECTOR))) NIL)
+	      (&PRIN1 'DO/ YOU/ WANT/ ME/ TO/ IGNORE/ IT? T)
+	      (&TERPRI T)
+	      (COND ((MEMQ (SETQ ANS (*READ NIL))
+			   '(YES T TRUE))
+		     (&PRINT 'OK T))
+		    ((EQ ANS 'BREAK)
+		     (BREAK1 T T SEMSUB NIL NIL))
+		    (T (QUIT)))
+	 T))
+ (R:PP AND
+       (NP/.PP (NOT (MEANING? (/# 2.))))
+       ->
+       (PROG (ANS) 
+	     (&PRIN1 'I/ DO/ NOT/ UNDERSTAND/  T)
+	     (&PRINT (CDR (ASSQ 3. (CAR RVECTOR))) T)
+	     (&PRIN1 'AS/ A/ MODIFIER/ OF/  T)
+	     (&PRINT (HEAD (CDR (ASSQ 2. (CAR RVECTOR)))) T)
+	     (&PRIN1 'DO/ YOU/ WANT/ ME/ TO/ IGNORE/ IT? T)
+	     (&TERPRI T)
+	     (COND ((MEMQ (SETQ ANS (*READ NIL)) '(YES T TRUE))
+		    (&PRINT 'OK T))
+		   ((EQ ANS 'BREAK)
+		    (BREAK1 T T SEMSUB NIL NIL))
+		   (T (QUIT)))
+	T))
+)
+(DEFINEG-RULES
+ (R:QREL
+  (NP/.QREL (AND (RELTAG (/# 1.))
+		 (OR (INTERP (/# 1.) NIL)
+		     (PROG (ANS) 
+			   (&PRIN1 'I/ DO/ NOT/ UNDERSTAND/  T)
+			   (&PRINT (/# 1.) T)
+			   (&PRIN1 'DO/ YOU/ WANT/ ME/ TO/ IGNORE/ IT?
+				   T)
+			   (&TERPRI T)
+			   (COND ((MEMQ (SETQ ANS (*READ NIL))
+					'(YES T TRUE))
+				  (&PRINT 'OK T))
+				 ((EQ ANS 'BREAK)
+				  (BREAK1 T T SEMSUB NIL NIL))
+				 (T (QUIT)))
+		      T))))
+  ->
+  '(/# 1. 1.))
+ (R:REL
+  AND
+  (NP/.REL (AND (RELTAG (/# 1.))
+		(OR (INTERP (/# 1.) NIL)
+		    (PROG (ANS) 
+			  (&PRIN1 'I/ DO/ NOT/ UNDERSTAND/  T)
+			  (&PRINT (/# 1.) T)
+			  (&PRIN1 'DO/ YOU/ WANT/ ME/ TO/ IGNORE/ IT?
+				  T)
+			  (&TERPRI T)
+			  (COND ((MEMQ (SETQ ANS (*READ NIL))
+				       '(YES T TRUE))
+				 (&PRINT 'OK T))
+				((EQ ANS 'BREAK)
+				 (BREAK1 T T SEMSUB NIL NIL))
+				(T (QUIT)))
+		     T))))
+  ->
+  (PRED (/# 1. 1.)))
+ (S:BE-AROUND (S/.NP-V (AND (MEM 1. (ANALYSIS CONCENTRATION))
+			    (EQU 2. BE)))
+	      (S/.COMP-N (AND (OR (EQU 1. AROUND)
+				  (EQU 1. APPROXIMATELY))
+			      (MEM 3. UNIT)))
+	      ->
+	      (BUILDQ (AROUNDVAL (/# 1. 1.) /#)
+		      (LIST 'QUOTE
+			    (CONS (/# 2. 2. INTEGER) (/# 2. 3. UNIT)))))
+ (S:BE-EQUAL (S/.NP-V (AND (EQU 2. BE)
+			   (NOT (OR (EQU 1. WHQ THING SG)
+				    (EQU 1. WHQ THING PL)
+				    (EQU 1. WHQ THING SG//PL)))))
+	     (S/.OBJ (AND (NOT (OR (EQU 1. WHQ THING SG)
+				   (EQU 1. WHQ THING PL)
+				   (EQU 1. WHQ THING SG//PL)))
+			  (EQU 2. SG)))
+	     ->
+	     (PRED (EQUAL (/# 1. 1.) (/# 2. 1.))))
+)
+(DEFINEG-RULES
+ (S:BE-GREATER-VAL (S/.NP-V (AND (MEM 1. (ANALYSIS CONCENTRATION))
+				 (EQU 2. BE)))
+		   (S/.COMP-N (AND (OR (EQU 1. MORETHAN)
+				       (EQU 1. GREATERTHAN))
+				   (MEM 3. UNIT)))
+		   ->
+		   (BUILDQ (GREATER (/# 1. 1.) /#)
+			   (LIST 'QUOTE
+				 (CONS (/# 2. 2. INTEGER)
+				       (/# 2. 3. UNIT)))))
+ (S:BE-LESS-VAL (S/.NP-V (AND (MEM 1. (ANALYSIS CONCENTRATION))
+			      (EQU 2. BE)))
+		(S/.COMP-N (AND (OR (EQU 1. LESSTHAN)
+				    (EQU 1. FEWERTHAN))
+				(MEM 3. UNIT)))
+		->
+		(BUILDQ (LESSVAL (/# 1. 1.) /#)
+			(LIST 'QUOTE
+			      (CONS (/# 2. 2. INTEGER)
+				    (/# 2. 3. UNIT)))))
+ (S:BE-MEMBER (S/.NP-V (AND (EQU 2. BE)
+			    (NOT (OR (EQU 1. WHQ THING SG)
+				     (EQU 1. WHQ THING PL)
+				     (EQU 1. WHQ THING SG//PL)))))
+	      (S/.OBJ (AND (NOT (OR (EQU 1. WHQ THING SG)
+				    (EQU 1. WHQ THING PL)
+				    (EQU 1. WHQ THING SG//PL)))
+			   (OR (MEM 1. SET)
+			       (EQU 2. PL)
+			       (EQU 2. SG//PL))))
+	      ->
+	      (PRED (MEMBER (/# 1. 1.) (/# 2. 1. SET?))))
+ (S:BE-MEMBER* (S/.NP-V (EQU 2. BE))
+	       (S/.OBJ (MEM 1. TYPE))
+	       ->
+	       '(MEMBER* (/# 1. 1.) (/# 2. 1.)))
+ (S:DCL (S/.DCL-S T) -> (PRED (/# 1. 1.)))
+ (S:IMP (S/.IMP-S T) -> (PRED (DO (/# 1. 1.))))
+ (S:NEG (S/.NEG-S T) -> (PRED (NOT (1. . 1.))))
+ (S:NPQ (S/.NPQ T) -> (PRED (/# 1. 1. REFS?)))
+ (S:NPU (S/.NPU T) -> (PRED (PRINTOUT (/# 1. 1. REFS?))))
+ (S:QREL ((S (QREL)) T) -> '(/# 0. SRULES))
+ (S:QREL-NEG ((S (QREL NEG)) T) -> '(NOT (/# 0. SRULES)))
+ (S:WHQ (S/.Q-S (LEAFMEMB P
+			  '(WHQ WHICHQ WHEN WHERE WHY HOW HOWMANY)))
+	->
+	(PRED (/# 1. 1.)))
+ (S:YES//NO (S/.Q-S (NOT (LEAFMEMB P
+				   '(WHQ WHICHQ
+					 WHEN
+					 WHERE
+					 WHY
+					 HOW
+					 HOWMANY))))
+	    ->
+	    (PRED (TEST (/# 1. 1.))))
+)
+(DEFINEG-RULES
+ (SS30 (S/.NP-V (EQU 2. BE))
+       (S/.OBJ (OR (EQU 1. WHQ THING SG)
+		   (EQU 1. WHQ THING PL)
+		   (EQU 1. WHQ THING SG//PL)
+		   (EQU 1. WHAT)))
+       ->
+       (PRED (PRINTOUT (1. . 1.))))
+ (SS32 (S/.NP-V (AND (MEM 1. INTEGER) (EQU 2. BE)))
+       (S/.COMP (AND (OR (EQU 1. AT LEAST)
+			 (EQU 1. AS MANY AS)
+			 (EQU 1. ATLEAST)
+			 (EQU 1. ASMANYAS))
+		     (MEM 2. INTEGER)))
+       ->
+       (PRED (NOT (GREATER (2. . 2.) (1. . 1.)))))
+ (SS33 (S/.NP-V (AND (MEM 1. INTEGER) (EQU 2. BE)))
+       (S/.COMP (AND (OR (EQU 1. MORE THAN) (EQU 1. MORETHAN))
+		     (MEM 2. INTEGER)))
+       ->
+       (PRED (GREATER (1. . 1.) (2. . 2.))))
+ (SS34 (S/.NP-V (AND (MEM 1. INTEGER) (EQU 2. BE)))
+       (S/.COMP (AND (EQU 1. EXACTLY) (MEM 2. INTEGER)))
+       ->
+       (PRED (EQUAL (1. . 1.) (2. . 2.))))
+ (SS35 (S/.NP-V (AND (MEM 1. INTEGER) (EQU 2. BE)))
+       (S/.COMP (AND (OR (EQU 1. FEWER THAN)
+			 (EQU 1. LESS THAN)
+			 (EQU 1. FEWERTHAN)
+			 (EQU 1. LESSTHAN))
+		     (MEM 2. INTEGER)))
+       ->
+       (PRED (GREATER (2. . 2.) (1. . 1.))))
+ (SS36 (S/.NP-V (AND (MEM 1. INTEGER) (EQU 2. BE)))
+       (S/.COMP (AND (OR (EQU 1. AT MOST) (EQU 1. ATMOST))
+		     (MEM 2. INTEGER)))
+       ->
+       (PRED (NOT (GREATER (1. . 1.) (2. . 2.)))))
+ (SS41 (S/.NP-V (OR (EQU 2. BE) (EQU 2. EXIST)))
+       ->
+       (PRED (EXIST (1. . 1.))))) 
+
+(LISPXPRINT '(R: TRULES) T) 
+
+(SETQ TRULES '(TOPIC\ADJ TOPIC\ADJ-N
+			 TOPIC\ADJ-NPR
+			 TOPIC\ADJ/.NP
+			 TOPIC\AND-NP
+			 TOPIC\AND-S
+			 TOPIC\ESP
+			 TOPIC\N
+			 TOPIC\NOM
+			 TOPIC\NR/.S
+			 TOPIC\NR/.NP
+			 TOPIC\NOT-NP
+			 TOPIC\NOT-S
+			 TOPIC\NPR
+			 TOPIC\OR-NP
+			 TOPIC\OR-S
+			 TOPIC\PP
+			 TOPIC\REL
+			 TOPIC\S/.COMPL
+			 TOPIC\S/.NP
+			 TOPIC\S/.OBJ
+			 TOPIC\S/.PP
+			 TOPIC\S/.V
+			 TOPIC\TERM
+			 TOPIC\TERM2
+			 TOPIC\AUTHOR
+			 TOPIC\AUTHOR2
+			 TOPIC\NP/.COMPL
+			 TOPIC\PP/.COMPL
+			 TOPIC\V-INTRANS
+			 TOPIC\V-TRANS
+			 TOPIC\V-TRANS2
+			 TOPIC\EMPHASIS
+			 TOPIC\ADJ/.SUPER
+			 TOPIC\ADJ/.COMP)) 
+
+(DEFINEG-RULES
+ (TOPIC\ADJ AND
+	    (NP/.ADJ (AND (NOT (MEM 1. DOCUMENT))
+			  (NOT (EQ (CAR (/# 1.)) 'NP))
+			  (NOT (MEM 1. PADDING))))
+	    ->
+	    '(/# 1. 1. TERM))
+ (TOPIC\ADJ-N OR
+	      (NP/.ADJ-N (NOT (AND (OR (MEM 1. DOCUMENT)
+				       (MEM 1. PADDING))
+				   (MEM 2. DOCUMENT))))
+	      (OR (NP/.PP T) (NP/.REL T) (NP/.COMPL T))
+	      ->
+	      (ADJPHRSE '(/# 0. IDENTITY)))
+ (TOPIC\ADJ-NPR OR
+		(NP/.NPR T)
+		(NP/.ADJ T)
+		(OR (NP/.PP T) (NP/.REL T) (NP/.COMPL T))
+		->
+		(ADJPHRSE '(/# 0. IDENTITY)))
+ (TOPIC\ADJ/.NP AND (NP/.ADJ/.NP T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\AND-NP AND (NP/.AND T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\AND-S AND (S/.AND T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\ESP (NP/.ADVP (MEM 1. TRANSADV))
+	    ->
+	    (*FLAG '(/# 1. 2. TOPIC)))
+ (TOPIC\N (NP/.N (AND (NOT (MEM 1. PADDING)) (NOT (MEM 1. DOCUMENT))))
+	  ->
+	  '(/# 1. 1. TERM))
+ (TOPIC\NOM (NP/.NOM T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\NR/.S (NP/.NR/.S T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\NR/.NP (NP/.NR/.NP T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\NOT-NP (NP/.NEG T) -> '(NOT (/# 1. 1. TOPIC)))
+ (TOPIC\NOT-S (S/.NEG T) -> '(NOT (/# 1. 1. TOPIC)))
+ (TOPIC\NPR (NP/.NPR T) -> '(/# 1. 1. TERM))
+ (TOPIC\OR-NP OR (NP/.OR T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\OR-S OR (S/.OR T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\PP AND
+	   (OR (NP/.PP (NOT (EQ (CAADDR (/# 2.)) 'COMPL)))
+	       (NP/.PP/.AND/.PP (NOT (EQ (CAADDR (/# 2.))
+					 'COMPL))))
+	   ->
+	   '(/# 1. 2. TOPIC))
+)
+(DEFINEG-RULES
+ (TOPIC\REL AND (NP/.REL T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\S/.COMPL (S/.COMPL T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\S/.NP (S/.NP (AND (NOT (MEM 1. PADDING))
+			  (NOT (MEM 1. DOCUMENT))))
+	      (NOT (S/.PRO T))
+	      ->
+	      '(/# 1. 1. TOPIC))
+ (TOPIC\S/.OBJ (OR (S/.OBJ (AND (NOT (MEM 1. PADDING))
+				(NOT (MEM 1. DOCUMENT))))
+		   (S/.OBJ/.REL T))
+	       ->
+	       '(/# 1. 1. TOPIC))
+ (TOPIC\S/.PP AND
+	      (OR (S/.PP T) (S/.PP/.AND/.PP T))
+	      ->
+	      '(/# 1. 2. TOPIC))
+ (TOPIC\S/.V (S/.V NIL)
+	     ->
+	     (LIST (PACK (NCONC '(/# 1. 1. TERM)
+				'(ING)))))
+ (TOPIC\TERM (OR (NP/.N (AND (LESSP (LENGTH (KEYPHRASE (LIST P))) 5.)
+			     (GREATERP (LENGTH (KEYPHRASE (LIST P)))
+				       1.)
+			     (NOT (MEM 1. PADDING))
+			     (NOT (MEM 1. DOCUMENT))))
+		 (NP/.NPR (AND (LESSP (LENGTH (KEYPHRASE (LIST P)))
+				      5.)
+			       (GREATERP (LENGTH (KEYPHRASE (LIST P)))
+					 1.))))
+	     (NOT (NP/.REL T))
+	     ->
+	     (KEYPHRASE (LIST '(/# 0. IDENTITY))))
+ (TOPIC\TERM2 (NP/.N (AND (LESSP (LENGTH (KEYPHRASE (LIST P))) 5.)
+			  (GREATERP (LENGTH (KEYPHRASE (LIST P))) 1.)
+			  (OR (MEM 1. PADDING) (MEM 1. DOCUMENT))))
+	      (NP/.ADJ (AND (NOT (MEM 1. PADDING))
+			    (NOT (MEM 1. DOCUMENT))))
+	      (NOT (NP/.REL T))
+	      ->
+	      (KEYPHRASE (LIST '(/# 0. IDENTITY))))
+ (TOPIC\AUTHOR AND
+	       (OR (S/.AND/.NPR T) (S/.NPR T))
+	       (S/.V (MEM 1. WRITE))
+	       ->
+	       (AUTHOR: '(/# 1. 1. TERM)))
+ (TOPIC\AUTHOR2 AND
+		(NP/.N (MEM 1. DOCUMENT))
+		(NP/.PP/.NPR (EQU 1. BY))
+		->
+		(AUTHOR: '(/# 2. 2. TERM)))
+ (TOPIC\NP/.COMPL (NP/.COMPL T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\PP/.COMPL (NP/.PP/.COMPL T) -> '(/# 1. 1. TOPIC))
+ (TOPIC\V-INTRANS (NOT (S/.OBJ T))
+		  (S/.V T)
+		  ->
+		  (APPEND (LIST 'V:) '(/# 2. 1. TERM)))
+)
+(DEFINEG-RULES
+ (TOPIC\V-TRANS (S/.OBJ (NOR (MEMQ 'AND (/# 1.))
+			     (MEMQ 'OR (/# 1.))))
+		(S/.V T)
+		->
+		(APPEND (APPEND (LIST 'VP:)
+				(LIST (NFLCT-ING (CAR '(/# 2.
+							  1.
+							  TERM)))))
+			(ADJPHRSE '(/# 1. 1. IDENTITY))))
+ (TOPIC\V-TRANS2 OR
+		 (OR (S/.OBJ/.AND T) (S/.OBJ/.OR T))
+		 (S/.V T)
+		 ->
+		 (APPEND (APPEND (LIST 'VP:)
+				 (LIST (NFLCT-ING (CAR '(/# 2.
+							   1.
+							   TERM)))))
+			 (ADJPHRSE '(/# 1. 1. IDENTITY))))
+ (TOPIC\EMPHASIS (NP/.PP (MEM 2. EMPHASIS))
+		 (NP/.PP/.PP T)
+		 ->
+		 (*FLAG '(/# 2. 2. TOPIC)))
+ (TOPIC\ADJ/.SUPER AND
+		   (NP/.DET/.POSTART (MEMQ 'SUPERLATIVE
+					   (CADR (/# 1.))))
+		   (NP/.N T)
+		   ->
+		   (APPEND (LIST (NFLCT-ADJ (CADR '(/# 1. 1. TERM))
+					    'SUPERLATIVE))
+			   '(/# 2. 1. TERM)))
+ (TOPIC\ADJ/.COMP AND
+		  (NP/.ADJ/.COMP T)
+		  (NP/.N T)
+		  ->
+		  (APPEND (LIST (NFLCT-ADJ (CAR '(/# 1. 1. TERM))
+					   'COMPARATIVE))
+			  '(/# 2. 1. TERM)))) 
+
+(LISPXPRINT '(R: NEWRULES) T) 
+
+(SETQ NEWRULES '(N:AGE N:AGE/'
+		       N:ANALYSIS
+		       N:AVERAGE
+		       N:AVG-CONC?
+		       N:BASALT
+		       N:COMPOSITION
+		       N:CONCENTRATION
+		       N:CORETUBE
+		       N:DOCUMENT
+		       N:DUST
+		       N:ELT
+		       N:GABBRO
+		       N:HALOGEN
+		       N:LINE/#
+		       N:MAJOR-ELT
+		       N:MAXIMUM
+		       N:MINERAL
+		       N:MINIMUM
+		       N:MODAL-ANALYSIS
+		       N:MODAL-CONC
+		       N:NUMBER
+		       N:OLDEST
+		       N:ONE
+		       N:ONEOF
+		       N:ONES
+		       N:ONES-OF-PRO
+		       N:PHASE
+		       N:RARE//EARTH
+		       N:RATIO
+		       N:ROCK
+		       N:ROCKTYPE
+		       N:SAMPLE
+		       N:SAMPLETYPE
+		       N:SPEC-ACT
+		       N:TYPEA
+		       N:TYPEB
+		       N:TYPEC
+		       N:TYPED
+		       R:ANALYSIS-REF
+		       R:ANALYSIS-TAG
+		       R:AROUND
+		       R:BIBLIOGRAPHY
+		       R:DOC-ON
+		       R:ELT/#1
+		       R:ELT/#2
+		       R:GLASS
+		       R:GREATERVAL
+		       R:LESSVAL
+		       R:N-DOC
+		       R:ONE
+		       R:ONEOF
+		       R:ONES
+		       R:PHASE
+		       R:PHASE/#2
+		       R:ROCKTYPE
+		       R:SAMPLE-WITH
+		       R:SAMPLE-WITH-COMP
+		       R:SAMPLETYPE
+		       REFRULE
+		       REFRULE?
+		       S:ADD
+		       S:ADDLINE
+		       S:ANALYZE
+		       S:AND
+		       S:BE-ABOUT
+		       S:BE-IN
+		       S:BE-IN2
+		       S:BE-INTERESTED
+		       S:CHANGE
+		       S:COMMON
+		       S:CONCERN
+		       S:DELETE
+		       S:DELETE/#
+		       S:DISCOVER
+		       S:EDIT
+		       S:GIVE
+		       S:GREAT
+		       S:I-NEED
+		       S:LIKE
+		       S:OLD
+		       S:OR
+		       S:PAPER-HAVE
+		       S:PERTAIN
+		       S:POSSESS
+		       S:PRINTFILE
+		       S:REFER
+		       S:SAMPLE-BE-COMPOSED
+		       S:SAMPLE-CONTAIN
+		       S:SAMPLE-HAVE/#1
+		       S:SAMPLE-HAVE/#2
+		       S:SEARCH
+		       S:SORT)) 
+
+(DEFINEG-RULES
+ (N:AGE (NP/.N (EQU 1. AGE))
+	(NP/.PP (MEM 2. SAMPLE))
+	->
+	(SSUNIONF (AGE (/# 2. 2. SSET))))
+ (N:AGE/' (NP/.N (EQU 1. AGE))
+	  (NP/.ADJ (MEM 1. CLOCK))
+	  (NP/.PP (MEM 2. SAMPLE))
+	  ->
+	  (SSUNIONF (AGE (/# 3. 2. SSET) (/# 2. 1.))))
+ (N:ANALYSIS (NP/.N (MEM 1. ANALYSIS))
+	     (NOT (NP/.ADJ (EQU 1. MODAL)))
+	     (OR (NP/.PP (MEM 2. (SAMPLE ROCK)))
+		 (NP/.PP/.PP (MEM 2. (SAMPLE ROCK)))
+		 (NP/.PP/.PP/.PP (MEM 2. (SAMPLE ROCK)))
+		 (DEFAULT (2. NP (DET ALL) (N SAMPLE) (NU PL))))
+	     (OR (NP/.PP (MEM 2. (PHASE MINERAL)))
+		 (NP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+		 (NP/.PP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+		 (NP/.ADJ/#2 (MEM 2. (PHASE MINERAL)))
+		 (NP/.PP/.ADJ-N (AND (OR (EQU 2. FINE)
+					 (EQU 2. COARSE))
+				     (MEM 1. DUST)))
+		 (DEFAULT (2. NP (NPR OVERALL))))
+	     (OR (NP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		 (NP/.PP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		 (NP/.PP/.PP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		 (NP/.ADJ/#2 (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		 (DEFAULT (2. NP
+			      (DET EVERY)
+			      (ADJ MAJOR)
+			      (N ELEMENT)
+			      (NU SG))))
+	     (OR (NP/.ADJ (EQU 1. CHEMICAL)) (DEFAULT (1. NPR NIL)))
+	     ->
+	     (SSUNIONF (DATALINE (WHQFILE (/# 3. 2. SSET))
+				 (/# 3. 2. SSET)
+				 (/# 4. 2.)
+				 (/# 5. 2. SSET))))
+ (N:AVERAGE (NP/.N (MEM 1. (MEAN AVERAGE)))
+	    (NP/.PP (MEM 2. (QUANTITY)))
+	    ->
+	    '(/# 2. 2. AVERAGE))
+ (N:AVG-CONC? (NP/.N (MEM 1. (CONCENTRATION)))
+	      (NP/.DET (AND (EQU 1. THE) (EQU 2. SG) (AVERAGE?)))
+	      ->
+	      '(/# 0. AVERAGE))
+ (N:BASALT (NP/.N (MEM 1. (BASALT))) -> '(SEQ TYPEAS))
+)
+(DEFINEG-RULES
+ (N:COMPOSITION (NP/.N (MEM 1. (COMPOSITION)))
+		(NOT (NP/.ADJ (EQU 1. MODAL)))
+		(OR (NP/.PP (MEM 2. (SAMPLE ROCK)))
+		    (NP/.PP/.PP (MEM 2. (SAMPLE ROCK)))
+		    (NP/.PP/.PP/.PP (MEM 2. (SAMPLE ROCK)))
+		    (DEFAULT (2. NP (DET ALL) (N SAMPLE) (NU PL))))
+		(OR (NP/.PP (MEM 2. (PHASE MINERAL)))
+		    (NP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+		    (NP/.PP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+		    (NP/.ADJ/#2 (MEM 2. (PHASE MINERAL)))
+		    (NP/.PP/.ADJ-N (AND (OR (EQU 2. FINE)
+					    (EQU 2. COARSE))
+					(MEM 1. DUST)))
+		    (DEFAULT (2. NP (NPR OVERALL))))
+		(OR (NP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		    (NP/.PP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		    (NP/.PP/.PP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		    (NP/.ADJ/#2 (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		    (DEFAULT (2. NP
+				 (DET EACH)
+				 (ADJ MAJOR)
+				 (N ELEMENT)
+				 (NU SG))))
+		(OR (NP/.ADJ (EQU 1. CHEMICAL))
+		    (DEFAULT (1. NPR NIL)))
+		->
+		(SSUNIONF (DATALINE (WHQFILE (/# 3. 2. SSET))
+				    (/# 3. 2. SSET)
+				    (/# 4. 2.)
+				    (/# 5. 2. SSET))))
+ (N:CONCENTRATION (NP/.N (MEM 1. (CONCENTRATION)))
+		  (NOT (NP/.ADJ (EQU 1. MODAL)))
+		  (OR (NP/.PP (MEM 2. (SAMPLE ROCK)))
+		      (NP/.PP/.PP (MEM 2. (SAMPLE ROCK)))
+		      (NP/.PP/.PP/.PP (MEM 2. (SAMPLE ROCK)))
+		      (DEFAULT (2. NP (DET ALL) (N SAMPLE) (NU PL))))
+		  (OR (NP/.PP (MEM 2. (PHASE MINERAL)))
+		      (NP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+		      (NP/.PP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+		      (NP/.ADJ/#2 (MEM 2. (PHASE MINERAL)))
+		      (NP/.PP/.ADJ-N (AND (OR (EQU 2. FINE)
+					      (EQU 2. COARSE))
+					  (MEM 1. DUST)))
+		      (DEFAULT (2. NP (NPR OVERALL))))
+		  (OR (NP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		      (NP/.PP/.PP (MEM 2. (ELEMENT OXIDE ISOTOPE)))
+		      (NP/.PP/.PP/.PP (MEM 2.
+					   (ELEMENT OXIDE ISOTOPE)))
+		      (NP/.ADJ/#2 (MEM 2. (ELEMENT OXIDE ISOTOPE))))
+		  ->
+		  (SSUNIONF (DATALINE (WHQFILE (/# 3. 2. SSET))
+				      (/# 3. 2. SSET)
+				      (/# 4. 2.)
+				      (/# 5. 2. SSET))))
+ (N:CORETUBE (OR (NP/.N (MEM 1. (CORETUBE)))
+		 (NP/.ADJ-N (EQU 1. CORE) (EQU 2. TUBE)))
+	     ->
+	     '(SEQ CORETUBES))
+ (N:DOCUMENT (NP/.N (MEM 1. DOCUMENT))
+	     (NOT (NP/.ADJ (MEM 1. LUNAR)))
+	     ->
+	     'DOCUMENT)
+ (N:DUST (NP/.N (OR (MEM 1. (SOIL)) (EQU 1. DUST) (EQU 1. FINE)))
+	 ->
+	 '(SEQ DUSTS))
+ (N:ELT (NP/.N (EQU 1. ELEMENT))
+	(NOT (NP/.ADJ (EQU 1. MAJOR)))
+	->
+	'(SEQ ELEMENTS))
+)
+(DEFINEG-RULES
+ (N:GABBRO (NP/.N (OR (MEM 1. (GABBRO)) (EQU 1. MICROGABBRO)))
+	   ->
+	   '(SEQ TYPEBS))
+ (N:HALOGEN (NP/.N (MEM 1. (HALOGEN))) -> '(SEQ HALOGENS))
+ (N:LINE/# (NP/.N (EQU 1. NUMBER))
+	  (NP/.ADJ (EQU 1. LINE))
+	  (NP/.PP (AND (EQU 1. OF) (MEM 2. ANALYSIS)))
+	  ->
+	  '(SEQL (/# 3. 2.)))
+ (N:MAJOR-ELT (NP/.N (EQU 1. ELEMENT))
+	      (NP/.ADJ (EQU 1. MAJOR))
+	      ->
+	      '(SEQ MAJORELTS))
+ (N:MAXIMUM (NP/.N (OR (EQU 1. MAXIMUM)
+		       (AND (MEM 1. (BIG)) (SUPERLATIVE 1.))))
+	    (NP/.PP (MEM 2. (QUANTITY)))
+	    ->
+	    '(/# 2. 2. MAXIMUM))
+ (N:MINERAL (NP/.N (EQU 1. MINERAL)) -> '(SEQ MINERALS))
+ (N:MINIMUM (NP/.N (OR (EQU 1. MINIMUM)
+		       (AND (MEM 1. (LITTLE)) (SUPERLATIVE 1.))))
+	    (NP/.PP (MEM 2. (QUANTITY)))
+	    ->
+	    '(/# 2. 2. MINIMUM))
+ (N:MODAL-ANALYSIS (NP/.N (OR (MEM 1. ANALYSIS) (EQU 1. MODE)))
+		   (OR (NP/.ADJ (EQU 1. MODAL)) (NP/.N (EQU 1. MODE)))
+		   (OR (NP/.PP (MEM 2. (SAMPLE)))
+		       (DEFAULT (2. NP
+				    (DET EVERY)
+				    (N SAMPLE)
+				    (NU SG))))
+		   (OR (NP/.PP (MEM 2.
+				    (PHASE MINERAL
+					   ELEMENT
+					   OXIDE
+					   ISOTOPE)))
+		       (NP/.ADJ/#2 (MEM 2.
+				       (PHASE MINERAL
+					      ELEMENT
+					      OXIDE
+					      ISOTOPE))))
+		   ->
+		   (SSUNIONF (DATALINE (WHQFILE (/# 3. 2. SSET))
+				       (/# 3. 2. SSET)
+				       OVERALL
+				       (/# 4. 2.))))
+ (N:MODAL-CONC (NP/.N (MEM 1. (CONCENTRATION)))
+	       (OR (NP/.PP (MEM 2. (SAMPLE)))
+		   (NP/.PP/.PP (MEM 2. (SAMPLE)))
+		   (DEFAULT (2. NP (DET EVERY) (N SAMPLE) (NU SG))))
+	       (OR (NP/.PP (MEM 2.
+				(PHASE MINERAL
+				       ELEMENT
+				       OXIDE
+				       ISOTOPE)))
+		   (NP/.ADJ/#2 (MEM 2.
+				   (PHASE MINERAL
+					  ELEMENT
+					  OXIDE
+					  ISOTOPE))))
+	       ->
+	       (SSUNIONF (DATALINE (WHQFILE (/# 2. 2. SSET))
+				   (/# 2. 2. SSET)
+				   OVERALL
+				   (/# 3. 2.))))
+)
+(DEFINEG-RULES
+ (N:NUMBER (NP/.N (EQU 1. NUMBER))
+	   (NP/.PP (EQU 1. OF))
+	   ->
+	   '(/# 2. 2. NUMBER))
+ (N:OLDEST (NP/.N (AND (MEM 1. (OLD)) (SUPERLATIVE 1.)))
+	   (NP/.PP (MEM 2. (SAMPLE)))
+	   ->
+	   '(/# 2. 2. OLDEST))
+ (N:ONE (NP/.PRO (EQU 1. ONE))
+	->
+	(PROGN (SETQ ANTEVAR (ANTECEDANT '(/# 0. IDENTITY) NIL))
+	       (MAPC (FUNCTION ANTEQUANT) (SCOPEVARS ANTEVAR))
+	       (NEWCLASS ANTEVAR)))
+ (N:ONEOF (NP/.PRO (EQU 1. ONE))
+	  (NP/.PP (EQU 1. OF))
+	  ->
+	  '(/# 2. 2. NRULES))
+ (N:ONES (NP/.PRO (EQU 1. ONES))
+	 (NP/.PP (AND (EQU 1. OF) (NEQ (CAADR (/# 2.)) 'PRO)))
+	 ->
+	 '(/# 2. 2. NRULES))
+ (N:ONES-OF-PRO (NP/.PRO (EQU 1. ONES))
+		(NP/.PP (AND (EQU 1. OF)
+			     (EQ (CAADR (/# 2.)) 'PRO)))
+		->
+		'(/# 2. 2.))
+ (N:PHASE (NP/.N (EQU 1. PHASE)) -> '(SEQ PHASES))
+ (N:RARE//EARTH (NP/.N (EQU 1. RARE//EARTH))
+		->
+		'(SEQ RARE//EARTHS))
+ (N:RATIO (NP/.N (EQU 1. RATIO))
+	  (OR (NP/.ADJ/.N//N (AND (MEM 1. (ELEMENT ISOTOPE OXIDE))
+				  (MEM 2. (ELEMENT ISOTOPE OXIDE))))
+	      (NP/.ADJ-ADJ (AND (MEM 1. (ELEMENT ISOTOPE OXIDE))
+				(MEM 2. (ELEMENT ISOTOPE OXIDE)))))
+	  (OR (NP/.PP (AND (OR (EQU 1. IN) (EQU 1. FOR))
+			   (MEM 2. (PHASE MINERAL))))
+	      (NP/.PP/.PP (AND (OR (EQU 1. IN) (EQU 1. FOR))
+			       (MEM 2. (PHASE MINERAL))))
+	      (DEFAULT (2. NP (NPR OVERALL))))
+	  (OR (NP/.PP (AND (OR (EQU 1. IN) (EQU 1. OF) (EQU 1. FOR))
+			   (MEM 2. (SAMPLE ROCK))))
+	      (NP/.PP/.PP (AND (OR (EQU 1. IN)
+				   (EQU 1. OF)
+				   (EQU 1. FOR))
+			       (MEM 2. (SAMPLE ROCK))))
+	      (DEFAULT (2. NP (DET EVERY) (N SAMPLE) (NU SG))))
+	  ->
+	  (APPLY (FUNCTION SSUNIONF)
+		 (LIST (BUILDQ (RATIO '/#
+				      '/#
+				      (/# 4. 2. SSET)
+				      (/# 3. 2. SSET))
+			       (TABFORM (/# 2. 1. HEAD))
+			       (TABFORM (/# 2. 2. HEAD))))))
+)
+(DEFINEG-RULES
+ (N:ROCK (NP/.N (OR (EQU 1. ROCK) (EQU 1. VOLCANIC)))
+	 ->
+	 '(SEQ VOLCANICS))
+ (N:ROCKTYPE (NP/.N (MEM 1. (TYPE)))
+	     (OR (NP/.PP (AND (EQU 1. OF)
+			      (EQ (HEAD (/# 2.)) 'ROCK)
+			      (TAG (/# 2.) 'USED T)))
+		 (NP/.ADJ (EQU 1. ROCK)))
+	     ->
+	     '(SEQ ROCKTYPES))
+ (N:SAMPLE (OR (NP/.N (EQU 1. SAMPLE))
+	       (NP/.ADJ-N (AND (EQU 1. LUNAR) (EQU 2. MATERIAL))))
+	   (OR (NP/.ADJ (EQU 1. LUNAR)) (DEFAULT (1. ADJ NIL)))
+	   ->
+	   '(SEQ SAMPLES))
+ (N:SAMPLETYPE (NP/.N (MEM 1. (TYPE)))
+	       (OR (NP/.PP (AND (EQU 1. OF)
+				(EQ (HEAD (/# 2.)) 'SAMPLE)
+				(TAG (/# 2.) 'USED T)))
+		   (NP/.ADJ (EQU 1. SAMPLE)))
+	       ->
+	       '(SEQ SAMPLETYPES))
+ (N:SPEC-ACT (NP/.N (EQU 1. ACTIVITY))
+	     (NP/.ADJ (EQU 1. SPECIFIC))
+	     (NP/.PP (MEM 2. (ISOTOPE)))
+	     (OR (NP/.PP (MEM 2. (SAMPLE)))
+		 (NP/.PP/.PP (MEM 2. (SAMPLE)))
+		 (DEFAULT (2. NP (DET EVERY) (N SAMPLE) (NU SG))))
+	     ->
+	     '(DATALINE (WHQFILE (/# 4. 2.))
+			(/# 4. 2.)
+			OVERALL
+			(/# 3. 2.)))
+ (N:TYPEA (NP/.N (OR (EQU 1. PARTICLE) (EQU 1. ROCK) (EQU 1. SAMPLE)))
+	  (OR (NP/.ADJ (EQU 1. TYPE//A))
+	      (NP/.ADJ-ADJ (AND (EQU 1. HIGH)
+				(OR (EQU 2. ALKALI)
+				    (EQU 2. ALKALINE)
+				    (MEM 2. (RUBIDIUM)))))
+	      (NP/.ADJ-ADJ-ADJ (AND (EQU 1. FINE)
+				    (EQU 2. GRAINED)
+				    (OR (EQU 3. IGNEOUS)
+					(EQU 3. CRYSTALLINE)))))
+	  ->
+	  '(SEQ TYPEAS))
+ (N:TYPEB (NP/.N (OR (EQU 1. PARTICLE) (EQU 1. SAMPLE) (EQU 1. ROCK)))
+	  (OR (NP/.ADJ (EQU 1. TYPE//B))
+	      (NP/.ADJ-ADJ (AND (EQU 1. LOW)
+				(OR (EQU 2. ALKALI)
+				    (EQU 2. ALKALINE)
+				    (MEM 2. (RUBIDIUM)))))
+	      (NP/.ADJ-ADJ-ADJ (AND (EQU 1. COARSE)
+				    (EQU 2. GRAINED)
+				    (OR (EQU 3. CRYSTALLINE)
+					(EQU 3. IGNEOUS)))))
+	  ->
+	  '(SEQ TYPEBS))
+ (N:TYPEC (OR (NP/.N (OR (EQU 1. BRECCIA) (EQU 1. MICROBRECCIA)))
+	      (NP/.ADJ-N (AND (OR (EQU 2. PARTICLE)
+				  (EQU 2. SAMPLE)
+				  (EQU 2. ROCK))
+			      (EQU 1. TYPE//C))))
+	  ->
+	  '(SEQ TYPECS))
+)
+(DEFINEG-RULES
+ (N:TYPED (OR (NP/.N (OR (EQU 1. SOIL) (EQU 1. DUST) (EQU 1. FINE)))
+	      (NP/.ADJ-N (AND (OR (EQU 1. PARTICLE)
+				  (EQU 1. SAMPLE)
+				  (EQU 1. ROCK))
+			      (EQU 1. TYPE//D))))
+	  ->
+	  '(SEQ DUSTS))
+ (R:ANALYSIS-REF
+  (NP/.N (MEM 1. (ANALYSIS)))
+  (OR (NP/.PP (DOCP (CADR (ASSQ-CHECK-ATOMS 'NPR
+				(CDR (CONSTITUENTS (/# 2.)))))))
+      (NP/.PP/.PP (DOCP (CADR (ASSQ-CHECK-ATOMS 'NPR
+				    (CDR (CONSTITUENTS (/# 2.)))))))
+      (NP/.ADJ/#2 (DOCP (CADR (/# 2.)))))
+  ->
+  '(REF* X (/# 2. 2.)))
+ (R:ANALYSIS-TAG
+  (NP/.N (MEM 1. (ANALYSIS)))
+  (OR (NP/.PP/.ADJ-NPR (AND (EQU 1. TAG) (NUMBERP (CADR (/# 2.)))))
+      (NP/.PP/.PP/.ADJ-NPR (AND (EQU 1. TAG)
+				(NUMBERP (CADR (/# 2.))))))
+  ->
+  '(TAG* X (/# 2. 2.)))
+ (R:AROUND (NP/.N (MEM 1. ANALYSIS))
+	   (NP/.PP/.COMP (AND (OR (EQU 3. AROUND)
+				  (EQU 3. APPROXIMATELY))
+			      (MEM 2. (ELEMENT ISOTOPE OXIDE))))
+	   ->
+	   (BUILDQ (AROUNDVAL X /#)
+		   (LIST 'QUOTE
+			 (CONS (/# 2. 4. INTEGER) (/# 2. 5. UNIT)))))
+ (R:BIBLIOGRAPHY (NP/.N (EQU 1. BIBLIOGRAPHY))
+		 (NP/.PP (OR (EQU 1. ON) (EQU 1. ABOUT)))
+		 ->
+		 '(ABOUT X (/# 2. 2. TOPIC)))
+ (R:DOC-ON (NP/.N (MEM 1. DOCUMENT))
+	   (NP/.PP T)
+	   ->
+	   '(ABOUT X (/# 2. 2. TOPIC)))
+ (R:ELT/#1 (NP/.N (EQU 1. ELEMENT))
+	  (NP/.ADJ (AND (MEM 1. (ELEMENT OXIDE ISOTOPE))
+			(NOT (MEM 1. (SET)))))
+	  ->
+	  '(EQUAL X (/# 2. 1.)))
+ (R:ELT/#2 (NP/.N (EQU 1. ELEMENT))
+	  (NP/.ADJ/.NP (AND (MEM 1. (ELEMENT OXIDE ISOTOPE))
+			    (MEM 1. (SET))))
+	  ->
+	  '(MEMB X (/# 2. 1. NRULES)))
+ (R:GLASS (NP/.N (MEM 1. (SAMPLE FRAGMENT PARTICLE)))
+	  (NP/.ADJ (EQU 1. GLASS))
+	  ->
+	  '(CONTAIN X (/# 2. 1.)))
+)
+(DEFINEG-RULES
+ (R:GREATERVAL (NP/.N (MEM 1. ANALYSIS))
+	       (NP/.PP/.COMP (AND (OR (EQU 3. GREATERTHAN)
+				      (EQU 3. MORETHAN))
+				  (MEM 2. (ELEMENT ISOTOPE OXIDE))))
+	       ->
+	       (BUILDQ (GREATER X /#)
+		       (LIST 'QUOTE
+			     (CONS (/# 2. 4. INTEGER)
+				   (/# 2. 5. UNIT)))))
+ (R:LESSVAL (NP/.N (MEM 1. ANALYSIS))
+	    (NP/.PP/.COMP (AND (OR (EQU 3. LESSTHAN)
+				   (EQU 3. FEWERTHAN))
+			       (MEM 2. (ELEMENT OXIDE ISOTOPE))))
+	    ->
+	    (BUILDQ (LESSVAL X /#)
+		    (LIST 'QUOTE
+			  (CONS (/# 2. 4. INTEGER) (/# 2. 5. UNIT)))))
+ (R:N-DOC (NP/.N (MEM 1. DOCUMENT))
+	  (NP/.ADJ/.NP T)
+	  ->
+	  '(ABOUT X (/# 2. 1. TOPIC)))
+ (R:ONE (NP/.PRO (EQU 1. ONE)) -> (PROG2 0. (NEWPX ANTEVAR)))
+ (R:ONEOF (NP/.PRO (EQU 1. ONE))
+	  (NP/.PP (AND (EQU 1. OF)
+		       (NOT (EQ (CAADR (/# 2.)) 'PRO))))
+	  ->
+	  '(/# 2. 2. RRULES))
+ (R:ONES (NP/.PRO (EQU 1. ONES))
+	 (NP/.PP (AND (EQU 1. OF) (NEQ (CAADR (/# 2.)) 'PRO)))
+	 ->
+	 '(/# 2. 2. RRULES))
+ (R:PHASE (NP/.N (EQU 1. PHASE))
+	  (NP/.ADJ (MEM 1. (PHASE MINERAL)))
+	  ->
+	  '(EQUAL X (/# 2. 1.)))
+ (R:PHASE/#2 (NP/.N (EQU 1. PHASE))
+	    (NP/.PP (OR (MEM 2. (SAMPLE)) (SAMPLEP (HEAD (/# 2.)))))
+	    ->
+	    '(CONTAIN (/# 2. 2. SSET) X))
+ (R:ROCKTYPE (NP/.ADJ-N (AND (EQU 1. ROCK) (MEM 2. (TYPE))))
+	     (NP/.PP (MEM 2. (SAMPLE)))
+	     ->
+	     '(MEMBER* (/# 2. 2.) X))
+ (R:SAMPLE-WITH (NP/.N (MEM 1. SAMPLE))
+		(NOT (NP/.PP/.COMP T))
+		(NP/.PP (AND (EQU 1. WITH)
+			     (MEM 2. (ELEMENT ISOTOPE OXIDE))))
+		(OR (NP/.PP (AND (EQU 1. IN)
+				 (MEM 2. (MINERAL PHASE))))
+		    (NP/.PP/.PP (AND (EQU 1. IN)
+				     (MEM 2. (MINERAL PHASE))))
+		    (DEFAULT (2. NPR NIL)))
+		->
+		'(CONTAIN X (/# 3. 2.) (/# 4. 2.)))
+ (R:SAMPLE-WITH-COMP (NP/.N (MEM 1. (SAMPLE)))
+		     (NP/.PP/.COMP (AND (EQU 1. WITH)
+					(MEM 2.
+					     (ELEMENT ISOTOPE
+						      OXIDE))))
+		     (OR (NP/.PP (MEM 2. (PHASE MINERAL)))
+			 (NP/.PP/.PP (MEM 2. (PHASE MINERAL)))
+			 (DEFAULT (2. NPR NIL)))
+		     ->
+		     '(CONTAIN/' X
+				 (/# 2. 2.)
+				 (/# 3. 2.)
+				 (/# 2. 6. TERM)))
+)
+(DEFINEG-RULES
+ (R:SAMPLETYPE (NP/.ADJ-N (AND (EQU 1. SAMPLE) (MEM 2. (TYPE))))
+	       (NP/.PP (MEM 2. (SAMPLE)))
+	       ->
+	       '(MEMBER* (/# 2. 2.) X))
+ (REFRULE (T T)
+	  ->
+	  (QUANT (FOR EVERY
+		      X
+		      //
+		      DOCUMENT
+		      :
+		      (ABOUT X (/# 0. TOPIC))
+		      /;
+		      (PRINTOUT X))))
+ (REFRULE? (T (INTERP P NIL)) -> '(/# 0.))
+ (S:ADD (S/.V (MEM 1. (ADD)))
+	(S/.OBJ/.NPR7 (AND (SAMPLEP (CADR (/# 1.)))
+			   (MEM 2. (PHASE MINERAL))
+			   (MEM 3. (ELEMENT OXIDE ISOTOPE))
+			   (NUMBERP (CADR (/# 4.)))
+			   (MEM 5. (UNIT))
+			   (DOCP (CADR (/# 6.)))
+			   (NUMBERP (CADR (/# 7.)))))
+	(S/.PP (MEM 2. (FILE)))
+	->
+	(PRED (APPLY (FUNCTION PRENEWLINE)
+		     (LIST (/# 3. 2.)
+			   (/# 2. 1.)
+			   (/# 2. 2.)
+			   (/# 2. 3.)
+			   (/# 2. 4.)
+			   (/# 2. 5.)
+			   (/# 2. 6.)
+			   (/# 2. 7.)))))
+ (S:ADDLINE (S/.IMP T)
+	    (S/.V (OR (EQU 1. ADDLINE) (EQU 1. ADD)))
+	    (S/.OBJ/.NPR T)
+	    (OR (S/.PP (MEM 2. (FILE))) (S/.OBJ/.PP (MEM 2. (FILE))))
+	    ->
+	    (BUILDQ (APPLY (FUNCTION PRENEWLINE) '/#)
+		    (CONS '(/# 4. 2.) '(/# 3. 1. TERM))))
+ (S:ANALYZE
+  (S/.NP-V
+   (AND
+    (MEM 2. (ANALYZE))
+    (COND ((NOT (MEMQ (CADR (/# 1.))
+		      '(SOMEONE SOMETHING ANYONE)))
+	   (&PRIN1 'I/ PRESENTLY/ IGNORE/ SUBJECTS/ OF/ THE/ VERB/ 
+		   T)
+	   (&PRINT HEAD T))
+	  (T T))))
+  (S/.OBJ (MEM 1. (SAMPLE)))
+  (S/.PP (AND (EQU 1. FOR)
+	      (MEM 2. (ELEMENT OXIDE ISOTOPE MINERAL PHASE))))
+  (OR (S/.PP (AND (EQU 1. IN) (MEM 2. (PHASE MINERAL))))
+      (S/.PP/.PP (AND (EQU 1. IN) (MEM 2. (PHASE MINERAL))))
+      (DEFAULT (2. NP (NPR OVERALL))))
+  ->
+  (SSUNIONF (DATALINE (WHQFILE (/# 2. 1. SSET))
+		      (/# 2. 1. SSET)
+		      (/# 4. 2.)
+		      (/# 3. 2. SSET))))
+)
+(DEFINEG-RULES
+ (S:AND AND (S/.AND T) -> (PRED (/# 1. 1.)))
+ (S:BE-ABOUT (S/.NP (MEM 1. DOCUMENT))
+	     (S/.V (EQU 1. BE))
+	     (S/.PP (OR (EQU 1. ON)
+			(EQU 1. ABOUT)
+			(EQU 1. TO)
+			(EQU 1. FOR)))
+	     ->
+	     (PRED (PRINTOUT (/# 3. 2. REFS))))
+ (S:BE-IN (S/.NP-V (AND (MEM 2. (BE EXIST OCCUR))
+			(MEM 1.
+			     (ELEMENT OXIDE ISOTOPE PHASE MINERAL))))
+	  (OR (S/.PP (AND (EQU 1. IN) (MEM 2. (SAMPLE))))
+	      (S/.PP/.PP (AND (EQU 1. IN) (MEM 2. (SAMPLE)))))
+	  (OR (S/.PP (AND (EQU 1. IN) (MEM 2. (PHASE MINERAL))))
+	      (DEFAULT (2. NPR NIL)))
+	  ->
+	  (PRED (CONTAIN (/# 2. 2. SET?) (/# 1. 1.) (/# 3. 2.))))
+ (S:BE-IN2 (S/.NP/.COMP (MEM 1.
+			     (ELEMENT OXIDE ISOTOPE PHASE MINERAL)))
+	   (S/.V (MEM 1. (BE EXIST OCCUR)))
+	   (OR (S/.PP (AND (EQU 1. IN) (MEM 2. (SAMPLE))))
+	       (S/.PP/.PP (MEM 2. (SAMPLE))))
+	   (OR (S/.PP (AND (EQU 1. IN) (MEM 2. (PHASE MINERAL))))
+	       (DEFAULT (2. NPR NIL)))
+	   ->
+	   (PRED (CONTAIN/' (/# 3. 2.)
+			    (/# 1. 1.)
+			    (/# 4. 2.)
+			    (/# 1. 2. TERM))))
+ (S:BE-INTERESTED (S/.V (EQU 1. BE))
+		  (S/.ADJ (EQU 1. INTERESTED))
+		  (S/.PP (EQU 1. IN))
+		  ->
+		  (PRED (PRINTOUT (/# 3. 2. REFS))))
+ (S:CHANGE (S/.V (EQU 1. CHANGE))
+	   (S/.IMP T)
+	   (S/.OBJ (MEM 1. FIELDNAME))
+	   (S/.OBJ/.PP (AND (EQU 1. OF) (MEM 2. ANALYSIS)))
+	   (OR (S/.OBJ/.PP (EQU 1. TO)) (S/.OBJ/.PP/.PP (EQU 1. TO)))
+	   ->
+	   (PRED (CHANGE1LINE (/# 4. 2.)
+			      '(/# 3. 1. HEAD)
+			      '(/# 5. 2. HEAD))))
+ (S:COMMON (S/.NP-V (AND (MEM 1.
+			      (PHASE MINERAL ELEMENT ISOTOPE OXIDE))
+			 (EQU 2. COMMON)))
+	   (S/.PP (EQU 1. TO))
+	   ->
+	   (PRED (CONTAIN (/# 2. 2.) (/# 1. 1.))))
+)
+(DEFINEG-RULES
+ (S:CONCERN (S/.NP (MEM 1. DOCUMENT))
+	    (S/.V (MEM 1. CONCERN))
+	    (S/.OBJ T)
+	    ->
+	    (PRED (PRINTOUT (/# 3. 1. REFS?))))
+ (S:DELETE (S/.IMP T)
+	   (S/.V (EQU 1. DELETE))
+	   (S/.OBJ (MEM 1. ANALYSIS))
+	   ->
+	   (PRED (DELETE1LINE (/# 3. 1.))))
+ (S:DELETE/# (S/.IMP T)
+	    (S/.V (EQU 1. DELETE))
+	    (S/.OBJ/.NPR (LINEP (/# 1.)))
+	    (OR (S/.PP (MEM 2. (FILE))) (S/.OBJ/.PP (MEM 2. (FILE))))
+	    ->
+	    '(DELETE/# (/# 4. 2.) (/# 3. 1.)))
+ (S:DISCOVER
+  (NOT (S/.IMP T))
+  (S/.V (MEM 1. (DISCOVER CONTAIN)))
+  (S/.OBJ (MEM 1. (ELEMENT OXIDE ISOTOPE MINERAL PHASE)))
+  (OR (S/.PP (MEM 2. (MINERAL PHASE))) (DEFAULT (2. NPR NIL)))
+  (OR (S/.PP (MEM 2. (SAMPLE)))
+      (S/.PP/.PP (MEM 2. (SAMPLE)))
+      (DEFAULT (2. NP (DET ANY) (N SAMPLE) (NU PL))))
+  (S/.NP
+   (COND ((NOT (EQU 1. SOMETHING))
+	  (&PRIN1 'I/ PRESENTLY/ IGNORE/ SUBJECTS/ OF/ THE/ VERB/ 
+		  T)
+	  (&PRINT HEAD T))
+	 (T T)))
+  ->
+  (PRED (CONTAIN (/# 5. 2. SET?) (/# 3. 1.) (/# 4. 2.))))
+ (S:EDIT (S/.V (EQU 1. EDIT))
+	 (S/.OBJ/.NPR (LINEP (/# 1.)))
+	 (OR (S/.PP (MEM 2. (FILE))) (S/.OBJ/.PP (MEM 2. (FILE))))
+	 ->
+	 (PRED (EDITLINE (/# 3. 2.) (/# 2. 1.))))
+)
+(DEFINEG-RULES
+ (S:GIVE (S/.V (MEM 1. GIVE))
+	 (S/.OBJ T)
+	 (OR (S/.IMP T) (S/.Q-MODAL T))
+	 ->
+	 (PRED (PRINTOUT (/# 2. 1. REFS?))))
+ (S:GREAT (S/.NP-V (MEM 2. GREAT)) -> (PRED (/# 1. 1.)))
+ (S:I-NEED (S/.NP (EQU 1. I SG))
+	   (S/.V (OR (EQU 1. NEED) (EQU 1. WANT)))
+	   (S/.OBJ T)
+	   ->
+	   (PRED (PRINTOUT (/# 3. 1. REFS?))))
+ (S:LIKE (S/.V (MEM 1. LIKE))
+	 (S/.OBJ T)
+	 ->
+	 (PRED (PRINTOUT (/# 2. 1. REFS?))))
+ (S:OLD (S/.NP-V (MEM 2. OLD))
+	->
+	(PRED (FOR EVERY X0 // (AGE (/# 1. 1.)) : T /; (PRINTOUT X0))))
+ (S:OR OR (S/.OR T) -> (PRED (/# 1. 1.)))
+ (S:PAPER-HAVE (S/.NP (MEM 1. DOCUMENT))
+	       (S/.V (EQU 1. HAVE))
+	       (S/.OBJ T)
+	       ->
+	       (PRED (PRINTOUT (/# 3. 1. REFS?))))
+ (S:PERTAIN (S/.NP (MEM 1. DOCUMENT))
+	    (S/.V (MEM 1. PERTAIN))
+	    (S/.PP (OR (EQU 1. WITH) (EQU 1. TO)))
+	    ->
+	    (PRED (ABOUT (/# 1. 1.) (/# 3. 2. TOPIC))))
+ (S:POSSESS (S/.NP-V (AND (MEM 1. (WE YOU THEY)) (MEM 2. (POSSESS))))
+	    (S/.OBJ T)
+	    ->
+	    (PRED (EXIST (/# 2. 1.))))
+ (S:PRINTFILE (OR (S/.IMP T) (S/.Q-MODAL T))
+	      (S/.V (MEM 1. (GIVE)))
+	      (S/.OBJ (MEM 1. (FILE)))
+	      ->
+	      (PRED (PRINTFILE (/# 3. 1.))))
+ (S:REFER (S/.NP (MEM 1. DOCUMENT))
+	  (S/.V (EQU 1. REFER))
+	  (S/.PP (EQU 1. TO))
+	  ->
+	  (PRED (ABOUT (/# 1. 1.) (/# 3. 2. TOPIC))))
+ (S:SAMPLE-BE-COMPOSED (S/.NP-V (AND (MEM 1. (SAMPLE)) (EQU 2. BE)))
+		       (S/.OBJ/.COMP (MEM 1. (PHASE MINERAL)))
+		       ->
+		       (PRED (CONTAIN/' (/# 1. 1.)
+					(/# 2. 1.)
+					(/# 2. 2. TERM))))
+)
+(DEFINEG-RULES
+ (S:SAMPLE-CONTAIN AND
+		   (S/.NP (MEM 1. (SAMPLE)))
+		   (S/.V (OR (EQU 1. HAVE) (EQU 1. CONTAIN)))
+		   (OR (S/.OBJ (MEM 1.
+				    (ELEMENT OXIDE
+					     ISOTOPE
+					     MINERAL
+					     PHASE)))
+		       (S/.OBJ/.AND (MEM 1.
+					 (ELEMENT OXIDE
+						  ISOTOPE
+						  MINERAL
+						  PHASE))))
+		   (OR (S/.OBJ/.PP (MEM 2. (MINERAL PHASE)))
+		       (S/.PP (MEM 2. (MINERAL PHASE)))
+		       (DEFAULT (2. NPR NIL)))
+		   ->
+		   (PRED (CONTAIN (/# 1. 1. SET?)
+				  (/# 3. 1.)
+				  (/# 4. 2.))))
+ (S:SAMPLE-HAVE/#1 (S/.NP-V (AND (MEM 1. (SAMPLE))
+				(MEM 2. (HAVE CONTAIN))))
+		  (S/.OBJ/.COMP (MEM 1. (ELEMENT OXIDE ISOTOPE)))
+		  (S/.PP (MEM 2. (PHASE MINERAL)))
+		  ->
+		  (PRED (CONTAIN/' (/# 1. 1.)
+				   (/# 2. 1.)
+				   (/# 3. 2.)
+				   (/# 2. 2. TERM))))
+ (S:SAMPLE-HAVE/#2 (S/.NP-V (AND (MEM 1. (SAMPLE))
+				(MEM 2. (HAVE CONTAIN))))
+		  (S/.OBJ/.COMP (MEM 1.
+				     (ELEMENT OXIDE
+					      ISOTOPE
+					      PHASE
+					      MINERAL)))
+		  ->
+		  (PRED (CONTAIN/' (/# 1. 1.)
+				   (/# 2. 1.)
+				   (/# 2. 2. TERM))))
+ (S:SEARCH (S/.V (MEM 1. SEARCH))
+	   (S/.PP (OR (EQU 1. FOR) (EQU 1. IN) (EQU 1. ON)))
+	   ->
+	   (PRED (PRINTOUT (/# 2. 2. REFS?))))
+ (S:SORT (S/.V (EQU 1. SORT)) (S/.IMP T) -> (PRED (SORTNEW)))) 
+
+(LISPXPRINT '(V: TREEFRAGS) T) 
+
+(SETQ TREEFRAGS '(ADJ/.NP NP/.ADJ
+			  NP/.ADJ/#2
+			  NP/.ADJ-ADJ
+			  NP/.ADJ-ADJ-ADJ
+			  NP/.ADJ-N
+			  NP/.ADJ/.COMP
+			  NP/.ADJ/.NP
+			  NP/.ADJ/.NPR
+			  NP/.ADJ/.N//N
+			  NP/.ADVP
+			  NP/.AND
+			  NP/.AND2
+			  NP/.COMPL
+			  NP/.DET
+			  NP/.DET/.ART
+			  NP/.DET/.COMP
+			  NP/.DET/.COMP-UNIT
+			  NP/.DET/.INTEGER
+			  NP/.DET/.MANY
+			  NP/.DET/.POSTART
+			  NP/.N
+			  NP/.NEG
+			  NP/.NOM
+			  NP/.NPR
+			  NP/.NR/.NP
+			  NP/.NR/.S
+			  NP/.OR
+			  NP/.OR2
+			  NP/.PP
+			  NP/.PP/.ADJ-N
+			  NP/.PP/.ADJ-NPR
+			  NP/.PP/.AND
+			  NP/.PP/.AND/.PP
+			  NP/.PP/.COMP
+			  NP/.PP/.COMPL
+			  NP/.PP/.NPR
+			  NP/.PP/.PP
+			  NP/.PP/.PP/#4
+			  NP/.PP/.PP/.ADJ-NPR
+			  NP/.PP/.PP/.COMP-UNIT
+			  NP/.PP/.PP/.PP
+			  NP/.PP/.PP/.PP/.ADJ-NPR
+			  NP/.PRO
+			  NP/.QREL
+			  NP/.REL
+			  S/.ADJ
+			  S/.AND
+			  S/.AND/.NPR
+			  S/.COMP
+			  S/.COMP-N
+			  S/.COMPL
+			  S/.COMPL-THAN
+			  S/.COMPL/.OBJ
+			  S/.DCL
+			  S/.DCL-S
+			  S/.IMP
+			  S/.IMP-S
+			  S/.NEG
+			  S/.NEG-S
+			  S/.NP
+			  S/.NP/.COMP
+			  S/.NPR
+			  S/.NPQ
+			  S/.NPU
+			  S/.NP-V
+			  S/.OBJ
+			  S/.OBJ/.ADJ/#2
+			  S/.OBJ/.AND
+			  S/.OBJ/.COMP
+			  S/.OBJ/.NPR
+			  S/.OBJ/.NPR7
+			  S/.OBJ/.OR
+			  S/.OBJ/.PP
+			  S/.OBJ/.PP/.PP
+			  S/.OBJ/.PP/.PP/.PP
+			  S/.OBJ/.PP/.PP/.PP/.PP
+			  S/.OBJ/.REL
+			  S/.OR
+			  S/.PP
+			  S/.PP/#1
+			  S/.PP/.AND
+			  S/.PP/.AND/.PP
+			  S/.PP/.PP
+			  S/.Q
+			  S/.Q-MODAL
+			  S/.Q-NEG
+			  S/.Q-S
+			  S/.V
+			  S/.VP)) 
+
+(DEFINEV
+ (ADJ/.NP (ADJ ((NP NIL 1.))))
+ (NP/.ADJ (NP ((ADJ NIL 1.))))
+ (NP/.ADJ/#2 (NP ((ADJ NIL 2.))))
+ (NP/.ADJ-ADJ (NP ((ADJ NIL 1.) (ADJ NIL 2.))))
+ (NP/.ADJ-ADJ-ADJ (NP ((ADJ NIL 1.) (ADJ NIL 2.) (ADJ NIL 3.))))
+ (NP/.ADJ-N (NP ((ADJ NIL 1.) (N NIL 2.))))
+ (NP/.ADJ/.COMP (NP ((ADJ ((COMPARATIVE)) 1.))))
+ (NP/.ADJ/.NP (NP ((ADJ ((NP NIL 1.))))))
+ (NP/.ADJ/.NPR (NP ((ADJ ((NPR NIL 1.))))))
+ (NP/.ADJ/.N//N (NP ((ADJ ((NP ((N ((N NIL 1.) // (N NIL 2.))))))))))
+ (NP/.ADVP (NP ((ADVP ((ADV NIL 1.) (NP NIL 2.))))))
+ (NP/.AND (NP (AND (NP NIL 1.))))
+ (NP/.AND2 (NP (AND (NP NIL 1.) (NP NIL 2.))))
+ (NP/.COMPL (NP ((COMPL ((S NIL 1.))))))
+ (NP/.DET (NP ((DET NIL 1.) (NU NIL 2.))))
+ (NP/.DET/.ART (NP ((DET ((ART NIL 1.))))))
+ (NP/.DET/.COMP (NP ((DET ((POSTART ((COMP ((ADV NIL 1.)
+					    (NP ((INTEGER NIL 2.)))))
+				     MANY))))
+		     (NU NIL 3.))))
+ (NP/.DET/.COMP-UNIT (NP ((DET ((POSTART ((COMP ((ADV NIL 1.)
+						 (NP ((INTEGER NIL 2.)
+						      (UNIT NIL
+							    3.)))))
+					  MUCH)))))))
+ (NP/.DET/.INTEGER (NP ((DET ((POSTART ((NP ((INTEGER NIL 1.)))
+					MANY)))))))
+ (NP/.DET/.MANY (NP ((DET ((NP ((INTEGER NIL 1.))) MANY))
+		     (NU NIL 2.))))
+ (NP/.DET/.POSTART (NP ((DET ((POSTART NIL 1.))))))
+ (NP/.N (NP ((N NIL 1.))))
+ (NP/.NEG (NP (NEG (NP ((DET NIL 2.)) 1.))))
+ (NP/.NOM (NP (NOM (S NIL 1.))))
+ (NP/.NPR (NP ((NPR NIL 1.))))
+ (NP/.NR/.NP (NP ((NR ((NP NIL 1.))))))
+ (NP/.NR/.S (NP ((NR ((S NIL 1.))))))
+ (NP/.OR (NP (OR (NP NIL 1.))))
+ (NP/.OR2 (NP (OR (NP NIL 1.) (NP NIL 2.))))
+ (NP/.PP (NP ((PP ((PREP NIL 1.) (NP NIL 2.)) 3.))))
+ (NP/.PP/.ADJ-N (NP ((PP ((ADJ NIL 2.) (N NIL 1.))))))
+ (NP/.PP/.ADJ-NPR (NP ((PP ((NP ((ADJ NIL 1.) (NPR NIL 2.))))))))
+ (NP/.PP/.AND (NP ((PP ((PREP NIL 1.)
+			(NP (AND (NP NIL 2.) (NP NIL 3.))))))))
+ (NP/.PP/.AND/.PP (NP ((PP (AND (PP ((PREP NIL 1.) (NP NIL 2.))))))))
+ (NP/.PP/.COMP (NP ((PP ((PREP NIL 1.)
+			 (NP ((DET ((POSTART ((COMP ((ADV NIL 3.)
+						     (NP ((INTEGER NIL
+								   4.)
+							  (UNIT NIL
+								5.))))
+						    6.)
+					      MUCH)))))
+			     2.))))))
+)
+(DEFINEV
+ (NP/.PP/.COMPL (NP ((PP ((NP ((COMPL ((S NIL 1.))))))))))
+ (NP/.PP/.NPR (NP ((PP ((PREP NIL 1.) (NP ((NPR NIL 2.))))))))
+ (NP/.PP/.PP (NP ((PP ((NP ((PP ((PREP NIL 1.) (NP NIL 2.))))))))))
+ (NP/.PP/.PP/#4 (NP ((PP ((PREP NIL 3.)
+			 (NP ((PP ((PREP NIL 1.) (NP NIL 2.))))
+			     4.))))))
+ (NP/.PP/.PP/.ADJ-NPR (NP ((PP ((NP ((PP ((NP ((ADJ NIL 1.)
+					       (NPR NIL 2.))))))))))))
+ (NP/.PP/.PP/.COMP-UNIT
+  (NP ((PP ((NP ((PP ((NP ((DET ((POSTART ((COMP ((ADV NIL 1.)
+						  (NP ((INTEGER NIL
+								2.)
+						       (UNIT NIL
+							     3.)))))
+					   MUCH)))))))))))))))
+ (NP/.PP/.PP/.PP (NP ((PP ((NP ((PP ((NP ((PP ((PREP NIL 1.)
+					       (NP NIL
+						   2.))))))))))))))
+ (NP/.PP/.PP/.PP/.ADJ-NPR
+  (NP ((PP ((NP ((PP ((NP ((PP ((NP ((ADJ NIL 1.)
+				     (NPR NIL 2.))))))))))))))))
+ (NP/.PRO (NP ((PRO NIL 1.))))
+ (NP/.QREL (NP ((S (QREL) 1.))))
+ (NP/.REL (NP ((S (REL) 1.))))
+ (S/.ADJ (S ((VP ((ADJ NIL 1.))))))
+ (S/.AND (S (AND (S NIL 1.))))
+ (S/.AND/.NPR (S ((NP (AND (NP ((NPR NIL 1.))))))))
+ (S/.COMP (S ((VP ((NP ((DET ((POSTART ((COMP ((ADV NIL 1.)
+					       (NP ((INTEGER NIL
+							     2.)))))
+					MANY)))))))))))
+ (S/.COMP-N (S ((VP ((NP ((DET ((POSTART ((COMP ((ADV NIL 1.)
+						 (NP ((INTEGER NIL
+							       2.)))))
+					  MANY))))
+			  (N NIL 3.))))))))
+ (S/.COMPL (S ((VP ((COMPL ((NP (NOM (S NIL 1.))))))))))
+ (S/.COMPL-THAN (S ((VP ((COMPL ((NP (THAN (S NIL 1.))))))))))
+ (S/.COMPL/.OBJ
+  (S ((VP ((COMPL ((NP (NOM (S ((VP ((NP NIL 1.))))))))))))))
+ (S/.DCL (S (DCL)))
+ (S/.DCL-S (S (DCL (S NIL 1.))))
+ (S/.IMP (S (IMP)))
+ (S/.IMP-S (S (IMP (S NIL 1.))))
+ (S/.NEG (S (NEG)))
+ (S/.NEG-S (S (NEG (S NIL 1.))))
+ (S/.NP (S ((NP NIL 1.))))
+)
+(DEFINEV
+ (S/.NP/.COMP (S ((NP ((DET ((POSTART ((COMP ((ADV NIL)) 2.) MUCH)))))
+		      1.))))
+ (S/.NPR (S ((NP ((NPR NIL 1.))))))
+ (S/.NPQ (S (NPQ (NP NIL 1.))))
+ (S/.NPU (S (NPU (NP NIL 1.))))
+ (S/.NP-V (S ((NP NIL 1.) (VP ((V NIL 2.))))))
+ (S/.OBJ (S ((VP ((NP ((NU NIL 2.)) 1.))))))
+ (S/.OBJ/.ADJ/#2 (S ((VP ((NP ((ADJ NIL 2.))))))))
+ (S/.OBJ/.AND (S ((VP ((NP (AND (NP NIL 1.))))))))
+ (S/.OBJ/.COMP (S ((VP ((NP ((DET ((POSTART ((COMP ((ADV NIL)) 2.)
+					     MUCH)))))
+			    1.))))))
+ (S/.OBJ/.NPR (S ((VP ((NP ((NPR NIL 1.))))))))
+ (S/.OBJ/.NPR7
+  (S ((VP ((NP ((NR ((S ((NP (OR (NP ((NPR NIL 1.)))
+				 (NP NIL 2.)
+				 (NP NIL 3.)
+				 (NP ((NPR NIL 4.)))
+				 (NP NIL 5.)
+				 (NP ((NPR NIL 6.)))
+				 (NP ((NPR NIL 7.))))))))))))))))
+ (S/.OBJ/.OR (S ((VP ((NP (OR (NP NIL 1.))))))))
+ (S/.OBJ/.PP (S ((VP ((NP ((PP ((PREP NIL 1.) (NP NIL 2.))))))))))
+ (S/.OBJ/.PP/.PP (S ((VP ((NP ((PP ((NP ((PP ((PREP NIL 1.)
+					      (NP NIL 2.))))))))))))))
+ (S/.OBJ/.PP/.PP/.PP
+  (S ((VP ((NP ((PP ((NP ((PP ((NP ((PP ((PREP NIL 1.)
+					 (NP NIL 2.))))))))))))))))))
+ (S/.OBJ/.PP/.PP/.PP/.PP
+  (S
+   ((VP
+     ((NP
+       ((PP
+	 ((NP ((PP ((NP ((PP ((NP ((PP ((PREP NIL 1.)
+					(NP NIL
+					    2.))))))))))))))))))))))
+ (S/.OBJ/.REL (S ((VP ((NP ((S NIL 1.))))))))
+ (S/.OR (S (OR (S NIL 1.))))
+ (S/.PP (S ((VP ((PP ((PREP NIL 1.) (NP NIL 2.))))))))
+ (S/.PP/#1 (S ((VP ((PP ((NP NIL 1.))))))))
+ (S/.PP/.AND (S ((VP ((PP ((PREP NIL 1.)
+			   (NP (AND (NP NIL 2.) (NP NIL 3.))))))))))
+ (S/.PP/.AND/.PP (S ((VP ((PP (AND (PP ((PREP NIL 1.)
+					(NP NIL 2.))))))))))
+ (S/.PP/.PP (S ((VP ((PP ((NP ((PP ((PREP NIL 1.)
+				    (NP NIL 2.))))))))))))
+ (S/.Q (S (Q (NP NIL) (VP NIL))))
+ (S/.Q-MODAL (S (Q (AUX ((MODAL NIL))))))
+ (S/.Q-NEG (S (Q NEG (NP NIL) (VP NIL))))
+ (S/.Q-S (S (Q (S NIL 1.))))
+ (S/.V (S ((VP ((V NIL 1.))))))
+ (S/.VP (S ((VP NIL))))) 
+
+(LISPXPRINT '(V: RULELISTS) T) 
+
+(SETQ RULELISTS '(TOPICRULES PRERULES
+			     DRULES
+			     SETRUL
+			     SETRUL?
+			     NPRRULE
+			     TERMRULE
+			     HEADRULES
+			     DALL
+			     SSETRUL
+			     QWORDS
+			     SEM-NOUNS
+			     SEM-VERBS
+			     AVERAGEFLAG)) 
+
+(DEFINEV
+ (TOPICRULES (TOPIC\NOT-NP TOPIC\NOT-S
+			   TOPIC\AUTHOR
+			   NIL
+			   (OR TOPIC\TERM
+			       TOPIC\TERM2
+			       TOPIC\ESP
+			       TOPIC\EMPHASIS
+			       TOPIC\NR/.S
+			       TOPIC\NR/.NP
+			       (AND TOPIC\OR-S
+				    TOPIC\AND-S
+				    TOPIC\OR-NP
+				    TOPIC\AND-NP
+				    TOPIC\ADJ/.NP
+				    TOPIC\NP/.COMPL
+				    TOPIC\S/.COMPL
+				    TOPIC\PP
+				    TOPIC\AUTHOR2
+				    TOPIC\PP/.COMPL
+				    TOPIC\REL
+				    (OR TOPIC\ADJ/.COMP
+					(AND TOPIC\ADJ
+					     (OR TOPIC\ADJ/.SUPER
+						 TOPIC\N)
+					     TOPIC\NPR)
+					TOPIC\ADJ-N
+					TOPIC\ADJ-NPR)
+				    TOPIC\NOM
+				    TOPIC\NR/.S
+				    TOPIC\NR/.NP
+				    TOPIC\S/.NP
+				    TOPIC\V-INTRANS
+				    TOPIC\V-TRANS
+				    TOPIC\V-TRANS2
+				    TOPIC\S/.OBJ
+				    TOPIC\S/.PP))))
+ (PRERULES (S:AND S:OR
+		  S:DCL
+		  S:IMP
+		  S:WHQ
+		  S:QREL-NEG
+		  NIL
+		  S:QREL
+		  S:YES//NO
+		  NIL
+		  PR1
+		  NIL
+		  PR2
+		  NIL
+		  PR3
+		  NIL
+		  PR4
+		  NIL
+		  PR5
+		  NIL
+		  S:NPU
+		  S:NPQ
+		  NIL
+		  PR6))
+ (DRULES (N:NUMBER NIL
+		   D:MASS
+		   NIL
+		   NP:NPR
+		   D:SOME
+		   D:NIL
+		   D:HOWMANY
+		   D:ATLEAST
+		   D:EXACTLY
+		   D:MORETHAN
+		   D:LESSTHAN
+		   D:ATMOST
+		   D:EVERY
+		   D:ALL-PL
+		   D:NEG
+		   D:THE-SG
+		   D:WHQ-SG
+		   D:WHQ-PL
+		   D:EACH
+		   D:ORDINAL
+		   D:CARDINAL
+		   D:ANAPHORA
+		   D:SEMI-ANAPHOR
+		   D:ALL\ONES
+		   D:THE-SG2))
+ (SETRUL (D:SETOF NIL D:NOT-SET))
+ (SETRUL? (D:SET1 NIL D:NOT-SET))
+ (NPRRULE (NP:NPR))
+ (TERMRULE (ANY:TERM))
+ (HEADRULES (((S (NPU)) 'NPU)
+	     ((S (NPQ)) 'NPQ)
+	     ((S (AND)) 'AND)
+	     ((S (OR)) 'OR)
+	     ((S (Q (S NIL))) 'Q)
+	     ((S (Q (VP NIL 1.))) (HEAD 1.))
+	     ((S (DCL (S NIL))) 'DCL)
+	     ((S (DCL (VP NIL 1.))) (HEAD 1.))
+	     ((S (IMP (S NIL))) 'IMP)
+	     ((S (NEG (S NIL))) 'NEG)
+	     ((S (NEG (VP NIL 1.))) (HEAD 1.))
+	     ((S ((VP NIL 1.))) (HEAD 1.))
+	     ((VP ((VP NIL 1.))) (HEAD 1.))
+	     ((VP ((V NIL 1.))) (TERM 1.))
+	     ((NP ((NPR NIL 1.))) (TERM 1.))
+	     ((NPR NIL 1.) (TERM 1.))
+	     ((NP ((N NIL 1.))) (TERM 1.))
+	     ((N NIL 1.) (TERM 1.))
+	     ((NP (OR)) 'OR)
+	     ((NP (AND)) 'AND)
+	     ((ADJ NIL 1.) (TERM 1.))
+	     ((PREP NIL 1.) (TERM 1.))
+	     ((NP (NOM (S NIL 1.))) (HEAD 1.))
+	     ((V NIL 1.) (TERM 1.))
+	     ((NP ((PRO NIL 1.))) (TERM 1.))
+	     ((INTEGER NIL 1.) (TERM 1.))
+	     ((UNIT NIL 1.) (TERM 1.))
+	     ((PRO NIL 1.) (TERM 1.))
+	     ((NP (NEG)) 'NEG)))
+ (DALL (D:ALL))
+ (SSETRUL (D:SSET NIL D:NOT-SET))
+ (QWORDS (HOWMANY WHICHQ WHEN WHERE WHY HOW WHQ))
+ (SEM-NOUNS (AGE ANALYSIS
+		 AVERAGE
+		 BIG
+		 CONCENTRATION
+		 DOCUMENT
+		 DUST
+		 LITTLE
+		 OLD))
+ (SEM-VERBS (CONCERN CONTAIN DISCOVER GIVE LIKE PERTAIN REFER))
+ (AVERAGEFLAG NIL)) 

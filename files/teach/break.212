@@ -1,0 +1,966 @@
+;;; -*- LISP -*-
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (COND ((NOT (STATUS FEATURE IOTA))
+		  (LOAD '((DSK LIBLSP) IOTA FASL)))))
+
+(declare (*expr ask-help find-help ))
+(declare (*fexpr help))
+(declare (*lexpr *census+more DATIMPRINC document))
+(declare (setq base (+ 5 5) ibase (+ 5 5)))
+
+(declare (special protocol-file break-level helpers-found || |^| help-file
+		  possible-helpers helpers-not-tried unique cla-file person
+		  *in-more* help-wait-time old-helpers +census-obarray
+		  help-wanted NOVICE-FLAG |:TEACH;LISP Version|
+		  HELPER-NAMES))
+
+(defun fn macro (body)
+       (list 'function
+	     (cons 'lambda
+		   (cdr body))))
+
+(setq help-wait-time 120)
+(setq base (+ 5 5) ibase (+ 5 5))
+
+(setsyntax '|/
+| '| | nil)
+
+(SETQ *RSET-TRAP ())
+
+(close (setq cla-file (open '|nul:|)))	;make sure there's a file to be closed
+
+(setq possible-helpers '((rwk hactrn)
+			 (rwk0 hactrn)
+			 (rwk1 hactrn)
+			 (bobk hactrn)
+			 (bobk0 hactrn)
+			 (bobk1 hactrn)
+			 q1
+			 (kmp hactrn)
+			 (tnp hactrn)
+			 q2
+			 (ltest hactrn)
+			 q3
+			 (ltest1 hactrn)))
+
+(SETQ HELPER-NAMES
+      (DO ((L POSSIBLE-HELPERS (CDR L))
+	   (N ()))
+	  ((NULL L) N)
+	  (COND ((NOT (ATOM (CAR L)))
+		 (PUSH (CAAR L) N)))))
+
+(defun *census+toplevel nil
+       (SETQ EVALHOOK 'SMART-EVALHOOK)
+       (close cla-file)		   ;avoid file-locked errors
+       (setq ^w t)
+
+ ;; Compliments of KMP
+
+       (COND (PRIN1
+	      (TERPRI)
+	      (FUNCALL PRIN1 *)
+	      (TYO 32.))
+	     (T
+	      (PRINT *)))  ; do similar stuff to default
+
+       (setq + -)
+       (terpri)
+       (princ '|-=>| protocol-file) ; but to file add prompt
+       (force-output protocol-file)  ;and make sure it gets it all
+       (cond ((eq (setq - (read)) 'done) ; and check 
+	      (princ '|[exiting program]| ; for done
+		     protocol-file) ; if done close up
+	      (close protocol-file) ; shop and kill
+	      (quit 'quiet)) ; self
+	     ((eq - 'help) (help)) ; ask for help
+	     ((memq - '(:lesson  lesson
+			:teach   teach
+			:lesson? lesson?
+			:lesson1 lesson1))
+	      (atomic-lesson-handler))
+	     ((illegal-functional-notation-check -))
+	     (t (eval -)))) ; else same
+			     
+(defun *census+break nil
+       (do ((^r (and (princ '|[entering a break]| protocol-file) ;turn on
+		     (progn (clear-input tyi)
+			    (terpri protocol-file)
+			    t))) ; file output
+	    (|^| (list 'quote (maknam (append '(b r e a k - l e v e l -)
+					      (explode (1+ break-level)))))
+		 (cond ((setq |^|
+			      (progn
+			       (force-output protocol-file)  ;Get it all
+			       (errset (read) T))) ; watch for read errs
+			(setq |^| (car |^|)) ; none -- strip cons
+			(cond ((eq |^| '/P) ; check for $p for end of break
+			       (princ '|[exiting from break]| ;and tell file
+				      protocol-file)
+			       (clear-input t) ; flush random chars
+			       (terpri) 
+			       (*census+level-print) ; indent listing 
+			       (princ '|-=>| protocol-file) ; prompt
+			       (*THROW 'BREAK '/P)) ; and return
+			      ((eq |^| 'done) ;if done
+			       (princ '|[exit from program]| ; tell file
+				      protocol-file)
+			       (terpri)
+			       (close protocol-file) ; close up shop
+			       (QUIT))
+			      ((eq |^| 'help) (help)) ;ask for help
+			      ((memq |^| '(:lesson  lesson
+					   :teach   teach
+					   :lesson? lesson?
+					   :lesson1 lesson1))
+			       (atomic-lesson-handler))
+			      ((illegal-functional-notation-check -))
+			      (t |^|)))
+		       (T (*census+level-print) ; otherwise indent and complain
+			  (princ '|[error while in break read]| ; bad read
+				 protocol-file)
+			  '|?|))) ; return ?
+	    (echofiles (list protocol-file)) ; initialize echo
+	    (outfiles (list tyo protocol-file)) ; and output
+	    (break-level (1+ break-level))
+	    (obarray +census-obarray)) ; and count level
+	   (nil) ; do forever
+	   (close cla-file)	   ;avoid file-locked errors
+	   (setq ^w t) ; kill random output
+	   (SETQ EVALHOOK 'SMART-EVALHOOK) ; Just in case --kmp 
+	   (setq |^| (cond ((setq |^| (errset (eval |^|))) ; eval carefully
+			    (car |^|)) ; if ok, strip cons
+			   (t (*census+level-print) ; else indent
+			      (princ '|[error in break eval]| ; and complain
+				     protocol-file)
+			      '|?|)))
+	   (terpri)
+	   (*census+level-print) ; we're ok, indent
+	   (prin1 |^|) ; and display answer
+	   (terpri)
+	   (*census+level-print) ; and indent
+	   (princ '|-=>| ; for prompt
+		  protocol-file)))
+ 
+(defun *census+error-return nil
+       (endpagefn t '*census+more)
+       (setq ^r t) ; turn output to files back on
+       (setq ^w t) ; no print except for outfiles
+       (setq echofiles (ncons protocol-file))
+       (setq outfiles (cons tyo echofiles))
+       (setq break-level 0) ; count level of breaks
+       (princ '|[returning to top level]| protocol-file) ; tell of return
+       (terpri)
+       (setq || (ascii 0))
+       (setq * '*))
+
+
+
+(defun *census+level-print nil ; indent two spaces for each level
+       (do ((count 0 (1+ count)))
+	   ((= count break-level))
+	   (princ '|  | protocol-file)))
+
+(defun help fexpr (())
+       (terpri)
+       (setq help-wanted t)
+       (setq helpers-found nil)
+       (setq helpers-not-tried (subst nil nil possible-helpers))
+       (find-help helpers-not-tried)
+       (cond ((null helpers-found)
+	      (princ '|Unable to get help.  Sorry.  I will try later.|)
+	      (terpri))
+	     (t (ask-help)))
+       (ascii 0))
+
+; Make ? same as HELP
+
+(SETPLIST '? (PLIST 'HELP))
+
+(defun find-help (helpers)
+  (setq helpers-found
+	(append helpers-found
+		(prog (helpers-found)
+		      (*catch 'FOUND
+		       (map (fn (files)
+				(cond
+				 ((atom (car files))  ; end of priority group
+				  (and helpers-found ;if you got it, flaunt it
+				       (*THROW 'FOUND
+					       (cdr (append
+						     helpers-not-tried
+						     files)))))
+				 ((probef (cons '(USR) (car files)))
+				  (setq helpers-found
+					(cons (car files)
+					      helpers-found))
+				  (setq helpers-not-tried
+					(delq (car files)
+					      helpers-not-tried)))
+				 (t nil)))
+			    helpers))
+		      (return helpers-found)))))
+
+(defun ask-help nil
+       (mapc (FN (file)
+		 (errset (cond ((probef (cons '(USR) file))
+				(princ '|Asking |)
+				(princ (car file))
+				(terpri)
+				(setq help-file
+				      (open (cons '(cli) file)
+					    '(ascii out)))
+				(princ '|Òequest for LISP help from |
+				       help-file)
+				(princ (status uname) help-file)
+				(terpri help-file)
+				(close help-file)
+				(alarmclock 'time
+					    help-wait-time))
+			       (t (setq helpers-not-tried
+					(cons file
+					      helpers-not-tried))
+				  (setq helpers-found
+					(delete file
+						helpers-found))))
+			 nil))
+	     helpers-found))
+
+(defun no-help (person)		   ;remove a person from list of helpers
+       (let ((file (list person 'HACTRN)))
+	  (setq helpers-not-tried
+		(delete file helpers-not-tried))
+	  (setq helpers-found
+		(delete file helpers-found))
+	  (setq possible-helpers
+		(delete file possible-helpers)))
+       (mapc (fn (file)
+		 (errset (let ((file (open (cons '(CLI) file)
+					   '(ascii out))))
+			    (princ person file)
+			    (princ '| Is unable to assist me!/
+| file)
+			    (close file))
+			 () ))
+	     helpers-found)
+       (try-next-helper 'time))
+
+
+(setq helpers-found nil)	   ;initialize
+(setq helpers-not-tried nil)	   ;so that NO-HELP can be done any time
+
+(defun try-next-helper (()) ; arg was "clock" -KMP
+       (cond (help-wanted
+	      (and helpers-not-tried
+		   (find-help helpers-not-tried))
+	      (ask-help))))
+
+(setq help-wanted nil)		   ;initially we don't need help
+(setq alarmclock 'try-next-helper)
+
+(defun notify nil
+       (terpri)
+       (setq helpers-found nil)
+       (mapc (fn (file)
+		 (cond ((atom file))
+		       ((probef (cons '(USR) file))
+			(setq helpers-found
+			      (cons file helpers-found))
+			(princ (car file))
+			(princ '| is here.|)
+			(terpri))))
+	     possible-helpers)
+       (cond ((null helpers-found)
+	      (princ '|There is no teacher available.
+  You may continue on your own.|)
+	      (terpri))
+	     (t (mapc (fn (file)
+			  (errset (progn (setq help-file
+					       (open (cons '(cli) file)
+						     '(ascii out)))
+					  (princ '|/ÈERE IS |
+						 help-file)
+					  (COND ((EQ (STATUS USERID) 'RWK)
+						 (PRINC '|TEACHER |
+							HELP-FILE))
+						((MEMQ (STATUS UNAME)
+						       HELPER-NAMES)
+						 (PRINC '|HELPER | HELP-FILE))
+						((AND (EQ (GETCHAR
+							   (STATUS UNAME)
+							   1.)
+							  '/_)
+						      (EQ (GETCHAR
+							   (STATUS UNAME)
+							   2.)
+							  '/_)
+						      (EQ (GETCHAR
+							   (STATUS UNAME)
+							   3.)
+							  '/_))
+						 (COND (NOVICE-FLAG
+							(PRINC
+							 '|FRESHLY GENSYM'd|
+							 HELP-FILE))
+						       (T
+							(SETQ NOVICE-FLAG T)
+							(PRINC
+							 '|A GENSYM'd STUDENT|
+							 HELP-FILE)
+							(PRINC
+							 '| WITH THE SAME|
+							 HELP-FILE)
+							(PRINC
+							 '| PRINTNAME AS|
+							 HELP-FILE)
+							(TERPRI HELP-FILE)
+							(PRINC
+							 '| A PREVIOUSLY|
+							 HELP-FILE)
+							(PRINC
+							 '| GENSYM'd|
+							 HELP-FILE)))
+						 (PRINC '| STUDENT |
+							HELP-FILE))
+						(NOVICE-FLAG
+						 (PRINC '|NEW STUDENT |
+							HELP-FILE))
+						(T
+						 (PRINC
+						  '|`EXPERIENCED' STUDENT |
+						  HELP-FILE)))
+					  (princ (status userid)
+						 help-file)
+					  (princ '| using RWK's FUNNY-LISP|
+						 help-file)
+					  (terpri help-file)
+					  (close help-file))
+				  nil))
+		      helpers-found)))
+       (ascii 0))
+
+(defun CLI-ANSWER-RECEIVED (())
+       (close cla-file)
+       (setq cla-file (open '((cla)) '(block cla)))
+       (terpri protocol-file)
+       (terpri protocol-file)
+       (terpri tyo)
+       (terpri tyo)
+       (princ '|[| protocol-file)
+       (let ((obarray (get 'foo-baz 'old-obarray)))
+	    (read cla-file)	   ;flush garbage
+	    (princ (read cla-file))
+	    (princ '| has sent a message concerning help.|)
+	    (princ '|]| protocol-file)
+	    (terpri)
+	    (setq unique (ncons nil))
+	    (do ((fform (read unique cla-file)
+			(read unique cla-file)))
+		((eq unique fform) (close cla-file))
+		(eval fform)))
+       (close cla-file))
+
+(setq cli-message 'cli-answer-received)
+
+(defun *census+more ignore
+       (declare (special ignore))
+       (do ((*in-more* t))
+	   nil
+	   (princ '|--type any char to continue--| t)
+	   (tyi)
+	   (terpri t)))
+
+(setq *in-more* nil)
+(endpagefn t '*census+more)
+
+(defun *fix-more-break ignore
+       (declare (special ignore))
+       (setq ^r nil)
+       (setq ^w nil)
+       (endpagefn t '*census+more))
+
+(sstatus ttyint 6 '*fix-more-break)
+
+(putprop 'foo-baz obarray 'old-obarray) 
+
+(defun save ()
+       (do ((save-file (open `((DSK STUDNT) ,(status userid) SAVE) 'out))
+	    ;; KMP: Using USERID instead of UNAME as a save name
+	    ;; KMP: Writing to STUDNT directory
+	    (defuns)
+	    (setqs))
+	   ()
+	   (mapatoms (fn (x)
+			 (cond ((samepnamep x '||))  ;prevent lossage
+			       ((getl x '(expr fexpr))
+				(defun-write x save-file)
+				(setq defuns
+				      (cons x
+					    defuns))))
+			 (cond ((memq 'VALUE
+				      (status system x)))  ;ignore system atoms
+			       ((and (boundp x)
+				     (or (symbolp (symeval x))
+					 (eq (typep x)
+					     'LIST)))
+				(setq setqs
+				      (cons x
+					    setqs))
+				(setq-write x save-file)))))
+	   (terpri save-file)
+	   (terpri save-file)
+	   (print (list 'SAVE-EOF
+			defuns
+			setqs)
+		  save-file)
+	   (close save-file)))
+
+(defun defun-write (x file)
+  (let (( (prop fun) (getl x '(expr fexpr macro))))
+    (cond ((symbolp fun)
+	   (print `(DEFPROP ,X ,FUN ,PROP) file))
+	  (T (princ '|(DEFUN | file)	   ;we want a defun
+	     (prin1 x file)		   ;of name of function
+	     (princ '| | file)
+	     (prin1 prop file)	   ;type
+	     (princ '| | file)
+	     (prin1 (cadr fun) file)	   ;BVL
+	     (terpri file)
+	     (mapcar #'(lambda (x)
+			 (prin1 x file))
+		     (cddr fun))
+	     (princ '|)| file)
+	     (terpri file)
+	     (terpri file)))))
+
+(defun setq-write (x file)
+       (princ '|(SETQ | file)
+       (prin1 x file)
+       (princ '| '| file)
+       (prin1 (symeval x) file)
+       (princ '|)| file)
+       (terpri file)
+       (terpri file))
+
+
+  ;; KMP: Fixed this so that (UNSAVE <name>) will unsave <name>'s save
+  ;;      file instead of own... (UNSAVE) defaults to own...
+  ;;
+  ;;  Also saving/unsaving under userid instead of uname
+
+(defun unsave fexpr (name)
+       (do ((echofiles nil)
+	    (save-file
+	     (open `((DSK STUDNT) ,(or (status userid) (car name)) SAVE)
+		   'IN)))
+	   nil
+	   (do ((form (read save-file)
+		      (read save-file)))
+	       ((eq (car form)
+		    'SAVE-EOF)
+		(princ '|/
+Loaded the following functions:/
+|)
+		(mapc 'modprint
+		      (cadr form))
+		(terpri)
+		(princ '|/
+Gave values to the following atoms:/
+|)
+		(mapc 'modprint
+		      (caddr form)))
+	       (eval form))))
+
+(defun (file macro) (file)
+       `(load '((DSK STUDNT) ,(status userid) ,(car file))))
+
+;;; the following function is to make an ironclad dumped environment
+(defun sterilize ()
+       (or (get 'foo-baz 'array)
+	   (array foo-baz obarray obarray))
+       (putprop 'obarray
+		(setq +census-obarray
+		      (setq obarray (get 'foo-baz 'array)))
+		'array)
+       (mapcar (function remob)
+	       '(*census+more
+		 *fix-more-break
+		 *in-more*
+		 lesson-act
+		 unique
+		 *lesson-^a
+		 ttyint
+		 lesson-file
+		 lesson-form
+		 lesson-line
+		 lesson-start
+		 lesson-number
+		 lesson-eof
+		 nargs
+		 ask-help
+		 find-help
+		 protocol-file
+		 break-level
+		 helpers-found
+		 help-file
+		 possible-helpers
+		 helpers-not-tried
+		 cla-file
+		 help-wait-time
+		 old-helpers
+		 *census+toplevel
+		 *census+break
+		 *census+error-return
+		 *census+level-print
+		 find-help
+		 ask-help
+		 try-next-helper
+		 sterilize
+		 alarmclock
+		 notify
+		 cli-answer-received
+		 ignore
+		 cli-message
+		 +internal-greeting
+		 dump
+		 ^W ^R
+ ;; KMP's hacks
+		 LOAD-MENU
+		 MENU-FILENAME
+		 MENU
+		 READ-MENU
+		 READ-MENU-ITEM
+		 FIND-LESSON
+		 LESSON-NAME-PRINC
+		 DESCRIBE-LESSON
+		 RUN-LESSON
+		 LOOK-FOR-LESSON
+		 DOCUMENT
+		 BUG-MAIL
+		 HELPER-NAMES
+		 NOVICE-FLAG
+		 |:TEACH;LISP Version|
+		 EXAMINE-LIST\LISTP
+		 EXAMINE-LIST\PRINT-LISTS
+		 EXAMINE-LIST\PRINT-LISTS1
+		 EXAMINE-LIST\PRINT-ALMOST-LIST
+		 EXAMINE-LIST\PRINT-DOTTED
+		 EXAMINE-LIST\PRINT-DOTTED1
+		 EXAMINE-LIST\PRINT-CONSES
+		 EXAMINE-LIST\PRINT-CONSES1
+		 EXAMINE-LIST\PRINT-TREE
+		 EXAMINE-LIST\PRINT-TREE-SUBNODES
+		 +REDEFINED-CONS
+		 ERRPRINC
+		 MAPPRINC
+		 +REDEFINED-CONS\DIAGNOSE-MULTIPLE-ARGS
+		 +REDEFINED-CONS\DIAGNOSE-SINGLE-ARG
+		 +REDEFINED-C*R
+		 DESCRIBE-RETURN-VALUE
+		 C*R-REDEFINE
+		 UNBOUND-VARIABLE-HANDLER
+		 UNBOUND-VARIABLE-HANDLER1
+		 ATOMIC-LESSON-HANDLER
+		 ILLEGAL-FUNCTIONAL-NOTATION-CHECK
+		 UNDEFINED-FUNCTION-HANDLER
+		 DESCRIBE-DEFINITION
+		 C*RDOC
+		 C*REXPAND
+		 C*REXPAND1
+		 C*REXPAND2
+		 DEFINE |DEFINE MACRO|
+		 PRIMITIVE |PRIMITIVE MACRO|
+		 INACCESSIBLE |INACCESSIBLE MACRO|
+		 MIS-NAMED |MIS-NAMED MACRO|
+		 LONGATOMS
+		 SMART-EVALHOOK
+		 DIAGNOSE-QUOTED-FUNCTION
+		 EXPLAIN-DONT-QUOTE-FUNCTIONS
+		 EXPLAIN-PUT-QUOTE-OUTSIDE
+		 DIAGNOSE-QUOTED-FUNCTION
+		 DIAGNOSE-RANDOM-FUNCTIONAL-FORM
+		 EVALHOOK
+		 ERRLIST
+		 COMPETING-LISP-FUNCTIONS-TABLE
+		 COMMA-CHECK
+		 ; FH's Tree Printer
+		 SHOW
+		 SHOWP
+		 PLOT
+		 DOWNP
+		 ARRAYPRINT
+		 CONSPRINT
+		 BARPRINT
+		 CELLPRINT
+		 TREEPRINT
+		 NILPRINT
+		 ARROWPRINT
+		 MUSH
+		 CDRCASES
+		 CDRPRINT
+		 SFA-HANDLER
+		 )))
+
+(defun +internal-greeting FEXPR (CFLAG)
+       (sstatus cli t)		   ;turn on CLI handling
+       (setq protocol-file
+	     `((DSK STUDNT) ,(status userid) RECORD)) ;open file
+       (setq protocol-file (cond ((probef protocol-file)
+				  (open protocol-file
+					'(append ascii single)))
+				 (t (open protocol-file
+					  '(out ascii single)))))
+       (setq echofiles (ncons protocol-file)) ; echo
+       (setq outfiles (cons tyo echofiles))  ; output
+       (setq msgfiles outfiles)	   ; error output
+       (setq ^r t)		   ; send it
+       (setq ^w t)		   ; but don't duplicate output to tty
+       (setq ibase 10. base 10.)
+       (tyo 12. protocol-file)
+       (terpri protocol-file)
+       (princ '|[| protocol-file)
+       (datimprinc protocol-file)
+       (princ '|]| protocol-file)
+       (terpri protocol-file)
+
+       (princ '|[entering top level--data collected by | protocol-file)
+	  ;; KMP: Removed (caddr (probef '((dsk teach) census |(init)|)))
+          ;;      from the following PRINC in favor of dump version
+       (COND ((BOUNDP '|:TEACH;LISP Version|)
+	      (PRINC '|Teach.| protocol-file)
+	      (PRINC |:TEACH;LISP Version| protocol-file))
+	     (T
+	      (PRINC '|an ``undumped'' Teach program| protocol-file)))
+       (princ '| for student | protocol-file)  ; initial message in file
+       (princ (status userid) protocol-file)
+       (princ '|]| protocol-file)
+       (setq ibase (+ 1 1 1 1 1 1 1 1 1 1))  ; talk base 10
+       (defprop mev ((dsk liblsp) stepmm) autoload)
+       (defprop hkstart ((dsk liblsp) stepmm) autoload)
+       (COND ((NOT CFLAG)
+	      (cursorpos 'c tyo))
+	     (T
+	      (TERPRI TYO)
+	      (TERPRI TYO)))
+       (princ '|You may type (lesson ?) for a list of prepackaged lessons on LISP.| tyo)
+       (terpri tyo)
+       (princ '|Do: (lesson recent) for recent changes to this program.| tyo)
+       (terpri tyo)
+       (notify)
+       (setq base 10.)
+       (setq errlist '((*census+error-return)))	 ; tell him he's back
+
+       '*)
+
+(defun dump fexpr (args)
+   (LET ((DUMP-VERSION (PROBEF '((DSK TEACH) TEACHR >)))
+	 (CFLAG T))
+       (LET ((IBASE 10.) (BASE 10.) (*NOPOINT T))
+	    (SETQ DUMP-VERSION
+		  (IMPLODE
+		   (EXPLODEN
+		    (1+ (READLIST
+			 (EXPLODEN (OR (CADDR DUMP-VERSION) '/0))))))))
+       (SETQ |:TEACH;LISP Version| DUMP-VERSION) 
+       (sstatus flush t)
+       (sstatus toplevel '(*census+toplevel))
+       (sstatus break '(*census+break))
+       (cond ((not args)
+	      (sterilize)
+	      (suspend '|/:SFREAP DSK:TEACH;TEACHR <,0/
+:SFREAP DSK:TEACH;TEACHR >,1/
+//:/[Dumped] ://KILL | '((DSK TEACH) TEACHR >))
+	      (cond ((not (eq (status jname)
+			      'LISP))
+		     (princ '|This cannot be run other than with a job name of LISP./
+If you have another job called LISP, please kill it./
+Run this program by doing :TEACH;LISP./
+| tyo)
+		     (quit 'quiet)))))
+       (COND ((ZEROP (1+ (BOOLE 7. (CAR (PNGET (STATUS UNAME) 6.)) 262143.)))
+	      (PRINC '|You must log in to use TEACH;LISP!| TYO)
+	      (QUIT 'QUIET)))
+       (LET ((FILE `((DSK TEACH) TFIX ,DUMP-VERSION)))
+	    (COND ((PROBEF FILE)
+		   (COND ((NOT (ERRSET (LOAD FILE) NIL))
+			  (IOTA ((STREAM '|.MAIL.;MAIL >| '(OUT ASCII)))
+				(PRINC '|FROM-JOB: TEACH LISP| STREAM)
+				(TERPRI STREAM)
+				(PRINC '|SENT-BY:| STREAM)
+				(PRINC (STATUS UNAME) STREAM)
+				(TERPRI STREAM)
+				(PRINC '|CLAIMED-FROM:TEACH| STREAM)
+				(TERPRI STREAM)
+				(PRINC '|TO:354M"RWK| STREAM)
+				(TERPRI STREAM)
+				(PRINC '|TO:354M"KMP| STREAM)
+				(TERPRI STREAM)
+				(PRINC '|TEXT;-1| STREAM)
+				(TERPRI STREAM)
+				(PRINC '|My fix file is buggy!| STREAM)
+				(TERPRI STREAM))
+			  (SETQ CFLAG ())
+			  (PRINC '|/
+I had problems loading up, but I'll try to keep going./
+If I die horribly later on, please report it by sending/
+mail to RWK@MC./
+| TYO))
+			 ((MEMQ (STATUS USERID) '(KMP RWK))
+			  (SETQ CFLAG ())
+			  (PRINC '|/
+Fix file loaded successfully./
+| TYO))))
+		  ((MEMQ (STATUS USERID) '(KMP RWK))
+		   (SETQ CFLAG ())
+		   (PRINC '|/
+No fix file associated with this dump./
+|))))
+       (LISPT-PATCH)			;Must be re-done after dumping
+       (COND ((NOT (PROBEF `((DSK STUDNT) ,(STATUS USERID) RECORD)))
+	      (SETQ NOVICE-FLAG T))
+	     (T
+	      (SETQ NOVICE-FLAG ())))
+       (COND (CFLAG (+internal-greeting))
+	     (T (+internal-greeting T)))))
+
+
+
+;;; KMP's LESSON-typed-as-an-atom handler...
+
+(DECLARE (SPECIAL ATOMIC-LESSON-HANDLER NOVICE-FLAG))
+
+(SETQ ATOMIC-LESSON-HANDLER ())
+
+(DEFUN ATOMIC-LESSON-HANDLER ()
+       (COND ((AND NOVICE-FLAG (NOT ATOMIC-LESSON-HANDLER))
+	      (PRINC '|/
+[Describing "LESSON" to novice user for first time.]/
+| PROTOCOL-FILE)
+	      (PRINC '|/
+Typing a symbolic name at lisp with no parentheses around/
+it causes the name to be evaluated as a variable. "LESSON"/
+has not been assigneda value, so if I evaluate that I will/
+get an error. I'll bet what you want is the FUNCTION called
+LESSON? If so, you should type "(LESSON <name>)"/
+WITH the parentheses. Parentheses are very important to/
+Lisp and should never be ignored when you see them in an/
+example. Function names in lisp are found only as the first/
+word after a "(". Now try typing (LESSON 1) to get the/
+first lesson.../
+| TYO)
+	      (SETQ ATOMIC-LESSON-HANDLER T)
+	      '*)
+	     (NOVICE-FLAG
+	      (PRINC '|/
+[Describing "LESSON" to novice user again.]/
+| PROTOCOL-FILE)
+	      (PRINC '|/
+You did it again! Type the parentheses when you/
+want a lesson... Example:/
+/
+(LESSON 1)/
+/
+will get you the first lesson./
+| TYO)
+	      '*)
+             ((NOT ATOMIC-LESSON-HANDLER)
+	      (PRINC '|/
+[Describing "LESSON" to `experienced' user for first time.]/
+| PROTOCOL-FILE)
+	      (PRINC '|/
+Aw, c'mon now... This isn't your first time using this program/
+so I shouldn't have to tell you, but "LESSON" gets evaluated as/
+a variable when it has no parentheses around it like you just/
+did. Remember the parentheses! If you need help with what lessons/
+are available, try:/
+/
+(LESSON ?)/
+/
+We now return you to Lisp.../
+| TYO)
+              (SETQ ATOMIC-LESSON-HANDLER T)
+	      '*)
+	     (T
+	      (PRINC '|/
+[Describing "LESSON" to `experienced' user again.]/
+| PROTOCOL-FILE)
+	      (PRINC '|/
+Remember the parentheses around LESSON to make it a function!/
+| TYO)
+	      '*))
+         (CLEAR-INPUT TYI))
+
+(DECLARE (SPECIAL ILLEGAL-FUNCTIONAL-NOTATION-CHECK))
+
+(SETQ ILLEGAL-FUNCTIONAL-NOTATION-CHECK ())
+
+(DEFUN COMMA-CHECK (X)
+       (COND ((ATOM X) (EQ X '|`,/||))
+	     (T
+	      (OR (COMMA-CHECK (CAR X))
+		  (COMMA-CHECK (CDR X))))))
+
+(DEFUN ILLEGAL-FUNCTIONAL-NOTATION-CHECK (FORM)
+       (COND ((AND (> (LISTEN) 0.)    ; Type-ahead exists
+		   (ATOM FORM)        ; Atomic input
+		   (= (TYIPEEK) 40.)) ; Pending open paren against atom?
+	      (LET ((|`-,-level/|| 1000.) (COMMA-FLAG NIL))
+		   (DECLARE (SPECIAL |`-,-level/||))
+		   (SETQ COMMA-FLAG (COMMA-CHECK (READ)))
+		   (DOCUMENT
+		    '|[Correcting user model of functional notation.]|)
+		   (COND ((NOT ILLEGAL-FUNCTIONAL-NOTATION-CHECK)
+			  (PRINC '|/
+Hey! MacLISP doesn't use that type of syntax for functions. While/
+``conventional'' computer languages may use a notation like/
+| TYO)
+			  (PRIN1 FORM TYO)
+			  (PRINC '|(...) to mean apply the function "| TYO)
+			  (PRIN1 FORM TYO)
+			  (PRINC '|" to a/
+list of arguments, MacLISP uses the notation (| TYO)
+			  (PRIN1 FORM TYO)
+			  (PRINC '| ...)/
+Make sure your function name always goes INSIDE the parentheses!/
+| TYO)
+			  (AND COMMA-FLAG
+			       (PRINC
+				'|... and by the way, commas are wrong here./
+Put spaces between args. Comma means something to lisp which/
+is much different than what you are trying to use them for.../
+| TYO))
+			  (PRINC '|/
+Now try typing in that form again (correctly this time)/
+if you want...| TYO)
+			  (SETQ ILLEGAL-FUNCTIONAL-NOTATION-CHECK T)
+			  '*)
+			 (T
+			  (DOCUMENT
+			   '|[Correcting functional syntax model again.]|)
+			  (PRINC '|/
+Remember:/
+Use (| TYO)
+			  (PRIN1 FORM TYO)
+			  (PRINC '| ...), not | TYO)
+			  (PRIN1 FORM TYO)
+			  (PRINC '|(...)!/
+The general form of a function call is:/
+/
+	(<function-name> <arg1> <arg2> ... <argN>)./
+/
+| TYO)
+			  (AND COMMA-FLAG
+			       (PRINC
+				'|... and no commas! Put spaces between args./
+/
+| TYO))
+			  (PRINC '|Try again...| TYO)
+			  '*))))
+	     (T NIL)))
+
+(DEFUN DOCUMENT X
+       (COND ((AND (BOUNDP 'PROTOCOL-FILE)
+		   (FILEP PROTOCOL-FILE)
+		   (STATUS FILEM PROTOCOL-FILE))
+	      (MAPC (FUNCTION (LAMBDA (X) (PRINC X PROTOCOL-FILE)))
+		    (LISTIFY X))
+	      T)
+	     (T NIL)))
+
+(DEFUN BUG-MAIL X
+       (IOTA ((STREAM '|.MAIL.;_TEACH OUTPUT| '(OUT ASCII BLOCK DSK)))
+	     (MAPC (FUNCTION (LAMBDA (X)
+				     (PRINC X STREAM)
+				     (TERPRI STREAM)))
+		   '(|FROM-JOB:Teach-Lisp|
+		     |TO:(TEACH MC)|
+		     |SENT-BY:TEACH|
+		     |SUBJECT:Automatic Bug Mail|
+		     |TEXT;-1|))
+	     (MAPC (FUNCTION (LAMBDA (X) (PRINC X STREAM)))
+		   (LISTIFY X))
+	     (RENAMEF STREAM '|.MAIL.;MAIL >|)))
+
+;;; Evalhook hacking
+
+ ;; A necessary evil
+
+(SETQ ERRLIST '((SETQ EVALHOOK 'SMART-EVALHOOK)))
+(SETQ EVALHOOK 'SMART-EVALHOOK)
+
+(DEFUN SMART-EVALHOOK (EVALHOOK-VAR)
+       (COND ((ATOM EVALHOOK-VAR)
+	      (EVALHOOK EVALHOOK-VAR 'SMART-EVALHOOK))
+	     ((NOT (ATOM (CAR EVALHOOK-VAR)))
+	      (CASEQ (CAAR EVALHOOK-VAR)
+		     (LAMBDA (EVALHOOK EVALHOOK-VAR 'SMART-EVALHOOK))
+		     (QUOTE  (DIAGNOSE-QUOTED-FUNCTION EVALHOOK-VAR))
+		     (T      (DIAGNOSE-RANDOM-FUNCTIONAL-FORM EVALHOOK-VAR))))
+	     (T
+	      (EVALHOOK EVALHOOK-VAR 'SMART-EVALHOOK))))
+
+(DEFUN DIAGNOSE-QUOTED-FUNCTION (FORM)
+       (LET (((FUNCTIONAL-FORM . ARG-LIST) FORM))
+	    (COND ((CDDR FUNCTIONAL-FORM)
+		   (DIAGNOSE-RANDOM-FUNCTIONAL-FORM FORM))
+		  (T
+		   (LET ((FUNCTION-NAME (CADR FUNCTIONAL-FORM)))
+			(COND ((GETL FUNCTION-NAME '(EXPR FEXPR MACRO
+						     SUBR FSUBR LSUBR))
+			       (EXPLAIN-DONT-QUOTE-FUNCTIONS FUNCTION-NAME)
+			       (EVALHOOK (CONS FUNCTION-NAME ARG-LIST)
+					 'SMART-EVALHOOK))
+			      (T
+			       (EXPLAIN-PUT-QUOTE-OUTSIDE FORM)
+			       FORM)))))))
+
+(DEFUN EXPLAIN-DONT-QUOTE-FUNCTIONS (NAME)
+       (DOCUMENT '|[Explaining not to quote functions]| TYO)
+       (PRINC '|/
+You seem to have quoted the function "| TYO)
+       (PRIN1 NAME TYO)
+       (PRINC '|"... That isn't/
+necessary -- In fact, it's really wrong./
+Do just (| TYO)
+       (PRIN1 NAME TYO)
+       (PRINC '| ...) -- No need to put in the quote./
+Anyway, since you're just learning, I'll correct the error/
+and continue.../
+/
+| TYO))
+       
+(DEFUN EXPLAIN-PUT-QUOTE-OUTSIDE (FORM)
+       (DOCUMENT '|[Explaining to put ' outside the form]|)
+       (RPLACA FORM (CADAR FORM))
+       (PRINC '|/
+You seem to have put the quote mark inside a form./
+You said ('| TYO)
+       (PRIN1 (CAR FORM) TYO)
+       (MAPCAR (FUNCTION (LAMBDA (X) (PRINC '| | TYO) (PRIN1 X TYO)))
+	       (CDR FORM))
+       (PRINC '|)/
+instead of '| TYO)
+       (PRIN1 FORM TYO)
+       (PRINC '|./
+Remember the ' always goes on the outside of the thing you are/
+trying to quote! I'll correct it this time for you -- real lisp/
+isn't so forgiving.../
+/
+| TYO))
+
+(DEFUN DIAGNOSE-RANDOM-FUNCTIONAL-FORM (FORM)
+       (DOCUMENT '|[Random Functional Form Dianosis]|)
+       (PRINC '|/
+The form:/
+| TYO)
+       (PRIN1 FORM TYO)
+       (PRINC '|/
+is completely meaningless ... The form for a lisp expression/
+is a function name inside the first parenthesis followed by/
+arguments to the function separated by spaces. The first thing/
+inside the parentheses is not a function name here, so I can't/
+evaluate it./
+| TYO)
+       (ERR))
+

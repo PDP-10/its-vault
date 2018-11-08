@@ -1,0 +1,102 @@
+;; -*-MIDAS-*-
+
+.fasl
+.insrt sys:.fasl defs
+
+define syscal op,args
+	.call [ setz ? sixbit /op/ ? args ((setz)) ]
+termin
+
+argi==:1000,,0
+val==:2000,,0
+cnti==:5000,,0
+
+bf%aob==:0			   ;AOBJN ptr to byte-pointer table
+bf%obp==:1			   ;Byte pointer to beginning of output buffer
+bf%ibp==:2			   ;Byte Pointer to input to output buffer
+bf%obc==:3			   ;count of characters remaining in output
+
+				   ;buffer
+bf%vml==:4			   ;vertical multiplier.  # of words/line
+bf%tbi==:5			   ;word to indirect through with Hpos in F
+bf%tab==:6			   ;table of byte pointers into first line of
+				   ;screen.  To get a byte V,H put V*[BF%TAB]
+				   ;into R, put H into F, and do
+				   ;LDB @BF%TAB(x)
+
+.entry EF_NEW_TTY_MAP_LOCATION_ SUBR 0002
+	.suset [.rcnsl,,t]	   ;get our TTY number
+	move tt,[squoze 0,ticc]	   ;symbol for input character count in system
+	.eval tt,		   ;find it in the system
+	  .lose
+	addi t,(tt)		   ;get location of TICC for our TTY
+	push fxp,t		   ;save address of TICC for our TTY in system
+	push fxp,t
+	move t,(a)		   ;get address of system page
+	idivi t,2000		   ;get page number we need
+	exch t,(fxp)		   ;remember that tidbit and get loc in system
+	idivi t,2000		   ;get page in system to map in
+	syscal CORBLK,[ argi %cbndr ? argi %jself ? (fxp) ? argi %jsabs ? t]
+	  .lose %lssys
+	pop fxp,t
+	pop fxp,t		   ;get address of TICC for our TTY in system
+	idivi t,2000		   ;convert to pages and words
+	add tt,(a)		   ;make absolute in our page
+	movei a,(tt)		   ;that's a fixnum number of chars of input
+	popj p,
+
+;; (EF_INITIALIZE_BUFFER_POINTERS_) sets up buffer pointers, expects
+;; EV_BUFFER_POINTER_PAGE_ADDRESS_ to be a fixnum who's value is address of
+;;				   a single page of type RANDOM,
+;; EV_SCREEN_IMAGE_PAGE_ADDRESS_ to be a fixnum who's value is address of
+;;				 two pages of type RANDOM
+;; and EV_SCREEN_WIDTH_ to be a fixnum who's value is the width of the screen
+
+.entry EF_INITIALIZE_BUFFER_POINTERS_ SUBR 0001
+
+	move f,@.SPECIAL EV_BUFFER_POINTER_PAGE_ADDRESS_
+	hrrz tt,@.SPECIAL EV_SCREEN_IMAGE_PAGE_ADDRESS_
+	movn r,@.SPECIAL EV_SCREEN_WIDTH_  ;-<# of bytes in line, horizontal>
+	hrli r,(r)		   ;-<# of bytes in line, horizontal>,,x
+	hrri r,(f)		   ;-<# of bytes in line, horizontal>,,<bfpage>
+	movem r,bf%aob(f)	   ;save our AOBJN ptr too
+	movei t,bf%tab(r)	   ;get start address of table
+	hrli t,f		   ;index by F
+	movem t,bf%tbi(f)	   ;save this in the table indirect word
+
+scrlop:	hrli tt,(331100,,0(r))	   ;make it a byte pointer
+	movem tt,bf%tab(r)	   ;save it away in the table
+	aobjp r,scrxit		   ;next byte.  Exit if done
+	hrli tt,(221100,,0(r))	   ;Byte pointer to next byte
+	movem tt,bf%tab(r)	   ;save it away in the table
+	aobjp r,scrxit		   ;next byte, if any
+	hrli tt,(111100,,0(r))	   ;byte pointer to next to last byte
+	movem tt,bf%tab(r)	   ;salt it away
+	aobjp r,scrxit		   ;next byte, if any
+	hrli tt,(001100,,0(r))	   ;Byte pointer to last byte in word
+	movem tt,bf%tab(r)	   ;salt it away
+	aos tt			   ;on to the next word
+	aobjn r,scrlop		   ;more bytes to point to?
+
+scrxit:	move t,@.special EV_SCREEN_WIDTH_
+	addi t,3		   ;get the number of words per screen line
+	idivi t,4		   ;so we can compute vertical position
+	movem t,bf%vml(f)	   ;salt it away for later
+	setz a,			   ;return nil
+	popj p,			   ;and return
+
+
+
+;; (EF_READ_9BYTE_ <hpos> <vpos>)
+;; NCALLable
+
+.entry EF_READ_9BYTE_ SUBR 0003
+	push p,[fix1]
+	move f,@.special EV_BUFFER_POINTER_PAGE_ADDRESS
+	move r,(b)		   ;get the vertical position
+	imul r,bf%vml(f)	   ;make it into a word offset
+	move f,(a)		   ;get horizontal position
+	ldb tt,@bf%tbi(f)	   ;get the byte
+	popj p,			   ;and return it!
+
+fasend

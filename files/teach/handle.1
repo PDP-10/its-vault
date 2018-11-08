@@ -1,0 +1,306 @@
+;;; -*- lisp -*-
+;;;
+;;;
+;;;;;;;;;; ***handler section***     File released 3:28pm  Sunday, 4 February 1979
+;;;;;;;;;;
+;;;        this file contains the complex inter-workings 
+;;;        of the digital logic simulation system handler land.
+;;;
+
+;;;
+;;;
+;;;
+;;;
+;;;
+;;;                      ***** wire handler *****
+;;;
+;;; get-state returns the state of the wire
+;;; set-state sets the state to the first input
+;;; get-name gets the name of the wire
+;;; propagate-transition attempts to call the devices its
+;;; connected to and let them know about the transition.
+;;; 
+;;; for connect operation, input-1 is device-entity 
+;;; 
+
+(defun wire-handler (self op input-1 input-2 input-3)
+       (declare (special output-connected-to inputs-connected-to
+			 pin-struct name-struct mode-struct state name))
+       (caseq op
+	      (which-operations '(get-state connect-to-gate-input set-state
+					    get-name propagate-transition
+					    get-input-devices get-ict get-oct))
+	      (get-state state)
+	      (set-state (setq state input-1))
+	      (get-name name)
+	      (get-ict inputs-connected-to)
+	      (get-oct output-connected-to)
+	      (connect-to-gate (let ((var (which-var)))
+				    (set var
+					 (add-atom (symeval var) input-2))))
+	      (disconnect-gate (let ((var (which-var)))
+				    (set var (delete input-1 (symeval var)))))
+	      (propagate-transition
+	       (e-call self 'set-state (transition-get new-state input-1))
+	       (cond ((not (null inputs-connected-to))
+		      (do ((inputs-connected-to inputs-connected-to
+						(cdr inputs-connected-to )))
+			  ((null inputs-connected-to))
+			   (e-call (car inputs-connected-to)
+				  'propagate-transition input-1 self)))))
+	      (get-input-devices (do ((inputs-connected-to
+				       inputs-connected-to
+				       (cdr inputs-connected-to))
+				      (dev-entity (car inputs-connected-to)
+						  (car inputs-connected-to)))
+				     ((null inputs-connected-to))
+				     (print (e-call dev-entity 'get-name))))
+	      (t (unknown-op self op input-1 input-2 input-3))))
+;;;
+;;; 
+;;; input-1 is pin name 
+;;; input-2 is wire-entity for connect operation
+;;; 
+;;; input-1 is pin for disconnect/which-wire operations
+;;;
+;;; input-1 transition that is being propagated for propagate-transition op
+;;;
+;;; input-1  pin to set, input-2 value to set pin for set-state operation
+;;;
+
+(defun master-device-handler (self op input-1 input-2 input-3)
+       (declare (special name pin-struct name-struct mode-struct function))
+       (caseq op
+	      (which-operations '(disconnect-wire connect-to-wire
+				   which-wire what-wires? get-name set-state
+				   propagate-transition))
+	      (disconnect-wire (let ((wire-to-disconnect
+				      (get-connection input-1)))
+				    (cond ((null wire-to-disconnect)
+					   (err-handle 'disc name input-1))
+					  (t (store-connection input-1 nil)
+					     (e-call wire-to-disconnect
+						     'disconnect-from-input
+						     self)))))
+	      (connect-to-wire (let ((old-connection (get-connection input-1)))
+				    (cond ((not (null old-connection))
+					   (err-handle 'alrd name input-1)
+					   (e-call self
+						   'disconnect-wire input-1))
+					  (t (e-call input-2
+						     'connect-to-gate
+						     input-1
+						     self)))
+				    (store-connection input-1 input-2) t))
+	      (what-wires? (list-wires pin-struct name-struct mode-struct state-struct))
+	      (which-wire (e-call (get-connection input-1) 'get-name))
+	      (get-name name)
+	      (set-state (set-slot input-1 state-struct input-2))
+	      (propagate-transition (e-call self 'set-state (which-pin input-2) (transition-get new-state input-1))
+				    (transition-set source input-1 self)
+				    (e-call function 'propagate-transition input-1 self))
+	      (t (unknown-op self op input-1 input-2 input-3))))
+;;;
+;;; Function Handler for two input NAND gate
+;;; 
+
+(defun two-input-nand-function-handler (self op input-1 input-2 input-3)
+       (declare (special
+		 pin-struct				;hunk of wires
+		 name-struct				;hunk of slot names
+		 mode-struct				;hunk of modes (I/O)
+		 state-struct))				;hunk of states (t/nil)
+       (caseq op
+	      (which-operations '(get-pin-names
+				  get-pin-connections
+				  get-pin-modes
+				  get-pin-states
+				  propagate-transition))
+	      (get-pin-connections pin-struct)
+	      (get-pin-names       name-struct)
+	      (get-pin-modes       mode-struct)
+	      (get-pin-states      state-struct)
+	      (propagate-transition (prop-two-input-nand input-1 input-2))
+	      (t (unknown-op self op input-1 input-2 input-3))))
+
+;;;
+;;; Indicator handler
+;;;
+
+(defun Indicator-handler (self op input-1 input-2 input-3)
+       (declare (special name))
+       (caseq op
+	      (which-operations '(propagate-transition get-name))
+	      (get-name name)
+	      (propagate-transition (format t '|~&~&Source is ~,,0a, New state is ~,,0a~&|
+					    (transition-get source input-1)
+					    (transition-get new-state input-1)))))
+;;;
+;;; Null queue handler
+;;; waiting for kgk to finnish his...
+;;;
+
+(defun nullq-handler (self op input-1 input-2 input-3)
+       (declare (special name pin-struct name-struct mode-struct state-struct))
+       (caseq op
+	      (which-operations '(propagate-transition get-name))
+	      (propagate-transition (e-call input-2 'propagate-transition input-1 ))
+	      (get-name name)))
+;;;
+;;; This frob sets a slot to the specified value
+;;;
+
+(defun set-slot (slot-to-change hunk-to-change new-value)
+       (declare (special name-struct))
+       (rplacx (get-slot slot-to-change) hunk-to-change new-value))
+
+
+;;;
+;;; This frob returns the slot number of the pin specified.
+;;;
+
+(defun get-slot (pin-to-find)
+       (declare (special name-struct))
+       (do ((i 0 (1+ i))
+	    (size (hunksize name-struct)))
+	   ((equal i size)
+	    (err-handle   '|Cant find slot ~,,0a.~&| 'GET-SLOT pin-to-find))
+	   (cond ((equal (cxr i name-struct) pin-to-find)
+		  (return i)))))
+;;;
+;;; This utility frob returns the entity connect to the
+;;; specified pin of the specified device
+;;; (and if that's confusing to you, imagine how I feel!)
+;;;
+
+(defun get-connection (pin-to-find)
+       (declare (special pin-struct name-struct))
+       (cxr (get-slot pin-to-find) pin-struct))
+
+(defun store-connection (pin-to-store-in value-to-store)
+       (declare (special pin-struct name-struct))
+       (set-slot pin-to-store-in pin-struct value-to-store)
+			 pin-struct value-to-store))
+
+;;;
+;;; Gets the mode of a pin (input or output)
+;;;
+
+(defun get-mode (pin-to-get-mode-of)
+       (declare (special name-struct mode-struct))
+       (cxr (get-slot pin-to-get-mode-of) mode-struct))
+
+
+
+(setq ctw 'connect-to-wire)
+
+(setq ptr  'propagate-transition)
+
+(defun init ()
+       (setq name '|Top Level|)
+       (setq w1 (create-wire 'wire-entity-number-1))
+       (setq w2 (create-wire 'wire-entity-number-2))
+       (setq w3 (create-wire 'wire-entity-number-3))
+       (setq fe (create-two-input-nand-function 10))
+       (setq me (create-master-device 'hank fe))
+       (e-call me 'connect-to-wire 'input-pin-1 w1))
+
+
+(defun dfix ()
+       (sstatus ttycons tyo tyi))
+
+(defun list-wires (pin-struct name-struct mode-struct state-struct)
+       (format console-output
+	       '|~&~&~7tPin Name~32TWire~55TMode~70TState|)
+       (do ((i 0 (1+ i))
+	    (size (hunksize pin-struct))
+	    (entity))
+	   ((= size i) t)
+	   (declare (fixnum i))
+	   (setq entity (cxr i pin-struct))
+	   (format console-output
+		   '|~&~5T~,,0A~30T~,,0A~55T~,,0A~67T~,,0A| (cxr i name-struct)
+		   (cond ((not (null entity))
+			  (e-call entity 'get-name))
+			 (t '|Not Connected|))
+		   (cxr i mode-struct)
+		   (cxr i state-struct))))
+(defun init2 ()
+       (setq pin-struct (e-call fe 'get-pin-connections))
+       (setq name-struct (e-call fe 'get-pin-names))
+       (setq mode-struct (e-call fe 'get-pin-modes)))
+
+;;;
+;;; Generalized Error Handler for standard errors.
+;;; Arg 1 is complaint, arg 2 is the name of the complainer, arg 3 ... arg n
+;;; are any thing you feel like saying to the world
+;;;
+
+(Defun err-handle nargs
+       (format console-output '|~&~,,0A says: | (arg 2))
+       (error (err-form-expand (arg 1) nargs)))
+
+(defun get-err-atom  (abbrev)
+       (caseq abbrev
+	      (alrd '|Pin ~,,0a is already connected.~&|)
+	      (disc '|No wire to disconnect from pin ~,,0a~&|)
+	      (iand '|I am an AND gate and I don't know what to propagate.  My inputs are: ~,,0a and ~,,0a.~&|)
+	      (t abbrev)))
+(defun add-atom (list atom)
+       (append list (ncons atom)))
+
+(defun which-var ()
+       (declare (special name-struct mode-struct input-1))
+       (caseq (get-mode input-1)
+			 (input 'inputs-connected-to)
+			 (output 'output-connected-to)
+			 (t
+			  (err-handle 'bdmd name input-1 (get-mode input-1)))))
+
+(defun (err-form-expand macro) (form)
+       `(format nil  (get-err-atom ,(cadr form)) ,@(get-args (caddr form))))
+
+
+(defun get-args (number-of-args)
+       (let ((arg-list) (number-of-args (symeval number-of-args)))
+	    (do ((i 3 (1+ i))
+		 (arg-list '((arg 3))
+			   (append arg-list (ncons (list 'arg (1+ i))))))
+		((equal i number-of-args) arg-list))))
+
+(defun prop-two-input-nand (input-1 input-2)
+       (declare (special pin-struct name-struct mode-struct state-struct))
+       (transition-set new-state input-1 (not (and-val (get-state 'input-pin-1) (get-state 'input-pin-2))))
+       (e-call input-2 'set-state 'output-pin (transition-get new-state input-1))
+       (e-call clock-entity 'propagate-transition input-1 (get-connection 'output-pin)))
+
+(defun and-val (state-1 state-2)
+       (declare (special name))
+       (cond ((or (equal state-1 'dont-know) (equal state-2 'dont-know))
+	      (err-handle 'iand name  state-1 state-2))
+	     (t (and state-1 state-2))))
+
+;;;
+;;; This frob figures what the name of the slot 
+;;; is that belongs to this entity
+;;;
+
+(defun  which-pin (wire-entity)
+	(declare (special name-struct pin-struct))
+	(do ((name (cxr 0 name-struct) (cxr i name-struct))
+	     (pin (cxr 0 pin-struct) (cxr i pin-struct))
+	     (i 0 (1+ i)))
+	    ((equal i (hunksize pin-struct)) (err-handle '|I can't find the entity ~,,0a.~&|
+							 'WHICH-PIN  wire-entity))
+
+	    (cond ((equal pin wire-entity) (return name)))))
+
+(defun get-state (pin)
+       (declare (special state-struct))
+       (cxr (get-slot pin) state-struct))
+;; Local Modes: ::
+;; Comment Column:56 ::
+;; End: ::
+
+						        
+

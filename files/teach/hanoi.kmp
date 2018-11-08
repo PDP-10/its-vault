@@ -1,0 +1,98 @@
+;;; -*- LISP -*-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;                                                                         ;;;
+;;;             KMP's Solution to the "Tower of Hanoi" problem.             ;;;
+;;;                                                                         ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Representation being used for towers is
+;;; ( <name-of-tower> <element1> <element2> <element3> ... )
+
+;;;;;;;;;;;;;;; Define Basic Operations to do on a Towers ;;;;;;;;;;;;;;;;;;;;;
+
+;;; Data-structure dependent functions
+
+(DEFUN CREATE-TOWER (NAME ELEMENTS) (CONS NAME ELEMENTS))
+
+(DEFUN NAME-OF (TOWER) (CAR TOWER))
+
+(DEFUN ELEMENTS-OF (TOWER) (CDR TOWER))
+
+;;; Data-structure independent functions (these functions depend only
+;;;  on the fact that ELEMENTS-OF returns a list of the elements of a
+;;;  tower.)
+
+(DEFUN HEIGHT (TOWER) (LENGTH (ELEMENTS-OF TOWER)))
+
+(DEFUN EMPTY? (TOWER) (ZEROP (HEIGHT TOWER)))
+
+(DEFUN ALL-BUT-BOTTOM (TOWER) (CDR (ELEMENTS-OF TOWER)))
+
+(DEFUN TOP (TOWER) (CAR (LAST (ELEMENTS-OF TOWER))))
+
+(DEFUN BOTTOM (TOWER) (CAR (ELEMENTS-OF TOWER)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;; User Interface Function ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(DEFUN HANOI ()
+       (PROG (N)
+	     (TERPRI TYO)
+	     (PRINC '|How many blocks? | TYO)         ; Ask initial question
+	     (SETQ N (DO ((FORM (READ) (READ)))       ; Loop reading reply
+			 ((FIXP FORM) FORM)           ; Exit on fixed point #
+			 (TERPRI TYO)		      ; Re-ask otherwise
+			 (PRINC '|Try again: | TYO)))
+	     (SOLVE (CREATE-TOWER '|Tower #1| (MAKE-A-STACK N)) ; Solve
+		    (CREATE-TOWER '|Tower #2| NIL)
+		    (CREATE-TOWER '|Tower #3| NIL))
+	     (RETURN 'DONE)))                         ; Return
+
+;;;;;;;;;;;;;;;;;;;;;;;;; Auxiliary Functions ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Returns a list of numbers (N N-1 N-2 ... 1)
+
+(DEFUN MAKE-A-STACK (N)
+       (DO ((COUNT 1. (1+ COUNT))     ; COUNT counts from 1 by 1's
+	    (L NIL))		      ; L will accumulate a list
+	   ((> COUNT N) L)            ; Stop when COUNT > N, Return L
+	   (SETQ L (CONS COUNT L))))  ; L <- [CONS N onto front of L]
+
+;;; Just printing the solution is enough for our purposes.
+
+(DEFUN PUT-BLOCK (BLOCK-NAME LOCATION)
+       (TERPRI TYO)
+       (PRINC (LIST '|Put Block #| BLOCK-NAME '| on | LOCATION) TYO))
+
+;;;;;;;;;;;;;;;;;;;;;;;;; Main Problem Solver ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Method of solution:
+;;;
+;;; If there are no blocks in the ORIGIN tower, there is nothing to do
+;;; else 
+;;;  [1] Solve for N-1 blocks, thereby clearing the top off of biggest
+;;;      block
+;;;  [2] Move the biggest block
+;;;  [3] With the biggest block on right pile, resolve the N-1 case,
+;;;      remembering that some blocks have moved from their original
+;;;      locations by now.
+;;;      
+
+(DEFUN SOLVE (ORIGIN-TOWER SCRAP-TOWER GOAL-TOWER)
+       (COND ((EMPTY? ORIGIN-TOWER) NIL)  ; Nothing to do!
+	     (T
+	      (SOLVE                      ; Clear biggest (bottom) block
+	       (CREATE-TOWER (NAME-OF ORIGIN-TOWER)
+			     (ALL-BUT-BOTTOM ORIGIN-TOWER))
+	       GOAL-TOWER
+	       SCRAP-TOWER)
+	      (PUT-BLOCK		  ; Move biggest block
+	       (BOTTOM ORIGIN-TOWER)
+	       (NAME-OF GOAL-TOWER))
+	      (SOLVE                      ; Put things back on biggest block
+	       (CREATE-TOWER (NAME-OF SCRAP-TOWER)
+			     (ALL-BUT-BOTTOM ORIGIN-TOWER))
+	       (CREATE-TOWER (NAME-OF ORIGIN-TOWER)
+			     NIL)
+	       (CREATE-TOWER (NAME-OF GOAL-TOWER)
+			     (NCONS (BOTTOM ORIGIN-TOWER)))))))
+

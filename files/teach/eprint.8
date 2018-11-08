@@ -1,0 +1,64 @@
+;-*-LISP-*-
+
+(defun (neq macro) (form)
+   `(not (eq ,@(cdr form))))
+
+(def-sfa (my-output)
+   (def-handler struct-print-handler (sfa op data)
+      (caseq op
+	     (which-operations '(print princ tyo init open print-cdr terpri
+				       truename close renamef deletef
+				       namestring shortnamestring cursorpos))
+	     (init (setq my-output data))	;connect us inline
+	     (open (open my-output data))	;reset the world
+	     (cursorpos (apply 'cursorpos (append data (ncons my-output))))
+	     (renamef (renamef my-output data))
+	     (deletef (deletef my-output))
+	     (close (close my-output))
+	     (tyo (cond ((> data -1)
+			 (tyo data my-output))))  ;TYO just goes on through
+	     (print-cdr
+	      (cond ((neq (typep data) 'LIST)
+		     (princ '|. | my-output)))
+	      (sfa-call sfa 'prin1 data))
+	     (prin1
+	      (caseq (typep data)
+		     (list (princ '|(| my-output)
+			   (sfa-call sfa 'prin1 (car data))
+			   (princ '| | my-output)
+			   (sfa-call sfa 'print-cdr (cdr data))
+			   (princ '|)| my-output))
+		     ((hunk4 hunk8 hunk16 hunk32 hunk64 hunk128 hunk256)
+		      (cond ((not (memq (car data) data-types))
+			     (princ '|[| my-output)
+			     (do ((cxr-max (hunksize data))
+				  (cxr-count 0 (1+ cxr-count)))
+				 ((= cxr-max cxr-count))
+				 (cond ((> cxr-count 0)  ;unless just after |[|
+					(princ '| | my-output)))
+				 (sfa-call sfa 'prin1 (cxr cxr-count data)))
+			     (princ '|]| my-output))
+			    (t (princ '|#| my-output)
+			       (princ '|<| my-output)
+			       (princ (car data) my-output)
+			       (princ '| | my-output)
+			       (princ (get-structure-pname data) my-output)
+			       (princ '|>| my-output))))
+		     (t (prin1 data my-output))))
+	     (print (sfa-call sfa 'prin1 data)
+		    (princ '| | my-output)
+		    (terpri my-output))
+	     (princ (princ data my-output))  ;don't hack specially for PRINC
+	        ;on the theory that we won't PRINC STRUCTs
+	     (terpri (terpri my-output))
+	     (truename (truename data))
+	     (namestring (namestring data))
+	     (shortnamestring (shortnamestring data)))))
+
+(defun struct-printer (file)
+   (let ((sfa (sfa-create 'struct-print-handler 2 (namestring file))))
+      (sfa-call sfa 'init file)
+      sfa))
+
+
+(setq data-types '(dtp-entity))

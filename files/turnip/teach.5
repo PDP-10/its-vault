@@ -1,0 +1,110 @@
+;;; -*- LISP -*-
+;;;
+;;; Lisp Teaching Program by RWK/KMP
+
+(COMMENT Compiler Declarations)
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (SSTATUS MACRO /# '+INTERNAL-/#-MACRO SPLICING)
+	   (SSTATUS MACRO /" '+INTERNAL-/"-MACRO SPLICING))
+
+
+(COMMENT System Sterilization)
+
+;;;
+;;; (STUDENT-FUNCTION <name1> <name2> ...)
+;;;  Declares <name1> ... <nameN> to be a function that should be accessible
+;;;  to the user at runtime.
+;;;
+;;; (STUDENT-FUNCTION? <name>) 
+;;;  Returns true if <name> evals to a symbol which has been declared
+;;;  accessible to the user at runtime.
+
+(DEFMACRO STUDENT-FUNCTION FORM
+   `(PROGN 'COMPILE 
+	   ,@(MAPCAR #'(LAMBDA (SYM) `(DEFPROP ,SYM T STUDENT-FUNCTION))
+		     FORM)))
+
+(DEFMACRO STUDENT-FUNCTION? (SYM) `(GET ,SYM 'STUDENT-FUNCTION))
+
+;;; System sterilization
+;;;
+;;; The system will use a large number of internal routines which it is
+;;; not a good idea to leave on the main obarray.
+
+(DEFUN STERILIZE ()
+       (LET ((SYMBOLS-TO-INTERN ()))
+	    (MAPATOMS #'(LAMBDA (SYM)
+				(COND ((STUDENT-FUNCTION? SYM)
+				       (PUSH SYM SYMBOLS-TO-INTERN)))))
+	    (LET ((OBARRAY (ARRAY () OBARRAY T)))
+		 (MAPC '(LAMBDA (SYM) (INTERN SYM)) SYMBOLS-TO-INTERN))))
+
+
+(COMMENT Student-Data Files)
+
+;;; Protocol Files
+;;;
+;;; A protocol file will be a wallpaper-like file of interesting information
+;;; about the student. It need not be made in machine-readable format.
+;;;
+;;; Wallpaper of user trials should go to here
+
+
+;;; Student-Record Files
+;;;
+;;; A student record file is a database in machine-readable form of interesting
+;;; things that the program needs to know about the user.
+;;;
+;;; Useful information might include
+;;;
+;;;	(1) Lessons seen (including when)
+;;;	(2) Skills mastered
+;;;	(3) Previous Experience
+;;;	(4) Accompanying offline texts
+;;;	(5) Average rate of learning
+;;;	(6) Other languages known
+;;;	(7) Frequency of use
+;;;	(8) Whether user is on a display or printing, fast or slow line.
+;;;	    This may affect verbosity of program and expected amount he'll
+;;;	    retain.
+;;;	(9) Age, Level of Schooling, Background, etc.
+
+
+(COMMENT Lesson Texts)
+
+;;; Lessons and Problem Sets
+;;;
+;;;  The program should try to enforce some sort of ordering on the
+;;;  lessons for those who don't know where to go next.
+;;;
+;;;  Additionally, for those students who wish to go in their own direction,
+;;;  a set of prerequisites is necessary. Querying about whether the user
+;;;  understands the lessons he needed for prereq's would be sufficient if
+;;;  he hadn't taken them via our program.
+;;;
+;;;  Information about the various real-world text-books around and how
+;;;  the help/hurt our curriculum should be accounted for.
+
+
+(COMMENT Getting Help)
+
+;;;
+;;;  Several flavors are needed:
+;;;
+;;;	(1) Pre-Packaged
+;;;		(a) Definitions (DESCRIBE, APROPOS, ...)
+;;;		(b) Examples
+;;;	(2) Interactive
+;;;		(a) Simple-Question Answering (Database query)
+;;;		(b) Online Helpers
+;;;		    We should be able to do arbitrary advising to 
+;;;		    the program without actually linking to the user.
+;;;	(3) Long-Term
+;;;		(a) Mail/Bug/Query facility
+;;;		(b) Info about available textbooks
+
+
+(COMMENT Meta-Evaluator and Error Handling)
+
+

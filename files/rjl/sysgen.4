@@ -1,0 +1,1715 @@
+;	SYSGEN.CND V02.11A	RT-11 SYSGEN SCRIPT FILE
+;	Edited 19 Oct 78 for SGTL FL and FD devices
+;
+; COPYRIGHT (C)    1978
+;
+; DIGITAL EQUIPMENT CORPORATION,  MAYNARD,   MASS.
+;
+; THIS SOFTWARE IS FURNISHED UNDER A LICENSE AND MAY ONLY BE USED
+; OR COPIED IN ACCORDANCE WITH THE TERMS OF SUCH LICENSE.
+;
+;
+	#NAME	SYCND
+	#FILE	SYCND.MAC
+.SBTTL	SYSTEM CONDITIONAL FILE
+	; SYCND.MAC--SYSTEM CONDITIONAL FILE
+	;
+	; COPYRIGHT (C)    1978
+	;
+	; DIGITAL EQUIPMENT CORPORATION,  MAYNARD,   MASS.
+
+	#SET	MONITR=N
+	#SET	MTTY=N
+	#SET	BLSJFB=N
+	#SET	FBXM=N
+	#SET	TIME=N
+
+	#PRINT	
+	#PRINT	RT-11 SYSTEM GENERATION PROGRAM V02.11
+	#PRINT	 
+	#ASK	Do you want the expanded form of dialogue [Y/N] (Y)?LONG/Y=Y
+	#IF	LONG
+	#PRINT	
+	#PRINT	All answers requiring a choice are indicated by [Y/N]
+	#PRINT	and require you to type either 'Y' for yes or 'N'
+	#PRINT	for no followed by a carriage return.  Answers requiring
+	#PRINT	numeric input are indicated by [D] for decimal input and
+	#PRINT	[O] for octal input.  Answers requiring a device name
+	#PRINT	response are indicated by [DD]; answers requiring a
+	#PRINT	device name followed by a unit number are indicated
+	#PRINT	by [DDU]. If you enter no response (just a CARRIAGE RETURN),
+	#PRINT	your answer will default to the response indicated in
+	#PRINT	parentheses before the question mark (e.g. [DD] (RK)?).
+	#PRINT	Your responses are checked for validity wherever possible.
+	#PRINT	 
+	#PRINT	The outputs of this SYSGEN program are two conditional
+	#PRINT	files (SYCND.MAC and SYSTBL.MAC) and three indirect
+	#PRINT	command files (SYSBLD.COM, MONBLD.COM and DEVBLD.COM)
+	#PRINT	which are used to assemble and link the monitor(s) and
+	#PRINT	device handlers for the target system. The assembly
+	#PRINT	and linking process requires a machine with at least
+	#PRINT	16K words of memory and mass storage with at least 500
+	#PRINT	free blocks on the output device and 128 free blocks
+	#PRINT	on the system device.
+	#PRINT	
+	#PRINT	The following dialogue asks questions about
+	#PRINT	the configuration for which the system is being
+	#PRINT	generated, and about monitor and device support
+	#PRINT	options you may desire.  You should have read the
+	#PRINT	RT-11 System Generation Manual before proceeding.
+	#PRINT	You can terminate SYSGEN at any time by typing CTRL/C.
+	#PRINT	 
+	#PRINT	The RT-11 system includes a variety of monitors, allowing
+	#PRINT	you to select the monitor best suited to your
+	#PRINT	application.  The monitors are customized to your configuration
+	#PRINT	by this SYSGEN process, and, while you may build any number of  
+	#PRINT	monitors, you should realize that SYSGEN places a large
+	#PRINT	demand on time and data storage.
+	#PRINT	
+	#PRINT	If you elect to build the base-line
+	#PRINT	single-job (SJ) monitor, no other monitors
+	#PRINT	may be built during the same SYSGEN pass.
+	#PRINT	 
+	#PRINT	The base-line single-job (SJ) monitor is the minimal monitor
+	#PRINT	necessary to execute standard system functions. It is intended
+	#PRINT	for systems with only 8K words of memory, or for larger
+	#PRINT	systems	that require the lowest possible monitor overhead.
+	#PRINT	Device support is limited, and some features of the
+	#PRINT	SJ monitor usable in larger configurations are omitted,
+	#PRINT	such as BATCH and VT11 support.
+	#ENDC	LONG
+SYSG$N	= 1		;INDICATE SYSGENED MONITOR
+	#IF	LONG
+	#PRINT
+	#PRINT	If you are SYSGENing a system for the LSI-11 there are
+	#PRINT	many devices that are not available and you will therefore
+	#PRINT	not want to include support for them. 
+	#ENDC	LONG
+	#PRINT
+	#ASK	Is this SYSGEN for an LSI-11 [Y/N] (N)?LSISYS/Y=N
+	#PRINT	
+	#ASK	Do you want the base-line single-job monitor [Y/N] (N)?BLSJ/Y=N
+	#IF	BLSJ
+	#SET	SJ=N
+	#SET	FB=N
+	#SET	XM=N
+	#SET	TIME$R=N
+	#SET	DS=N
+	#SET	DM=N
+	#SET	RF=N
+	#SET	RX2=N
+	#SET	DP=N
+	#SET	RP3=N
+	#SET	MTSP=N
+	#SET	TM=N
+	#SET	TJU=N
+	#SET	GRAFX=N
+	#SET	CT=N
+	#SET	CR=N
+	#SET	BATC$H=N
+	#SET	ERL$G=N
+	#SET	MONITR=Y
+	#SET	BLSJFB=Y
+	#SET	MTTY=N
+ ; BASE-LINE SJ MONITOR
+TIME$R	= 0		;NO TIMER SUPPORT
+MPT$Y	= 0		;NO MEMORY PARITY SUPPORT
+BATC$H	= 0		;NO BATCH SUPPORT
+ERL$G	= 0		;NO ERROR LOG SUPPORT
+ESC$P	= 0		;NO ESCAPE SEQUENCE SUPPORT
+RDF$L	= 0		;NO MESSAGE ON SYS I/O ERRORS (SJ)
+	#IFF
+	#IF	LONG
+	#PRINT	
+	#PRINT	The single-job (SJ) monitor provides an environment suitable
+	#PRINT	for the development of simple applications in FORTRAN or
+	#PRINT	BASIC.  It provides a subset of the foreground/background
+	#PRINT	(FB) features and offers maximum ability for minimum size.
+	#PRINT	Some additional features may be added during SYSGEN, but at
+	#PRINT	the cost of increased monitor size.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the single-job (SJ) monitor [Y/N] (Y)?SJ/Y=Y
+	#IF	SJ
+	#SET	BLSJFB=Y
+	#SET	MONITR=Y
+	#ENDC	SJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	The foreground/background (FB) monitor offers an extended
+	#PRINT	set of facilities which are helpful for applications
+	#PRINT	involving real-time or data acquisition. These
+	#PRINT	include timer support, serialized asynchronous I/O, and 
+	#PRINT	support for a foreground job.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the foreground/background (FB) monitor [Y/N] (Y)?FB/Y=Y
+	#IF	FB
+	#SET	BLSJFB=Y
+	#SET	MONITR=Y
+	#SET	FBXM=Y
+	#ENDC	FB
+	#IF	LONG
+	#PRINT	
+	#PRINT	The extended memory (XM) monitor is a version of the FB
+	#PRINT	monitor which supports up to 128K words of memory. It is
+	#PRINT	useful for advanced applications that require an extended
+	#PRINT	addressing space.  The XM monitor is larger than FB and
+	#PRINT	requires a resident USR and drivers.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the extended memory (XM) monitor [Y/N] (N)?XM/Y=N
+	#IF	XM
+	#SET	MONITR=Y
+	#SET	FBXM=Y
+	#ENDC	XM
+	#ENDC	BLSJ
+	#IFN	MONITR
+	#PRINT	
+	#PRINT	?SYSGEN-F-No monitor requested
+	#PRINT	
+	#EXIT
+	#ENDC	MONITR
+	#IFN	BLSJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	There are a number of monitor options you may select:
+	#ENDC	LONG
+	#IF	SJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	The following options apply only to the SJ monitor.
+	#PRINT	 
+	#PRINT	The SJ monitor normally does not have timer support.
+	#PRINT	You may optionally include the .MRKT and .CMKT requests.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want timer support in the SJ monitor [Y/N] (N)?TIME$R/Y=N
+	#IF	TIME$R
+TIME$R	= 1		;ADD TIMER SUPPORT (SJ)
+	#ENDC	TIME$R
+	#IF	LONG
+	#PRINT	
+	#PRINT	The device time-out option permits device drives to issue
+	#PRINT	mark time requests.  This feature is currently not used
+	#PRINT	by any RT-11 drivers, but is necessary for DECNET support.
+	#PRINT	Select this option if you are planning to use DECNET
+	#PRINT	with your monitor.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want device time-out support [Y/N] (N)?DEVTO/Y=N
+	#IF	DEVTO
+	#IFN	TIME
+TIM$IT	= 1		;ADD DEVICE TIMER SUPPORT
+	#SET	TIME=Y
+	#ENDC	TIME
+	#IF	SJ
+	#IFN	TIME$R
+TIME$R	= 1		;ADD TIMER SUPPORT (SJ)
+	#ENDC	TIME$R
+	#ENDC	SJ
+	#ENDC	DEVTO
+	#IF	LONG
+	#PRINT	
+	#PRINT	The SJ monitor will normally halt at the "system halt"
+	#PRINT	if there is a fatal system I/O error. This halt can
+	#PRINT	be replaced with a system error message at the cost of
+	#PRINT	about 30 words additional code in the resident
+	#PRINT	monitor. This option is highly recommended if the system
+	#PRINT	is going to be used by anyone other than the expert.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want an error message on system I/O errors [Y/N] (Y)?RDF$L/Y=Y
+	#IF	RDF$L
+RDF$L	= 1		;ADD SYSTEM I/O ERROR MESSAGE (SJ)
+	#IFF
+RDF$L	= 0		;NO SYSTEM I/O ERROR MESSAGE (SJ)
+	#ENDC	RDF$L
+	#ENDC	SJ
+	#IF	FBXM
+	#IF	LONG
+	#PRINT	
+	#PRINT	The following options apply only to the FB and XM monitors.
+	#PRINT	 
+	#PRINT	The FB and XM monitors' scheduler idle loop will display
+	#PRINT	a moving light pattern in the display register of any
+	#PRINT	PDP-11/45, 11/50, 11/55 or 11/70 processor.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want idle loop light pattern [Y/N] (N)?LIGH$T/Y=N
+	#IF	LIGH$T
+LIGH$T	= 1		;IDLE LOOP LIGHT PATTERN (FB,XM)
+	#ENDC	LIGH$T
+	#IF	LONG
+	#PRINT	
+	#PRINT	RT-11 normally supports a single terminal interfaced through
+	#PRINT	the console KL11 or DL11, which is shared by both background
+	#PRINT	and foreground jobs. You may optionally select multi-
+	#PRINT	terminal support of up to 16 terminals interfaced through
+	#PRINT	a choice of DL11 and DZ11 interfaces.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want support of more than one terminal [Y/N] (N)?MTTY/Y=N
+	#IF	MTTY
+MTT$Y	= 1		;MULTIPLE TERMINAL SUPPORT (FB,XM)
+	#ENDC	MTTY
+	#ENDC	FBXM
+	#ENDC	BLSJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	The following options apply to all monitors.
+	#PRINT	 
+	#PRINT	RT-11 assumes a 60 Hz power line frequency, but can
+	#PRINT	optionally support a 50 Hz frequency.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the optional 50 Hz clock support [Y/N] (N)?CLOCK/Y=N
+	#IF	CLOCK
+CLOCK	= 50.		;POWER LINE FREQUENCY (SJ,FB,XM)
+	#IFF
+CLOCK	= 60.		;POWER LINE FREQUENCY (SJ,FB,XM)
+	#ENDC	CLOCK
+	#IFN	BLSJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	RT-11 normally uses a line clock for the system clock.
+	#PRINT	You may substitute the KW11-P programmable clock if you wish,  
+	#PRINT	in which case the KW11-P is not available for program use.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want to use the KW11-P clock as the system clock [Y/N] (N)?KW11$P/Y=N
+	#IF	KW11$P
+KW11$P	= 1		;USE KW11-P CLOCK AS SYSTEM CLOCK (SJ,FB,XM)
+	#ENDC	KW11$P
+	#ENDC	BLSJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	The bootstrap optionally executes an indirect file when
+	#PRINT	starting the system.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the startup indirect file [Y/N] (Y)?START/Y=Y
+	#IF	START
+STAR$T	= 1		;STARTUP COMMAND FILE (SJ,FB,XM)
+	#ENDC	START
+	#IFN	BLSJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	RT-11 supports parity memory and processes memory
+	#PRINT	parity errors.  If error logging is present, parity errors
+	#PRINT	are also logged.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want memory parity support [Y/N] (N)?MPT$Y/Y=N
+	#IF	MPT$Y
+MPT$Y	= 1		;MEMORY PARITY (SJ,FB,XM)
+	#ENDC	MPT$Y
+	#IF	LONG
+	#PRINT	
+	#PRINT	The monitor normally halts on power recovery startup
+	#PRINT	after a power failure.  You may elect to have the monitor
+	#PRINT	print a message explaining that power failure caused the halt.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want power failure messages [Y/N] (Y)?PWF$L/Y=Y
+	#IF	PWF$L
+PWF$L	= 1		;POWER FAIL (SJ,FB,XM)
+	#ENDC	PWF$L
+	#IF	LONG
+	#PRINT	
+	#PRINT	RT-11 supports BATCH as an option. Indirect command
+	#PRINT	file support is separately available in all monitors,
+	#PRINT	and BATCH support need not be selected to obtain
+	#PRINT	indirect command file support.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want BATCH support [Y/N] (N)?BATC$H/Y=N
+	#IF	BATC$H
+BATC$H	= 1		;BATCH SUPPORT (SJ,FB,XM)
+	#ENDC	BATC$H
+	#IF	LONG
+	#PRINT	
+	#PRINT	The RT-11 terminal service is capable of recognizing
+	#PRINT	ANSI or DEC standard escape sequences and processing
+	#PRINT	those sequences according to application instructions.
+	#PRINT	This support is not necessary for normal system operation;
+	#PRINT	if your application does not make special use of escape
+	#PRINT	sequences, do not select this support.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want escape sequence processing [Y/N] (N)?ESC/Y=N
+	#IF	ESC
+	#PRINT	
+	#ASK	Do you want ANSI standard escape sequences [Y/N] (N)?ANSI/Y=N
+	#IF	ANSI
+ESC$P	= 2		;ANSI ESCAPE SEQUENCES (SJ,FB,XM)
+	#IFF
+ESC$P	= 1		;DEC ESCAPE SEQUENCES (SJ,FB,XM)
+	#PRINT	
+	#PRINT	DEC standard escape sequences assumed.
+	#ENDC	ANSI
+	#IFF
+ESC$P	= 0		;NO ESCAPE SEQUENCES (SJ,FB,XM)
+	#ENDC	ESC
+	#IF	LONG
+	#PRINT	
+	#PRINT	Selection of error logging creates the error logging
+	#PRINT	driver EL and incorporates error logging into the device
+	#PRINT	handlers. When EL is loaded and initialized, logging of
+	#PRINT	disk, DECtape and memory parity errors will occur.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want error logging [Y/N] (N)?ERL$G/Y=N
+	#IF	ERL$G
+ERL$G	= 1		;ERROR LOGGING (SJ,FB,XM)
+	#IF	SJ
+	#IFN	TIME$R
+TIME$R	= 1		;ADD TIMER SUPPORT (SJ)
+	#ENDC	TIME$R
+	#ENDC	SJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	The error logger can capture either initial errors
+	#PRINT	or the most recent errors that have occured. For most
+	#PRINT	types of problems, information concerning initial
+	#PRINT	errors is most useful.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Should the error logger capture the most recent errors [Y/N] (N)?ERLW/Y=N
+	#IF	ERLW
+ERL$W	= 1		;LOG MOST RECENT ERROR (SJ,FB,XM)
+	#ENDC	ERLW
+	#IF	LONG
+	#PRINT	
+	#PRINT	Normal error logging usage requires the utility ERRUTL
+	#PRINT	to be run occasionally from the console
+	#PRINT	to write the error information out to the error log file. If
+	#PRINT	an application is to be run continuously for a long period
+	#PRINT	of time, however, the error logger has a facility that
+	#PRINT	allows the application program to dump the error log buffer
+	#PRINT	to the error file at regular intervals. Unless your
+	#PRINT	application specifically uses this feature, you do not need
+	#PRINT	this support.
+	#ENDC	LONG
+	#PRINT	
+	#PRINT	Do you want a program other than ERRUTL
+	#ASK	-   to write the error log buffer [Y/N] (N)?ERLA/Y=N
+	#IF	ERLA
+ERL$A	= 1		;AUTOMATIC ERROR LOG DUMPING (SJ,FB,XM)
+	#ENDC	ERLA
+	#IF	LONG
+	#PRINT	
+	#PRINT	The error logger requires a resident buffer to collect
+	#PRINT	errors. The buffer size may be increased to accomodate
+	#PRINT	an unusual error load.
+	#ENDC	LONG
+	#PRINT	
+	#PRINT	How many 256 word memory blocks should be
+	#ASK	-   set aside for the error buffer [D] (1)?ERLB/D=1,1,4
+	#SUBS	"ER.B"ERLB
+ERL$B	= ER.B.		;NUMBER OF BLOCKS IN ERROR LOG BUFFER
+	#ENDS
+	#IF	LONG
+	#PRINT	
+	#PRINT	The error logger can handle up to 35 individual device
+	#PRINT	units. Space can be conserved by reducing the number
+	#PRINT	of units the logger can handle to the specific number
+	#PRINT	of units present on the target configuration. Only disk
+	#PRINT	and DECtape units need be included.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	How many disk and DECtape device units can be logged [D] (10)?ERLU/D=10,1,35
+	#SUBS	"ER.U"ERLU
+ERL$U	= ER.U.		;NUMBER OF UNITS TO BE LOGGED
+	#ENDS
+	#ENDC	ERL$G
+	#ENDC	BLSJ
+	#SET	RK=N
+	#SET	RF=N
+	#SET	DT=N
+	#SET	DX=N
+	#SET	DS=N
+	#SET	DP=N
+	#SET	DM=N
+	#SET	DL=N
+	#SET	DY=N
+	#SET	FL=N
+	#SET	FD=N
+	#IF	LONG
+	#PRINT	
+	#PRINT	The following questions ask about the
+	#PRINT	peripheral devices that are to be supported by the
+	#PRINT	generated system. By selecting support for a specific
+	#PRINT	device, you make the device known to the monitor's
+	#PRINT	device tables, and you cause a device handler
+	#PRINT	to be generated for the device. If you do not select
+	#PRINT	a specific device, you will have to create the
+	#PRINT	device handler separately and use the monitor
+	#PRINT	INSTALL command when device access is desired.
+	#PRINT	
+	#PRINT	RT-11 supports the following devices as system devices:
+	#IF	BLSJ
+	#PRINT		RK  RK05 Cartridge Disk
+	#PRINT		DT  DECtape
+	#PRINT		DX  Flexible Diskette
+	#IFF
+	#PRINT		RK  RK05 Cartridge Disk
+	#PRINT		DL  RL01 Cartridge Disk
+	#PRINT		RF  RF11 Fixed-head Disk
+	#PRINT		DT  DECtape
+	#PRINT		DX  RX01 Flexible Diskette
+	#PRINT		DY  RX02 Double Density Diskette
+	#PRINT		DS  RJS03/4 Massbus Fixed-head Disk
+	#PRINT		DP  RP11 Disk Pack
+	#PRINT		DM  RK06/RK07 Cartridge Disk
+	#PRINT		FL  SGTL single density floppy diskette
+	#PRINT		FD  SGTL double density floppy diskette
+	#ENDC	BLSJ
+	#PRINT	 
+	#PRINT	You must select one as your system device; use the
+	#PRINT	two character device name as indicated above.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	What is the name of the system device [DD] (RK)?SYSDV/A=RK
+	#SUBS	"S$D."SYSDV
+$S$D.SYS	= 1		;SYSTEM DEVICE
+	#SET	S$D.=Y
+	#ENDS
+	#IF	BLSJ
+	#IFN	RK
+	#IFN	DT
+	#IFN	DX
+	#PRINT
+	#PRINT	?SYSGEN-F-Illegal system device for base-line monitor
+	#EXIT
+	#ENDC	DX
+	#ENDC	DT
+	#ENDC	RK
+	#ENDC	BLSJ
+	#IFN	LSISYS
+	#IFN	BLSJ
+	#IFN	DS
+	#IFN	RF
+	#PRINT	
+	#ASK	Do you want RJS03 or RJS04 disk support [Y/N] (N)?DS/Y=N
+	#ENDC	RF
+	#ENDC	DS
+	#IF	DS
+	#PRINT	
+	#ASK	Do you want RJS03 support (as opposed to RJS04 support) [Y/N] (Y)?DS3/Y=Y
+	#IF	DS3
+RJS0$3	= 1		;RJS DISK IS RJS03
+	#IFF
+	#PRINT	
+	#PRINT	RJS04 support assumed.
+RJS0$3	= 0		;RJS DISK IS RJS04
+	#ENDC	DS3
+	#ENDC	DS
+	#IFN	DS
+	#IFN	RF
+	#PRINT	
+	#ASK	Do you want RF11 fixed-head disk support [Y/N] (N)?RF/Y=N
+	#ENDC	RF
+	#IF	RF
+	#PRINT	
+	#ASK	How many disk platters are installed on the RF11 controller [D] (1)?RFP/D=1,1,8
+	#SUBS	"RF.P"RFP
+$RFNUM	= RF.P.		;NUMBER OF RS11 PLATTERS
+	#ENDS
+	#ENDC	RF
+	#ENDC	DS
+	#IFN	DP
+	#PRINT	
+	#ASK	Do you want RP11/RPR02 or RP11/RP03 disk support [Y/N] (N)?DP/Y=N
+	#ENDC	DP
+	#IF	DP
+	#PRINT	
+	#ASK	Do you want RPR02 support (as opposed to RPR02/RP03) [Y/N] (Y)?DP2/Y=Y
+	#IF	DP2
+RP0$3	= 0		;RP11 DISK IS RP02/RPR02
+	#IFF
+RP0$3	= 1		;RP11 DISK IS RP03
+	#PRINT	
+	#PRINT	RPR02 and RP03 support assumed.
+	#ENDC	DP2
+	#ENDC	DP
+	#ENDC	BLSJ
+	#ENDC	LSISYS
+	#IFN	DX
+	#PRINT	
+	#ASK	Do you want RX01/RX11 flexible diskette support [Y/N] (N)?DX/Y=N
+	#ENDC	DX
+	#IF	DX
+	#IF	LONG
+	#PRINT	
+	#PRINT	The RX11 flexible diskette subsystem supports only two
+	#PRINT	drives for each controller. If your system contains four
+	#PRINT	diskette drives, there is a second controller present
+	#PRINT	supporting the third and fourth units.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want support for a second RX11 controller [Y/N] (N)?DX2/Y=N
+	#PRINT	
+	#PRINT	What is the CSR address for the
+	#ASK	-   first RX11 controller [O] (177170)?DXC1/O=177170,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the first RX11 controller [O] (264)?DXV1/O=264,100,770
+	#SUBS	"R.C"DXC1
+DX$CSR	= R.C	;CSR OF FIRST RX11
+	#SUBS	"R.V"DXV1
+DX$VEC	= R.V		;VECTOR OF FIRST RX11
+	#ENDS
+	#IF	DX2
+DXT$O	= 1		;SECOND RX11 CONTROLLER
+	#PRINT	
+	#PRINT	What is the CSR address for the
+	#ASK	-   second RX11 controller [O] (177150)?DXC/O=177150,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the second RX11 controller [O] (270)?DXV/O=270,100,770
+	#SUBS	"R.C"DXC
+DX$CS2	= R.C	;CSR OF SECOND RX11
+	#SUBS	"R.V"DXV
+DX$VC2	= R.V		;VECTOR OF SECOND RX11
+	#ENDS
+	#ENDC	DX2
+	#ENDC	DX
+	#IFN	LSISYS
+	#IFN	BLSJ
+	#IFN	DY
+	#PRINT	
+	#ASK	Do you want RX02 diskette support [Y/N] (N)?DY/Y=N
+	#ENDC	DY
+	#IF	DY
+	#IF	LONG
+	#PRINT	
+	#PRINT	The RX02 diskette subsystem supports only two drives for
+	#PRINT	each controller.  If your system contains four drives,
+	#PRINT	there is a second controller present supporting the
+	#PRINT	third and fourth units.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want support for a second RX02 controller [Y/N] (N)?DY2/Y=N
+	#IF	LONG
+	#PRINT	
+	#PRINT	The RX02 diskette supports both single and double densities
+	#PRINT	by default. You can obtain a slight performance
+	#PRINT	enhancement and a reduction in the size of the device
+	#PRINT	handler by specifying double density support only.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want RX02 double density support only [Y/N] (N)?DYD/Y=N
+	#IF	DYD
+DY$DD	= 1		;RX02 DOUBLE DENSITY ONLY
+	#ENDC	DYD
+	#PRINT	
+	#PRINT	What is the CSR address for the
+	#ASK	-   first RX02 controller [O] (177170)?DYC1/O=177170,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the first RX02 controller [O] (264)?DYV1/O=264,100,770
+	#SUBS	"R.C"DYC1
+DY$CSR	= R.C	;CSR OF FIRST RX02
+	#SUBS	"R.V"DYV1
+DY$VEC	= R.V		;VECTOR OF FIRST RX02
+	#ENDS
+	#IF	DY2
+DYT$O	= 1		;SECOND RX02 CONTROLLER
+	#PRINT	
+	#PRINT	What is the CSR address for the
+	#ASK	-   second RX02 controller [O] (177150)?DYC/O=177150,160000,177564
+	#PRINT	
+	#ASK	What is the vector address for the second RX02 controller [O] (270)?DYV/O=270,100,770
+	#SUBS	"R.C"DYC
+DY$CS2	= R.C	;CSR OF SECOND RX02
+	#SUBS	"R.V"DYV
+DY$VC2	= R.V		;VECTOR OF SECOND RX02
+	#ENDS
+	#ENDC	DY2
+	#ENDC	DY
+	#IFN	DL
+	#PRINT	
+	#ASK	Do you want RL01 disk support [Y/N] (N)?DL/Y=N
+	#ENDC	DL
+	#IF	DL
+	#PRINT	
+	#ASK	How many RL01 units are to be supported [D] (2)?DLUNIT/D=2,1,4
+	#SUBS	"U.N"DLUNIT
+DL$UN	= U.N		;NUMBER OF RL01 UNITS
+	#ENDC	DL
+	#ENDC	BLSJ
+	#ENDC	LSISYS
+	#IFN	RK
+	#PRINT	
+	#ASK	Do you want RK05/RK05F disk support [Y/N] (N)?RK/Y=N
+	#ENDC	RK
+	#IFN	LSISYS
+	#IFN	DT
+	#PRINT	
+	#ASK	Do you want TC11 DECtape support [Y/N] (N)?DT/Y=N
+	#ENDC	DT
+	#IFN	BLSJ
+	#IFN	DM
+	#PRINT	
+	#ASK	Do you want RK06/RK07 disk support [Y/N] (N)?DM/Y=N
+	#ENDC	DM
+	#PRINT	
+	#ASK	Do you want magnetic tape support [Y/N] (N)?MTSP/Y=N
+	#IFN	MTSP
+	#SET	TM=N
+	#SET	TJU=N
+	#IFF
+	#IF	LONG
+	#PRINT	
+	#PRINT	RT-11 magtape support is available in two forms. The standard
+	#PRINT	form is file-structured magtape, which supports a subset of
+	#PRINT	ANSI file format. The file-structured handler may be used to
+	#PRINT	store and retrieve data in a file format usable with most
+	#PRINT	RT-11 system programs. The second form of magtape support
+	#PRINT	omits file structuring and reads and writes data directly in variable
+	#PRINT	length records. This type of support is called the "hardware
+	#PRINT	handler", and while this handler is significantly smaller than
+	#PRINT	the file-structured handler, it can not be used with any
+	#PRINT	system programs. The file-structured handler is also
+	#PRINT	capable of performing direct hardware functions.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the file-structured magtape handler [Y/N] (Y)?MTF/Y=Y
+	#IF	MTF
+FILES	= 1		;MAGTAPE FILES SUPPORT
+	#IF	LONG
+	#PRINT	
+	#PRINT	The file-structured handler requires table space for
+	#PRINT	each magtape unit. You can minimize the size of
+	#PRINT	the magtape handler by limiting the number of units it can
+	#PRINT	simultaneously handle to the number actually present on the
+	#PRINT	target machine.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	How many magtape units are to be supported [D] (2)?DRIVEN/D=2,1,8
+	#SUBS	"D.N"DRIVEN
+DRIVEN	= D.N.		;NUMBER OF MAGTAPE UNITS
+	#ENDS
+	#ENDC	MTF
+	#PRINT	
+	#ASK	Do you want TM11 (UNIBUS) magtape support [Y/N] (Y)?TM/Y=Y
+	#IF	TM
+	#SET	TJU=N
+	#IFF
+	#PRINT	
+	#ASK	Do you want TJU16 (MASSBUS) magtape support [Y/N] (Y)?TJU/Y=Y
+	#IFN	TJU
+	#PRINT	
+	#PRINT	?SYSGEN-F-Magtape specification error
+	#PRINT	
+	#EXIT
+	#ENDC	TJU
+	#ENDC	TM
+	#ENDC	MTSP
+	#PRINT	
+	#ASK	Do you want TA11 cassette support [Y/N] (N)?CT/Y=N
+	#PRINT	
+	#ASK	Do you want VT11 or VS60 graphics support [Y/N] (N)?GRAFX/Y=N
+	#IF	GRAFX
+	#PRINT	
+	#ASK	Do you want VS60 support [Y/N] (N)?VS60$/Y=N
+	#IF	VS60$
+VS60$	= 1		;SUPPORT VS60 DISPLAY
+	#IFF
+VT11$	= 1		;SUPPORT VT11 DISPLAY
+	#PRINT	
+	#PRINT	VT11 hardware is assumed.
+	#ENDC	VS60$
+	#IF	LONG
+	#PRINT	
+	#PRINT	The VT11/VS60 is normally installed at vector 320 with
+	#PRINT	its CSR address at 172000, but these addresses may float.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	What is the CSR address for the VT11/VS60 [O] (172000)?VC/O=172000,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the VT11/VS60 [O] (320)?VV/O=320,300,770
+	#SUBS	"V.C"VC
+VT.CSR	= V.C	;VT11/VS60 CSR
+	#SUBS	"V.V"VV
+VT.VEC	= V.V		;VT11/VS60 VECTOR
+	#ENDS
+	#ENDC	GRAFX
+	#ENDC	BLSJ
+	#ENDC	LSISYS
+	#PRINT	
+	#ASK	Do you want line printer support [Y/N] (Y)?LP/Y=Y
+	#IF	LP
+	#IF	LONG
+	#PRINT	
+	#PRINT	The line printer vector address is normally 200
+	#PRINT	and the CSR address is normally 177514. If your printer
+	#PRINT	is installed at another vector or CSR address, you
+	#PRINT	must specify the correct values.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Does your printer have a non-standard vector or CSR address [Y/N] (N)?NSLP/Y=N
+	#IF	NSLP
+	#PRINT	
+	#ASK	What is the CSR address for the printer [O] (177514)?LPCS/O=177514,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the printer [O] (200)?LPVC/O=200,100,770
+	#SUBS	"LPC$"LPCS
+LP.S	= LPC$	;LINE PRINTER CSR
+	#SUBS	"LPV$"LPVC
+LP.VEC	= LPV$		;LINE PRINTER VECTOR
+	#ENDS
+	#ENDC	NSLP
+	#ENDC	LP
+	#IF	LONG
+	#PRINT	
+	#PRINT	The PC11 is a high speed paper tape reader/punch unit.
+	#PRINT	The PR11 is a similar unit with a high speed reader but no punch.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want PC11 high-speed paper tape reader/punch support [Y/N] (N)?PC/Y=N
+	#IF	PC
+	#SET	PR=N
+PR11$X	= 0		;PC11 HI-SPEED READER/PUNCH
+	#IFF
+	#PRINT	
+	#ASK	Do you want PR11 high-speed paper tape reader support [Y/N] (N)?PR/Y=N
+	#IF	PR
+PR11$X	= 1		;PR11 HI-SPEED READER
+	#ENDC	PR
+	#ENDC	PC
+	#IFN	BLSJ
+	#PRINT	
+	#ASK	Do you want card reader support [Y/N] (N)?CR/Y=N
+	#ENDC	BLSJ
+	#IF	LONG
+	#PRINT	
+	#PRINT	The null handler is a mechanism that allows logical
+	#PRINT	input and output to take place without actual physical
+	#PRINT	data transfers. It is most useful in debugging applications.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the null handler [Y/N] (Y)?NULL/Y=Y
+	#IF	LONG
+	#PRINT	
+	#PRINT	This completes the device query. Space in the monitor is allocated
+	#PRINT	only for the devices specified, but you may allocate additional
+	#PRINT	space by requesting empty device slots. Allocate
+	#PRINT	one empty slot for each device you intend to add to
+	#PRINT	the system after it is built.
+	#ENDC	LONG	
+	#PRINT	
+	#ASK	How many extra device slots do you want [D] (0)?EMPTY/D=0,0,10
+	#IF	LONG
+	#PRINT	
+	#PRINT	The indirect command files generated by the SYSGEN program
+	#PRINT	contain commands that will delete the object modules
+	#PRINT	from which the system is built when they are
+	#PRINT	no longer needed. This measure serves to conserve disk
+	#PRINT	space while the system is being built. It is often useful,
+	#PRINT	however, to keep the object modules for later use in
+	#PRINT	patching the system. If your output device
+	#PRINT	has sufficient free space,you can elect to retain all
+	#PRINT	system object modules for future use.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want to retain the system OBJ's [Y/N] (N)?OBJ/Y=N
+	#IF	MTTY
+	#IF	LONG
+	#PRINT	
+	#PRINT	The following questions ask about the terminal
+	#PRINT	interfaces installed in your system. RT-11 supports a
+	#PRINT	combination of serial asynchronous interfaces which include
+	#PRINT	the KL11, DLV11, DLV11-E, DLV11-F, DLV11-J, and the DL11
+	#PRINT	series.  It also supports DL11-E and DLV11-E interfaces with
+	#PRINT	modem capabilities, and the DZ11 and DZV11 series of
+	#PRINT	asynchronous line multiplexors.
+	#PRINT	 
+	#PRINT	The dialogue asks first for the number of local DL11
+	#PRINT	lines, then the number of remote DL11 lines. The total
+	#PRINT	number of lines is the sum of local and remote
+	#PRINT	lines. Physical unit numbers of the DL11 lines are assigned
+	#PRINT	first to local lines and then to remote lines. This assignment
+	#PRINT	is permanent and its order cannot be changed.
+	#PRINT	
+	#PRINT	After the dialogue has established the number of lines of each
+	#PRINT	type, the CSR and vector addresses for each line must be
+	#PRINT	established. The first question corresponds to the first
+	#PRINT	local line (the console), the second to the second local
+	#PRINT	line, etc. until all local lines are accounted for. At that
+	#PRINT	point, the next response applies to the first remote
+	#PRINT	line, the second to the second remote line, etc. until all
+	#PRINT	remote lines are accounted for.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	How many local DL11's, including the console [D] (1)?DLNUM/D=1,1,8
+	#SUBS	"DLN$"DLNUM
+DL11$L	= DLN$.		;# OF LOCAL DL11 INTERFACES (MULTI-TERM SUPPORT)
+	#PRINT	
+	#ASK	How many remote DL11 lines [D] (0)?DLMDM/D=0,0,7
+	#SUBS	"DLM$"DLMDM
+DL11$M	= DLM$.		;# OF REMOTE DL11-E LINES (MULTI-TERM SUPPORT)
+DL11$N	= DLN$. + DLM$.	;TOTAL # OF DL11 LINES (MULTI-TERM SUPPORT)
+	#ENDS
+	#PRINT	
+	#PRINT	What is the CSR address for the
+	#ASK	-   first (console) DL11 [O] (177560)?DLC0/O=177560,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the first (console) DL11 [O] (60)?DLV0/O=60,60,770
+	#SUBS	"DL.C"DLC0
+	#SUBS	"DL.V"DLV0
+DLC$0	= DL.C	;CSR OF 1ST (CONSOLE) DL11 (MULTI-TERM SUPPORT)
+DLV$0	= DL.V		;VECTOR OF 1ST (CONSOLE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176500)?DLC1/O=176500,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (300)?DLV1/O=300,60,770
+	#SUBS	"DL.C"DLC1
+	#SUBS	"DL.V"DLV1
+DLC$1	= DL.C	;CSR OF 2ND (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$1	= DL.V		;VECTOR OF 2ND (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175610)?DLC1/O=175610,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (300)?DLV1/O=300,60,770
+	#SUBS	"DL.C"DLC1
+	#SUBS	"DL.V"DLV1
+DLC$1	= DL.C	;CSR OF 2ND (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$1	= DL.V		;VECTOR OF 2ND (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176510)?DLC2/O=176510,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (310)?DLV2/O=310,60,770
+	#SUBS	"DL.C"DLC2
+	#SUBS	"DL.V"DLV2
+DLC$2	= DL.C	;CSR OF 3RD (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$2	= DL.V		;VECTOR OF 3RD (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175620)?DLC2/O=175620,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (310)?DLV2/O=310,60,770
+	#SUBS	"DL.C"DLC2
+	#SUBS	"DL.V"DLV2
+DLC$2	= DL.C	;CSR OF 3RD (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$2	= DL.V		;VECTOR OF 3RD (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176520)?DLC3/O=176520,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (320)?DLV3/O=320,60,770
+	#SUBS	"DL.C"DLC3
+	#SUBS	"DL.V"DLV3
+DLC$3	= DL.C	;CSR OF 4TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$3	= DL.V		;VECTOR OF 4TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175630)?DLC3/O=175630,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (320)?DLV3/O=320,60,770
+	#SUBS	"DL.C"DLC3
+	#SUBS	"DL.V"DLV3
+DLC$3	= DL.C	;CSR OF 4TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$3	= DL.V		;VECTOR OF 4TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176530)?DLC4/O=176530,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (330)?DLV4/O=330,60,770
+	#SUBS	"DL.C"DLC4
+	#SUBS	"DL.V"DLV4
+DLC$4	= DL.C	;CSR OF 5TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$4	= DL.V		;VECTOR OF 5TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175640)?DLC4/O=175640,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (330)?DLV4/O=330,60,770
+	#SUBS	"DL.C"DLC4
+	#SUBS	"DL.V"DLV4
+DLC$4	= DL.C	;CSR OF 5TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$4	= DL.V		;VECTOR OF 5TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176540)?DLC5/O=176540,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (340)?DLV5/O=340,60,770
+	#SUBS	"DL.C"DLC5
+	#SUBS	"DL.V"DLV5
+DLC$5	= DL.C	;CSR OF 6TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$5	= DL.V		;VECTOR OF 6TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175650)?DLC5/O=175650,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (340)?DLV5/O=340,60,770
+	#SUBS	"DL.C"DLC5
+	#SUBS	"DL.V"DLV5
+DLC$5	= DL.C	;CSR OF 6TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$5	= DL.V		;VECTOR OF 6TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176550)?DLC6/O=176550,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (350)?DLV6/O=350,60,770
+	#SUBS	"DL.C"DLC6
+	#SUBS	"DL.V"DLV6
+DLC$6	= DL.C	;CSR OF 7TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$6	= DL.V		;VECTOR OF 7TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175660)?DLC6/O=175660,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (350)?DLV6/O=350,60,770
+	#SUBS	"DL.C"DLC6
+	#SUBS	"DL.V"DLV6
+DLC$6	= DL.C	;CSR OF 7TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$6	= DL.V		;VECTOR OF 7TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#DECR	DLNUM
+	#IFGT	DLNUM
+	#PRINT	
+	#ASK	What is the CSR address for the next (local) DL11 [O] (176560)?DLC7/O=176560,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (local) DL11 [O] (360)?DLV7/O=360,60,770
+	#SUBS	"DL.C"DLC7
+	#SUBS	"DL.V"DLV7
+DLC$7	= DL.C	;CSR OF 8TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+DLV$7	= DL.V		;VECTOR OF 8TH (LOCAL) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF
+	#IFGT	DLMDM
+	#PRINT	
+	#ASK	What is the CSR address for the next (remote) DL11 [O] (175670)?DLC7/O=175670,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the next (remote) DL11 [O] (360)?DLV7/O=360,60,770
+	#SUBS	"DL.C"DLC7
+	#SUBS	"DL.V"DLV7
+DLC$7	= DL.C	;CSR OF 8TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+DLV$7	= DL.V		;VECTOR OF 8TH (REMOTE) DL11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#DECR	DLMDM
+	#ENDC	DLMDM
+	#ENDC	DLNUM
+	#IF	LONG
+	#PRINT	
+	#PRINT	RT-11 supports one DZ11-A or -B eight line multiplexor
+	#PRINT	with an additional DZ11-C or -D eight line multiplexor
+	#PRINT	for a maximum of 16 lines,or one DZV11 four line
+	#PRINT	multiplexor.  Modem support is available on
+	#PRINT	remote lines, but is limited to Bell 103 type modems or
+	#PRINT	equivalent with the "common clear to send and carrier"
+	#PRINT	option installed to operate the modem in an auto-answer mode.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want DZ11 or DZV11 multiplexor support [Y/N] (N)?DZNEED/Y=N
+	#IFN	DZNEED
+DZ11$N	= 0		;NO DZ11 OR DZV11 SUPPORT (MULTI-TERM SUPPORT)
+	#IFF	
+	#PRINT	
+	#ASK	Do you want DZ11 multiplexor support [Y/N] (Y)?DZ11/Y=Y
+	#IF	DZ11
+	#PRINT	
+	#ASK	Do you want support for two DZ11's [Y/N] (N)?DZTWO/Y=N
+	#IF	DZTWO
+DZ11$N	= 2		;# OF DZ11 MULTIPLEXORS (MULTI-TERM SUPPORT)
+	#IFF	
+DZ11$N	= 1		;# OF DZ11 MULTIPLEXORS (MULTI-TERM SUPPORT)
+	#ENDC	DZTWO
+	#IFF	
+	#PRINT	
+	#PRINT	One DZV11 four line multiplexor assumed.
+DZ11$N	= 1		;# OF DZV11 MULTIPLEXORS (MULTI-TERM SUPPORT)
+	#ENDC	DZ11
+	#IF	LONG
+	#PRINT	
+	#PRINT	The lines must be initialized to a specific baud
+	#PRINT	rate. The choices are 300, 150, and 110 baud.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want the lines initialized to 300 baud [Y/N] (Y)?B300/Y=Y
+	#IF	B300
+DZSP$D	= 2400		;INIT TO 300 BAUD (MULTI-TERM SUPPORT)
+DZST$P	= 0		;1 STOP UNIT (MULTI-TERM SUPPORT)
+	#IFF
+	#PRINT	
+	#ASK	Do you want the lines initialized to 150 baud [Y/N] (Y)?B150/Y=Y
+	#IF	B150
+DZSP$D	= 2000		;INIT TO 150 BAUD (MULTI-TERM SUPPORT)
+DZST$P	= 0		;1 STOP UNIT (MULTI-TERM SUPPORT)
+	#IFF
+DZSP$D	= 1000		;INIT TO 110 BAUD (MULTI-TERM SUPPORT)
+DZST$P	= 40		;2 STOP UNITS (MULTI-TERM SUPPORT)
+	#PRINT	
+	#PRINT	110 baud is assumed.
+	#ENDC	B150
+	#ENDC	B300
+	#IF	LONG
+	#PRINT	
+	#PRINT	The vectors and CSR addresses are assigned to the floating
+	#PRINT	device region and will vary with each installation.
+	#ENDC	LONG
+	#IFN	DZ11
+	#PRINT	
+	#ASK	What is the CSR address for the DZV11 [O] (160010)?DZ1/O=160010,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the DZV11 [O] (300)?DZV1/O=300,60,770
+	#SUBS	"DZCS1"DZ1
+	#SUBS	"DZVEC1"DZV1
+DZVC$0	= DZVEC1		;VECTOR OF FIRST DZ11 (MULTI-TERM SUPPORT)
+DZCS$0	= DZCS1	;CSR OF FIRST DZ11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFF	
+	#PRINT	
+	#ASK	What is the CSR address for the first DZ11 [O] (160010)?DZ1/O=160010,160000,177570
+	#PRINT	
+	#ASK	What is the vector address for the first DZ11 [O] (300)?DZV1/O=300,60,770
+	#SUBS	"DZCS1"DZ1
+	#SUBS	"DZVEC1"DZV1
+DZVC$0	= DZVEC1		;VECTOR OF FIRST DZ11 (MULTI-TERM SUPPORT)
+DZCS$0	= DZCS1	;CSR OF FIRST DZ11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#IF	DZTWO
+	#PRINT	
+	#ASK	What is the CSR address for the second DZ11 [O] (160020)?DZ2/O=160020,160000,177570
+	#PRINT	
+	#ASK	What is the vector address of the second DZ11 [O] (310)?DZV2/O=310,60,770
+	#SUBS	"DZCS2"DZ2
+	#SUBS	"DZVEC2"DZV2
+DZVC$1	= DZVEC2		;VECTOR OF SECOND DZ11 (MULTI-TERM SUPPORT)
+DZCS$1	= DZCS2	;CSR OF SECOND DZ11 (MULTI-TERM SUPPORT)
+	#ENDS
+	#ENDC	DZTWO
+	#ENDC	DZ11
+	#IF	LONG
+	#PRINT	
+	#PRINT	The following dialogue will ask for the number of local
+	#PRINT	DZ11 or DZV11 lines, then the number of remote lines.
+	#PRINT	The total number of lines is the sum of local and remote
+	#PRINT	lines. Physical unit numbers of the DZ11 or DZV11 lines
+	#PRINT	are assigned first to local lines and then to remote
+	#PRINT	lines. This assignment is permanent and its order cannot
+	#PRINT	be changed.
+	#ENDC	LONG
+	#IF	DZ11
+	#PRINT	
+	#ASK	How many DZ11 lines are local terminals [D] (0)?DZLCL/D=0,0,16
+	#PRINT	
+	#ASK	How many remote DZ11 lines [D] (0)?DZM/D=0,0,16
+	#IFF	
+	#PRINT	
+	#ASK	How many DZV11 lines are local terminals [D] (0)?DZLCL/D=0,0,4
+	#PRINT	
+	#ASK	How many remote DZV11 lines [D] (0)?DZM/D=0,0,4
+	#ENDC	DZ11
+	#SUBS	"DZL$"DZLCL
+DZ11$L	= DZL$.		;# OF LOCAL DZ11 LINES (MULTI-TERM SUPPORT)
+	#ENDS
+	#SUBS	"DZM$"DZM
+DZ11$M	= DZM$.		;# OF REMOTE DZ11 LINES (MULTI-TERM SUPPORT)
+	#ENDS
+	#IFGT	DZM
+	#IFN	TIME
+TIM$IT	= 1		;GENERAL DEVICE TIME OUT (MULTI-TERM SUPPORT)
+	#SET	TIME=Y
+	#ENDC	TIME
+	#ENDC	DZM
+	#ENDC	DZNEED
+	#IF	LONG
+	#PRINT	
+	#PRINT	The terminal service requires a set of input and output
+	#PRINT	ring buffers for each terminal supported. The output ring
+	#PRINT	buffer default size is 40 characters. The input ring size
+	#PRINT	depends on terminal width and amount of type-ahead
+	#PRINT	expected. The default size is 82 characters.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Size of the output buffers in characters [D] (40)?ORNG/D=40,10,132
+	#PRINT	
+	#ASK	Size of the input buffers in characters [D] (82)?IRNG/D=82,74,132
+	#SUBS	"O.R"ORNG
+	#SUBS	"I.R"IRNG
+TTYOUT	= O.R.		;SIZE OF OUTPUT RING BUFFERS(MULTI-TERM SUPPORT)
+TTYIN	= I.R.		;SIZE OF INPUT RING BUFFERS (MULTI-TERM SUPPORT)
+	#ENDS
+	#IF	LONG
+	#PRINT	
+	#PRINT	Terminal status may be obtained by doing an .MTGET request
+	#PRINT	but some applications require asynchronous notification of 
+	#PRINT	changes in terminal status. RT-11 supports asynchronous
+	#PRINT	terminal status as an option to the .MTATCH
+	#PRINT	request and provides information on buffer and modem
+	#PRINT	status as well as double CTRL/C.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want asynchronous terminal status [Y/N] (Y)?MATS/Y=Y
+	#IF	MATS
+MAT$S	= 1		;ASYNCHRONOUS TERMINAL STATUS (MULTI-TERM SUPPORT)
+	#ENDC	MATS
+	#IF	LONG
+	#PRINT	
+	#PRINT	Time-out support will cause the monitor to reset at regular
+	#PRINT	intervals any terminal that may have gone off-line. This
+	#PRINT	helps to minimize the impact of static (and similar)
+	#PRINT	problems, and is recommended if maximum availability
+	#PRINT	is important to the application.
+	#ENDC	LONG
+	#PRINT	
+	#ASK	Do you want multi-terminal time-out support [Y/N] (Y)?MTTO/Y=Y
+	#IF	MTTO
+MTI$M	= 1		;TERMINAL TIME OUT (MULTI-TERM SUPPORT)
+	#IFN	TIME
+TIM$IT	= 1		;GENERAL DEVICE TIME OUT (MULTI-TERM SUPPORT)
+	#SET	TIME=N
+	#ENDC	TIME
+	#ENDC	MTTO
+	#ENDC	MTTY
+	#CALL	SYSTBL.CND
+	#NAME	SYSBLD
+	#FILE	SYSBLD.COM
+@MONBLD
+@DEVBLD
+	#NAME	MONBLD
+	#FILE	MONBLD.COM
+!	MONBLD.COM
+!         
+	#IF	LONG
+	#PRINT	
+	#PRINT	The SYSGEN assembling and linking process requires a
+	#PRINT	source input and a binary output device, as well as an
+	#PRINT	output device for monitor link maps. You must specify
+	#PRINT	the physical name and unit number for each (for example,
+	#PRINT	RK1, DP4, etc.). For more explanation, see
+	#PRINT	Section 3.6.1 of the RT-11 System Generation Manual.
+	#ENDC	LONG
+	#PRINT	
+	#PRINT	What is the PHYSICAL name and unit of the
+	#ASK	-   source input device [DDU] (RK1)?IN/A=RK1
+	#SUBS	"IN$"IN
+ASS IN$ SRC
+	#PRINT	
+	#PRINT	What is the PHYSICAL name and unit of the
+	#ASK	-   binary output device [DDU] (RK0)?OUT/A=RK0
+	#SUBS	"OUT$"OUT
+ASS OUT$ BIN
+	#PRINT	
+	#PRINT	What is the PHYSICAL name and unit of the
+	#ASK	-   map output device [DDU] (TT)?MAP/A=TT
+	#SUBS	"MAP$"MAP
+ASS MAP$ MAP
+	#ENDS
+	#IF	BLSJ
+MACRO/OBJ:BIN:KMBL SRC:(SJ+SYCND+EDTGBL+KMON+KMOVLY)
+MACRO/OBJ:BIN:RMBL SRC:(SJ+SYCND+EDTGBL+USR+RMONSJ)
+	#SUBS	"S$D."SYSDV
+MACRO/OBJ:BIN:SYBL SRC:(SJ+SYCND+SYSDEV+S$D.)
+	#ENDS
+MACRO/OBJ:BIN:TBBL SRC:(SJ+SYCND+SYSTBL)
+MACRO/OBJ:BIN:BTBL SRC:(SJ+SYCND+BSTRAP)
+	#SUBS	"S$D."SYSDV
+LINK/EXE:BIN:S$D.MNSJ.BLG/BOU:1000/MAP:MAP:S$D.MNSJ
+BIN:(BT,RM,KM,TB,SY)BL
+	#ENDS
+OVLY0
+	#IFN	OBJ
+DELETE/NOQ BIN:(BT,RM,KM,TB,SY)BL.OBJ
+	#ENDC	OBJ
+	#ENDC	BLSJ
+	#IF	SJ
+MACRO/OBJ:BIN:KMSJ SRC:(SJ+SYCND+EDTGBL+KMON+KMOVLY)
+MACRO/OBJ:BIN:RMSJ SRC:(SJ+SYCND+EDTGBL+USR+RMONSJ)
+	#SUBS	"S$D."SYSDV
+MACRO/OBJ:BIN:SYSJ SRC:(SJ+SYCND+SYSDEV+S$D.)
+	#ENDS
+MACRO/OBJ:BIN:TBSJ SRC:(SJ+SYCND+SYSTBL)
+MACRO/OBJ:BIN:BTSJ SRC:(SJ+SYCND+BSTRAP)
+	#SUBS	"S$D."SYSDV
+LINK/EXE:BIN:S$D.MNSJ.SYG/BOU:1000/MAP:MAP:S$D.MNSJ
+BIN:(BT,RM,KM,TB,SY)SJ
+	#ENDS
+OVLY0
+	#IFN	OBJ
+DELETE/NOQ BIN:(BT,RM,KM,TB,SY)SJ.OBJ
+	#ENDC	OBJ
+	#ENDC	SJ
+	#IF	FB
+MACRO/OBJ:BIN:KMFB SRC:(FB+SYCND+EDTGBL+KMON+KMOVLY)
+MACRO/OBJ:BIN:RMFB SRC:(FB+SYCND+EDTGBL+USR+RMONFB)
+	#SUBS	"S$D."SYSDV
+MACRO/OBJ:BIN:SYFB SRC:(FB+SYCND+SYSDEV+S$D.)
+	#ENDS
+MACRO/OBJ:BIN:TBFB SRC:(FB+SYCND+SYSTBL)
+MACRO/OBJ:BIN:BTFB SRC:(FB+SYCND+BSTRAP)
+	#IF	MTTY
+MACRO/OBJ:BIN:MEFB SRC:(FB+SYCND+MTTEMT)
+MACRO/OBJ:BIN:MIFB SRC:(FB+SYCND+MTTINT)
+	#SUBS	"S$D."SYSDV
+LINK/EXE:BIN:S$D.MNFB.SYG/BOU:1000/PROMPT/MAP:MAP:S$D.MNFB BIN:BTFB
+BIN:RMFB,KMFB,MEFB,MIFB,TBFB,SYFB//
+	#ENDS
+OVLY0
+	#IFN	OBJ
+DELETE/NOQ BIN:(BT,RM,ME,MI,TB,SY)FB.OBJ
+DELETE/NOQ BIN:KMFB.OBJ
+	#ENDC	OBJ
+	#IFF
+	#SUBS	"S$D."SYSDV
+LINK/EXE:BIN:S$D.MNFB.SYG/BOU:1000/MAP:MAP:S$D.MNFB
+BIN:(BT,RM,KM,TB,SY)FB
+	#ENDS
+OVLY0
+	#IFN	OBJ
+DELETE/NOQ BIN:(BT,RM,KM,TB,SY)FB.OBJ
+	#ENDC	OBJ
+	#ENDC	MTTY
+	#ENDC	FB
+	#IF	XM
+MACRO/OBJ:BIN:KMXM SRC:(XM+SYCND+EDTGBL+KMON+KMOVLY)
+MACRO/OBJ:BIN:RMXM SRC:(XM+SYCND+EDTGBL+USR+RMONFB)
+	#SUBS	"S$D."SYSDV
+MACRO/OBJ:BIN:SYXM SRC:(XM+SYCND+SYSDEV+S$D.)
+	#ENDS
+MACRO/OBJ:BIN:TBXM SRC:(XM+SYCND+SYSTBL)
+MACRO/OBJ:BIN:BTXM SRC:(XM+SYCND+BSTRAP)
+	#IF	MTTY
+MACRO/OBJ:BIN:MEXM SRC:(XM+SYCND+MTTEMT)
+MACRO/OBJ:BIN:MIXM SRC:(XM+SYCND+MTTINT)
+	#SUBS	"S$D."SYSDV
+LINK/EXE:BIN:S$D.MNXM.SYG/BOU:1000/PROMPT/MAP:MAP:S$D.MNXM BIN:BTXM
+BIN:RMXM,KMXM,MEXM,MIXM,TBXM,SYXM//
+	#ENDS
+OVLY0
+	#IFN	OBJ
+DELETE/NOQ BIN:(BT,RM,ME,MI,TB,SY)XM.OBJ
+DELETE/NOQ BIN:KMXM.OBJ
+	#ENDC	OBJ
+	#IFF
+	#SUBS	"S$D."SYSDV
+LINK/EXE:BIN:S$D.MNXM.SYG/BOU:1000/MAP:MAP:S$D.MNXM
+BIN:(BT,RM,KM,TB,SY)XM
+	#ENDS
+OVLY0
+	#IFN	OBJ
+DELETE/NOQ BIN:(BT,RM,KM,TB,SY)XM.OBJ
+	#ENDC	OBJ
+	#ENDC	MTTY
+	#ENDC	XM
+	#NAME	DEVBLD
+	#FILE	DEVBLD.COM
+!	DEVBLD.COM
+!
+	#SUBS	"IN$"IN
+ASS IN$ SRC
+	#SUBS	"OUT$"OUT
+ASS OUT$ BIN
+	#ENDS
+	#IF	SJ
+MACRO/OBJ:BIN:TT SRC:(SYCND+TT)
+LINK/EXE:BIN:TT.SYG BIN:TT
+	#IFN	OBJ
+DELETE/NOQ BIN:TT.OBJ	
+	#ENDC	OBJ
+	#ENDC	SJ
+	#IF	BLSJ
+MACRO/OBJ:BIN:TT SRC:(SYCND+TT)
+LINK/EXE:BIN:TT.SYG BIN:TT
+	#IFN	OBJ
+DELETE/NOQ BIN:TT.OBJ
+	#ENDC	OBJ
+	#ENDC	BLSJ
+	#IF	ERL$G
+	#IF	BLSJFB
+MACRO/OBJ:BIN:EL SRC:(SYCND+EL)
+LINK/EXE:BIN:EL.SYG BIN:EL
+	#IFN	OBJ
+DELETE/NOQ BIN:EL.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:ELX SRC:(XM+SYCND+EL)
+LINK/EXE:BIN:ELX.SYG BIN:ELX
+	#IFN	OBJ
+DELETE/NOQ BIN:ELX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	ERL$G
+	#IF	BATC$H
+	#IF	BLSJFB
+MACRO/OBJ:BIN:BA SRC:(SYCND+BA)
+LINK/EXE:BIN:BA.SYG BIN:BA
+	#IFN	OBJ
+DELETE/NOQ BIN:BA.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:BAX SRC:(XM+SYCND+BA)
+LINK/EXE:BIN:BAX.SYG BIN:BAX
+	#IFN	OBJ
+DELETE/NOQ BIN:BAX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	BATC$H
+	#IF	LP
+	#IF	BLSJFB
+MACRO/OBJ:BIN:LP SRC:(SYCND+LP)
+LINK/EXE:BIN:LP.SYG BIN:LP
+	#IFN	OBJ
+DELETE/NOQ BIN:LP.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:LPX SRC:(XM+SYCND+LP)
+LINK/EXE:BIN:LPX.SYG BIN:LPX
+	#IFN	OBJ
+DELETE/NOQ BIN:LPX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	LP
+	#IF	RK
+	#IF	BLSJFB
+MACRO/OBJ:BIN:RK SRC:(SYCND+RK)
+LINK/EXE:BIN:RK.SYG BIN:RK
+	#IFN	OBJ
+DELETE/NOQ BIN:RK.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:RKX SRC:(XM+SYCND+RK)
+LINK/EXE:BIN:RKX.SYG BIN:RKX
+	#IFN	OBJ
+DELETE/NOQ BIN:RKX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM	
+	#ENDC	RK
+	#IF	DL
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DL SRC:(SYCND+DL)
+LINK/EXE:BIN:DL.SYG BIN:DL
+	#IFN	OBJ
+DELETE/NOQ BIN:DL.OBJ
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DLX SRC:(XM+SYCND+DL)
+LINK/EXE:BIN:DLX.SYG BIN:DLX
+	#IFN	OBJ
+DELETE/NOQ BIN:DLX.OBJ
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DL
+	#IF	DT
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DT SRC:(SYCND+DT)
+LINK/EXE:BIN:DT.SYG BIN:DT
+	#IFN	OBJ
+DELETE/NOQ BIN:DT.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DTX SRC:(XM+SYCND+DT)
+LINK/EXE:BIN:DTX.SYG BIN:DTX
+	#IFN	OBJ
+DELETE/NOQ BIN:DTX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DT
+	#IF	DS
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DS SRC:(SYCND+DS)
+LINK/EXE:BIN:DS.SYG BIN:DS
+	#IFN	OBJ
+DELETE/NOQ BIN:DS.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DSX SRC:(XM+SYCND+DS)
+LINK/EXE:BIN:DSX.SYG BIN:DSX
+	#IFN	OBJ
+DELETE/NOQ BIN:DSX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DS
+	#IF	PC
+	#IF	BLSJFB
+MACRO/OBJ:BIN:PC SRC:(SYCND+PC)
+LINK/EXE:BIN:PC.SYG BIN:PC
+	#IFN	OBJ
+DELETE/NOQ BIN:PC.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:PCX SRC:(XM+SYCND+PC)
+LINK/EXE:BIN:PCX.SYG BIN:PCX
+	#IFN	OBJ
+DELETE/NOQ BIN:PCX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	PC
+	#IF	PR
+	#IF	BLSJFB
+MACRO/OBJ:BIN:PC SRC:(SYCND+PC)
+LINK/EXE:BIN:PC.SYG BIN:PC
+	#IFN	OBJ
+DELETE/NOQ BIN:PC.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:PCX SRC:(XM+SYCND+PC)
+LINK/EXE:BIN:PCX.SYG BIN:PCX
+	#IFN	OBJ
+DELETE/NOQ BIN:PCX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	PR
+	#IF	DM
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DM SRC:(SYCND+DM)
+LINK/EXE:BIN:DM.SYG BIN:DM
+	#IFN	OBJ
+DELETE/NOQ BIN:DM.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DMX SRC:(XM+SYCND+DM)
+LINK/EXE:BIN:DMX.SYG BIN:DMX
+	#IFN	OBJ
+DELETE/NOQ BIN:DMX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DM
+	#IF	DX
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DX SRC:(SYCND+DX)
+LINK/EXE:BIN:DX.SYG BIN:DX
+	#IFN	OBJ
+DELETE/NOQ BIN:DX.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DXX SRC:(XM+SYCND+DX)
+LINK/EXE:BIN:DXX.SYG BIN:DXX
+	#IFN	OBJ
+DELETE/NOQ BIN:DXX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DX
+	#IF	DY
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DY SRC:(SYCND+DY)
+LINK/EXE:BIN:DY.SYG BIN:DY
+	#IFN	OBJ
+DELETE/NOQ BIN:DY.OBJ
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DYX SRC:(XM+SYCND+DY)
+LINK/EXE:BIN:DYX.SYG BIN:DYX
+	#IFN	OBJ
+DELETE/NOQ BIN:DYX.OBJ
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DY
+	#IF	CR
+	#IF	BLSJFB
+MACRO/OBJ:BIN:CR SRC:(SYCND+CR)
+LINK/EXE:BIN:CR.SYG BIN:CR
+	#IFN	OBJ
+DELETE/NOQ BIN:CR.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:CRX SRC:(XM+SYCND+CR)
+LINK/EXE:BIN:CRX.SYG BIN:CRX
+	#IFN	OBJ
+DELETE/NOQ BIN:CRX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	CR
+	#IF	NULL
+	#IF	BLSJFB
+MACRO/OBJ:BIN:NL SRC:(SYCND+NL)
+LINK/EXE:BIN:NL.SYG BIN:NL
+	#IFN	OBJ
+DELETE/NOQ BIN:NL.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:NLX SRC:(XM+SYCND+NL)
+LINK/EXE:BIN:NLX.SYG BIN:NLX
+	#IFN	OBJ
+DELETE/NOQ BIN:NLX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	NULL
+	#IF	DP
+	#IF	BLSJFB
+MACRO/OBJ:BIN:DP SRC:(SYCND+DP)
+LINK/EXE:BIN:DP.SYG BIN:DP
+	#IFN	OBJ
+DELETE/NOQ BIN:DP.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:DPX SRC:(XM+SYCND+DP)
+LINK/EXE:BIN:DPX.SYG BIN:DPX
+	#IFN	OBJ
+DELETE/NOQ BIN:DPX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	DP
+	#IF	CT
+	#IF	BLSJFB
+MACRO/OBJ:BIN:CT SRC:(SYCND+CT)
+LINK/EXE:BIN:CT.SYG BIN:CT
+	#IFN	OBJ
+DELETE/NOQ BIN:CT.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:CTX SRC:(XM+SYCND+CT)
+LINK/EXE:BIN:CTX.SYG BIN:CTX
+	#IFN	OBJ
+DELETE/NOQ BIN:CTX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	CT
+	#IF	RF
+	#IF	BLSJFB
+MACRO/OBJ:BIN:RF SRC:(SYCND+RF)
+LINK/EXE:BIN:RF.SYG BIN:RF
+	#IFN	OBJ
+DELETE/NOQ BIN:RF.OBJ	
+	#ENDC	OBJ
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:RFX SRC:(XM+SYCND+RF)
+LINK/EXE:BIN:RFX.SYG BIN:RFX
+	#IFN	OBJ
+DELETE/NOQ BIN:RFX.OBJ	
+	#ENDC	OBJ
+	#ENDC	XM
+	#ENDC	RF
+	#IF	MTSP
+	#IF	TM
+	#IF	BLSJFB
+MACRO/OBJ:BIN:MT SRC:(SYCND+TM)
+	#IF	MTF
+MACRO/OBJ:BIN:FSM SRC:(SYCND+FSM)
+LINK/EXE:BIN:MT.SYG BIN:(MT,FSM)
+	#IFN	OBJ
+DELETE/NOQ BIN:(FSM.OBJ,MT.OBJ)
+	#ENDC	0BJ
+	#IFF
+LINK/EXE:BIN:MTHD.SYG BIN:MT
+	#IFN	OBJ
+DELETE/NOQ BIN:MT.OBJ
+	#ENDC	OBJ
+	#ENDC	MTF
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:MTX SRC:(XM+SYCND+TM)
+	#IF	MTF
+MACRO/OBJ:BIN:FSMX SRC:(XM+SYCND+FSM)
+LINK/EXE:BIN:MTX.SYG BIN:(MTX,FSMX)
+	#IFN	OBJ
+DELETE/NOQ BIN:(FSMX.OBJ,MTX.OBJ)
+	#ENDC	0BJ
+	#IFF
+LINK/EXE:BIN:MTHDX.SYG BIN:MTX
+	#IFN	OBJ
+DELETE/NOQ BIN:MTX.OBJ
+	#ENDC	OBJ
+	#ENDC	MTF
+	#ENDC	XM
+	#ENDC	TM
+	#IF	TJU
+	#IF	BLSJFB
+MACRO/OBJ:BIN:MM SRC:(SYCND+TJ)
+	#IF	MTF
+MACRO/OBJ:BIN:FSM SRC:(SYCND+FSM)
+LINK/EXE:BIN:MM.SYG BIN:(MM,FSM)
+	#IFN	OBJ
+DELETE/NOQ BIN:(FSM.OBJ,MM.OBJ)
+	#ENDC	0BJ
+	#IFF
+LINK/EXE:BIN:MMHD.SYG BIN:MM
+	#IFN	OBJ
+DELETE/NOQ BIN:MM.OBJ
+	#ENDC	OBJ
+	#ENDC	MTF
+	#ENDC	BLSJFB
+	#IF	XM
+MACRO/OBJ:BIN:MMX SRC:(XM+SYCND+TJ)
+	#IF	MTF
+MACRO/OBJ:BIN:FSMX SRC:(XM+SYCND+FSM)
+LINK/EXE:BIN:MMX.SYG BIN:(MMX,FSMX)
+	#IFN	OBJ
+DELETE/NOQ BIN:(FSMX.OBJ,MMX.OBJ)
+	#ENDC	0BJ
+	#IFF
+LINK/EXE:BIN:MMHDX.SYG BIN:MMX
+	#IFN	OBJ
+DELETE/NOQ BIN:MMX.OBJ
+	#ENDC	OBJ
+	#ENDC	MTF
+	#ENDC	XM
+	#ENDC	TJU
+	#ENDC	MTSP
+	#IF	LONG
+	#PRINT	
+	#PRINT	To build an entire system, mount the source and
+	#PRINT	binary disks, copy the files SYCND.MAC and SYSTBL.MAC
+	#PRINT	to the source disk, and type "@SYSBLD". To build just the monitors,
+	#PRINT	type "@MONBLD". To build just the device handlers, type
+	#PRINT	"@DEVBLD". For more information, read Section 3.6 of the
+	#PRINT	RT-11 System Generation Manual.
+	#ENDC	LONG
+	#PRINT	
+	#PRINT	END OF SYSGEN PROGRAM--Don't forget to copy DK:SYCND.MAC and
+	#PRINT		DK:SYSTBL.MAC to the source disk before executing the
+	#PRINT		command file(s). Remember that SWAP.SYS must
+	#PRINT		be on all bootable volumes.
+	#PRINT	

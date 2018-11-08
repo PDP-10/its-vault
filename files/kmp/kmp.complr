@@ -1,0 +1,58 @@
+;;; -*- Mode:LISP; -*-
+;;;
+;;; This is KMP's Maclisp Compiler init file.
+
+;; Use fancy more-break handler
+
+#+ITS
+(PROGN (LOAD '((DSK LIBLSP) MORE FASL))
+       (*MORE 10.))
+
+;; Make Control-S toggle compiler verbosity
+
+#+ITS 
+(SSTATUS TTYINT #^S
+	 #'(LAMBDA (X Y)
+	     (CLEAR-INPUT TYI)
+	     (CURSORPOS 'A TYO)
+	     (COND ((SETQ TTYNOTES (NOT TTYNOTES))
+		    (PRINC ";Verbose" TYO))
+		   (T
+		    (PRINC ";Silent" TYO)))))
+
+;;Autoload preferred debugger
+
+(PUTPROP 'DEBUG
+	 (COND ((STATUS FEATURE ITS)     "LIBLSP;DEBUG")
+	       ((STATUS FEATURE TOPS-20) "LISP:DEBUG.FASL")
+	       (T NIL)) ;??
+	 'AUTOLOAD)
+
+;; Set up to make finding compiler bugs easier
+
+(*RSET T)
+(SETQ PURE 1.)
+
+;; Allow dynamic memory allocation so GC-OVERFLOW breaks don't happen.
+
+(ALLOC '(LIST 80000.))
+(COMMENT
+(SETQ GC-OVERFLOW
+      #'(LAMBDA (X)
+	  (MAPC #'(LAMBDA (STREAM)
+		    (FORMAT STREAM "~&;Allocating ~A space.~%"))
+		MSGFILES)
+	  T))
+)
+
+;; Steal useful stuff from compiler's internal obarrays and put it on user
+;; obarray for easier debugging...
+
+(LET ((OBARRAY SOBARRAY))			; Utterly opaque but it works.
+  (MAPCAR #'(LAMBDA (SYM)
+	      (LET ((SSYM (INTERN SYM))		; symbol interned on SOBARRAY
+		    (OBARRAY COBARRAY))		; Enable COBARRAY
+		(REMOB SYM)	; symbol removed from COBARRAY
+		(INTERN SSYM)))	; symbol interned on COBARRAY
+	  '(DEBUG DB CL CDUMP BAR *MORE)))
+

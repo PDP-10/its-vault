@@ -1,0 +1,148 @@
+;; -*- LISP -*-
+
+;; the compiler does not simplify expressions involving BOOLE's and LSH's
+;; of constant values.  Therefore, we must do it ourself.
+
+(eval-when (compile eval)
+   (load '|teach;*macros fasl|)
+   (load '|teach;simp fasl|))
+
+
+(defun (simplify macro) (form)
+   (displace form
+      (cond ((= (length form) 2)
+	     (simplify1 (cadr form)))
+	    (T `(progn ,@(mapcar 'simplify1 (cdr form)))))))
+
+(defun simplify1 (form)
+   (let ((form form)
+	 (temp)
+	 (simplifier))
+      (cond ((and (symbolp form)
+		  (setq temp (get form 'constant)))
+	     (car temp))
+	    ((atom form) form)
+	    ((setq simplifier (get (car form) 'macro))
+	     (simplify1 (funcall simplifier form)))
+	    ((setq simplifier (get (car form) 'simplifier))
+	     (funcall simplifier form))
+	    (T (mapcar 'simplify1 form)))))
+
+(defun simplify-number-fn (form)
+   (let ((arglist (mapcar 'simplify1 (cdr form))))
+      (cond ((list-of-constants-p arglist)
+	     (apply (car form) arglist))
+	    (T (cons (car form) arglist)))))
+
+(defun list-of-constants-p (list)
+  (do ((list list (cdr list)))
+    ((or (null list) (not (fixp (car list))))
+     (null list))))
+
+(defun simplify-quote (list) list) ;no simplification
+(mapcar '(lambda (x)
+	     (putprop x 'simplify-quote 'simplifier))
+	'(quote declare defprop uclose uappend include fasload crunit
+		uprobe uread ukill ufile uwrite))
+
+(mapcar '(lambda (x)
+	     (putprop x 'simplify-number-fn 'simplifier))
+	'(boole plus lsh ash + - * // \ difference minus minusp plusp zerop
+	  1+ 1- +$ -$ //$ *$ numberp fixp floatp sin cos haipart haulong))
+
+
+(defun macro-expand-1 (form)
+   (cond ((atom form) form)
+	 (T (let ((macro (get (car form) 'macro)))
+		 (cond ((not (null macro))
+			(funcall macro form))
+		       (T form))))))
+
+(defun (do simplifier) (form)
+   (cond ((atom (cadr form)) (simplify-old-do form))
+	 (T (simplify-new-do form))))
+
+(defun simplify-new-do (form)
+   (let (((nil arglist end-test . body) form))
+     (setq arglist
+	   (mapcar
+	      (fn (argspec)
+		 (cons (car argspec)
+		       (mapcar 'simplify1 (cdr argspec))))
+	      arglist))
+     (setq end-test (mapcar 'simplify1 end-test))
+     (setq body (mapcar 'simplify1 body))
+     `(do ,arglist ,end-test ,@body)))
+
+(defun simplify-old-do (form)
+  `(do ,@(mapcar 'simplify1 (cdr form))))
+
+(defun (cond simplifier) (form)
+   (let ((forms (mapcar 'simplify-list (cdr form))))
+      `(cond ,@forms)))
+
+(defun simplify-list (forms)
+   (mapcar 'simplify1 forms))
+
+(defun (caseq simplifier) (form)
+   (let ((var (simplify1 (cadr form)))
+	 (clauses (mapcar 'simplify-list (cddr form))))
+      `(caseq ,var ,@clauses)))
+
+(defun simplify-not-first (form)
+  `(,(car form) ,(cadr form) ,@(simplify-list (cddr form))))
+
+(mapcar '(lambda (frob)
+	     (putprop frob 'simplify-not-first 'simplifier))
+	'(setq prog lambda eval-when))
+
+(defun (defun simplifier) (form)
+   (let (((nil name frob1 frob2 . body) form))
+      (setq body (simplify-list body))
+      (cond ((memq frob1 '(macro expr fexpr))
+	     `(defun ,name ,frob1 ,frob2 ,@body))
+	    (T `(defun ,name ,frob1 ,(simplify1 frob2) ,@body)))))
+
+
+(defun (progv simplifier) (form)
+   (let (((op bv1 bv2 . body) form))
+      `(,op ,bv1 ,bv2 ,@(simplify-list body))))
+
+;;; need this since DISPLACE can generate PROGN's
+(defun (progn simplifier) (form)
+  (cond ((= (length form) 2) (cadr form))
+	((list-of-constants-p (cdr (reverse (cdr form))))
+	 (last form))
+	(T form)))
+
+;; MAP-FN frobie turns first arg of QUOTE into FUNCTION, and then simplifies
+(defun map-fn-simplifier (form)
+   (let (((mapper funct . args) form))	;decompose into parts
+     (setq funct
+	   (simplify1
+	      (cond ((atom funct) funct)
+		    ((eq (car funct) 'quote) `(function ,(cadr funct)))
+		    (T funct))))
+     (setq args
+	(mapcar 'simplify1 args))
+     `(,mapper ,funct ,@args)))
+
+(defun (constant macro) (form)
+   (simplify
+    `(progn 'compile
+	,@(mapcan
+	  '(lambda (form)
+	      (let ((symbol (car form))
+		    (val (simplify1 (cadr form))))
+		(list
+		 (caseq (typep val)
+		    (fixnum `(declare (fixnum ,symbol)))
+		    (flownum `(declare (flonum ,symbol)))
+		    (T nil))
+		 (caseq compiler-state
+		    (compiling (putprop symbol
+					(ncons val)
+					'constant)
+			       nil)
+		    (T `(setq ,symbol ,val))))))
+	  (cdr form)))))

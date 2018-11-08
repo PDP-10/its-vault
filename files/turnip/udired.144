@@ -1,0 +1,514 @@
+;;; -*- LISP -*-
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (COND ((NOT (STATUS FEATURE IOTA))
+		  (LOAD '((DSK LIBLSP) IOTA FASL))))
+	   (SSTATUS MACRO /% (FUNCTION (LAMBDA () (CAR (PNGET (READ) 6.)))))
+	   (SSTATUS MACRO /" '+INTERNAL-/"-MACRO)
+	   (SSTATUS MACRO /# '+INTERNAL-/#-MACRO SPLICING))
+
+(DECLARE (SPECIAL MODE MODE-LIST COMMANDS DOZE-TIME COMMAND DATA
+		  RECORD-FILE)
+	 (*EXPR *COMPLETING-READ1 CAPS-N2A)
+	 (*LEXPR CONFIRM TIMESTRING))
+
+(SETQ RECORD-FILE '((DSK ACOUNT) UDIRED RECORD))
+
+(SETQ MODE 'LOAD MODE-LIST () COMMANDS () DOZE-TIME 0.5)
+
+(INCLUDE ((TURNIP) LSRRTN INSERT))
+
+(SSTATUS FEATURE NOLDMSG)
+
+(HERALD UDIRED)
+
+(SETQ BASE 10. IBASE 10. *NOPOINT T NOUUO NIL *RSET NIL)
+
+(DEFMACRO GET-INQUIR-INFO (USER TAG)
+       `((LAMBDA (USER)
+		 (OR (GET USER ',TAG)
+		     (AND (NOT-LOGGED-IN? USER) '-)
+		     (AND (NOT (UNAME? USER)) '?)
+		     (PUTPROP USER (LOOKUP-INQUIR-INFO USER ,TAG) ',TAG)))
+	 ,USER))
+
+(DEFUN USERS ()
+       (LET ((USER-LIST))
+	    (IOTA ((STREAM "TTY:.FILE. (DIR)" 'IN))
+		  (TYIPEEK T STREAM) ; Skip over leading whitespace
+		  (READLINE STREAM)  ; Strip header line
+		  (DO ((TOKEN (READ STREAM)
+			      (READ STREAM)))
+		      ((EQUAL TOKEN 'FREE))
+		      (COND ((EQ (GETCHAR TOKEN 1.) 'D)) ;Ignore devices
+			    (T
+			     (PUSH (USER-INFO TOKEN STREAM) USER-LIST))))
+		  (NREVERSE USER-LIST))))
+
+(DEFUN IDLE-TIME (UNAME)
+   (COND ((NOT (ONLINE? UNAME)) '--)
+     (T
+      (IOTA ((USR-STREAM `((USR *) ,UNAME HACTRN)))
+	(PROG (TTY-NUMBER IDLE-TIME)
+	    (SETQ TTY-NUMBER (SYSCALL 1 'USRVAR USR-STREAM %CNSL))
+	    (CLOSE USR-STREAM)
+	    (COND ((ATOM TTY-NUMBER)
+		   (FORMAT T "~%UnKnown Error Code /"~O/" in IDLE-TIME (1)"
+			   TTY-NUMBER)
+		   (RETURN '??)))
+	    (SETQ IDLE-TIME (SYSCALL 1 'TTYVAR
+				     (+ (CAR TTY-NUMBER) #O400000)
+				     %IDLTIM))
+	    (COND ((ATOM IDLE-TIME)
+		   (FORMAT T "~%UnKnown Error Code /"~O/" -- IDLE-TIME (2)"
+			   IDLE-TIME)
+		   (RETURN '?)))
+	    (RETURN (CAR IDLE-TIME)))))))
+
+(DEFUN READ-SIXBIT (STREAM)
+       (DO ((NAME () (CONS (TYI STREAM) NAME))
+	    (I 0. (1+ I)))
+	   ((= I 6.)
+	    (DO ()
+		((NOT (= (CAR NAME) #\SPACE))
+		 (IMPLODE (NREVERSE NAME)))
+		(POP NAME)))))
+
+(LOAD '((TURNIP) WORD))
+(DECLARE (*EXPR CAPITALIZE))
+
+(DEFUN UNAME-PRINT (X STREAM)
+       (COND ((CAR X)
+	      (PRINC (CAPITALIZE (CAAR X)) STREAM)
+	      (COND ((CDAR X)
+		     (PRINC '/, STREAM)
+		     (MAPC #'(LAMBDA (Y) (TYO #\SPACE STREAM)
+				     (PRINC (CAPITALIZE Y) STREAM))
+			   (CDAR X))))))
+       (COND ((CAR (CDDDDR X))
+	      (PRINC '| [| STREAM)
+	      (PRINC (CAR (CDDDDR X)) STREAM)
+	      (PRINC '|]| STREAM))))
+
+(DEFUN NOT-LOGGED-IN? (X)
+       (= #O777777 (LSH (CAR (PNGET X 6.)) -18.)))
+
+(DEFUN USER-INFO (TOKEN STREAM)
+       (LET ((UNAME (PROGN (TYI STREAM) (READ-SIXBIT STREAM)))
+	     (JNAME (PROGN (TYI STREAM) (READ-SIXBIT STREAM)))
+	     (IDLE-TIME))
+	    (SETQ IDLE-TIME (IDLE-TIME UNAME))
+	    (PUTPROP UNAME JNAME 'JNAME)
+	    (READLINE STREAM) ; Clean up the mess
+	    (COND ((NOT-LOGGED-IN? UNAME)
+		   (LIST TOKEN UNAME '((|Not Logged In|)) '- JNAME IDLE-TIME))
+		  ((NOT (UNAME? UNAME))
+		   (LIST TOKEN UNAME NIL '? JNAME IDLE-TIME))
+		  (T
+		   (LET ((NAME   (GET-USER-NAME UNAME))
+			 (GROUP  (GET-INQUIR-INFO UNAME GROUP-AFFILIATION)))
+			(LIST TOKEN UNAME NAME GROUP JNAME IDLE-TIME))))))
+
+(DEFUN DISPLAY-USER-INFO (USER-LIST STREAM)
+       (FORMAT T
+"~/|TTY-Uname--Jname-Group-Idle-Other------- ~A" (TIMESTRING))
+       (MAPC #'(LAMBDA (X) (DISPLAY-USER-INFO-AUX X STREAM)) USER-LIST)
+       T)
+
+(DEFUN DISPLAY-USER-INFO-AUX (USER-INFO STREAM)
+       (LET (((TTYNUM UNAME NAME GROUP JNAME IDLE-TIME) USER-INFO))
+	    (TERPRI STREAM)
+	    (PRINC TTYNUM STREAM)
+	    (TYO #\SPACE STREAM)
+	    (PRINC UNAME STREAM)
+	    (DO ((I (FLATC UNAME) (1+ I))) ((= I 6.)) (TYO #\SPACE STREAM))
+	    (TYO #\SPACE STREAM)
+	    (PRINC JNAME STREAM)
+	    (DO ((I (FLATC JNAME) (1+ I))) ((= I 6.)) (TYO #\SPACE STREAM))
+	    (PRINC '| (| STREAM)
+	    (PRINC GROUP STREAM)
+	    (PRINC '|) | STREAM)
+	    (IDLE-TIME-PRINT IDLE-TIME STREAM)
+	    (UNAME-PRINT NAME STREAM)))
+
+(DEFUN IDLE-TIME-PRINT (TIME STREAM)
+       (FORMAT STREAM "~A " (IDLE-TIME-STRING TIME)))
+
+(DEFUN IDLE-TIME-STRING (TIME)
+       (COND ((NOT (NUMBERP TIME)) (FORMAT NIL "~5A" TIME))
+	     (T
+	      (SETQ TIME (//$ (FLOAT (FIXNUM-IDENTITY TIME)) 1800.0))
+	      (LET ((HRS (// (FIX (FLONUM-IDENTITY TIME)) 60.)) (MINS))
+		   (SETQ MINS (FIX (-$ TIME (*$ (FLOAT (FIXNUM-IDENTITY HRS))
+						60.0))))
+		   (FORMAT NIL "~2D:~2,48D" HRS MINS)))))
+
+(DEFUN TTYSIZE () (SYSCALL 2. 'CNSGET TYO)) ; returns (width height)
+
+(DEFUN DIRED ()
+       (COND ((NOT (PROBEF `((DSK ,(STATUS USERID)) /.FILE/. /(DIR/))))
+	      (LET ((DATA NIL) (COMMAND '*START*)) (DOCUMENT "Loser AutoQuit"))
+	      (IOTA ((STREAM ".MAIL.;_UDIR_ OUTPUT" 'OUT))
+		    (FORMAT STREAM "From-Job:UDIRED~%")
+		    (FORMAT STREAM "Sent-By:~A~%" (STATUS UNAME))
+		    (FORMAT STREAM "To:(KMP)~%")
+		    (FORMAT STREAM "To:(~A (R-OPTION CC))~%" (STATUS USERID))
+		    (FORMAT STREAM "Subject:Use of UDIRED~%")
+		    (FORMAT STREAM "Text;-1~%")
+		    (FORMAT STREAM "I tried to run UDIRED.~%--~A~%"
+			    (STATUS UNAME))
+		    (RENAMEF STREAM "MAIL >")
+		    (FORMAT T "~&You are not allowed to use this program.~%"))
+	      (QUIT)))
+       (LET ((DATA (USERS)) (COMMAND '*TOPLEVEL*))
+	    (COND ((LIGHT-LOAD? DATA) (SETQ MODE 'FASCIST)))
+	    (DOCUMENT (FORMAT NIL "Entering UDIRED.~A" (GET 'UDIRED 'VERSION)))
+	    (DO () (NIL)
+		(FORMAT T "~/|UDIRED.~A  Machine=~A  Users=~A  Mode=~A"
+			(GET 'UDIRED 'VERSION)
+			(STATUS SITE)
+			(LENGTH DATA)
+			MODE)
+		(RUN-COMMAND DATA))))
+	   
+(DEFUN LIGHT-LOAD? (DATA) (< (LENGTH DATA) 15.))
+
+(DEFUN HANG ()
+       (FORMAT T "~%--Pause--")
+       (CLEAR-INPUT TYI)
+       (COND ((MEMBER (TYIPEEK NIL TYI) '(#\SPACE #\RUBOUT))
+	      (TYI TYI))))
+
+(DEFMACRO DEF-COMMAND (NAME DOC . BODY)
+       `(PROGN 'COMPILE
+	       (PUSH ',NAME COMMANDS)
+	       (DEFUN (,NAME DIRED-OPTION) (COMMAND DATA) ,@BODY)
+	       (DEFPROP ,NAME ,DOC DIRED-DOC)))
+
+(DEFUN RUN-COMMAND (DATA)
+       (LET ((COMMAND (READ-COMMAND-KEYWORD)))
+	    (COND ((NULL COMMAND)
+		   (TYO 7. TYO)
+		   (FORMAT T "Huh? Type /"HELP/" for documentation.")
+		   (RUN-COMMAND DATA))
+		  (T
+		   (SETQ COMMAND (CAR COMMAND))
+		   (FUNCALL (GET COMMAND 'DIRED-OPTION) COMMAND DATA)))))
+
+(DEFUN ONLINE? (X) (PROBEF `((USR *) ,X HACTRN)))
+
+(DEFUN LOAD-INTERPRET (DATA)
+       (COND ((NOT DATA) "??")
+	     (T
+	      (FORMAT NIL "[Users= ~D]" (LENGTH DATA)))))
+
+(DEFUN DOCUMENT (ACTION)
+       (DO ((FLAG NIL T)) (NIL)
+	   (ERRSET 
+	    (IOTA ((RECORD-STREAM RECORD-FILE '(ASCII APPEND BLOCK)))
+		  (FORMAT RECORD-STREAM
+		     "~%User=~A Time=~A Mode=~A Load=~A Command=~A~%Action=~A"
+		     (STATUS UNAME)
+		     (TIMESTRING)
+		     MODE (LOAD-INTERPRET DATA) COMMAND ACTION)
+		  (RETURN T))
+	    NIL)
+	   (COND ((NOT FLAG) (FORMAT T "~&File I/O Wait...")
+			     (SLEEP 1.0))
+		 (T (RETURN NIL)))))
+
+(DEFUN TIMESTRING (&OPTIONAL (TIME (STATUS DAYTIME)) (DATE (STATUS DATE)))
+       (LET (((YR MO DY) DATE)
+	     ((HR MN)    TIME)
+	     (PHASE))
+	    (COND ((ZEROP HR) (SETQ HR 12.        PHASE "am"))
+		  ((= HR 12.) (SETQ               PHASE "pm"))
+		  ((> HR 12.) (SETQ HR (\ HR 12.) PHASE "pm"))
+		  (T          (SETQ		  PHASE "am")))
+	    (FORMAT NIL "~D//~D//~D ~D:~2,48D~A" MO DY YR HR MN PHASE)))
+
+(DEFUN FLUSH-USER (X)
+       (DOCUMENT `(FLUSH ,X))
+       (COND ((NOT (ONLINE? X))
+	      (FORMAT T "~%User ~A not logged in." X))
+	     ((ERRSET (IOTA ((STREAM `((CLI) ,X HACTRN) 'OUT))
+			    (TYO #\RUBOUT STREAM)
+			    (FORMAT STREAM "[Message from System Overseer]~%")
+			    (FORMAT STREAM "To: ~A~%" X)
+			    (FORMAT STREAM (GET-APPROPRIATE-MESSAGE X))
+			    (FORMAT STREAM "~% --~A" (STATUS USERID)))
+		      NIL)
+	      (FORMAT T "~%User ~A warned." X))
+	     (T
+	      (FORMAT T "~%User ~A apparently gagged? Warn open failed." X))))
+
+(DEFUN GET-APPROPRIATE-MESSAGE (UNAME)
+       (LET ((AFFILIATION (GET-INQUIR-INFO UNAME GROUP-AFFILIATION)))
+	    (OR (GET AFFILIATION MODE)
+		(GET (AFFILIATION-ALIAS AFFILIATION) MODE)
+		(GET 'DEFAULT MODE))))
+
+(DEFUN AFFILIATION-ALIAS (AFFILIATION)
+       (LET ((VAL (ASSQ AFFILIATION '((V . T)))))
+	    (IF VAL (CDR VAL) AFFILIATION)))
+
+(LOAD '((TURNIP) CR FASL))
+
+(DEFUN READ-ONE-OF (L PROMPT)
+       (PRINC PROMPT TYO)
+       (LET ((RESULT 
+	      (*COMPLETING-READ1
+	       PROMPT L () TYI TYO NIL T '(27.) '(13. 32.) T NIL)))
+	    (COND ((> (LENGTH RESULT) 2.)
+		   (COND ((MEMBER (CAR RESULT) '((13.) (32.))) NIL)
+			 ((EXACT-MATCH RESULT))
+			 (T (FORMAT T "~&Ambiguous. Try again.~%")
+			    (READ-ONE-OF L PROMPT))))
+		  (T
+		   (CDR RESULT)))))
+
+(DEFUN EXACT-MATCH (RESULT)
+       (LET ((OBJ (IMPLODE (REVERSE (CDAR RESULT)))))
+	    (COND ((MEMQ OBJ (CDR RESULT)) (NCONS OBJ))
+		  (T NIL))))
+
+(DEFUN READ-COMMAND-KEYWORD () (TERPRI TYO) (READ-ONE-OF COMMANDS "Command: "))
+
+(DEFUN READ-NAMES (DATA)
+       (DO ((U (READ-NAME DATA) (READ-NAME DATA))
+	    (L () (CONS (CAR U) L)))
+	   ((NULL U) (UNIQUE-IFY (NREVERSE L)))))
+
+(DEFUN USER-NAMES (DATA) (UNIQUE-IFY (MAPCAR 'CADR DATA)))
+
+(DEFUN UNIQUE-IFY (X)
+       (COND ((NULL X) NIL)
+	     (T (CONS (CAR X) (DELETE (CAR X) (UNIQUE-IFY (CDR X)))))))
+
+(DEFUN READ-NAME (DATA) (READ-ONE-OF (USER-NAMES DATA) "User: "))
+
+(DEFUN CONFIRM (&OPTIONAL (MESSAGE "
+Confirm: "))
+       (TYO 7. TYO)
+       (CLEAR-INPUT TYI)
+       (EQUAL (READ-ONE-OF '(YES NO) MESSAGE) '(YES)))
+
+(DEFUN CONFIRM-AND-FLUSH-USER (USER)
+       (LET ((GROUP (GET-INQUIR-INFO USER GROUP-AFFILIATION))
+	     (IDLE  (IDLE-TIME-STRING (IDLE-TIME USER))))
+	    (COND ((AND (ONLINE? USER)
+			(CONFIRM
+			 (FORMAT NIL
+			   "~%~A ~A U= ~6A J= ~6A Reap? "
+			   GROUP IDLE USER (GET USER 'JNAME))))
+		   (FLUSH-USER USER)))))
+
+
+
+(DEF-COMMAND HELP "Gives this info on commands."
+    (FORMAT T "~%Valid commands are:")
+    (DO ((L COMMANDS (CDR L))) ((NULL L))
+	(FORMAT T "~%~A -- ~A" (CAR L) (GET (CAR L) 'DIRED-DOC)))
+    (HANG))
+
+(DEF-COMMAND VIEW
+	     "Shows a message that would get sent to a given category of user."
+    (CLEAR-INPUT TYI)
+    (PRINC "message for affiliation of " TYO)
+    (LET* ((CLASS (CAPS-N2A (TYI TYI)))
+	   (DATA (GET CLASS MODE)))
+	  (COND ((NOT DATA)
+		 (FORMAT T
+		    "~&Group '~A' gets the default message...~2%~A~%--~A~%"
+		    CLASS (GET 'DEFAULT MODE) (STATUS UNAME)))
+		(T
+		 (FORMAT T
+		    "~&Group '~A' gets this special message...~2%~A~%--~A~%"
+		    CLASS DATA (STATUS UNAME))))
+	  (HANG)))
+
+(DEF-COMMAND NAME "Shows who's logged in and what they're doing."
+    (CLEAR-INPUT TYI)
+    (DISPLAY-USER-INFO (DISPLACE DATA (USERS)) TYO)
+    (HANG))
+
+(DEF-COMMAND RENAME "Repeats last list of users//jobs without refetching data."
+    (CLEAR-INPUT TYI)
+    (DISPLAY-USER-INFO DATA TYO)
+    (HANG))
+
+(DEFVAR *TURISTY-GROUPS* '(V T))
+
+(DEF-COMMAND TOURISTS "Grim Tourist Reap (Asks for per-user confirmation)"
+    (LET ((TOURISTS ()))
+	 (DO ((L DATA (CDR L)) (USER) (GROUP))
+	     ((NULL L))
+	     (SETQ USER  (CADAR L))
+	     (SETQ GROUP (CADDDR (CAR L)))
+	     (COND ((MEMQ GROUP *TURISTY-GROUPS*)
+		    (PUSH USER TOURISTS))))
+	 (SETQ TOURISTS (UNIQUE-IFY TOURISTS))
+	 (COND ((NOT TOURISTS)
+		(FORMAT T "~&No Tourists Logged In.")
+		(SLEEP DOZE-TIME))
+	       (T
+		(LET ((N (LENGTH TOURISTS)))
+		     (FORMAT T "~&~D tourist~P logged in." N N)
+		     (MAPC 'CONFIRM-AND-FLUSH-USER TOURISTS)
+		     (FORMAT T "~&That's all of 'em.")
+		     (HANG))))))
+
+(DEF-COMMAND GPR "Grim People Reaper (Asks for per-user confirmation)"
+    (FORMAT T '|~&** Grim People Reap **|)
+    (COND ((CONFIRM)
+	   (MAPC 'CONFIRM-AND-FLUSH-USER (USER-NAMES DATA))
+	   (FORMAT T "~&That's all of 'em.")
+	   (HANG))
+	  (T
+	   (FORMAT T '|~%Reap Aborted.|)
+	   (SLEEP DOZE-TIME))))
+
+(DEF-COMMAND UPDATE "Updates NAME info."
+   (FORMAT T "~%Updating...")
+   (DISPLACE DATA (USERS))
+   (FORMAT T "Done.~%")
+   (SLEEP DOZE-TIME))
+
+(DEF-COMMAND WHOIS "Looks up INQUIR info on a user. (Prompts for uname)"
+   (COND ((ZEROP (LISTEN)) (FORMAT T "user ")))
+   (LET ((UNAME (READLINE TYI '(FAIL))))
+     (COND ((ATOM UNAME)
+	    (FORMAT T "~%This user is~A logged in:"
+	       (COND ((PROBEF `((USR *) ,UNAME HACTRN)) "") (T " not")))
+	    (COND ((UNAME? UNAME)
+		   (FORMAT T "~%~A ~A ~A~%Hacking ~A for ~A"
+			   UNAME
+			   (GET-INQUIR-INFO UNAME GROUP-AFFILIATION)
+			   (GET-INQUIR-INFO UNAME FULL-NAME)
+			   (GET-INQUIR-INFO UNAME PROJECT)
+			   (GET-INQUIR-INFO UNAME SUPERVISOR)))
+		  (T
+		   (FORMAT T "~%Not in database."))))))
+   (HANG))
+
+(DEF-COMMAND FLUSH "Asks user(s) to log out. (Prompts for names)"
+    (FORMAT T "the following user(s)...~%")
+    (MAPC 'FLUSH-USER (READ-NAMES DATA))
+    (HANG))
+
+(DEF-COMMAND QUIT "Kills this job. (Requires confirmation)"
+    (FORMAT T "... and kill job.~%")
+    (COND ((CONFIRM) (QUIT))))
+
+(DEF-COMMAND DDT "Returns to DDT temporarily."
+    (VALRET '|/:VK |)
+    (DISPLACE DATA (USERS))) ; Expect stale data on return
+
+(DEF-COMMAND MODE "Sets the current flush mode. (Prompts for a mode)"
+    (LET ((OPTION (READ-ONE-OF MODE-LIST "to be reset to ")))
+	 (COND ((NULL OPTION)
+		(FORMAT T "~%No change made.")
+		(SLEEP DOZE-TIME))
+	       (T
+		(SETQ MODE (CAR OPTION))))))
+
+
+
+(DEFMACRO DEF-MODE (TYPE DEFAULT &REST SPECIALS)
+	  `(PROGN 'COMPILE
+		  (PUSH ',TYPE MODE-LIST)
+		  (DEFPROP DEFAULT ,DEFAULT ,TYPE)
+		  ,@(DO ((L SPECIALS (CDDR L))
+			 (M ()))
+			((NULL L) (NREVERSE M))
+			(PUSH `(DEFPROP ,(CAR L) ,(CADR L) ,TYPE) M))
+		  ',TYPE))
+
+
+(DEF-MODE JOBS
+      "MC is short of job slots right now. Please log out and come
+back some time when the load is lighter. Thanks for your cooperation."
+
+      M  "This is a 'no-job-slots' message. It is ridiculous to think
+that the load could be so bad that M's should have to log out.
+I am probably just testing the program. Ignore this message."
+
+      U  "The system is out of job slots. If you have jobs you are not
+using, could you kill them? If you're not doing serious work maybe you could
+consider coming back another time. The system is VERY loaded and there
+just isn't room for all of us to function usefully on it right now.
+Naturally if you're in the middle of real work and need the jobs you have,
+you should just ignore this message. Thanks for your consideration."
+
+      N  "Although you are welcome to use Macsyma when our system is less
+loaded, we are undergoing unusually high load right now. We are out of job
+slots to support all our paying users. Please come back some other time.
+Thanks for your cooperation. Sorry for the inconvenience this probably causes."
+
+      T  "MC is very short of job slots right now. Please log out and
+come back when the load is lower. In general, the restrictions on tourism
+are roughly as follows --
+
+ System load is excessive if
+   (1) More than 18 users
+   (2) Fair share averaging below 40%
+or (3) 12 or more Macsymas.
+
+Thank you for your cooperation.")
+
+
+(DEF-MODE LOAD
+      "MC is unusually heavily loaded and cannot support non-Macsyma 
+use right now. Please come back later. Thanks."
+
+      M  "This is a 'please-log-out' message. It is ridiculous to think
+that the load could be so bad that M's should have to log out.
+I am probably just testing the program. Ignore this message."
+
+      U  "The system is heavily loaded. Please kill any un-needed jobs.
+Thank you."
+
+      N  "Although you are welcome to use Macsyma when our system is less
+loaded, we are undergoing unusually high load right now and cannot
+support persons of the /"N/" category being logged in right now.
+Thanks for your cooperation. Sorry for the inconvenience this
+probably causes you."
+
+      T  "The system is too heavily loaded to support tourism.
+
+Excessive system load is defined by:
+ (1) More than 18 users
+ (2) Fair share averaging below 40%
+ (3) 12 or more Macsymas.
+
+Please come back later when the load is lighter. 
+Thank you for your cooperation.")
+
+(DEF-MODE DEMO
+      "The system is currently being used for a Macsyma demo.
+If at all possible, you should log out now and come back later. If
+you have work underway that you would like not to start over, please
+at least halt your jobs until termination of the demo. Thank you.")
+
+(DEF-MODE FASCIST
+      "System load is currently low enough that there is no reason
+for you to be being bothered by this message, which is supposed to
+ask you to log out for some reason or another. If you get this
+message, you should probably inquire as to why you are being asked
+to leave before actually bothering to log out.")
+
+(MAPC '(LAMBDA (GROUP)
+	 (COND ((NOT (EQ GROUP 'T))
+		(MAPC '(LAMBDA (MODE) (PUTPROP GROUP (GET 'T MODE) MODE))
+		      MODE-LIST))))
+      *TURISTY-GROUPS*)
+
+
+(SETQ COMMANDS (SORT (UNIQUE-IFY COMMANDS) 'ALPHALESSP))
+
+(DO ((I 0. (1+ I)))
+    ((> I 127.))
+    (SSTATUS TTYINT I NIL))
+
+(SSTATUS TTYINT 7. 7.)
+

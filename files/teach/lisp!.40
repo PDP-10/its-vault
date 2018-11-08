@@ -1,0 +1,271 @@
+;;;;;;;;;;;;;;;;;-*-lisp-*-;;;;;;;;;;;;;;;;;;;
+;;; DCH's LISP macros and useful functions ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+(declare (load '((dch) lisp! >)))
+
+(declare (special *varlist* *vallist* **backquote**))
+
+(declare (special lf))
+
+(declare (macros t))
+
+
+
+;;; Backquote macros stolen from ALAN with his consent and advice
+
+;note comma is defined all the time not just in a backquote:
+(setq **backquote** 1)
+
+(setsyntax '/` 'macro '(lambda ()
+  (back-quotify ((lambda (**backquote**) (read))
+		 (1+ **backquote**)))))
+
+(setsyntax '/, 'macro '(lambda ()
+  ((lambda (**backquote**)
+	   (cond ((zerop **backquote**)
+		  (error '|comma not inside a backquote.| nil 'fail-act))
+		 ((eq (tyipeek) 100)			;was it a ",@"?
+		  (tyi)
+		  (cons '/,/@ (read)))
+		 (t
+		  (cons '/, (read)))))
+   (1- **backquote**))))
+
+(defun back-quotify (x)
+  ((lambda (a d)
+    (cond ((atom x) (list 'quote x))
+	  ((eq (car x) '/,)
+	   (cdr x))
+	  ((or (atom (car x))
+	       (not (eq (caar x) '/,/@)))
+	   (setq a (back-quotify (car x)) d (back-quotify (cdr x)))
+	   (cond ((and (not (atom a))
+		       (not (atom d))
+		       (eq (car a) 'quote)
+		       (eq (car d) 'quote))
+		  (list 'quote (cons (cadr a) (cadr d))))
+		 (t (list 'cons a d))))
+	  (t
+	   (list 'append (cdar x)
+		         (back-quotify (cdr x))))))
+   nil nil))
+
+
+(defun mexp ()
+       (terpri)
+       (do x (read) (read) (eq x 't)
+	   (do ((y))
+	       ((null (setq y (get (car x) 'macro))))
+	       (princ '| ==> |)(prin1 (setq x (funcall y x)))
+	       )
+	   (terpri))	
+       'done)
+
+
+;;; Now available in LISP itself.
+;;;(defun displace (x y)
+;;;       (rplaca x (car y))
+;;;       (rplacd x (cdr y))
+;;;       x)
+
+(defun defmac macro (body)
+       `(defun ,(cadr body) macro (body)
+	       (displace body . ,(cddr body))))
+
+
+(defmac 1st `(car ,(cadr body)))
+(defmac 2nd `(cadr ,(cadr body)))
+(defmac 3rd `(caddr ,(cadr body)))
+(defmac 4th `(cadddr ,(cadr body)))
+
+
+
+;;; (defmacro mess (arg1 arg2 &rest) `(list qqq ,&rest arg1 arg2))
+;;;
+;;; (mess a b c d) => (list qqq (c d) a b)
+
+(defun defmacro macro (macdef)
+       `(defun ,(cadr macdef) macro (body)
+	       (displace
+		body
+		((lambda ,(caddr macdef) . ,(cdddr macdef))
+		 . ,(do ((arg-name-list (caddr macdef) (cdr arg-name-list))
+			 (arg-value-form '(cdr body)
+					 (list 'cdr arg-value-form))
+			 (arg-values nil
+				     (append arg-values
+					     (ncons
+					      (cond
+					       ((eq (car arg-name-list) '&rest)
+						arg-value-form)
+					       (t (list 'car arg-value-form)))
+					      ))))
+			((null arg-name-list) arg-values))))))
+
+
+
+(defmacro do-forever (&rest)
+	  `(do () (nil) . ,&rest))
+
+
+
+(defmacro for (var start end &rest)
+	`(do ,var ,start (1+ ,var)
+	     (> ,var ,end) . ,&rest))
+
+
+
+(defmacro vars (names &rest)
+	  `((lambda ,names .
+		     ,&rest) .
+		     ,(maplist '(lambda (var) nil) names)))
+
+(defmacro let (name-value-pairs &rest)
+	  `((lambda ,(mapcar '(lambda (pair) (1st pair)) name-value-pairs) .
+		     ,&rest) .
+		     ,(mapcar '(lambda (pair) (2nd pair)) name-value-pairs)))
+
+
+(defmacro if (condition if-true if-false)
+	`(cond
+	  (,condition ,if-true)
+	  (t ,if-false)))
+
+
+(defmacro <= (a b)
+	  `(not (> ,a ,b)))
+
+(defmacro >= (a b)
+	  `(not (< ,a ,b)))
+
+
+(defmacro prog1 (&rest)
+	  `(prog2 nil . ,&rest))
+
+
+(defmacro push (item list)
+	  `(setq ,list (cons ,item ,list)))
+
+(defmacro pop (list)
+	  `(prog1
+	    (car ,list)
+	    (setq ,list (cdr ,list))))
+
+
+;;; (defstructure <structure> <item-1> <item-2> ...)
+;;;
+;;; (defstructure pkt address data) defines many macros:
+;;; (create-pkt)                 => (hunk nil nil 'pkt)
+;;;   [Thus (cdr <structure>) gives the structure's type.]
+;;; (pkt^address a-pkt)          => (cxr 1 a-pkt)
+;;; (store-pkt^address a-pkt 45) => (rplacx 0 a-pkt 45)
+;;; (pkt^data a-pkt)             => (cxr 2 a-pkt)
+;;; (store-pkt^data a-pkt 32)    => (rplacx 1 a-pkt 32)
+
+
+(defmacro defstructure (structure-name &rest)
+	  `(progn
+	    'compile
+	    (defmacro ,(implode (append '(c r e a t e -)
+					(explode structure-name)))
+		       ()
+		       `(hunk . ,(append (nillist ,(length &rest))
+					 '(',structure-name))))
+	    . ,(do ((item-list &rest (cdr item-list))
+		    (item-name-chars)
+		    (structure-name-chars (explode structure-name))
+		    (item-number 1 (1+ item-number))
+		    (item-defs))
+		   ((null item-list) item-defs)
+
+		   (setq item-name-chars (explode (car item-list)))
+		   (push `(defmacro
+			   ,(implode (append structure-name-chars
+					     '(^)
+					     item-name-chars))
+			   (structure)
+			   `(cxr ,,item-number ,structure))
+			 item-defs)
+		   (push `(defmacro
+			   ,(implode (append '(s t o r e -)
+					     structure-name-chars
+					     '(^)
+					     item-name-chars))
+			   (structure value)
+			   `(rplacx ,,item-number ,structure ,value))
+			 item-defs))))
+
+
+;;; array macros and functions
+
+(defmacro arraystore (array &rest)
+	  `(store (arraycall t ,array . ,(allbutlast &rest)) . ,(last &rest)))
+
+(defmacro arrayget (array &rest)
+	  `(arraycall t ,array . ,&rest))
+
+(defmacro newarray (&rest)
+	  `(*array nil t . ,&rest))
+
+
+;;; Vectors are either hunks or arrays, depending on which is more efficient
+;;; to create.
+
+(defun vectorstore (vec index data)
+       (if (eq (typep vec) 'array)
+	   (arraystore vec index data)
+	   (rplacx index vec data)))
+
+(defun vectorget (vec index)
+       (if (eq (typep vec) 'array)
+	   (arrayget vec index)
+	   (cxr index vec)))
+
+(defun newvector (size)
+       (if (> size 64.)
+	   (newarray size)
+	   (makhunk size)))
+
+;;;Useful functions
+
+;;;(ed) goes back to the EMACS job
+
+(defun ed ()
+       (valret '|e|)
+       (princ '|Back to Lisp:|)
+       '||)
+
+
+;;;(lf <file>) does (load <file>).  Then (lf) loads the last file lf'd.
+
+(defun lf expr numbargs
+       (and (= numbargs 1)
+	    (setq lf (arg 1)))
+       (load lf)
+       lf)
+
+
+;;; (time-it <form>) gives the run-time it take to (eval <form>)
+
+(defun time-it (form)
+       (- (- (runtime)
+	     (prog2 (eval form)
+		    (runtime)))))
+
+;;; (allbutlast '(1 2 3 4)) => (1 2 3)
+
+(defun allbutlast (list)
+       (if (null (cdr list))
+	   nil
+	   (cons (car list) (allbutlast (cdr list)))))
+
+;;; (nillist 4) => (nil nil nil nil)
+
+(defun nillist (num)
+       (if (zerop num)
+	   nil
+	   (cons nil (nillist (1- num)))))

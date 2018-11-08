@@ -1,0 +1,153 @@
+.PAGE
+.HEADING
+\Appendix 1\KGK Lesson 1 Reply\Mapping Functions\
+----- MAPPING FUNCTIONS IN MACLISP-----
+
+
+<<Explain in english before giving reference data below>>
+
+The following is taken from the MACLISP manual, version 0
+
+maping-functions
+   Mapping is a type of iteration in which a function is  successively
+applied to pieces of a list.  There are several options for the way in
+which  the pieces of the list are chosen and for what is done with the
+results returned by the applications of the function.
+   For example, mapcar operates on successive elements  of  the  list.
+As  it  goes down the list, it calls the function giving it an element
+of the list as its one argument:  first the car of the list, then  the
+cadr,  then  the  caddr, etc.; continuing until the end of the list is
+reached.  The value returned by mapcar is a list of the results of the
+successive calls to the function.
+   An example of the use of mapcar would be  mapcar'ing  the  function
+abs  on  the  list  (1  -2  -4.5 6.0e15 -4.2).  The result is (1 2 4.5
+6.0e15 4.2).
+   The form of a call to mapcar is
+                             (mapcar f x)
+where f is the function to be mapped and x is the list over  which  it
+is to be mapped.  Thus the example given above would be written as
+          (mapcar 'abs
+                  '(1 -2 -4.5 6.0e15 -4.2))
+This has been generalized to allow a form such as
+                       (mapcar f x1 x2 ... xn)
+In this case f must be a function of n arguments.  Mapcar will proceed
+down  the  lists x1, x2, ..., xn in parallel.  The first argument to f
+will come from x1, the second from x2, etc.  The  iteration  stops  as
+soon as any of the lists becomes exhausted.
+   There  are five other mapping functions besides mapcar.  Maplist is
+like mapcar except that the  function  is  applied  to  the  list  and
+successive  cdr's  of  that list rather than to successive elements of
+the list.  Map and mapc  are  like  maplist  and  mapcar  respectively
+except  that  the  return value is the first of the lists being mapped
+over and the results of the function are ignored.  Mapcan  and  mapcon
+are  like mapcar and maplist respectively except that they combine the
+results of the function using nconc instead of list.
+   Sometimes a do or a straight recursion  is  preferable  to  a  map;
+however,  the mapping functions should be used wherever they naturally
+apply because this increases the clarity of the code.
+   Often  f  will  be  a  lambda-type   function   rather   than   the
+atomic-symbol name of a function.  For example,
+         (mapcar '(lambda (x) (cons x something)) some-list)
+   The functional argument to a mapping function must be acceptable to
+apply:  it  cannot  be a macro.  A fexpr or an fsubr may be acceptable
+however the results will be bizarre.  For instance, mapping set  works
+better than mapping setq, and mapping cond is unlikely to be useful.
+   It  is  permissible (and often useful) to break out of a map by use
+of a go, return, or throw in  a  lambda-type  function  being  mapped.
+Consider  this  function which is similar to and, except that it works
+on a list.
+(defun andl (x)
+    (prog nil       ;prog just used so return will work
+          (mapc (function (lambda (y)
+                              (or y (return nil)) ))
+                x)
+          (return t)
+             ))
+   Here  is  a  table  showing  the  relations  between  the  six  map
+functions.
+                                applies function to
+                         |  successive  |   successive  |
+                         |   sublists   |    elements   |
+          ---------------+--------------+---------------+
+              its own    |              |               |
+              second     |     map      |     mapc      |
+             argument    |              |               |
+          ---------------+--------------+---------------+
+            list of the  |              |               |
+returns      function    |    maplist   |    mapcar     |
+              results    |              |               |
+          ---------------+--------------+---------------+
+            nconc of the |              |               |
+              function   |    mapcon    |    mapcan     |
+              results    |              |               |
+          ---------------+--------------+---------------+
+
+((map . |map
+|)
+(mapc . |mapc
+|)
+(mapcar . |mapcar
+|)
+(maplist . |maplist
+|)
+(mapcan . |mapcan
+|)
+(mapcon . |mapcon|)
+)
+
+map                 LSUBR 2 or more args
+     The  first  argument  to  map  is  a  function, and the remaining
+     arguments are lists.  Map "goes down"  the  lists,  applying  the
+     function  to  the  lists each time.  The value returned by map is
+     its second argument.  Map stops as soon as one of  the  lists  is
+     exhausted.  Example:
+     (map '(lambda (x y z) (print (list x y z)))
+          '(1 2 3 4) '(a b c d e) '(+ - * |))
+     prints
+     ((1 2 3 4) (a b c d e) (+ - * |))
+     ((2 3 4) (b c d e) (- * |))
+     ((3 4) (c d e) (* |))
+     ((4) (d e) (|))
+     and returns (1 2 3 4).
+()
+
+mapc		LSUBR 2 or more args
+     Mapc  is  just  like  map  except that the function is applied to
+     successive elements  of  the  lists  rather  than  to  the  lists
+     themselves.  Thus the example given under map would print
+     (1 a +)
+     (2 b -)
+     (3 c *)
+     (4 d |)
+     and return (1 2 3 4)
+()
+
+mapcar		LSUBR 2 or more args
+     Mapcar is like mapc except that the return value is a list of the
+     results  of  each  application of the function.  Thus the example
+     given with mapc would return, not (1 2 3 4), but
+     ((1 a +) (2 b -) (3 c *) (4 d |))
+()
+
+maplist		LSUBR 2 or more args
+     Maplist is like map except that the return value is a list of the
+     results of each application of the function.   Thus  the  example
+     given with map would return, not (1 2 3 4), but
+     (((1 2 3 4) (a b c d e) (+ - * |)) ((2 3 4) (b c d e) (- * |))
+      ((3 4) (c d e) (* |)) ((4) (d e) (|)))
+()
+
+mapcan		LSUBR 2 or more args
+     Mapcan  is  like  mapcar  except  that the values returned by the
+     function are nconc'ed together instead of being listed  together.
+     Thus the example would return
+     (1 a + 2 b - 3 c * 4 d |)
+()
+
+mapcon		LSUBR 2 or more args
+     Mapcon  is  like  maplist  except that the values returned by the
+     function are nconc'ed together instead of being listed  together.
+     This  can  have  disastrous effects on the arguments to mapcon if
+     one is not careful.  The example would return
+     ((1 2 3 4) (a b c d e) (+ - * |) (2 3 4) (b c d e) (- * |)
+      (3 4) (c d e) (* |) (4) (d e) (|))

@@ -1,0 +1,57 @@
+;;; A Pin is a terminal on a package, or a connection point.  It contains just
+;;; two things:  A Device and an Wire.
+
+
+;;; A Wire has a limited inteligence and a state.
+;;; It is told whenever one of it's inputs changes state, and propogates the
+;;; message to it's outputs
+
+(def-closure wire wire-handler
+	     (input nil)	   ;Thing outputing to this wire
+	     (outputs nil)	   ;List of inputs attached to this wire
+	     (state 'unknown)
+	     (tracer nil))
+
+(defun wire-handler (object operation value)
+    (caseq operation
+	   (connect-input:
+	    (let ((input (wire-get object input)))
+	      (cond ((memq value input)
+		     '|Already Connected|)
+		    (t (wire-set object input (cons value input))))))
+
+	   (connect-output:
+	    (let ((outputs (wire-get object outputs)))
+	      (cond ((memq value outputs)
+		     '|Already Connected|)
+		    (t (wire-set object outputs (cons value outputs))))))
+
+	   (State? (wire-get object state))
+
+	   (transition:
+	      (let ((old-state (wire-get object state))
+		    (tracer (wire-get object tracer))
+		    (new-state (transition-get value state)))
+		(transition-set value devices (wire-get object outputs))
+		(cond (tracer (c-call tracer 'wire-trace transition)))
+		(cond ((eq old-state new-state))  ;Propogate only if different
+		      (t (c-call master-clock-queue
+				 'transition
+				 value)))))
+
+	   (t (error '|Unknown Operation -- WIRE-HANDLER| operation))))
+
+(defstruct transition
+	   old-state
+	   new-state
+	   wire
+	   devices
+	   time)
+
+(def-closure sn7400 boolean-handler
+	     (state unknown)
+	     (status un-initialized)
+	     (inputs nil)
+	     (outputs nil)
+	     (time-delay 10)
+	     (boole-function 15.)) ;NAND

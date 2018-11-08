@@ -1,0 +1,219 @@
+tag
+MEM
+
+Lesson MEMBERSHIP, Version 1		     Kent M. Pitman, 5/27/79
+
+
+     By the time you read this lesson, let's hope you understand
+something about what a list is and how to play with it in some basic
+ways. Now let's discuss some of the more interesting kinds of things
+that you can do with lists.
+
+     To begin with, it's nice to be able to find if a certain symbol
+occurs in a list. This can be done with the function MEMQ. MEMQ returns
+NIL if its first arg is not a member of the list which is its second
+arg. If first arg is a member, it returns its the rest of the list 
+beginning with the first occurance of that arg in the second list. It
+uses EQ to test for equivalence, so is mainly useful for testing the
+membership of symbols in the list.
+
+Try these examples:
+
+	(MEMQ 'A '(C D E))
+
+	(MEMQ 'A '(A B C))
+
+	(MEMQ 'B '(A B C A B C))
+
+try
+
+MEMQ is only for testing membership in the top level of a list. 
+For instance, arg 1 will not be found in the second arg if it is
+buried in it by other list structure. Try these examples:
+
+	(MEMQ 'A '(FOO (A B C) BAR))
+
+	(MEMQ 'A '(FOO (A B C) A B C))
+
+try
+
+Since MEMQ uses the EQ test, which will not say two lists are the
+same unless they are pointers to the same instance of a list, it
+will fail in most cases to find a list in the second list. Try
+these examples:
+
+	(MEMQ '(A B) '(FOO (A B) BAR))
+
+try
+
+But notice we said 'in most cases' ... In fact, if you are looking
+for a pointer to exactly the same list, you will find it. Here's an
+example:
+
+	(SETQ A '(FOO BAR))
+
+Returns =>  (FOO BAR)
+
+	(SETQ B (LIST 'A A 'B))
+
+Returns =>  (A (FOO BAR) B)
+
+	(MEMQ A B)
+
+Returns =>  ((FOO BAR) B)
+
+because a pointer to the same instance of the list A was found in the
+list you were looking in. This will never happen unless you do something
+to force it to happen (such as how we constructed B above). Normally
+two lists are created out of completely unrelated pieces.
+
+eval
+(SETQ A '(FOO BAR) B (LIST 'A A 'B))
+()
+
+try
+
+It should have been apparent that the extra (...)'s hide the 
+existence of A in the list. In most practical programming problems
+this will be what you want anyway. It is not a misfeature as it may
+seem at first because it is [1] much more efficient to do and
+[2] much more useful.
+
+The function MEMQ could be defined using other functions in lisp.
+(It isn't - for efficiency, since it is used often, it's written in 
+assembly code, but it needn't be). This is how MEMQ could be defined
+in Lisp:
+
+  (DEFUN MYMEMQ (ELEMENT LIST-TO-LOOK-IN)
+	 (COND ((NULL LIST-TO-LOOK-IN)
+		NIL)
+	       ((EQ (CAR LIST-TO-LOOK-IN) ELEMENT)
+		LIST-TO-LOOK-IN)
+	       (T
+		(MYMEMQ ELEMENT (CDR LIST-TO-LOOK-IN)))))
+
+
+Now let's try another function which is very much like MEMQ but will
+look for non-symbols (ie, numbers or lists) in a list. This function
+is called MEMBER. It is just like MEMQ except it uses the EQUAL
+predicate instead of the EQ test for checking equality. (It is, of
+course, slower than MEMQ - generality costs.)
+
+Try this example:
+
+	(MEMQ '(A B) '(FOO (A B) BAR))
+
+	(MEMBER '(A B) '(FOO (A B) BAR))
+
+try
+
+MEMBER is also useful for finding numbers in a list. (NOTE: Due to
+an implementation-dependent feature of MacLISP, most small FIXNUM's
+in MacLISP are EQ and can be found by an EQ test. Do not rely on this!
+It is not a reliable feature.)
+
+	(MEMQ 1 '(3 2 1))   ; This works by accident!
+	(MEMBER 1 '(3 2 1)) ; This works because it should!
+
+	(MEMQ 895 '(455 895 129))   ; This doesn't work!
+	(MEMBER 895 '(455 895 129)) ; This works because it should!
+
+	(MEMQ '(A B) '((A B) (C D) (E F)))   ; This better not work!
+	(MEMBER '(A B) '((A B) (C D) (E F))) ; This better work!
+eof
+
+tag
+ASS
+
+Lesson ASSOCIATION, Version 1		     Kent M. Pitman, 5/27/79
+
+    A very useful type of structure which is used often by Lisp
+programmers is something called an Association list. It is a list
+which the user can construct which has special things true about it
+that make it easy to search through. In particular, it is a list
+of lists, and the first element of each of the sub-lists is a tag
+that you would like to keep information about. For instance:
+
+	(SETQ INFO-LIST '((DOG MAMMAL)
+			  (CAT MAMMAL)
+			  (LIZARD REPTILE)))
+
+Notice that this list, INFO-LIST, is composed of sub-lists, each of
+which contains information about the thing in the CAR of the sub-list.
+There are functions which will retrieve the element of INFO-LIST which
+has a CAR that is the same as some value we ask for. The most efficient
+of these is a function called ASSQ.  ASSQ returns the sub-list containing
+the info we desired, or NIL if such a list was not found.
+
+For example:
+
+	(ASSQ 'DOG INFO-LIST) should return (DOG MAMMAL)
+	(ASSQ 'FROG INFO-LIST) should return NIL
+	
+eval
+(SETQ INFO-LIST '((DOG MAMMAL) (CAT MAMMAL) (LIZARD REPTILE)))
+()
+try
+
+Like MEMQ, ASSQ only works for finding symbols. Here's another example to
+give a try...
+
+	(ASSQ '(FOO BAR) '(((FOO BAR) WE LOSE!) (A B)))
+
+try
+
+But like with MEMQ, there is a function we can resort to when we have
+more complex things to look for: ASSOC. This function will look for
+numbers or lists. Example:
+
+	(ASSOC '(FOO BAR) '(((FOO BAR) WE WIN) (A B)))
+
+	returns ((FOO BAR) WE WIN)
+
+	(ASSOC '(BAR BAZ) '(((FOO BAR) IF IT FINDS THEN ASSOC IT IS BROKEN)
+			    (A B)))
+
+	returns NIL
+
+try
+
+Let's do something useful with Association lists now. Suppose we define
+some functions:
+eval
+(DEFUN INIT-DATABASE () (SETQ DATABASE NIL))
+(DEFUN DEFINE-CATEGORY (THING CATEGORY)
+       (COMMENT REMEMBER THAT "THING" HAS A CATEGORY OF "CATEGORY")
+       (SETQ DATABASE (CONS (LIST THING CATEGORY) DATABASE))
+       (COMMENT RETURN SOMETHING SO THE USER KNOWS IT WORKED)
+       'DEFINED)
+(DEFUN WHAT-CATEGORY? (THING)
+       (COND ((NOT (ASSQ THING DATABASE))
+	      (COMMENT THING WAS NOT IN DATABASE)
+	      '(SORRY -- MAY YOU SHOULD TEACH IT TO ME?))
+	     (T
+	      (COMMENT JUST RETURN THE INFO ABOUT IT)
+	      (CADR (ASSQ THING DATABASE)))))
+(GRINDEF INIT-DATABASE DEFINE-CATEGORY WHAT-CATEGORY?)
+()
+
+Try doing the following:
+
+	(INIT-DATABASE) ; have to make sure our database is initialized!
+	(DEFINE-CATEGORY 'HORSE 'MAMMAL)
+	(DEFINE-CATEGORY 'FROG 'AMPHIBIAN)
+	(WHAT-CATEGORY? 'HORSE)
+	(WHAT-CATEGORY? 'DOG)
+
+try
+
+To define ASSQ in lisp, by the way, we'd just do this:
+
+  (DEFUN MYASSQ (TAG A-LIST)
+	 (COND ((NULL A-LIST)
+		NIL)
+	       ((EQ TAG (CAAR A-LIST))
+		(CAR A-LIST))
+	       (T
+		(MYASSQ TAG (CDR A-LIST)))))
+
+eof

@@ -1,0 +1,189 @@
+; -*-LISP-*-
+
+;;; This is not fully documented because it is not fully released for use.
+;;; For questions, ask RWK@MC
+
+;load needed packages, if necessary
+
+(eval-when (load)
+   (cond ((not (get '+internal-entity-setup 'subr))
+	  (load '|TEACH;NEWCAL FASL|))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Like the CLOSURE function on the LISP machine.  Returns a DTP-ENTITY    ;;;
+;;; which is a hunk, which is a message-passing entity.  The functional	    ;;;
+;;; object must be an EXPR or LAMBDA or SUBR of 5 arguments.  The first	    ;;;
+;;; will always be the ENTITY itself, the second will be the operation,	    ;;;
+;;; and the rest will be optional data.  They will be unbound if missing.   ;;;
+;;;									    ;;;
+;;; The closure is not perfect.  In particular, there is no sharing amongst ;;;
+;;; things which "obviously" are in the same binding environment.  I.e. this;;;
+;;; copies the values rather than providing true lexical scoping.	    ;;;
+;;; Also, it will not work to invoke this recursively.  This could be fixed if;
+;;; anyone had a need for it.						    ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(declare (special error-output))
+
+;;; Create an entity
+
+(defun entity (entity-vars entity-fun)
+   (let ((size (length entity-vars)))
+     (let ((entity (makhunk (+ (* size 2) 8))))
+	(+internal-entity-setup entity entity-vars entity-fun size))))
+
+
+(defun (get-entity-handler macro) (form)
+   `(cxr 7 ,(cadr form)))	   ;magical slot number
+
+(defun (set-entity-handler macro) (form)
+   `(rplacx 7 ,@(cdr form)))
+
+;;; Given a structure, find the type
+
+(defun (get-structure-type macro) (form)
+   `(car ,(cadr form)))
+
+;;; Given a structure, set the type
+
+(defun (set-structure-type macro) (form)
+   `(rplaca ,@(cdr form)))
+
+;;; Given a structure, set its PNAME
+
+(defun (set-structure-pname macro) (form)
+   `(rplacx 4 ,@(cdr form)))
+
+(defun (get-structure-pname macro) (form)
+   `(cxr 4 ,(cadr form)))
+
+;;; Given an entity, an operation, and up to 3 data arguments, invoke it.
+
+(defun (e-call macro) (form)
+    (cond ((and (boundp 'compiler-state)
+		compiler-state
+		(not (eq compiler-state 'toplevel)))
+	   `(,(caseq (length form)
+		     (2 (error '|Missing operation -- E-CALL| form))
+		     (3 'e-call-compiled-1)
+		     (4 'e-call-compiled-2)
+		     (5 'e-call-compiled-3)
+		     (6 'e-call-compiled-4)
+		     (t (error '|Wrong Number of args -- E-CALL| form)))
+	     ,@(cdr form)))
+	  (t `(e-call-interpreted ,@(cdr form)))))
+
+(declare (*fexpr unwind-protect))  ;Until the compiler knows about it
+
+(defun (def-sfa macro) (form)
+   (declare (fixnum slot-number))
+   (let (( (nil environment creator-function handler-function)
+	   form))
+     (cond ((and (or (eq (car creator-function) 'DEF-HANDLER)
+		     (null creator-function))
+		 (or (eq (car handler-function) 'DEF-CREATOR)
+		     (null handler-function)))
+	    (setq creator-function
+		  (prog2 nil
+			 handler-function
+			 (setq handler-function creator-function))))
+	   ((not (eq (car creator-function) 'DEF-CREATOR))
+	    (error '|UNKNOWN-CLAUSE -- DEF-SFA| creator-function))
+	   ((not (eq (car handler-function) 'DEF-HANDLER))
+	    (error '|UNKOWN-CLAUSE -- DEF-SFA| handler-function)))
+     (let ((creator-name (cadr creator-function))
+	   (create-lambda-vars (caddr creator-function))
+	   (create-body (cdddr creator-function))
+	   (handler-name (cadr handler-function))
+	   (handler-lambda-vars (caddr handler-function))
+	   (handler-body (cdddr handler-function))
+	   (handler-self-var (caaddr handler-function))
+	   (pname (gensym)))
+       (do ((environment (cdr environment)
+			 (cdr environment))
+	    (previous-environment environment environment)
+	    (var (cond ((not (atom (car environment)))
+			(caar environment))  ;in preparation for defaulting
+		       (t (car environment)))
+		 (cond ((not (atom (car environment)))
+			(caar environment))
+		       (t (car environment))))
+	    (slot-number 1 (1+ slot-number))
+	    (slot-init-list nil
+			    (cond ((not (atom (car environment)))
+				   (cons `(sfa-store ,var
+						     ,slot-number
+						     ,(cadar environment))
+					 slot-init-list))
+				  (t slot-init-list)))
+	    (bind-list nil
+		       (cons `(,var (sfa-get ,handler-self-var
+					    ,slot-number))
+			     bind-list))
+	    (unbind-progn nil
+			  (cons `(sfa-store ,handler-self-var
+					    ,slot-number
+					    ,var)
+				unbind-progn)))
+	   ((null previous-environment)
+	    `(progn 'compile
+		(defun ,handler-name ,handler-lambda-vars  ;variables
+		   (let ,(nreverse bind-list)
+		      (unwind-protect
+		       (progn ,@handler-body)
+		       ,@(nreverse unbind-progn))))
+		,@(cond
+		   (creator-function
+		    (ncons
+		     `(defun ,creator-name
+			     ,(cons pname creator-lambda-vars)
+			     (let ((sfa (sfa-create
+					 ',handler-name
+					 ,(1+ (length environment))
+					 ,pname)))
+				(sfa-store sfa 0 ',environment)
+				,@creator-body
+				(sfa-call sfa 'INITIALIZE nil)
+				sfa)))))))))))
+
+
+(defun (dtp-entity pname-finder) (object)
+   (let ((pname (get object 'pname)))  ;already got a unique PNAME?
+	(cond ((not (null pname)) pname)  ;that's it!
+	      ((and (getl (get-entity-handler object) '(subr expr))
+		    (memq 'PNAME? (e-call object 'which-operations)))
+	       (e-call object 'PNAME?))
+	      (T (format nil '|~,,0A!~O|
+			 (get-entity-handler object)
+			 (maknum object))))))
+
+;;; default handler for unknown operations.
+(defun (unknown-op macro) (form)
+   (let (((nil self op arg1 arg2 arg3) form))
+     `(+internal-unknown-op ,self ,op
+			    ,(cond ((= (length form) 6)
+				    `(cond ((boundp ',arg3)
+					    (list ,arg1 ,arg2 ,arg3))
+					   ((boundp ',arg2)
+					    (list ,arg1 ,arg2))
+					   ((boundp ',arg1)
+					    (list ,arg1))
+					   (T nil)))
+				   (T `(ncons ,arg1))))))
+
+(defun +internal-unknown-op (self op arglist)
+  (declare (special arglist))	   ;so user can access
+  (format (cond ((boundp 'error-output) error-output)
+		(T msgfiles))
+	  '|~&; Unknown operation "~,,0A" to ~:[entity~;SFA~] ~,,0A.~&
+; ~:[There were no data arguments given.~;
+The ~R argument~[ was ~,,0S~;s were ~,,0S~&; and ~,,0S~;
+s were ~,,0S, ~,,0S~&; and ~,,0S~]~]|
+	  op (sfap self) self	   ;operation, ENTITY/SFA option, object
+	  (not (= (length arglist) 0))	;arguments/no-arguments
+	  (length arglist)	   ;# of arguments
+	  (1- (length arglist))	   ;format for 1, 2, or 3 args
+	  (car arglist) (cadr arglist) (caddr arglist))	 ;actual arguments
+
+  (cond (wrng-type-arg (funcall wrng-type-arg (ncons op)))
+	(T (err))))

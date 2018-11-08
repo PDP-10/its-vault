@@ -1,0 +1,148 @@
+;-*-MIDAS-*- 
+title Message Passing Entities
+
+.fasl
+.insrt L;DEFNS >
+
+
+;;;; Format of a entity
+
+;  [ data-type ]
+;  [   plist   ]
+;  [     * ----]---> [ fixnum AOBJN ptr ]
+;  [   pname   ]
+;  [    nil    ]
+;  [	 * ----]---> [ fixnum CALL instruction]
+;  [ function  ]
+;  [  unused   ]
+;    ---------     ; and pairs as follows
+;  [ saved val ]
+;  [    * -----]---> [ <value cell> ]
+
+
+.global sunbound
+.global makvc
+
+.entry +INTERNAL-ENTITY-SETUP SUBR 005
+	movei ar2a,.atom DTP-ENTITY
+	hrlm ar2a,(a)		   ;set the type
+	movn tt,(ar1)		   ;Setup an aobjn ptr
+	movss tt		   ;for each of the vars
+	hrri tt,4(a)		   ;in the appropriate area of the entity
+	movei ar1,(a)		   ;(save away the closure in AR1)
+	jsp t,fxcons		   ;make the aobjn ptr a fixnum
+	hrlm a,1(ar1)		   ;squirel it away
+	hrlm c,3(ar1)		   ;save away the function itself in a slot
+	hrli c,(<call 5,>)	   ;set up a CALL instruction
+	move tt,c		   ;make up a fixnum
+	jsp t,fxcons		   ;so that we can save this away in our hunk
+	hrrzm a,2(ar1)		   ;and save away with LH 0 so we can XCT @ it.
+	jumpe b,cpopj		   ;if no vars, do nothing
+	movei c,(b)		   ;put the list of vars in C for later
+	movei a,(b)		   ;the CAR is the list
+	hrrz b,(ar1)		   ;cons it onto the front of the plist (should
+				   ;be NIL)
+	jsp t,%cons		   ;cons it
+	movei a,.atom VARIABLES-CLOSED-OVER  ;save the vars under this property
+	jsp t,%cons		   ;(we assume that there isn't one already)
+	hrrm a,(ar1)		   ;put the ALIST in the PLIST slot.
+	movei t,3(ar1)		   ;otherwise, set up an aobjn ptr for it
+sloop:	hlrz r,(c)		   ;get atom from list
+	hlrz ar2a,(r)		   ;get the loc of the SY2 block
+	hrrz ar2a,(ar2a)	   ;location of value cell
+	cain ar2a,sunbound	   ;is this a value-cell-less atom?
+	  pushj p,getcel	   ;  get it a value-cell!
+	hrl ar2a,(ar2a)		   ;put LH into the word
+	push t,ar2a		   ;put it into the closure
+	hrrz c,(c)		   ;on to next atom
+	jumpn c,sloop		   ;if there's more, hack them
+	movei a,(ar1)		   ;return the closure, of course
+	popj p,
+
+
+getcel:	push p,b		   ;save B so we don't clobber
+	push p,t		   ;we're using T
+	push p,r		   ;atom goes on the stack (why?)
+	move b,(ar2a)		   ;value stays the same though
+	jsp tt,makvc		   ;give it a value cell!
+	pop p,t			   ;recover T
+	pop p,b			   ;recover B
+	movei ar2a,(a)		   ;and that's our value cell.
+	popj p,			   ;and return
+
+.global q..mis
+.entry E-CALL-INTERPRETED SUBR 000
+	cain b,q..mis		   ;is this argument missing?
+	  wna /NOT ENOUGH ARGUMENTS TO E-CALL!/
+	movei tt,(a)		   ;time for TYPEP
+	lsh tt,-seglog		   ;get segment number
+	skipl st(tt)		   ;is this some kind of list?
+	  jrst notent		   ;  yes, complain about not being a entity
+	hrrz tt,st(tt)		   ;check out the type
+	cain tt,.atom LIST	   ;Is it LIST?
+	  jrst notent		   ;  That's too small!
+	hlrz tt,(a)		   ;check the data-type
+	caie tt,.atom DTP-ENTITY   ;is it an entity?
+	  jrst notent		   ;  no, complain
+opchk:	movei tt,(b)		   ;now check out the operation
+	lsh tt,-seglog		   ;type-P
+	hrrz tt,st(tt)
+	caie tt,.atom SYMBOL	   ;is it a symbol?
+	  jrst [ exch a,b	   ;  No, barf at the idiot
+		 wta /MESSAGE NOT SYMBOL -- E-CALL!/
+		 exch b,a	   ;  We exchange for WTA
+		 jrst opchk]	   ;  and check the type again!
+	cain c,q..mis		   ;is this argument missing?
+	  movei c,qunbound	   ;  yes, so make it unbound
+	cain ar1,q..mis		   ;is this argument missing?
+	  movei ar1,qunbound	   ;  yes, so make it unbound
+	cain ar2a,q..mis	   ;is this argument missing?
+	  movei ar2a,qunbound	   ;  yes make it unbound
+	jrst ecalld		   ;and do the call
+
+notent:	WTA /NOT ENTITY -- E-CALL!/
+
+.entry E-CALL-COMPILED-1 SUBR 003
+	movei c,qunbound
+.entry E-CALL-COMPILED-2 SUBR 004
+	movei ar1,qunbound
+.entry E-CALL-COMPILED-3 SUBR 005
+	movei ar2a,qunbound
+.entry E-CALL-COMPILED-4 SUBR 006
+ecalld:	hlrz tt,1(a)		   ;get address of AOBJN ptr
+	move tt,(tt)		   ;get the AOBJN ptr
+	push p,a		   ;remember our hunk
+	push flp,p		   ;remember where HIC hid our arguments.
+	jumpge tt,lopcls	   ;if no symbols, punt
+
+clslop:	move r,(tt)		   ;push all the symbols
+	push p,(r)
+	hlrm r,(r)
+	aobjn tt,clslop
+
+lopcls:	push flp,a		   ;remember it where UNWINC won't clobber
+
+unwindprotect [
+	move a,(flp)		   ;since UNWINC clobers!
+	xct @2(a)		   ;call the function
+][
+	move t,-1(flp)
+	move a,(t)		   ;from wherever we hid it
+	hlrz tt,1(a)		   ;extract the address of the AOBJN ptr
+	move tt,(tt)		   ;get the AOBJN ptr to the environment specs
+	jumpge tt,cpopj		   ;don't do anything if no vars!
+
+unwnd1:	move r,(tt)		   ;get the binding spec
+	move f,(r)		   ;get the symbol's value
+	hrrz d,1(t)		   ;and the outside value
+	hrlm f,(tt)		   ;save the entity's value
+	hrrm d,(r)		   ;and restore the outside value
+	aos t			   ;next pdl slot
+	aobjn tt,unwnd1		   ;loop
+]
+	pop flp,b		   ;restore the PDLs
+	pop flp,p
+	pop p,b			   ;and flush the saved A val
+	popj p,			   ;and return
+
+fasend

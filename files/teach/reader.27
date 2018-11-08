@@ -1,0 +1,63 @@
+;; -*-LISP-*-
+;; helpful read macros.
+
+(eval-when (eval compile)
+   (load '|teach;reader fasl|)
+   (setq O10 8. D10 10.)
+   (activate-character /%))
+
+
+(defun /%-hacker ()
+  (caseq (tyipeek)
+     (%// (tyi) (tyi))
+     ((%/O %/o) (tyi)
+      (cond ((= (tyipeek) %/.) (tyi)))
+      (let ((ibase %O.10))
+	(read)))
+     ((%/D %/d) (tyi) (tyi)
+      (cond ((= (tyipeek) %/.) (tyi)))
+      (let ((ibase %D.10))
+	(read)))
+     (%/(
+      (let ((form (read))
+	    (syntax-fn))
+	   (setq syntax-fn (get (car form) 'reader-syntax-fn))
+	   (cond ((null syntax-fn)
+		  (format T
+			  '|~&"~,,0S" is not a known reader syntax in the form/
+"%~S"~&|
+			  (car form) form)
+		  (error))
+		 (T (funcall syntax-fn form)))))
+     (T (format T '|~&"~C" is not a known character for % macro.~&|
+		(tyipeek))
+	(error))))
+
+
+(defun /:-hacker () ())		   ; :FOO is same as FOO, but LISPM compatible
+(defun (package-hack macro) (form) ; turn on the : hack
+   (setsyntax '/: 'splicing '/:-hacker))
+
+(defun (activate-character macro) (form)
+   `(setsyntax ',(cadr form) 'macro '/%-hacker))
+
+(defun (sixbit reader-syntax-fn) (form)
+   (car (pnget (cadr form) 6)))
+
+(defun (eval reader-syntax-fn) (form)
+   (do ((result (eval (cadr form)) (eval (car form-list)))
+	(form-list (cddr form) (cdr form-list)))
+     ((null form-list) result)))
+
+(defun /[-hacker ()
+   (do ((peekchar (tyipeek T) (tyipeek t))
+	(forms nil))
+       ((= peekchar %/])
+	(tyi)			   ;flush the /] now we're done with it
+	(cond ((null forms) nil)
+	      (T (makhunk (nreverse forms)))))
+     (push (read) forms)))
+
+(eval-when (load)
+    (setsyntax '/[ 'macro '/[-hacker)
+    (setsyntax '/] 4600000 nil))

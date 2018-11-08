@@ -1,0 +1,196 @@
+;;; -*- LISP -*-
+
+(DECLARE (READ))
+
+(PROG (C)
+      TOP
+      (CLEAR-INPUT TYI)
+      (CURSORPOS 'A TYO)
+      (PRINC '|Documentation? (Y or N) | TYO)
+      (SETQ C (ASCII (TYI TYI)))
+      (COND ((MEMQ C '(Y /y))
+	     (PRINC '| [Yes]| TYO)
+	     (DO ((C (TYI) (TYI)))
+		 ((= C 12.))
+		 (TYO C TYO)))
+	    ((MEMQ C '(N /n))
+	     (PRINC '| [No]| TYO)
+	     (DO ((C (TYI) (TYI)))
+		 ((= C 12.))))
+	    (T
+	     (PRINC '| [Type "Y" or "N"]| TYO)
+	     (GO TOP))))
+
+;;; This file contains a function called TEST which is may be useful 
+;;; in learning about the operators CONS and LIST and in general
+;;; about how lists are constructed.
+;;;
+;;; The function may be invoked by typing "(TEST)" at lisp, and it
+;;; will ask you to input a list... example:
+;;;
+;;;  (TEST)
+;;;  Type in a list: (A B C)
+;;;
+;;; The function will then tell you about how the list could have
+;;; been constructed using only the CONS operator, and also how it
+;;; could have been constructed using LIST. It will also tell you
+;;; about its internal form.
+;;; 
+;;; If you would rather use the value of a variable or some other
+;;; expression, you can say (TEST <expression>) and it will use
+;;; the value of the <expression> instead of asking for a list.
+;;; Examples:
+;;;
+;;;  (SETQ A '(THIS IS A (TEST LIST)))
+;;;  (TEST A)
+;;;
+;;;  (TEST (CAR '((THIS IS FUN) (I HOPE))))
+;;;
+;;; Send questions/complaints about this program to KMP@MC
+;;;
+
+
+
+(DEFUN TEST N
+       (PROG (L)
+	     (COND ((> N 1)
+		    (TERPRI TYO)
+		    (PRINC '|Too many args supplied.| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|No args means for me to read a list.| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|1 arg means for me to display up that arg.| TYO)
+		    (TERPRI TYO)
+		    (RETURN NIL))
+		   ((= N 1.)
+		    (SETQ L (ARG 1.)))
+		   (T
+		    (CURSORPOS 'A TYO)
+		    (PRINC '|Type in a list: | TYO)
+		    (SETQ L (READ))
+		    (COND ((AND (NOT (ATOM L))
+				(EQ (CAR L) 'QUOTE))
+			   (TERPRI TYO)
+			   (PRINC '|Don't bother to quote it.| TYO)
+			   (PRINC '| That makes it look messy...| TYO)
+			   (TERPRI TYO)
+			   (PRINC '|I'll pretend you didn't use quote.| TYO)
+			   (SETQ L (CADR L))))))
+	     (TERPRI TYO)
+	     (PRINC '|The list in question is:| TYO)
+	     (SPRINTER L)
+	     (TERPRI TYO)
+	     (PRINC '|The dotted pair representation of your list is:| TYO)
+	     (TERPRI TYO)
+	     (PRINT-DOTTED L)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (PRINC '|You could have formed the list with CONS by:| TYO)
+	     (TERPRI TYO)
+	     (PRINT-CONSES L)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (PRINC '|You could have formed the list with LIST by:| TYO)
+	     (TERPRI TYO)
+	     (PRINT-LISTS L)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (RETURN 'DONE)))
+
+(DEFUN LISTP (X)
+       (COND ((ATOM X) NIL)
+	     (T (DO ((L X (CDR L)))
+		    ((ATOM L) (NULL L))))))
+
+
+(DEFUN PRINT-LISTS (X)
+       (PROG (*CONS*)
+	     (TERPRI TYO)
+	     (PRINT-LISTS1 X)
+	     (COND (*CONS*
+		    (TERPRI TYO)
+		    (TERPRI TYO)
+		    (PRINC '|Of course, a sequence of things in list-like| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|form that doesn't end in NIL isn't really a| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|list, and can't be formed with the operator| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|LIST, so they have to be made with CONS| TYO)
+		    (PRINC '| instead.| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|An example of this, from your test, is:| TYO)
+		    (TERPRI TYO)
+		    (TERPRI TYO)
+		    (PRIN1 *CONS* TYO)
+		    (PRINC '| => | TYO)
+		    (PRINT-ALMOST-LIST *CONS*)
+		    ))))
+
+		    
+(DEFUN PRINT-LISTS1 (X)
+       (COND ((LISTP X)
+	      (PRINC '|(LIST| TYO)
+	      (MAPCAR (FUNCTION
+		       (LAMBDA (X)
+			       (PRINC '| | TYO)
+			       (PRINT-LISTS1 X)))
+		      X)
+	      (PRINC '|)|))
+	     ((NOT (ATOM X))
+	      (SETQ *CONS-FLAG* X)
+	      (PRINT-ALMOST-LIST X)
+	      (SETQ *CONS* X))
+	     ((NUMBERP X)
+	      (PRIN1 X))
+	     ((MEMQ X '(NIL T))
+	      (PRIN1 X))
+	     (T
+	      (PRINC '/' TYO)
+	      (PRIN1 X TYO))))
+
+(DEFUN PRINT-ALMOST-LIST (X)
+       (COND ((ATOM X)
+	      (COND ((OR (NUMBERP X) (MEMQ X '(T NIL)))
+		     (PRIN1 X TYO))
+		    (T (PRINC '/' TYO)
+		       (PRIN1 X TYO))))
+	     (T
+	      (PRINC '|(CONS | TYO)
+	      (PRINT-LISTS1 (CAR X))
+	      (PRINC '| | TYO)
+	      (PRINT-ALMOST-LIST (CDR X))
+	      (PRINC '|)| TYO))))
+
+(DEFUN PRINT-DOTTED (X)
+       (TERPRI TYO)
+       (PRINT-DOTTED1 X)
+       X)
+
+(DEFUN PRINT-DOTTED1 (X)
+       (COND ((ATOM X) (PRIN1 X TYO))
+	     (T (PRINC '|(| TYO)
+		(PRINT-DOTTED1 (CAR X))
+		(PRINC '| . | TYO)
+		(PRINT-DOTTED1 (CDR X))
+		(PRINC '|)| TYO))))
+
+(DEFUN PRINT-CONSES (X)
+       (TERPRI TYO)
+       (PRINT-CONSES1 X)
+       X)
+
+(DEFUN PRINT-CONSES1 (X)
+       (COND ((NULL X) (PRIN1 NIL TYO))
+	     ((NUMBERP X)
+	      ((LAMBDA (*NOPOINT BASE)
+		       (PRIN1 X TYO))
+	       NIL 10.))
+	     ((ATOM X)
+	      (PRINC '/' TYO)
+	      (PRIN1 X TYO))
+	     (T (PRINC '|(CONS | TYO)
+		(PRINT-CONSES1 (CAR X))
+		(PRINC '| | TYO)
+		(PRINT-CONSES1 (CDR X))
+		(PRINC '|)| TYO))))

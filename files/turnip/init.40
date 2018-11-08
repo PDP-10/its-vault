@@ -1,0 +1,193 @@
+;;; -*- Mode:LISP; -*-
+;;; INIT: A Lisp Initialization Package
+;;; Written by KMP, 23-Nov-79
+;;; Last modified by KMP, 21-Jul-82
+
+;;; IBASE, BASE
+;;;
+;;; These variables control input and output bases, respectively. They are
+;;; set to 8 by default (though, 8 base 8 has a printname of 10, so don't
+;;; be fooled!), and may be set to any other number from 2 through 36 
+;;; or the atom 'ROMAN which means use Roman numerals. Regardless of the
+;;; value of IBASE, numbers containing decimal points are read as Base-10
+
+(SETQ IBASE 10. BASE 10.)
+
+;;; *NOPOINT, NOUUO, *RSET, DEFAULTF
+;;;
+;;; These are variables but should not be SETQ'd. Instead, there are 
+;;; functions of the same name, which can be given args of the value
+;;; to set the variable to. The function will make sure that the value
+;;; given to the variable is in the proper format.
+;;;
+;;; Acceptable values for *NOPOINT, NOUUO and *RSET are only T and NIL.
+;;; Acceptable values for DEFAULTF are lists of the form:
+;;; ((device directory) filename1 filename2)
+;;;
+;;; The functions are more tolerant about their input and will coerce
+;;; it to the right format. Any Lisp filespec notation may be given to
+;;; DEFAULTF and will be altered as needed to set the variable. Any 
+;;; non-null arg to *NOPOINT, NOUUO or *RSET will set the respective 
+;;; variable to T.
+
+;;; *NOPOINT controls whether or not numbers will print with a "." after
+;;;          them when BASE is set to Base-10. If NIL, a decimal point 
+;;;          is printed.
+
+(*NOPOINT NIL)
+
+;;; NOUUO controls whether UUO links are created. When set to NIL, they are
+;;;       created. This variable must have been T at the time of the first
+;;;       call to a given function is made if it is desired to trace calls
+;;;       to that function.
+
+(NOUUO T)
+
+;;; *RSET controls whether MacLISP does extra error checking on many functions.
+;;;       if set to T, it does the checking. This is used during debugging.
+
+(*RSET T)
+
+;;; DEFAULTF is the default file to be used by MacLISP in file I/O.
+;;;
+;;; Use default filename of "DSK: hsname; xuname _LISP" rather than 
+;;; MacLISP's choice of "DSK: sname; * >"
+
+(DEFAULTF (LIST (LIST 'DSK (STATUS HSNAME)) (STATUS USERID) '|_LISP|))
+
+;;; Create a function that does a greeting to printing version number.
+
+(DEFUN LISP-GREETING ()
+       (PRINC '|MacLISP.| TYO)
+       (PRINC (STATUS LISPV) TYO)
+       (TERPRI TYO)
+       '/) ; Backspace is non-printing on a terminal
+
+;;; A function to set up AUTOLOAD definitions.
+;;; 
+;;; (AUTOLOAD <file> <fn1> <fn2> ...) sets up AUTOLOAD properties of <file>
+;;; on all of <fn1> ... <fnN>
+
+(DEFUN (AUTOLOAD MACRO) (FORM)
+       (LET (((FILE . FUNCTIONS) (CDR FORM)))
+	    `(PROGN 'COMPILE
+		    ,@(MAPCAR
+		       (FUNCTION (LAMBDA (FNC)
+					 `(DEFPROP ,FNC ,FILE AUTOLOAD)))
+		       FUNCTIONS))))
+
+;;; A function to set up TTY interrupt definitions.
+
+(DEFUN (DEF-TTY MACRO) (X)
+       (POP X)
+       `(SSTATUS TTYINT
+		 ,(COND ((NUMBERP (CAR X)) (CAR X)) (T (GETCHARN (CAR X) 1.)))
+		 '(LAMBDA (() ()) ,@(CDR X))))
+
+;;; Autload KMP's ##MORE## handler. See TURNIP;MORE > for documentation.
+
+(AUTOLOAD ((DSK LIBLSP) MORE FASL) *MORE)
+
+;;; Autoload KMP's QTRACE package
+
+(AUTOLOAD ((DSK LIBLSP) QTRACE FASL) QBREAK QTRACE *QBREAK)
+
+;;; Autoload KMP's file Save/UnSave package
+
+(AUTOLOAD ((DSK LIBLSP) SAVE FASL) SAVE UNSAVE)
+
+;;; LISPT package. LISPT is a special package for hopping from EMACS to Lisp.
+
+;;; Make LISPT-EDIT's package get loaded when needed only.
+
+(AUTOLOAD ((DSK LIBLSP) LISPT FASL) LISPT-EDIT)
+
+;;; Autoload Debugging packages
+
+  ;; JONL's Back Stacker
+
+  (AUTOLOAD ((DSK LIBLSP) BS FASL) BS FS)
+
+  ;; RWK's Lisp debugger 
+
+  (AUTOLOAD ((DSK LIBLSP) DEBUG FASL) DEBUG)
+
+  ;; Autoload DIDL and DSTEP (DCH's Display debugging package)
+
+  (AUTOLOAD ((DSK LIBLSP) DIDL FASL) DIDL DSTEP)
+
+;;; Make a RELOAD function which binds FASLOAD to NIL.
+;;; Use this to load compiled stuff suppressing messages
+;;; about "WARNING, REDEFINING ..."
+
+(DEFUN RELOAD (X) ((LAMBDA (FASLOAD) (LOAD X)) NIL))
+
+;;; Define a YES/NO asking function.
+
+(DEFUN +EXTERNAL-YES\NO-PREDICATE (QUESTION) 
+	(PROG (C C-LIST)
+RESTART	      (SETQ C-LIST '((#/Y . #/y) (#/E . #/e) (#/S . #/s)))
+	      (CURSORPOS 'A TYO)
+	      (PRINC QUESTION TYO)
+	      (PRINC '| | TYO)
+	      (CLEAR-INPUT TYI)
+TOP	      (COND ((NULL C-LIST)
+		     (PRINC '| [Confirmed]| TYO)
+		     (RETURN T)))
+	      (SETQ C (TYI TYI))
+	      (COND ((OR (= C #/?) (= C #\HELP))
+		     (CURSORPOS 'A TYO)
+		     (PRINC '|Anything other than "YES" will abort.| TYO)
+		     (TERPRI TYO)
+		     (PRINC '|Please try again. | TYO)
+		     (GO RESTART))
+		    ((OR (= C (CAAR C-LIST)) (= C (CDAR C-LIST)))
+		     (SETQ C-LIST (CDR C-LIST))
+		     (GO TOP))
+		    (T
+		     (PRINC '| [Aborted]| TYO)))))
+
+;;; Redefine the function QUIT to ask for a 'yes' before killing job!
+
+(DECLARE (*LEXPR +SYSTEM-QUIT)) ; Declare +SYSTEM-QUIT an N-ary function
+
+(PUTPROP '+SYSTEM-QUIT (GET 'QUIT 'LSUBR) 'LSUBR) ; Steal old QUIT's definition
+
+(DEFUN +QUERY-QUIT N				          ; Define our new QUIT
+       (COND ((+EXTERNAL-YES\NO-PREDICATE '|QUIT! Kill Job?|)
+	      (APPLY '+SYSTEM-QUIT (LISTIFY N)))))
+
+(PUTPROP 'QUIT (GET '+QUERY-QUIT 'LSUBR) 'LSUBR)          ; Install new QUIT
+
+;;; LISPT-PROTECT is a LISPT package var that makes Lisp's that
+;;; have inferior editor become protected jobs. This won't be
+;;; needed unless the LISPT package gets loaded before our tty
+;;; interrupt is run.
+
+(SETQ LISPT-PROTECT T)
+
+;;; DEFAULT-EDITOR is the editor flavor to be used. Examples
+;;; are TECO, RMODE, EMACS, and TECO.
+
+(COND ((NOT (BOUNDP 'DEFAULT-EDITOR))
+       (SETQ DEFAULT-EDITOR 'EMACS)))
+
+;;; Set up tty-interrupt on Control-T that reads a Jname to
+;;; create the editor under. After its first use, the LISPT
+;;; package re-defines Control-T to just re-enter the editor
+;;; under the already-defined name.
+
+(DEF-TTY /
+	 (CLEAR-INPUT TYI)
+	 (VALRET '|/..SAFE// 1/
+:VP |)
+	 (NOINTERRUPT ()) ; Re-enable interrupts
+	 (CURSORPOS 'A TYO)
+	 (PRINC '|Editor Name? |)
+	 (LET ((JNAME (READLINE TYI)))
+	      (COND ((ZEROP (FLATC JNAME)) (SETQ JNAME LISPT-JNAME)))
+	      (UNWIND-PROTECT
+	       (LISPT-EDIT (LIST JNAME DEFAULT-EDITOR))
+	       (SSTATUS TTYINT 20. 'LISPT-EDIT-INTERRUPT))))
+
+

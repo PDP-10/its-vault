@@ -1,0 +1,254 @@
+|A scheduler object accepts messages of the form
+|(signal-me <object-to-signal> <number-of-ticks>)
+|as well as (tick) messages.
+|It keeps an internal buffer which is a list of lists.
+|The nth element of the buffer is a list of everyone to signal at
+|the next tick.  When it gets a signal-me message, it adds <object-to-signal> 
+|to the (n+1)st list in the buffer, where n is equal to
+|<number of ticks>.  When it gets a tick message, it sends the message
+|(signal) to each item in the first list in the buffer, and then 
+|removes the first list from the buffer.
+
+(defun create-scheduler ()
+       (let ((buffer nil))
+	     (close-it
+	      (lambda (message)
+		      (cond
+		       ((eq (car message) 'signal-me)
+			(add-to-buffer (cadr message)
+					    (+ 1 (caddr message))))
+		       ((eq (car message) 'tick)
+			(cond ((null buffer) nil)
+			      (t (signal-all (car buffer))
+				 (setq buffer (cdr buffer)))))
+		       (t (gripe '(unknown message -- scheduler))))))))
+
+|Subprocedures used by scheduler:
+
+|Send the message (signal) to each object in a list
+
+(defun signal-all (objects)
+       (cond ((null objects) 'done)
+	     (t ((car objects) '(signal))
+		(signal-all (cdr objects)))))
+
+|This takes two inputs, an object and a number and adds the object onto the
+|list which is the nth element of the wait buffer.  If the wait buffer has
+|fewer than n elements, a sufficient number of nils are added to it.
+
+(defun add-to-buffer (waiter delay)
+       (progn
+	(cond ((< (length buffer) delay)
+	       (setq buffer
+		     (nconc buffer
+			    (repeat nil
+				    (- delay (length buffer)))))))
+	(tack-on-to-list (nth-cell buffer delay) waiter)))
+
+
+|This procedure simply nconc's an item onto a list, except when the
+|list is nil, in which case it initializes the list.  It takes as inputs
+|the item to tack on, and a pointer to a cell whose car is the list.
+
+(defun tack-on-to-list (pointer item)
+       (cond ((null (car pointer))
+	      (rplaca pointer (list item)))
+	     (t (nconc (car pointer) (list item)))))
+
+|This returns a pointer to the nth cell of a list
+
+(defun nth-cell (x n)
+       (cond ((= n 1) x)
+	     (t (nth-cell (cdr x) (- n 1)))))
+
+(defun repeat (x n)
+       (cond ((zerop n) nil)
+	     (t (cons x (repeat x (- n 1))))))
+
+(defun gripe (complaint)
+       (print (list message complaint)))
+
+
+|A teller object contains an internal queue of customers to serve.  When
+|it gets the message (serve-me <customer>) it checks to see if the queue is
+|empty, and if so, puts the <customer> at the head of the queue and proceeds
+|to serve the customer.  If the queue is not empty, it simply adds the
+|customer to the queue.  Serving a customer entails asking the customer how
+|long the transaction will take and then telling the scheduler to signal
+|the teller after that many clock ticks.  When the teller receives an
+|(signal) message, it sends ths message (done) to the customer at the head of
+|the queue, deletes that customer from the queue and proceeds to serve the
+|next customer, if any.  In addition, the teller can respond to the message
+|(how-long-is-your-queue).
+
+(defun create-server ()
+       (let ((me nil) (my-queue nil))
+	     (setq my-queue (create-queue))
+	     (setq me
+		   (close-it
+		    (lambda (message)
+			    (cond
+			     ((eq (car message) 'how-long-is-your-queue)
+			      (my-queue '(length)))
+			     ((eq (car message) 'serve-me)
+			      (cond
+			       ((my-queue '(empty?))
+				(my-queue (list 'enque (cadr message)))
+				(serve (my-queue '(head))))
+			       (t 
+				(my-queue (list 'enque (cadr message))))))
+			     ((eq (car message) 'signal)
+			      ((my-queue '(head)) '(done))
+			      (my-queue '(deque))
+			      (cond
+			       ((my-queue '(empty?)) nil)
+			       (t (serve (my-queue '(head))))))
+			     (t (gripe '(unknown message -- server)))))))))
+
+(defun serve (customer)
+	(the-scheduler (list 'signal-me
+			 me
+			 (customer '(how-long-do-you-need)))))
+
+
+|A customer object is created with a time needed to service.
+|When created, the customer records its arrival time.
+|The customer replies to the message (how-long-do-you-need) by returning
+|the time-needed.  When the customer receives the message
+|(done), it notes the current time, and prints out the following statistics:
+|arrival-time time-done time-to-service extra-time-spent-waiting-in-line
+
+(defun create-customer (time-to-service)
+       (let ((arrival-time time))
+	     (close-it
+	      (lambda (message)
+		      (cond
+		       ((eq (car message) 'how-long-do-you-need)
+			time-to-service)
+		       ((eq (car message) 'done)
+			(print (list 'arrive arrival-time
+				     'leave time
+				     'service time-to-service
+				     'wait (- time
+					   arrival-time
+					   time-to-service))))
+		       (t (gripe '(unknown message -- customer))))))))
+
+
+|A queue object accepts messages (empty?) and (length).  Also messages
+|(enque <item>) which installs the item at the tail of the queue,
+|(head) which returns the head of the queue, and (deque) which removes the
+|head of the queue.  The queue is represented internally as a pair of
+|pointers, one to a list which is the queue, and a second pointer to the 
+|tail of the queue.
+
+(defun create-queue ()
+       (let ((q nil) (tail nil))
+	     (close-it
+	      (lambda (message)
+		      (cond
+		       ((eq (car message) 'empty?)
+			(null q))
+		       ((eq (car message) 'length)
+			(length q))
+		       ((eq (car message) 'enque)
+			(cond ((null q)
+			       (setq q (list (cadr message)))
+			       (setq tail q))
+			      (t (rplacd tail (list (cadr message)))
+				 (setq tail (cdr tail)))))
+		       ((eq (car message) 'deque)
+			(cond ((null q)
+			       (gripe '(decrement an empty queue?)))
+			      (t
+			       (setq q (cdr q)))))
+		       ((eq (car message) 'head)
+			(car q))
+		       (t (gripe '(unknown message -- queue))))))))
+
+
+|The outline of the program is this: at each minute, there is a certain
+|chance of a customer entering the bank.  When a customer enters, he goes
+|to the teller with the shortest queue.  The paramters to the siumulation are
+|the numbers of tellers, the odds (as a percentage) that a customer enters
+|the bank in the next minute, and the distribution list from which the
+|time needed by the customer is randomly selected, e.g., if the list is
+|(1 2 2 3) a new customer will need 1 minute with 25% probability, 3 minutes
+|with 25% probability and 2 minutes with 50% probability.
+
+(defun bank (number-of-servers chance-customer-enters request-distribution)
+       (progn
+	(init)
+	(run-loop)))
+
+(defun run-loop ()
+       (while t do 
+	(setq time (+ time 1))
+	(cond ((odds chance-customer-enters) (customer-enters)))
+	(the-scheduler '(tick))))
+
+|To initialize the simulation, we initialize the time, set up a scheduler,
+|and a list of available tellers.
+
+(defun init ()
+       (progn
+	(setq time 0)
+	(setq the-scheduler (create-scheduler))
+	(setq available-servers (make-server-list number-of-servers))))
+
+(defun make-server-list (how-many)
+       (cond ((= how-many 0) nil)
+	     (t (cons (create-server)
+		      (make-server-list (- how-many 1))))))
+
+|A new customer is created with a time-to-service selected from the
+|distribution list.  The shortest teller is located by asking each teller
+|in turn (how-long-is-your-queue, and the message (serve-me <new-customer>)
+|is sent to that teller.
+
+(defun customer-enters ()
+	((shortest-queue-server available-servers)
+	 (list 'serve-me
+	       (create-customer (pick-random request-distribution)))))
+
+(defun shortest-queue-server (server-list)
+       (cond
+	((= (length server-list) 1)
+	 (car server-list))
+	(t (let ((shortest-so-far nil))
+		 (setq shortest-so-far
+		       (shortest-queue-server (cdr server-list)))
+		 (cond
+		  ((< ((car server-list) '(how-long-is-your-queue))
+		      (shortest-so-far '(how-long-is-your-queue)))
+		   (car server-list))
+		  (t shortest-so-far))))))
+
+
+
+|Miscellaneous routines
+
+|Return 't with a given percentage odds
+(defun odds (percentage)
+       (> percentage (random 100)))
+
+|Pick a random element from a list
+
+(defun pick-random (x)
+       (pick (random (length x)) x))
+
+(defun pick (n x)
+       (cond
+	((zerop n) (car x))
+	(t (pick (- n 1) (cdr x)))))
+
+
+(defun lastcell (x)
+       (cond ((null (cdr x)) x)
+             (t (lastcell (cdr x)))))
+
+(defun nconc (x y)
+       (cond ((null x) y)
+             (t (progn
+                 (rplacd (lastcell x) y)
+                 x))))

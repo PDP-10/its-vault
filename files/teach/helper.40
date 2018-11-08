@@ -1,0 +1,746 @@
+;;; -*- LISP -*-
+
+(DECLARE (SPECIAL *CONS*) (*LEXPR DOCUMENT MAPPRINC) (*EXPR SHOWP SHOW)
+	 (SPECIAL COMPETING-LISP-FUNCTIONS-TABLE))
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (SETQ TEST-DOC (DO ((C (TYI) (TYI))
+			       (L NIL (CONS C L)))
+			      ((= C 12.) (IMPLODE (NREVERSE L))))))
+
+;;; This is documentation for a function called "EXAMINE-LIST",
+;;; which is designed to help you learn about list operators such
+;;; as CONS, CAR, CDR, and LIST.
+;;;
+;;; The function may be invoked by typing "(EXAMINE-LIST)" at lisp, and it
+;;; will ask you to input a list... example:
+;;;
+;;;  (EXAMINE-LIST)
+;;;  Type in a list: (A B C)
+;;;
+;;; The function will then tell you about how the list could have
+;;; been constructed using only the CONS operator, and also how it
+;;; could have been constructed using LIST. It will also tell you
+;;; about its internal form.
+;;; 
+;;; If you would rather use the value of a variable or some other
+;;; expression, you can say (EXAMINE-LIST <expression>) and it will use
+;;; the value of the <expression> instead of asking for a list.
+;;; Examples:
+;;;
+;;;  (SETQ A '(THIS IS A (TEST LIST)))
+;;;  (EXAMINE-LIST A)
+;;;
+;;;  (EXAMINE-LIST (CAR '((THIS IS FUN) (I HOPE))))
+;;;
+;;; Send questions/complaints about this program to KMP@MC
+;;;
+
+
+
+(SSTATUS TTYINT 5. '(LAMBDA (X Y)
+			    (DO ((C (TYI X) (TYI X)))
+				((= C Y)))
+			    (NOINTERRUPT NIL)
+			    (COND ((OR (NOT (BOUNDP '*IN-MORE*))
+				       (NOT *IN-MORE*))
+				   (EXAMINE-LIST)
+				   (TERPRI TYO)
+				   (TERPRI TYO)))))
+
+(DEFUN TEST-DOC MACRO (())  `',TEST-DOC)
+
+(DEFUN EXAMINE-LIST N
+       (PROG (L)
+	     (DOCUMENT '|[Function EXAMINE-LIST being invoked.]|)
+	     (COND ((> N 1)
+		    (TERPRI TYO)
+		    (PRINC '|Too many args supplied.| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|No args means for me to read a list.| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|1 arg means for me to display up that arg.| TYO)
+		    (TERPRI TYO)
+		    (RETURN NIL))
+		   ((= N 1.)
+		    (SETQ L (ARG 1.)))
+		   (T
+		    (CURSORPOS 'A TYO)
+		    (PRINC '|Type in a list: | TYO)
+		    (LET ((EOF (GENSYM)))
+			 (SETQ L (READ TYI EOF))
+			 (COND ((EQ L EOF)
+				(PRINC '| [Aborted]| TYO)
+				(TERPRI TYO)
+				(TERPRI TYO)
+				(RETURN NIL))))
+		    (COND ((AND (NOT (ATOM L))
+				(EQ (CAR L) 'QUOTE))
+			   (TERPRI TYO)
+			   (PRINC '|Don't bother to quote it.| TYO)
+			   (PRINC '| That makes it look messy...| TYO)
+			   (TERPRI TYO)
+			   (PRINC '|I'll pretend you didn't use quote.| TYO)
+			   (SETQ L (CADR L))))))
+	     (COND ((AND (ATOM L) L)
+		    (COND ((OR (EQ L '?)
+			       (EQ L 'HELP)
+			       (PROGN (PRINC '|That's not a list! | TYO)
+				      (CLEAR-INPUT TYI)
+				      (PRINC '|Want help? (Y or N)| TYO)
+				      (LET ((C (TYI TYI)))
+					   (COND ((OR (= C 89.)
+						      (= C 121.)
+						      (= C 32.))
+						  (PRINC '| [Yes]| TYO)
+						  T)
+						 (T
+						  (PRINC '| [No]| TYO)
+						  NIL)))))
+			   (CURSORPOS 'C TYO)
+			   (PRINC (TEST-DOC) TYO)))
+		    (RETURN NIL))
+		   ((NOT (SHOWP L NIL))
+		    (DOCUMENT '|[SHOWP failed. Examination of list aborted.]|)
+		    (CURSORPOS 'A TYO)
+		    (PRINC '|Pick a small list for this demo or I can't| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|do all my nice display stuff on your terminal.|
+			   TYO)
+		    (TERPRI TYO)
+		    (RETURN NIL))
+		   ((NULL L)
+		    (CURSORPOS 'A TYO)
+		    (MAPPRINC '|NIL or () is a special thing to Lisp.|
+			      '|It is both an atom and a empty list.|
+			      '|The CAR and CDR of NIL are both NIL!|
+			      '|NIL is also the only False| '|thing in Lisp.|
+			      '|In truth-value tests,| '|anything that is|
+			      '|not NIL is True.|)
+		    (RETURN NIL)))
+	     (CURSORPOS 'C TYO)
+	     (PRINC '|The list in question is:| TYO)
+	     (SPRINTER L)
+	     (TERPRI TYO)
+	     (PRINC '|/
+Now we'll look at how that's represented inside of Lisp/
+as a chain of pointers.| TYO)
+	     (COND ((LONGATOMS L)
+		    (PRINC '|/
+[Note that your long atom names have been/
+truncated for prettier display.]| TYO)))
+	     (TERPRI TYO)
+	     (COND ((NOT (ZEROP TTY))
+		    (CLEAR-INPUT TYI)
+		    (PRINC '|(Type any character when ready to see this)| TYO)
+		    (TYI TYI)))
+	     (SHOW)
+	     (COND ((NOT (ZEROP TTY))
+		    (CLEAR-INPUT TYI)
+		    (CURSORPOS 'A TYO)
+		    (PRINC '|(Type any character when ready to continue)| TYO)
+		    (TYI TYI)))
+	     (CURSORPOS 'C TYO)
+	     (PRINC '|A more compressed notation is usually used, called| TYO)
+	     (TERPRI TYO)
+	     (PRINC '|the dotted pair noation. Note that the stuff| TYO)
+	     (TERPRI TYO)
+	     (PRINC '|parentheses is "<something> . <something-else>"| TYO)
+	     (TERPRI TYO)
+	     (PRINC '|where <something> is the left hand side of the| TYO)
+	     (TERPRI TYO)
+	     (PRINC '|and <something-else> is the right hand side of| TYO)
+	     (TERPRI TYO)
+	     (PRINC '|the tree...| TYO)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (EXAMINE-LIST\PRINT-DOTTED L)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (PRINC '|You could have formed the list with CONS by:| TYO)
+	     (TERPRI TYO)
+	     (EXAMINE-LIST\PRINT-CONSES L)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (PRINC '|You could have formed the list with LIST by:| TYO)
+	     (TERPRI TYO)
+	     (EXAMINE-LIST\PRINT-LISTS L)
+	     (TERPRI TYO)
+	     (TERPRI TYO)
+	     (RETURN 'DONE)))
+
+(DEFUN LONGATOMS (X)
+       (COND ((ATOM X) (> (FLATC X) 3.))
+	     (T (OR (LONGATOMS (CAR X))
+		    (LONGATOMS (CDR X))))))
+
+(DEFUN EXAMINE-LIST\LISTP (X)
+       (COND ((ATOM X) NIL)
+	     (T (DO ((L X (CDR L)))
+		    ((ATOM L) (NULL L))))))
+
+
+(DEFUN EXAMINE-LIST\PRINT-LISTS (X)
+       (PROG (*CONS*)
+	     (TERPRI TYO)
+	     (EXAMINE-LIST\PRINT-LISTS1 X)
+	     (COND (*CONS*
+		    (TERPRI TYO)
+		    (TERPRI TYO)
+		    (PRINC '|Of course, a sequence of things in list-like| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|form that doesn't end in NIL isn't really a| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|list, and can't be formed with the operator| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|LIST, so they have to be made with CONS| TYO)
+		    (PRINC '| instead.| TYO)
+		    (TERPRI TYO)
+		    (PRINC '|An example of this, from your test, is:| TYO)
+		    (TERPRI TYO)
+		    (TERPRI TYO)
+		    (PRIN1 *CONS* TYO)
+		    (PRINC '| => | TYO)
+		    (EXAMINE-LIST\PRINT-ALMOST-LIST *CONS*)
+		    ))))
+
+		    
+(DEFUN EXAMINE-LIST\PRINT-LISTS1 (X)
+       (COND ((EXAMINE-LIST\LISTP X)
+	      (PRINC '|(LIST| TYO)
+	      (MAPCAR (FUNCTION
+		       (LAMBDA (X)
+			       (PRINC '| | TYO)
+			       (EXAMINE-LIST\PRINT-LISTS1 X)))
+		      X)
+	      (PRINC '|)|))
+	     ((NOT (ATOM X))
+	      (EXAMINE-LIST\PRINT-ALMOST-LIST X)
+	      (SETQ *CONS* X))
+	     ((NUMBERP X)
+	      (PRIN1 X))
+	     ((MEMQ X '(NIL T))
+	      (PRIN1 X))
+	     (T
+	      (PRINC '/' TYO)
+	      (PRIN1 X TYO))))
+
+(DEFUN EXAMINE-LIST\PRINT-ALMOST-LIST (X)
+       (COND ((ATOM X)
+	      (COND ((OR (NUMBERP X) (MEMQ X '(T NIL)))
+		     (PRIN1 X TYO))
+		    (T (PRINC '/' TYO)
+		       (PRIN1 X TYO))))
+	     (T
+	      (PRINC '|(CONS | TYO)
+	      (EXAMINE-LIST\PRINT-LISTS1 (CAR X))
+	      (PRINC '| | TYO)
+	      (EXAMINE-LIST\PRINT-ALMOST-LIST (CDR X))
+	      (PRINC '|)| TYO))))
+
+(DEFUN EXAMINE-LIST\PRINT-DOTTED (X)
+       (TERPRI TYO)
+       (EXAMINE-LIST\PRINT-DOTTED1 X)
+       X)
+
+(DEFUN EXAMINE-LIST\PRINT-DOTTED1 (X)
+       (COND ((ATOM X) (PRIN1 X TYO))
+	     (T (PRINC '|(| TYO)
+		(EXAMINE-LIST\PRINT-DOTTED1 (CAR X))
+		(PRINC '| . | TYO)
+		(EXAMINE-LIST\PRINT-DOTTED1 (CDR X))
+		(PRINC '|)| TYO))))
+
+(DEFUN EXAMINE-LIST\PRINT-CONSES (X)
+       (TERPRI TYO)
+       (EXAMINE-LIST\PRINT-CONSES1 X)
+       X)
+
+(DEFUN EXAMINE-LIST\PRINT-CONSES1 (X)
+       (COND ((NULL X) (PRIN1 NIL TYO))
+	     ((NUMBERP X)
+	      ((LAMBDA (*NOPOINT BASE)
+		       (PRIN1 X TYO))
+	       NIL 10.))
+	     ((ATOM X)
+	      (PRINC '/' TYO)
+	      (PRIN1 X TYO))
+	     (T (PRINC '|(CONS | TYO)
+		(EXAMINE-LIST\PRINT-CONSES1 (CAR X))
+		(PRINC '| | TYO)
+		(EXAMINE-LIST\PRINT-CONSES1 (CDR X))
+		(PRINC '|)| TYO))))
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (TYIPEEK 12.))  ; Comment out all this cruft... Better things coming
+
+(DEFUN EXAMINE-LIST\PRINT-TREE (X)
+       (EXAMINE-LIST\PRINT-TREE-SUBNODES X 0.))
+
+(DEFUN EXAMINE-LIST\PRINT-TREE-SUBNODES (X DEPTH)
+       (COND ((ATOM X)
+	      (TERPRI TYO)
+	      (CURSORPOS NIL (* 6. DEPTH) TYO)
+	      (PRINC X TYO))
+	     (T
+	      (EXAMINE-LIST\PRINT-TREE-SUBNODES (CDR X) (1+ DEPTH))
+	      (TERPRI TYO)
+	      (CURSORPOS NIL (* 6. DEPTH) TYO)
+	      (PRINC '|   //| TYO)
+	      (TERPRI TYO)
+	      (CURSORPOS NIL (* 6. DEPTH) TYO)
+	      (PRINC '|.| TYO)
+	      (TERPRI TYO)
+	      (CURSORPOS NIL (* 6. DEPTH) TYO)
+	      (PRINC '|   \| TYO)
+	      (EXAMINE-LIST\PRINT-TREE-SUBNODES (CAR X) (1+ DEPTH)))))
+
+
+
+;;; Snarf old definitions of CAR, CDR, and CONS
+
+(DECLARE (*EXPR +LISP-INITIAL-CAR +LISP-INITIAL-CDR))
+
+(SETPLIST '+LISP-INITIAL-CONS (PLIST 'CONS))
+(SETPLIST '+LISP-INITIAL-CAR  (PLIST 'CAR))
+(SETPLIST '+LISP-INITIAL-CDR  (PLIST 'CDR))
+
+;;; Create an error...
+
+(DEFUN ERR-OUT MACRO (()) `(PROGN (SETQ * '?) (ERR)))
+
+;;; Make new definitions
+
+(DEFUN +REDEFINED-CONS (MACRO-FORM)
+       (LET ((NUMBER-OF-ARGS (1- (LENGTH MACRO-FORM)))
+	     ((ARG1 ARG2) (CDR MACRO-FORM)))
+	    (COND ((= NUMBER-OF-ARGS 1.)
+		   (+REDEFINED-CONS\DIAGNOSE-SINGLE-ARG ARG1)
+		   (ERR-OUT))
+		  ((= NUMBER-OF-ARGS 2.)
+		   `(+LISP-INITIAL-CONS ,ARG1 ,ARG2))
+		  (T
+		   (+REDEFINED-CONS\DIAGNOSE-MULTIPLE-ARGS (CDR MACRO-FORM))
+		   (ERR-OUT)))))
+
+(DEFUN ERRPRINC ()
+       (CURSORPOS 'A TYO)
+       (PRINC '|If I EVAL that, you'll get an error! | TYO))
+
+(DEFUN MAPPRINC X
+       (MAPC (FUNCTION
+	      (LAMBDA (X)
+		      (COND ((> (+ (FLATC X) (CHARPOS TYO) 2.) (LINEL TYO))
+			     (TERPRI TYO)))
+		      (PRINC X TYO)
+		      (TYO 32. TYO)))
+	     (LISTIFY X)))
+
+(DEFUN +REDEFINED-CONS\DIAGNOSE-MULTIPLE-ARGS (ARG-LIST)
+       (ERRPRINC)
+       (MAPPRINC '|CONS takes only two args.|) 
+       (LET ((LIST-IT (ERRSET (EVAL (CONS 'LIST ARG-LIST)) NIL)))
+	    (COND ((NULL LIST-IT)
+		   (MAPPRINC '|Try again.|))
+		  (T
+		   (MAPPRINC '|Maybe you want LIST?|
+			     '|If you had done:|)
+		   (PRINT `(LIST ,@ARG-LIST) TYO)
+		   (TERPRI TYO)
+		   (PRINC '|you would have gotten back:| TYO)
+		   (PRINT (CAR LIST-IT) TYO)))))
+
+
+(DEFUN +REDEFINED-CONS\DIAGNOSE-SINGLE-ARG (ARG1)
+       (ERRPRINC)
+       (MAPPRINC '|CONS takes two args! The two args will become a new|
+		 '|object whose CAR is the first arg to CONS, and whose|
+		 '|CDR is the second arg.|)
+       (COND ((ATOM ARG1)
+	      (COND ((AND (SYMBOLP ARG1) (BOUNDP ARG1))
+		     (LET ((VAL (EVAL ARG1)))
+			  (COND ((AND (CDR VAL) (ATOM (CDR VAL)))
+				 (SETQ VAL (LIST (CAR VAL) (CDR VAL)))))
+			  (COND ((= (LENGTH VAL) 2.)
+				 (MAPPRINC '|I note that| ARG1
+					   '|has a value of |
+					   (EVAL ARG1)
+					   '| ... If you're trying to cons| 
+					   (CAR VAL)
+					   '|and|
+					   (CADR VAL)
+					   '|together, try: |)
+				 (PRINT `(CONS ',(CAR VAL) ',(CADR VAL)) TYO)
+				 (TERPRI TYO)
+				 (MAPPRINC '|If you're still confused,|
+					   '|ask for help.|)))))
+		    ((SYMBOLP ARG1)
+		     (MAPPRINC '|I should also point out that|
+			       ARG1
+			       '|is going to be evaluated as a variable|
+			       '|because you haven't quoted it.|
+			       '|You should be sure any atom you don't quote|
+			       '|is a or a variable with a pre-defined value.|
+			       '|Now try again with 2 args to CONS.|))))
+	     ((AND
+	       (PROGN (COND ((AND (CDR ARG1) (ATOM (CDR ARG1)))
+			     (SETQ ARG1 (LIST (CAR ARG1) (CDR ARG1)))))
+		      T)
+	       (NOT (GETL (CAR ARG1)  ;We'll ignore user definitions
+			  '(LSUBR SUBR FSUBR MACRO)))
+	       (= (LENGTH ARG1) 2.))
+	      (LET ((VAL1 (COND ((BOUNDP (CAR ARG1))
+				 (COND ((AND (CAR ARG1)
+					     (NOT (NUMBERP (CAR ARG1)))
+					     (NOT (EQ (CAR ARG1) 'T)))
+					(MAPPRINC '|I see| (CAR ARG1)
+						  '|has a value|
+						  '|of| (EVAL (CAR ARG1))
+						  '|...|)))
+				 (CAR ARG1))
+				(T (LIST 'QUOTE (CAR ARG1)))))
+		    (VAL2 (COND ((BOUNDP (CADR ARG1)) 
+				 (COND ((AND
+					 (CADR ARG1)
+					 (NOT (NUMBERP (CADR ARG1)))
+					 (NOT (EQ (CAR ARG1) (CADR ARG1)))
+					 (NOT (EQ (CADR ARG1) 'T)))
+					(MAPPRINC '|Hmm,| (CADR ARG1)
+						  '|has a value|
+						  '|of| (EVAL (CADR ARG1))
+						  '|...|)))
+				 (CADR ARG1))
+				(T (LIST 'QUOTE (CADR ARG1))))))
+		   (MAPPRINC '|If you're trying to CONS|
+			     (EVAL VAL1)
+			     '|and|
+			     (EVAL VAL2)
+			     '|together, you should use:|)
+		   (PRINT `(CONS ,VAL1 ,VAL2) TYO)))))
+
+(DEFPROP CONS +REDEFINED-CONS MACRO)
+
+(DEFUN +REDEFINED-C*R (MACRO-FORM)
+       (COND ((= (LENGTH MACRO-FORM) 2.)
+	      (LIST (IMPLODE
+		     (APPEND '(+ L I S P - I N I T I A L -)
+			     (EXPLODEN (+LISP-INITIAL-CAR MACRO-FORM))))
+		    (+LISP-INITIAL-CAR
+		     (+LISP-INITIAL-CDR
+		      MACRO-FORM))))
+	     (T
+	      (ERRPRINC)
+	      (MAPPRINC (+LISP-INITIAL-CAR MACRO-FORM)
+			'|takes exactly one argument.|
+			'|That arg should be a list, and the|
+			'|function| (+LISP-INITIAL-CAR MACRO-FORM)
+			'|returns|)
+	      (DESCRIBE-RETURN-VALUE (+LISP-INITIAL-CAR MACRO-FORM))
+	      (ERR-OUT))))
+
+(DEFUN DESCRIBE-RETURN-VALUE (C*R)
+       (DO ((L (NREVERSE (CDR (NREVERSE (CDR (EXPLODEC C*R))))) (CDR L)))
+	   ((NULL L)
+	    (MAPPRINC '|the list it is given.|) T)
+	   (MAPPRINC
+	    (COND ((EQ (CAR L) 'D) '|the rest of|)
+		 (T '|the first element of|)))))
+
+(DEFUN C*R-REDEFINE FEXPR (X)
+       (SETPLIST (IMPLODE (APPEND '(+ L I S P - I N I T I A L -)
+				  (EXPLODEN (+LISP-INITIAL-CAR X))))
+		 (PLIST (+LISP-INITIAL-CAR X)))
+       (PUTPROP (+LISP-INITIAL-CAR X) '+REDEFINED-C*R 'MACRO)))
+
+(C*R-REDEFINE CAR)
+(C*R-REDEFINE CDR)
+
+(C*R-REDEFINE CAAR)
+(C*R-REDEFINE CADR)
+(C*R-REDEFINE CDAR)
+(C*R-REDEFINE CDDR)
+
+(C*R-REDEFINE CAAAR)
+(C*R-REDEFINE CAADR)
+(C*R-REDEFINE CADAR)
+(C*R-REDEFINE CADDR)
+(C*R-REDEFINE CDAAR)
+(C*R-REDEFINE CDADR)
+(C*R-REDEFINE CDDAR)
+(C*R-REDEFINE CDDDR)
+
+(C*R-REDEFINE CAAAAR)
+(C*R-REDEFINE CAAADR)
+(C*R-REDEFINE CAADAR)
+(C*R-REDEFINE CAADDR)
+(C*R-REDEFINE CADAAR)
+(C*R-REDEFINE CADADR)
+(C*R-REDEFINE CADDAR)
+(C*R-REDEFINE CADDDR)
+(C*R-REDEFINE CDAAAR)
+(C*R-REDEFINE CDAADR)
+(C*R-REDEFINE CDADAR)
+(C*R-REDEFINE CDADDR)
+(C*R-REDEFINE CDDAAR)
+(C*R-REDEFINE CDDADR)
+(C*R-REDEFINE CDDDAR)
+(C*R-REDEFINE CDDDDR)
+
+
+
+(DECLARE (SPECIAL UNBOUND-VARIABLE-HANDLER)
+	 (*EXPR UNBOUND-VARIABLE-HANDLER))
+
+(SETQ UNBOUND-VARIABLE-HANDLER 0.)
+
+(DEFUN UNBOUND-VARIABLE-HANDLER (NCONS-OF-UNBOUND-VARIABLE)
+       (LET ((VARIABLE (CAR NCONS-OF-UNBOUND-VARIABLE)))
+	    (TERPRI TYO)
+	    (PRINC '/; TYO)
+	    (PRIN1 VARIABLE TYO)
+	    (PRINC '| has been used as a variable, but has no value.| TYO)
+	    (TERPRI TYO)
+	    (COND ((AND UNBOUND-VARIABLE-HANDLER
+			(SETQ UNBOUND-VARIABLE-HANDLER
+			      (1+ UNBOUND-VARIABLE-HANDLER))
+			(PROGN
+			 (CLEAR-INPUT TYI)
+			 (DOCUMENT '|;Want help w// vars?|)
+			 (PRINC
+			  '|;Would you like more info on variables? (Y or N)|
+			  TYO)
+			 (LET ((C (TYI TYI)))
+			      (COND ((OR (= C 89.) (= C 121.))
+				     (PRINC '| [Yes]| TYO) T)
+				    (T (PRINC '| [No]| TYO)
+				       (COND ((> UNBOUND-VARIABLE-HANDLER 2.)
+					      (PRINC '| (I'll stop asking)|
+						     TYO)
+					      (SETQ UNBOUND-VARIABLE-HANDLER
+						    NIL)))
+				       NIL)))))
+		   (SETQ UNBOUND-VARIABLE-HANDLER NIL)
+		   (CURSORPOS 'A TYO)
+		   (COND ((ATOM -)
+			  (MAPPRINC
+			   '|If you type an atom| '|all by itself| '|to Lisp,|
+			   '|it will be evaluated as a variable|
+			   '|and its value| '|will be typed on your console.|
+			   '|The symbol you typed has no value,| '|so an error|
+			   '|condition has occurred.| '|Type ^G to clear the|
+			   '|error and return to Lisp's main|
+			   '|READ-EVAL-PRINT loop.|))
+			 (T
+			  (MAPPRINC
+			   '|When Lisp sees a list to be evaluated,|
+			   '|it takes the first element of| '|the list and|
+			   '|assumes it to be a function-name.|
+			   '|The other elements of the list|
+			   '|are the arguments| '|to the function| 
+			   '|and may be atoms (variables)| '|or lists (other|
+			   '|function calls).| '|You have used the atom|
+			   VARIABLE '|as an argument to some function|
+			   '|but the atom had no assigned value!|
+			   '|This created an error condition.|)))))
+	    (BREAK |Type <Alt>P<Space> to continue or ^G to quit|)))
+
+(SETQ UNBND-VRBL 'UNBOUND-VARIABLE-HANDLER)
+
+(DECLARE (SPECIAL UNDEFINED-FUNCTION-HANDLER)
+	 (*EXPR UNDEFINED-FUNCTION-HANDLER))
+
+(SETQ UNDEFINED-FUNCTION-HANDLER 0.)
+
+(SETQ COMPETING-LISP-FUNCTIONS-TABLE
+      '((SELECTQ . CASEQ)
+	(DEFINE . DEFUN)
+	(DEFQ . SETQ)
+	(DF . |(DEFUN <name> FEXPR ...)|)
+	(DE . DEFUN)
+	(DEF . DEFUN)))
+
+(DEFUN UNDEFINED-FUNCTION-HANDLER (NCONS-OF-UNDEFINED-FUNCTION)
+       (LET ((FUNCTION-CALL (CAR NCONS-OF-UNDEFINED-FUNCTION))
+	     (TEMP))
+	    (TERPRI TYO)
+	    (PRINC '/; TYO)
+	    (PRIN1 FUNCTION-CALL TYO)
+	    (PRINC '| has been used in a functional position,| TYO)
+	    (TERPRI TYO)
+	    (PRINC '|; but it has no function definition.| TYO)
+	    (TERPRI TYO)
+	    (COND ((SETQ TEMP
+			 (ASSQ FUNCTION-CALL COMPETING-LISP-FUNCTIONS-TABLE))
+		   (PRINC '|;Some lisps have a function by that name, but| TYO)
+		   (TERPRI TYO)
+		   (PRINC '|; MacLISP doesn't. Maybe you should find out| TYO)
+		   (TERPRI TYO)
+		   (PRINC '|; about the MacLISP construct "| TYO)
+		   (PRINC (CDR TEMP) TYO)
+		   (PRINC '|".| TYO)
+		   (TERPRI TYO)
+		   (PRINC '|; It might be what you want,| TYO)
+		   (PRINC '| though the syntax may be different.| TYO))
+		  ((AND UNDEFINED-FUNCTION-HANDLER
+			(SETQ UNDEFINED-FUNCTION-HANDLER
+			      (1+ UNDEFINED-FUNCTION-HANDLER))
+			(PROGN
+			 (CLEAR-INPUT TYI)
+			 (DOCUMENT '|;Want help w// funcs?|)
+			 (PRINC
+			  '|;Would you like more info on functions? (Y or N)|
+			  TYO)
+			 (LET ((C (TYI TYI)))
+			      (COND ((OR (= C 89.) (= C 121.))
+				     (PRINC '| [Yes]| TYO) T)
+				    (T (PRINC '| [No]| TYO)
+				       (COND ((> UNDEFINED-FUNCTION-HANDLER 2.)
+					      (PRINC '| (I'll stop asking)|
+						     TYO)
+					      (SETQ UNDEFINED-FUNCTION-HANDLER
+						    NIL)))
+				       NIL)))))
+		   (SETQ UNDEFINED-FUNCTION-HANDLER NIL)
+		   (CURSORPOS 'A TYO)
+		   (MAPPRINC
+		    '|When Lisp sees a list to be evaluated,|
+		    '|it takes the first element of| '|the list and|
+		    '|assumes it to be a function-name.|
+		    '|The other elements of the list|
+		    '|are the arguments| '|to the function| 
+		    '|and may be atoms (variables)| '|or lists (other|
+		    '|function calls).| '|You have put |
+		    FUNCTION-CALL '|as the first element of|
+		    '|a list to be evaluated|
+		    '|but it has no function definition.|
+		    '|This created an error condition.|)))
+	    (BREAK |Type <Alt>P<Space> to continue or ^G to quit|)))
+
+(SETQ UNDF-FNCTN 'UNDEFINED-FUNCTION-HANDLER)
+
+
+
+
+(DEFUN C*RP (X)
+       (AND (SYMBOLP X)
+	    (EQ (GETCHAR X 1.) 'C)
+	    (DO ((I 2. (1+ I))
+		 (E (FLATC X)))
+		((= I E) (EQ (GETCHAR X I) 'R))
+		(COND ((NOT (MEMQ (GETCHAR X I) '(A D)))
+		       (RETURN NIL))))))
+
+(DEFUN (DEFINITION MACRO) (X)
+       `(PROGN (MAPCAR 'DESCRIBE-DEFINITION ',(CDR X)) 'DONE))
+
+(DEFUN DESCRIBE-DEFINITION (X)
+       (LET ((DEF (GET 'DESCRIBE-DEFINITION X))
+	     (OUTFILES (NCONS TYO)))
+	    (COND ((EQ DEF 'PRIMITIVE)
+		   (PRINC '|/
+The function "| TYO)
+		   (PRINC X TYO)
+		   (PRINC '|" is primitive to Lisp./
+You can't define it in terms of other functions./
+| TYO))
+		  ((C*RP X)
+		   (C*RDOC X))
+		  ((EQ DEF 'INACCESSIBLE)
+		   (PRINC '|/
+The function "| TYO)
+		   (PRINC X TYO)
+		   (PRINC '|" is used internally by Lisp but/
+isn't accessible to the user. (It's primitive anyway, so/
+you couldn't define it using other lisp functions.)/
+| TYO))
+		  ((AND (NOT DEF)
+			(NOT (STATUS SYSTEM X)))
+		   (PRINC '|/
+The function "| TYO)
+		   (PRINC X TYO)
+		   (PRINC '|" isn't a lisp built-in./
+| TYO))
+		  ((NULL DEF)
+		   (PRINC '|/
+I don't know the definition of "| TYO)
+		   (PRINC X TYO)
+		   (PRINC '|"!| TYO))
+		  ((ATOM DEF)
+		   (TERPRI)
+		   (PRINC '|/
+There is no lisp function "| TYO)
+		   (PRINC X)
+		   (PRINC '|" ... Maybe you want "| TYO)
+		   (PRINC DEF)
+		   (PRINC '|"?| TYO))
+		  (T
+		   (PRINC '|/
+The function "| TYO)
+		   (PRINC X TYO)
+		   (PRINC '|" could be defined by:| TYO)
+		   (SPRINTER `(DEFUN ,X ,@DEF))))))
+
+(DEFUN C*RDOC (X) ; Better not call it on CAR or CDR!
+       (COND ((> (FLATC X) 6.)
+	      (PRINC '|/
+Well, it would be nice if Lisp had such a function built/
+in -- but it doesn't... It only has C...R type functions/
+for up to four letters in between. You could write one
+though. Like this:/
+| TYO)
+	      (SPRINTER (C*REXPAND X)))
+	     (T
+	      (PRINC '|/
+The function | TYO)
+	      (PRINC X TYO)
+	      (PRINC '| could have been defined by:|)
+	      (SPRINTER (C*REXPAND X)))))
+
+(DEFUN C*REXPAND (X)
+       (COND ((> (FLATC X) 6.)
+	      `(DEFUN ,X (X)
+		      ,(C*REXPAND1
+			(NREVERSE (CDR (NREVERSE (CDR (EXPLODEC X))))))))
+	     (T
+	      `(DEFUN ,X (X) ,(C*REXPAND2
+			       (NREVERSE
+				(CDR (NREVERSE (CDR (EXPLODEC X))))))))))
+
+(DEFUN C*REXPAND1 (X)
+       (COND ((> (LENGTH X) 4.)
+	      (LIST (IMPLODE `(C ,(CAR X) ,(CADR X) ,(CADDR X) ,(CADDDR X) R))
+		    (C*REXPAND1 (NTHCDR 4. X))))
+	     (T
+	      (LIST (IMPLODE `(C ,@ X R)) 'X))))
+
+(DEFUN C*REXPAND2 (X)
+       (COND ((NULL X) 'X)
+	     (T (LIST (IMPLODE `(C ,(CAR X) R))
+		      (C*REXPAND2 (CDR X))))))
+
+(DEFUN (DEFINE MACRO) (X)
+       `(PUTPROP 'DESCRIBE-DEFINITION ',(CDDR X) ',(CADR X)))
+
+(DEFUN (PRIMITIVE MACRO) (X)
+       `(MAPC (FUNCTION
+	       (LAMBDA (X)
+		       (PUTPROP 'DESCRIBE-DEFINITION 'PRIMITIVE X)))
+	      ',(CDR X)))
+
+(DEFUN (INACCESSIBLE MACRO) (X)
+       `(MAPC (FUNCTION
+	       (LAMBDA (X)
+		       (PUTPROP 'DESCRIBE-DEFINITION 'INACCESSIBLE X)))
+	      ',(CDR X)))
+
+(DEFUN (MIS-NAMED MACRO) (X)
+       `(MAPC (FUNCTION
+	       (LAMBDA (X)
+		       (PUTPROP 'DESCRIBE-DEFINITION (CADR X) (CAR X))))
+	      ',(CDR X)))
+
+(EVAL-WHEN (EVAL LOAD) ; Load definitions
+	   (LOAD '((DSK TEACH) DEFS >)))
+
+
+

@@ -1,0 +1,1378 @@
+. << Hey, Zwei, this file contains -*- Mode: Text;  Fonts: TR12B1; -*- >>
+.
+. Title _ "Logo Turtle Graphics for the Lisp Machine"
+. Author _ "Henry Lieberman"
+. device xgp
+. 
+.<<mode setting commands>>
+.compact
+.turn on "{", "", "","%", "\", "" , ""
+.<<special characters: begin command, begin underline, >>
+.<<end underline, font switch, quote, right flush>>
+.at 8  if filling then break; "\" 
+.<<better than tabbreak indent 8; this will retain tabs>>
+.<<before a paragraph, but will not put them where >>
+.<<you didn't>>
+.tabs 8, 16, 24, 32
+.
+. if Xcribl then LinesPerPage _ 46 else LinesPerPage _ 66 ;
+. if Xcribl then CharsPerLine _ 80 else CharsPerLine _ 75 ;
+. page frame LinesPerPage high CharsPerLine wide ;
+. title area Footing line LinesPerPage chars 1 to CharsPerLine
+. text area Text lines 4 to LinesPerPage-2 chars 1 to CharsPerLine
+. title area Heading line 1 chars 1 to CharsPerLine 
+. text area TwoColumns lines 9 to LinesPerPage-2 in 2 columns 5 apart
+.
+. TextFont _ "Henry;Text kst"
+. CodeFont _ "Henry;Myfont kst"
+. TitleFont _ "Henry;Title kst"
+. SysFont _ "Fonts1;Nons kst"
+.
+.font 1 textfont <<text font>>
+.font 2 codefont <<italic font for user typein, logo code>>
+.font 3 sysfont <<font for system typeout>>
+.font 4 titlefont <<font for headings>>
+.
+.place text
+.<<print titles after page not before, so that if>>
+.<<subsection begins on page, footing will have its number>>
+.before page  
+.after page   standard titles 
+.
+.<<indexing text -- any text enclosed in back quotes is>>
+.<<to be included in the index>>
+.at "`" phrase "`"  }phrase{ 
+.  send index  }&{page}& $phrase$ &{   
+.
+.<<indexing primitives -- names of functions, variables>>
+.<<enclosed in bars to be included in the index>>
+.at "|" primitivename "|"  }%2{
+.caprim _ ^"primitivename" ; (caprim)}%1{
+.send primitives  }&{page}&%2 ${caprim}$ %1&{ 
+.
+.
+.
+.<<macros>>
+.macro sin  begin single space indent 10 nofill skip 
+.macro sinend  skip spread-1;  end 
+.macro newpage  skip to column 1 
+.macro primitive (primitivename, inputs, ShortName) 
+.if lines < 7 then next page;
+.caprim _ ^"primitivename" ;
+.if "ShortName"  null then start capabb _ ^"ShortName"; 
+.         send primitives  }&{page}&%2 ${capabb}$ %1&{ ;
+.         bracedabb _ (("%1 {%2Abbreviation: " & capabb) & "%1}"); end
+.   else bracedabb_ null;
+.
+%2{ (caprim) }{(if "Inputs"  null then " " else null)}inputs%1{(bracedabb)}
+.send primitives  }&{page}&%2 ${caprim}$ %1&{  
+.
+.
+.
+.macro front  
+.
+.count sectionnumber
+.count subnumber in sectionnumber printing "!.1"
+.variable footingnumber, footingname
+.every footing (%3{footingname}, ,Section {footingnumber}%1)
+.insert contents
+.portion main
+.
+.
+. macro PrintPageNumber  if ((page = null) or (page = 1)) then null else ("Page " & page) 
+
+. macro section (sectionname, sectionlabel) 
+. every heading (%3{Title}, {PrintPageNumber}, {date}%1)
+. <<  next page >> << don't begin new page each section, as we did previously >>
+. if lines < 7 then next page
+. sectionlabel next sectionnumber
+.footingnumber _ sectionnumber!
+.footingname _ "sectionname"
+. skip 2
+.once center
+%4Section  {sectionnumber}.  sectionname%1
+.  skip 2
+.  send contents 
+Section {!}\\sectionname{page} 
+.
+.
+.macro subsection (subname, sublabel) 
+.if lines < 7 then newpage
+.sublabel  next subnumber!
+.footingnumber _ subnumber! 
+.skip 
+%4{!}   subname%1
+
+.send contents  
+\{!}\\\subname{page}
+.
+.
+.macro back 
+.
+.portion primitives
+.begin
+.every footing (,%3Index to Primitives%1,)
+.	wasword _ waslett _ waspg _ null ;
+.	at "&" pgno "&" startfont "$" phrase "$" endfont "&" 
+.               word _ ^"phrase" ; lett _ word[1] ;
+.		if lett  waslett then if lines<6 then skip to line 1 else skip ;
+.	if word  wasword then start break }startfont phrase endfont   pgno{ end
+.		else if "pgno"  waspg then }, pgno{ ;
+.		waspg _ "pgno" ; waslett _ lett ; wasword _ word ; 
+.	nofill preface 0
+.begin center
+%4Index to Primitives%1
+.end
+.	skip 3
+.send contents  
+
+Index to Primitives{page}
+
+.
+.begin
+.place twocolumns
+.receive "$$"
+.end
+.end
+.
+. portion contents
+.count page printing "i"
+.next page
+.every footing (,%3Table of Contents%1,)
+.nofill
+.tabs 3, 15, 20, 25
+.once center
+.skip 2
+%4Table of Contents%1
+.skip 2
+Page
+.receive
+. 
+.front
+.page _ 1
+.
+. begin center
+%4{Title} 
+
+{Author}
+. skip
+Artificial Intelligence Laboratory
+and Laboratory for Computer Science
+Massachusetts Institute of Technology
+. skip end
+. select 1
+
+. << Start of Text here >>
+.
+. section Introduction
+
+This paper is a manual for an implementation of Logo graphics
+primitives in Lisp on the MIT Lisp Machine.
+The graphics system provides:
+
+. begin nofill indent 10, 10 ; skip ; preface 0
+Simple line drawing and erasing using "turtle geometry"
+Flexible relative and absolute coordinate systems, scaling
+Floating point coordinates
+Drawing points, circles, boxes, text
+Automatically filling closed curves with patterns
+Saving and restoring pictures rapidly as arrays of points
+Drawing on color displays, creating new colors
+Three dimensional perspective drawing, two-color stereo display
+. end
+
+The program has been converted to Lisp Machine Lisp from 
+MacLisp on the PDP-10, where it was part of Lisp Logo.
+This paper is a revision of the section on the TV Turtle in 
+the Lisp Logo memo (AI memo 307, Logo memo 11).
+Familiarity with Lisp and the Logo graphics concepts is assumed.
+
+The primitives available are designed to be as compatible 
+as possible with LLOGO's turtle commands for the Knight TV's, 
+the 340 and GT40 vector displays, 
+and 11LOGO's. Some deviance from prior implementations of
+the LOGO turtle was necessary, however,
+to take advantage of the unique features and 
+respect the limitations 
+of the environment. Most of the incompatibilities are noted in
+the descriptions of the primitives below. 
+
+One global change is that in LLOGO, most global variables accessible
+to the user are
+preceded by a colon. Since Lisp Machine Lisp uses colon to 
+denote package prefixes, global variables have been prefixed
+by a star instead in this implementation.
+So LLOGO's %2:XCOR%1 variable is here %2*XCOR%1.
+
+The facilities described in this paper are available by
+loading the file %2AI:LLOGO;LMT%1 ("Lisp Machine Turtle")
+for the black-and-white version, or %2AI:LLOGO;LMCT%1 
+("Lisp Machine Color Turtle") for the color version.
+
+. next page
+
+. section Initializing the Display
+
+. primitive STARTDISPLAY,,SD
+
+Initializes the screen. The user is supplied
+with a single turtle, 
+located at the center of the screen, with its pen down and an 
+initial heading of zero.
+It creates a graphics window for displaying turtle pictures.
+This command is also useful as a means of
+reinitializing and restarting everything when things get
+hopelessly fouled up. %2STARTDISPLAY%1 should restore the entire 
+state of the turtle's world to what it was initially.
+
+%2STARTDISPLAY%1 allows the user to create a new
+window on the screen to display the turtle's pictures.
+If the newly created window overlaps the window in which
+the user was typing, he is given the opportunity to reshape that
+window to get it out of the way.
+This window is kept as the variable %2TVRTLE-WINDOW%1.
+
+. primitive STARTDISPLAY-WITH, <window>
+
+Same as %2STARTDISPLAY%1, except the user can supply
+a window to be used for the turtle's output.
+
+. primitive NODISPLAY,,ND
+
+Announces the user's intention to stop using
+turtle primitives. %2NODISPLAY%1 removes the turtle
+graphics window, so that program
+output may occur in any part of the screen. Turtle
+commands executed after a %2NODISPLAY%1 will cause
+graphic output to appear, but no assurance is 
+given that graphic output and printed output will
+not interfere with each other. %2NODISPLAY%1 also
+clears the screen. Use %2CLEARSCREEN%1 if you want to return to 
+split screen mode after executing a %2NODISPLAY%1.
+
+. primitive WIPE
+
+Erases the picture on the screen,
+except that it does not affect any turtles which are
+being displayed.
+
+. primitive CLEARSCREEN,,CS
+
+Equivalent to %2|HOME| %2WIPE%1, but faster.
+
+.section The Turtle
+
+The turtle marker is displayed as an isoceles triangle, 
+with a line from the center to the vertex between the equal sides; 
+this line points in the
+direction of the heading. The triangle turtle is
+XOR'ed in with the displayed picture to show or
+hide the turtle: points which are displayed when
+the turtle is not over them are turned off, and
+points where nothing is displayed are turned on
+when the turtle is over them. 
+This allows the turtle to be more
+visible against a background consisting of a complex
+picture, or shaded area. LLOGO's turtle cursor provides
+an extra bit of information to the user about 
+the turtle's state: The center of the triangle
+indicates what will happen if the turtle is moved.
+If the pen is down, a filled-in box is displayed
+at the center of the triangle. If the eraser is 
+down, an outlined box appears. If XOR mode is in 
+effect, an "X" is displayed at the center of the turtle.
+If XOR mode is not in effect and both the pen and
+the eraser are up, only the triangle will be
+displayed. This state indicates that the turtle
+will not draw or erase lines when moved.
+
+. primitive HIDETURTLE,,HT
+
+Makes the turtle disappear. Only lines drawn by the turtle 
+will be seen, and no marker will be drawn to indicate the turtle's 
+position and heading.
+
+. primitive SHOWTURTLE,,ST
+
+Brings the turtle back to life. A turtle marker will be drawn
+to indicate the state of the turtle.
+
+. primitive *SEETURTLE
+
+A global variable which is %2T%1 if the turtle is being displayed, else
+%2NIL%1. Don't modify this variable yourself using |SETQ|. 
+The value should only be changed by calls to 
+|HIDETURTLE| and |SHOWTURTLE|. Unless explicitly stated 
+otherwise, the global variables mentioned in this section, such
+as |*XCOR|, |*HEADING|, and |*PENSTATE|, should not be directly
+modified by assignment. Use instead the functions which are
+provided for that purpose. 
+
+. primitive maketurtle, <draw-turtle-procedure> <erase-turtle-procedure>
+
+This allows the user to substitute procedures for drawing 
+the turtle marker, to be used instead of the system's default 
+triangle turtle. This feature could be used to substitute a more 
+lifelike picture to represent the turtle, to print state information on
+the screen instead of drawing a picture, or to record the turtle's 
+wanderings. %2MAKETURTLE%1 takes as input the names of two 
+procedures, the first to be called whenever the system wants the 
+turtle to appear, the second to be called when the system wants the 
+turtle marker to vanish. These procedures will be called in 
+%2*SEETURTLE%1 mode when the turtle's state changes, i.e. by 
+%2FORWARD%1, %2RIGHT%1, %2PENDOWN%1, etc. The procedures should 
+examine the turtle state variables, such as %2*XCOR%1, %2*YCOR%1,
+%2*HEADING%1, %2*PENSTATE%1, etc. to decide how and where the turtle marker 
+is to be displayed. The procedures will be executed with 
+%2*SEETURTLE%1 bound to %2NIL%1, to prevent infinite recursion.
+All turtle state variables are rebound during the execution of user 
+supplied turtle marker procedures, so that you can change them in 
+the course of drawing a turtle.
+If there is more than one turtle, each turtle can be given 
+a separate set of procedures for drawing and erasing itself.
+
+. primitive *drawturtle
+
+Global variable containing the name of the procedure being 
+used to draw the current turtle. %2NIL%1 means the standard system 
+triangle turtle is in use. Set by %2MAKETURTLE%1.
+
+. primitive *eraseturtle
+
+Like %2*DRAWTURTLE%1, but contains procedure used to erase
+the turtle.
+
+. primitive triangleturtle
+
+The procedure used to draw the standard system triangle turtle.
+If you want to do something just slightly different than the 
+standard turtle, you might have a procedure which calls %2TRIANGLETURTLE%1.
+Since %2TRIANGLETURTLE%1 draws the turtle in XOR mode, the same 
+procedure is used both to draw and to erase the turtle.
+
+.section Moving the Turtle
+
+. primitive FORWARD, <steps>,FD
+
+Moves the turtle %2<steps>%1 in the direction 
+it is currently pointed.
+
+. primitive BACK, <steps>,BK
+
+Moves the turtle %2<steps>%1 opposite to the direction
+in which it is pointed.
+
+. primitive SETX, <x>
+
+Moves the turtle to (%2<x>%1, |YCOR|).
+
+. primitive SETY, <y>
+
+Moves the turtle to (|XCOR|, %2<y>%1).
+
+. primitive SETXY, <x> <y>
+
+Moves the turtle to (%2<x>%1, %2<y>%1).
+
+. primitive DELX, <dx>
+
+Moves turtle to (%2XCOR%1+%2<dx>%1, %2YCOR%1).
+
+. primitive DELY, <dy>
+
+Moves turtle to (%2XCOR%1, %2YCOR%1+%2<dy>%1).
+
+. primitive DELXY, <dx> <dy>
+
+Moves turtle to (%2XCOR%1+%2<dx>%1, %2YCOR%1+%2<dy>%1).
+
+. primitive HOME,,H
+
+Moves turtle home to its starting state, at (0, 0)
+with a heading of 0.
+
+. primitive WRAP,
+
+Movement of the turtle past the boundaries
+of the screen by |FORWARD|, |SETXY|, etc. is an 
+error, unless %2WRAP%1 is done. This causes movement
+off one edge to result in the turtle's reappearance at the opposite
+edge, as if the screen was a torus. 
+
+. primitive NOWRAP,
+
+Turns off wraparound mode.  %2NOWRAP%1 makes sure that 
+the turtle's coordinates are within the boundaries of the screen.
+Any subsequent attempt to
+move beyond the boundaries of the screen will cause an 
+error.
+
+. primitive *WRAP,
+
+A global variable containing %2T%1 iff wraparound
+mode is in effect, %2NIL%1 otherwise.
+
+.section Turning the Turtle
+
+. primitive RIGHT, <angle>,RT
+
+Turns the turtle clockwise %2<angle>%1 degrees.
+
+. primitive LEFT, <angle>,LT
+
+Turns the turtle counter-clockwise %2<angle>%1 degrees.
+
+
+. primitive SETHEAD, <angle>
+
+The turtle is turned to a heading of %2<angle>%1.
+
+
+.section The Pen
+
+. primitive PENDOWN,,PD
+
+The turtle's pen is lowered. This means that if
+the turtle is moved, a line will be drawn between the turtle's
+old and new positions.
+A filled in box is displayed at the center of the turtle if
+in %2SHOWTURTLE%1 mode, to show the user that the pen
+is down.
+
+
+. primitive PENUP,,PU
+
+The pen is raised. The turtle will not draw a line
+when moved. If %2SHOWTURTLE%1 mode is on, the filled in box
+displayed at the center of the turtle to indicate %2PENDOWN%1
+will disappear. 
+
+. primitive *PENstate
+
+A global variable which is %2T%1 iff the pen is down, else %2NIL%1.
+
+.section The Eraser
+
+As well as
+having a "pen" which can be raised or lowered to control
+drawing of lines when the turtle is moved, it also has an "eraser".
+When the eraser is down, if the turtle retraces a line which 
+has been previously drawn with the pen down, the line disappears.
+This can also be thought of as "drawing in the same color ink
+as the background".
+Note that this means that if a line is drawn with the eraser down,
+any point lying on that line will be turned off, even though
+another line might have passed through the same point.
+
+
+. primitive ERASERDOWN,,ERD
+
+
+The eraser is lowered. When the turtle moves, lines
+are erased which were drawn with the pen down. Note that
+the pen and the eraser can't be down at the same
+time. %2ERASERDOWN%1 therefore will automatically do a %2PENUP%1,
+and %2PENDOWN%1 will do an %2ERASERUP%1. An outlined
+box is displayed at the center of the turtle when in
+%2SHOWTURTLE%1 mode as long as the eraser is down.
+
+
+. primitive ERASERUP,,ERU
+
+The eraser is raised. 
+
+. primitive *ERASERSTATE
+
+Global variable which is %2T%1 iff the eraser is down,
+%2NIL%1 otherwise.
+
+.section Drawing in XOR Mode
+
+In addition to drawing with the pen down, which
+turns on points along the line being drawn, and drawing
+with the eraser down, which turns off points along
+the line being drawn, there exists another option, useful
+in certain circumstances. The turtle can be used to draw
+in XOR mode -- points along the line being drawn are
+turned on if they were previously off, and off if they
+were formerly on. This mode of operation is used to 
+display the triangle turtle in %2SHOWTURTLE%1 mode.
+It allows the same procedure to draw a line and erase it,
+leaving what was there before it undisturbed. 
+
+. primitive XORDOWN,,XD
+
+.skip
+. primitive xORUP,,XU
+
+.skip
+. primitive *XORSTATE
+
+Analogous to the corresponding primitives for the
+pen and the eraser.
+
+. primitive DRAWMODE, <mode>
+
+The screen memory has a feature which enables any attempt
+to write a word in the memory to result
+in a specified boolean function of the word being written
+and the word previously there. 
+%2DRAWMODE%1 changes that
+specification according to %2<mode>%1, which should be
+an integer representing the mode chosen from the values of one of the
+following symbols: %2IOR, XOR, ANDC,
+SAME, COMP, EQV, SETO, SETZ, SET%1. 
+%2IOR%1 is for %2PENDOWN%1 mode, %2ANDC%1 for %2ERASERDOWN%1.
+%2DRAWMODE%1 returns the number describing the mode previously in
+effect.
+
+. primitive *DRAWMODE
+
+A global variable containing the current mode number as set
+by the last call to %2DRAWMODE%1.
+
+.section Examining and Modifying the Turtle's State
+
+. primitive *xcor
+
+A global variable containing the turtle's current X location. 
+X coordinates increase rightward, and the origin is in the center 
+of the screen [but can be changed via |sethome|].
+This variable is always a floating point number. If wraparound mode 
+is in effect, this variable indicates distance from the origin as 
+if on an infinite plane. If 
+the right edge of the screen is 500, and %2SETX 600%1 is done, 
+%2*XCOR%1 will be 600.0, but the turtle will appear 400 units to 
+the left of the origin. 
+
+. primitive *YCOR
+
+Like %2*XCOR%1, but holds the value of the Y coordinate.
+Y coordinates increase upward.
+
+. primitive *heading
+
+Holds the value of the turtle's heading, in floating point. 
+A heading of zero corresponds to pointing straight upward, and 
+heading increases clockwise. This variable always gives the 
+absolute heading, not reduced modulo 360. After %2SETHEAD 400%1, 
+%2*HEADING%1 is 400.0, not 40.0, although the turtle is pointing in 
+the same direction as %2SETHEAD 40%1.
+
+. primitive XCOR
+
+Outputs the X coordinate of the turtle as an integer.
+If wrapaound mode is in effect, this function will output the 
+position of the turtle as it appears on the screen. After %2SETX 
+600%1, %2XCOR%1 would return -400.
+
+. primitive YCOR
+
+Like %2XCOR%1, but outputs the Y coordinate of the turtle.
+
+. primitive HEADING
+
+Outputs the heading of the turtle as an integer, modulo 360.
+After %2SETHEAD 400%1, %2HEADING%1 would return 40.
+
+. primitive HERE
+
+Outputs %2(LIST XCOR YCOR HEADING)%1. Useful for remembering
+the turtle's state via %2(SETQ 'TURTLESTATE (HERE))%1.  A
+turtle state saved in this manner can be restored using
+%2SETTURTLE%1.
+
+. primitive MOUSE-HERE
+
+Returns a list of the %2X%1 and %2Y%1 positions of the mouse.
+
+. primitive SETTURTLE, <state>,SETT
+
+Sets the state of the turtle to %2<state>%1. %2<state>%1 is a sentence
+of X coordinate, Y coordinate, and heading. The heading may be
+omitted, in which case it is not affected. %2SETTURTLE%1
+is the inverse of %2HERE%1.
+
+
+.section Multiple Turtles 
+
+Initially, the user is supplied by LOGO with one unique
+turtle, which remembers its position and heading, and is capable
+of drawing or erasing lines when moved. The ability to create any number
+of these creatures and to switch the attention of the
+system between them makes possible such things as
+assigning a turtle locally to each one of several programs.
+
+
+. primitive HATCH, <turtle-name>
+
+Creates a new turtle, christened %2<turtle-name>%1.
+The turtle created by %2HATCH%1 starts out in a state identical
+to that of the original turtle present after a |STARTDISPLAY|;
+It is located at its home, at the center of the display area,
+its heading points 
+straight up, and its pen is down. The newly created turtle
+becomes the current turtle, and will respond to all turtle commands.
+The state of any previously created turtle, including the 
+one originally supplied by %2STARTDISPLAY%1, remains unaffected
+by %2HATCH%1, or any turtle command referring to the new turtle.
+
+. primitive USETURTLE, <turtle-name>,UT
+
+Selects the named turtle to be the current turtle;
+this means that all subsequent turtle commands
+[|FORWARD|, |RIGHT|, .  .  .  .], and turtle state variables
+[|*HEADING|, |*XCOR|, |*YCOR|, .  .  .  .] now will refer 
+to the selected turtle until changed again  by 
+another call to %2USETURTLE%1 or a call to
+%2HATCH%1. The state of the previously
+selected turtle is preserved so that if it is ever 
+selected again, its state will be restored.
+The turtle which is provided initially by 
+%2STARTDISPLAY%1 is named |LOGOTURTLE|.
+
+
+. primitive *TURTLE
+
+Global variable which contains the name of the
+currently selected turtle.
+
+. primitive *TURTLES
+
+Global variable which contains a list of the names of
+all the turtles in existence.
+
+
+
+.section Global Navigation
+
+
+%2BEARING%1, %2RANGE%1, and %2TOWARDS%1 return
+integers if all inputs are integers, otherwise they return
+floating point numbers. The numbers returned are
+always positive, and %2BEARING%1 and %2TOWARDS%1 return
+headings modulo 360.
+
+
+. primitive RANGE, <x> <y>
+
+.break
+. primitive RANGE, <sentence-of-x-and-y>
+
+Outputs the distance from the turtle to a point specified
+either by two inputs which are x and y coordinates respectively,
+or by a sentence of x and y coordinates.
+
+. primitive BEARING, <x> <y>
+
+.break
+. primitive BEARING, <sentence-of-x-and-y>
+
+Outputs the absolute direction from the turtle
+to a point specified
+in a format acceptable to %2RANGE%1.
+%2(|SETHEAD|%2 (BEARING <x> <y>))%1 points the turtle in the
+direction of (%2<x>%1,%2<y>%1).
+
+. primitive TOWARDS, <x> <y>
+
+.break
+. primitive TOWARDS, <sentence-of-x-and-y>
+
+Outputs the relative direction from the turtle to the point
+specified.
+%2(|RIGHT|%2 (TOWARDS <x> <y>))%1 points the turtle in the
+direction of (%2<x>%1, %2<y>%1).
+
+.section Trigonometry
+
+. primitive COSINE, <angle>
+
+Cosine of <angle> degrees.
+
+. primitive SINE, <angle>
+
+Sine of <angle> degrees.
+
+. primitive ARCTAN, <x> <y>,ATANGENT
+
+Angle whose tangent is %2<x>%1/%2<y>%1, in degrees.
+
+[%2SIN%1, %2COS%1, and %2ATAN%1 are the corresponding functions 
+which input or output in radians]
+
+.section Text
+
+. primitive MARK, <text>
+
+
+Prints text in at the turtle's current location.
+|PRINC| is used to print the text (rather than |PRINT|).
+
+.section Points and Circles
+
+[These are displayed whether or not the pen or the eraser
+is down]
+
+. primitive POINT,
+
+Displays a point at the turtle's current location.
+
+. primitive POINT, <T or NIL>
+
+Turns the point at |HERE| on if its input is not %2NIL%1,
+off if it is %2NIL%1.
+
+. primitive POINT, <x> <y> <T or NIL>
+
+Turns the point at (%2<x>%1, %2<y>%1) on or off as specified
+by its input. The third input is optional, and defaults to %2T%1
+[e.g., turn the point on] if omitted.
+
+
+Note: These conventions for %2POINT%1 differ slightly
+from those used in the LLOGO 340 turtle, to accommodate the
+capability of turning a point off as well as on.	
+
+. primitive POINTSTATE
+
+Returns %2T%1 or %2NIL%1, depending on whether the
+point at the turtle's current location is on or off. 
+The turtle marker is hidden temporarily during the execution of 
+%2POINTSTATE%1, so that display of the turtle will not interfere 
+with the point being tested. %2POINTSTATE%1 will return whether the 
+point being tested is on, regardless of how it was caused to appear 
+-- by a line drawn by the turtle, text printed, shading, etc.
+
+. primitive POINTSTATE, <x> <y>
+
+Tests the point at the specified coordinates.
+
+. primitive ARC, <radius> <degrees>
+
+Draws an arc of a circle of the given radius, and
+extending for the given number of degrees around the circle
+centered on the turtle's current location. The arc drawn
+begins at the point on the circle where the turtle's heading
+is pointing, and is drawn in a clockwise direction [in the
+direction of increasing heading].
+
+. primitive circle, <radius>
+
+Equivalent to %2(ARC <radius> 360)%1.
+
+.section Scaling
+
+Two functions are provided for changing the size of the 
+graphic display area at the top of the screen and the area for
+typein and typeout at the bottom of the screen, and the dimensions of the
+display area in turtle coordinates. %2TVSIZE%1 controls the actual
+size of the display area, and operates in terms of raster display points.
+%2TURTLESIZE%1 is used to establish the mapping from the specified %2TVSIZE%1
+into turtle coordinates -- the numbers given to and returned by the turtle
+primitives. It does not have any effect on the visual size of the
+area used for graphic display output.
+
+. primitive TVSIZE,
+
+Returns a list containing the horizontal and vertical sizes
+of the display area in raster points. 
+
+. primitive TVSIZE, <new-size>
+
+Sets both the horizontal and vertical sizes of the display
+area to %2<new-size>%1. Modifying the %2TVSIZE%1 causes a %2CLEARSCREEN%1
+to be performed. The size of the area at the bottom of the screen
+for typein and typeout is adjusted to take up as much space as possible
+on the screen not being used for graphic output. Changing the
+%2TVSIZE%1 will not have any effect on pictures previously saved
+by |MAKEWINDOW| [see Section {sectionnumber! windowsection}].
+
+%2TVSIZE <new-x-size> <new-y-size>%1
+Sets the horizontal and vertical sizes independently.
+If either of the two inputs is %2NIL%1, the corresponding
+size remains unchanged.
+
+. primitive TURTLESIZE
+
+Returns a list containing the horizontal and vertical sizes
+of the display area in turtle coordinates. These are in 
+floating point. The initial default is 1000 x 1000, and the origin is always
+at the center of the screen -- so turtle coordinates initially range
+from  -500 to +500. If wraparound mode is in effect, turtle coordinates
+are allowed above and below the range set by %2TURTLESIZE%1, and
+will be mapped to appropriate points on the screen. 
+
+. primitive TURTLESIZE, <new-size>
+
+Sets the dimensions of the screen in turtle coordinates to 
+%2<new-size>%1 turtle steps. If the display area is not square 
+[that is, if the horizontal and vertical TV size parameters are not 
+equal], then %2<new-size>%1 is taken to be the number of turtle steps 
+for the minimum dimension of the screen, and the other dimension is 
+adjusted accordingly. In particular, you can't specify 
+%2TURTLESIZE%1 independently in each direction, so that a turtle 
+step always corresponds to the same number of TV points. 	
+Changing %2TURTLESIZE%1 has
+no effect on the picture currently being displayed, or on any pictures
+saved by |MAKEWINDOW|.
+
+. primitive sethome,,turtlehome
+
+.break
+. primitive sethome, <new-x-home> <new-y-home>, th
+
+Changes the origin of turtle coordinates to the specified 
+location, defaulting to the turtle's present position. That 
+position on the screen will then correspond to an |XCOR| and
+|YCOR| of zero for all subsequent turtle commands. The home 
+location is local to each turtle, so that each of several turtles 
+may be assigned different homes on the screen.
+
+. primitive TV-X, <turtle-x>
+. skip
+. primitive TV-Y, <turtle-y>
+. skip
+. primitive TURTLE-X, <tv-x>
+. skip
+. primitive TURTLE-Y, <tv-y>
+
+Conversion between TV and turtle coordinate systems.
+
+.section Saving Pictures, windowsection:
+
+In creating pictures which consist of repeating
+patterns of smaller pictures, and creating animated cartoons, 
+it is often useful to be able to save displayed pictures
+drawn by a series of turtle commands,
+and operate upon them as a unit, displaying and erasing
+them, moving them to other parts of the screen, etc.
+We provide such a facility, allowing
+the user to save rectangular portions of the screen as
+arrays of points. These arrays can be displayed and erased
+at any location on the screen, although they cannot
+be automatically rotated. 
+
+These saved pictures are called "windows", not to be
+confused with the Lisp Machine system windows.
+(The terminology conflict is unfortunate, but the
+turtle graphics software predates the Lisp Machine.)
+
+This facility is somewhat different from the
+|SNAP| command in the LLOGO 340 turtle and 11LOGO. 
+The %2SNAP%1 operation saves the picture as display lists,
+essentially a vector
+representation, while the window saves 
+an array of points. For large, sparse pictures, the
+vector representation consumes less space, while
+the point array representation favors small, complex
+pictures. Saving point arrays makes it possible 
+to redisplay pictures much more rapidly than 
+redrawing them with
+the commands used to originally generate the picture,
+since recomputation of points lying along vectors is
+unnecessary. It is therefore ideal for programs
+which want to make only few, spatially localized changes 
+to a picture, but need the maximum possible speed
+for dynamic updating of the screen. It also has
+the advantage that the amount of space and time used for creating 
+and redisplaying pictures is insensitive to the complexity
+of a picture within an area. These characteristics
+make an array representation more suitable than a
+vector representation for, say,
+a space war program, where the space ship must be
+redisplayed rapidly, and consists of perhaps a 
+large number of vectors confined to a small area
+of the screen. It also provides a "clipping" facility.
+
+Saving point arrays has a property not
+shared by picture saving commands on vector displays -- "What
+you see is what you get". Everything within the 
+designated area is included, regardless of how it
+was caused to appear -- vectors, text, points, 
+other %2WINDOW%1s, etc. This means that you can
+always tell what will be included in a saved picture
+simply by looking at the screen. 
+
+. primitive MAKEWINDOW, <name> <size>,MW
+
+Creates a "window", i.e., an array of
+points, and names it %2<name>%1.
+The %2<name>%1 should be a word, and 
+should be chosen so as not to conflict with existing
+functions or arrays.
+The window is centered on the turtle's current location, 
+and extends for %2<size>%1 turtle steps horizontally and
+vertically from the center. The location of the center
+of the window and its size are remembered. 
+
+. primitive makewindow, <name> <x-size> <y-size>
+
+Creates a window centered on the turtle's current
+location, but sets the horizontal and vertical sizes
+of the window independently, so the area saved can 
+be rectangular instead of square, as in the one input mode.
+
+. primitive MAKEWINDOW, <name> <x> <y> <x-size> <y-size>
+
+Creates a window centered on the specified location,
+of the specified size. If the %2<y-size>%1 is omitted
+it is assumed identical to the %2<x-size>%1.
+
+. primitive ERASEWINDOW, <name>,EW
+
+Destroys the window specified by %2<name>%1. 
+If the window is no longer needed, this permits the space that
+it occupied to be reclaimed.
+
+. primitive ERASEWINDOWS,,EWS
+
+Erases all currently defined windows.
+
+. primitive *WINDOWS
+
+Global variable which contains a list of all currently defined
+windows.
+
+. primitive WINDOWFRAME, .  .  .  .,WF
+
+
+Takes inputs like |MAKEWINDOW|, except
+for the window name. That is, it takes from one to four inputs
+specifying a size and optionally a center
+location. %2WINDOWFRAME%1 displays a box
+on the screen which indicates the extent of the picture
+which would be saved by a %2MAKEWINDOW%1 of the corresponding
+size and location. This is useful in deciding how large a
+window is necessary before using %2MAKEWINDOW%1.
+The box is XORed into the screen, so that 
+giving the %2WINDOWFRAME%1 command again will cause
+the box to disappear. If no inputs are given to %2WINDOWFRAME%1
+the size and location default to the last ones specified.
+
+
+. primitive SHOWWINDOW, <name>,SW
+
+Causes the specified window to be displayed at
+the location at which it was originally created. 
+Currently, wraparound is not allowed; display of the
+picture is not allowed to cross the edge of the display
+area. Changing %2TVSIZE%1 and %2TURTLESIZE%1 have no
+effect on the size of saved pictures.
+
+. primitive SHOWWINDOW, <name> <new-center-x> <new-center-y>
+
+Causes the window to be displayed at the new location
+specified.
+
+. primitive HIDEWINDOW, .  .  .  .,HW
+
+Accepts arguments like %2SHOWWINDOW%1, but displays
+the window turning off any point which was
+on in the window when it was created. The effect of this is
+as if the picture were redrawn in eraser mode.
+If a call to %2SHOWWINDOW%1
+displayed the window on a blank area, a similar call to %2HIDEWINDOW%1
+will erase it. If %2SHOWWINDOW%1 superimposed the window on something
+already displayed, the old picture is not guaranteed to remain
+intact after the window is hidden. 
+
+. primitive XORWINDOW, .  .  .  .,XW
+
+Like %2SHOWWINDOW%1 and %2HIDEWINDOW%1, but XOR's the
+picture into the screen. 
+
+. primitive windowhome, <name>,wh
+
+.break
+. primitive windowhome, <name> <new-x-home> <new-y-home>
+
+Changes the home location associated with a window to the 
+specified location, defaulting to |HERE|. This is the location 
+where the center of the window will be displayed if only the 
+name of the window is given as input to %2SHOWWINDOW%1, 
+%2HIDEWINDOW%1, etc.
+
+. primitive SAVEWINDOWS, <filespec>,SWS
+
+Creates a file on the disk which saves all currently 
+defined windows in binary. They can be reloaded at a later time
+with %2GETWINDOWS%1. The file specification follows the same
+format as other LLOGO file commands such as |READFILE|, 
+and LISP's |UREAD|. The filenames are not evaluated.
+
+. primitive GETWINDOWS, <filespec>,GW
+
+Reloads windows from a disk file created by 
+%2SAVEWINDOWS%1. 
+
+. primitive EXPAND, <small window> <expansion factor> <big window>
+
+     Expands the size of a window, creating a new window which
+is larger by some integer number of times. The last argument is 
+the name of the new window. It expands the window by replicating 
+each point horziontally and vertically.
+
+.section Shading
+
+A unique advantage of the TV displays over vector oriented
+displays is that in addition to the display of line drawings, 
+they make feasible the creation of pictures using shaded areas.
+Patterns of points of varying densities can be used to fill 
+regions, creating the effect of a "gray scale".
+Our shading facility is aimed toward creating 
+a convenient and efficient means of
+specifying areas to be shaded, and patterns to be used in shading.
+The basic idea is that regions to be shaded are indicated by 
+drawing a closed curve around them in %2PENDOWN%1 mode, and placing 
+the turtle inside the region before issuing the %2SHADE%1 command, 
+with an argument determining the pattern to be used. Several simple 
+patterns are supplied by the system, but the user has the 
+opportunity of defining new ones.
+
+. primitive shade, <pattern name>
+
+Shades the area enclosing the turtle's current location.
+The input is a pattern to be used in shading the area, and
+defaults to the %2SOLID%1 pattern if omitted. The turtle must
+be sitting in an empty area [not on a line or in a filled in 
+region], or an error results. The effect of this primitive is
+to fill in the region surrounding the turtle's location with
+the shading pattern given [by inclusive OR'ing it in with the 
+existing picture]. The region to be shaded must be bounded by a 
+closed curve; %2SHADE%1 works by filling in the pattern starting 
+from the turtle's location, and stopping when a boundary is 
+reached. If the region is not closed, the entire screen will be 
+shaded! 
+
+
+.section Shading Patterns
+
+Shading patterns are represented as functions which tell 
+the %2SHADE%1 primitive how to shade an area.
+The system provides a group of predefined shading patterns, 
+described below. These will probably be sufficient for most 
+simple uses of shading, i.e. distinguishing a few neighboring 
+regions with different shading patterns, etc. Those needing more 
+sophisticated capabilities can define their own patterns. 
+The predefined shading patterns are slightly different in this
+implementation than in LLOGO.
+
+. primitive solid
+
+A shading pattern which fills in every point.
+This pattern is the default used if no argument is given
+to %2SHADE%1.
+
+. primitive checkers
+
+A pattern which makes a checkerboard by filling in alternating
+squares.
+
+. primitive lines
+
+A pattern consisting of vertical lines.
+
+. primitive circles
+
+Repeating small open circles, packed close together.
+
+. primitive dots
+
+Small filled in circles.
+
+. primitive pignoses
+
+(I'm not responsible for this one, blame Bernie Greenberg!)
+
+The name of a window may also be given to %2SHADE%1 for use as a 
+shading pattern. This provides the capability of using arbitrary
+pictures as shading patterns.
+The effect will be to fill the closed curve to be shaded with the 
+picture specified by the window.
+If area beyond the extent of the original picture is to 
+be shaded, the picture will be repeated horizontally and vertically
+as many times as is necessary to fill the area. 
+
+The representation of a shading pattern is as a function of three arguments, 
+so that it is possible for a user to supply his own function to %2SHADE%1.
+The function has the responsibility of shading in a horizontal line, given
+starting X and Y coordinates, and ending X coordinate, in TV points.
+(This differs slightly from LLOGO.)
+
+.
+.
+. section Color
+
+This section describes a version of the turtle for machines equipped with 
+a color graphics display.
+
+Some of the primitives listed above for the black-and-white version are
+not available with the color version.
+These include XOR mode, XGP output, and %2MARK%1 (which may be implemented later).
+Shading patterns (except %2SOLID%1) don't work in color yet.
+
+Colors are created by specifying the amount of red, green, and blue light
+which make the color. The colors %2WHITE, BLACK, RED, GREEN, BLUE, YELLOW,
+MAGENTA, CYAN%1 are supplied initially, and new ones can be created
+
+. primitive MAKECOLOR, <color name> <red> <green> <blue>, MC
+
+Where <color name> is an atomic name for the color, and <red>, <green>,
+and <blue> are floating point numbers between 0.0 and 1.0 which say how
+much of each of the primaries is included in the color being defined.
+%2YELLOW%1 was defined by %2(MAKECOLOR 'YELLOW 1.0 1.0 0.0)%1.
+
+. primitive *COLORS
+
+A list of all currently defined colors.
+ 
+. break
+. primitive REDPART, <color name>
+. break
+. primitive GREENPART, <color name>
+. break
+. primitive BLUEPART, <color name>
+
+These retrieve the corresponding intensities of the primaries in that color.
+They are between zero and one, as for %2MAKECOLOR%1.
+
+The system always keeps track of two default colors, the %2PENCOLOR%1 and
+the %2ERASERCOLOR%1. The %2PENCOLOR%1 is the color the turtle draws in, so that
+all lines drawn by the turtle when its pen is down appear on the screen
+in that color. The initial pen color is %2WHITE%1.
+
+. primitive PENCOLOR, <color name>, PC
+
+Changes the pen color, where <color name> has been 
+previously defined. There can, of course,
+be many different turtles, each with its own color pen. The %2ERASERCOLOR%1
+is the color used by the turtle to draw when its eraser is down. It is
+used as the background color, so lines drawn with the pen down are made
+to disappear by drawing them in the same color as the background.
+%2CLEARSCREEN%1 erases everything on the screen, filling the screen with the
+%2ERASERCOLOR%1. 
+
+. primitive ERASERCOLOR, <color name>, ERC
+
+This changes the eraser color, and has the effect 
+of immediately changing the background color 
+on the screen as well, whereas changing %2PENCOLOR%1 only affects future
+drawing by the turtle. [maybe this is wrong?] The initial eraser color is
+black. 
+
+. primitive *PENCOLOR
+. skip
+. primitive *ERASERCOLOR
+
+Variables which hold the current pen color, and eraser color.
+
+. primitive POINTCOLOR
+
+Returns the name of the color of the point specified. 
+
+. primitive POINTSTATE
+
+If the point is in the eraser color, %2POINTSTATE%1 will return NIL. This
+is for compatibility with the black and white version, so that conditionals
+like %2IF POINTSTATE ...%1  will be true if the point is in some color other
+than the background color. Similarly, %2PENCOLOR NIL%1 will choose the current
+eraser color.
+
+There is a limit of 16. different colors visible on the screen at once,
+including the %2*PENCOLOR%1 and %2*ERASERCOLOR%1 [More precisely, you can only 
+do %2PENCOLOR%1 with 15. different colors between %2CLEARSCREEN's%1]. The currently visible
+colors are kept in an array called the %2PALETTE,%1 and colors are added to free
+slots in the %2PALETTE%1 whenever you do a %2PENCOLOR%1 mentioning a color not included
+in the %2PALETTE%1. Clearing the screen removes all colors from the palette 
+except for the current pen and eraser colors. The index of the %2*PENCOLOR%1
+in the %2PALETTE%1 is %2*PENNUMBER%1 and the index of the %2*ERASERCOLOR%1 is %2*ERASERNUMBER%1
+[%2*ERASERNUMBER%1 never changes]. The following primitives allow explicit
+manipulation of the current set of colors.
+
+. primitive REPLACECOLOR,  <old color> <new color>, RC
+
+changes all visible drawings currently on the screen in <old color> to
+be instantly changed to <new color>. It is much faster than changing
+the %2PENCOLOR%1 and redrawing the objects. 
+
+. primitive MAKEPALETTE, <number> <color>
+
+Changes the color in position <number> in the %2PALETTE%1 to be <color>. It
+is like %2REPLACECOLOR%1 of whatever color was formerly in that position.
+
+%2PENCOLOR%1 will also accept a number as input, in which case it will
+select whatever color is in that slot in the %2PALETTE,%1 i.e. it is like
+%2(PENCOLOR PALETTE <number>)%1.
+
+. primitive *CAREFULTURTLE
+
+This is a flag controlling whether displaying the triangle turtle cursor saves
+the picture underneath it. It is normally on, so that displaying the turtle cursor doesn't
+mess up the picture. However, this feature is expensive, so setting this switch to NIL
+will disable it when speed is more important.
+
+. section Three Dimensional Turtle
+
+There's also a three dimensional version of Logo graphics.
+On the color display, it draws perspective views of three dimensional drawings 
+in two colors, red and blue. 
+By wearing special glasses, you can view the picture in depth, like the 
+old 3D movies. 
+Jim Stansfield programmed an early version of a 3D turtle in 11LOGO.
+
+The 3D turtle lives on %2AI:LLOGO;3D%1.
+
+The turtle cursor is displayed as a little "airplane", instead of a triangle for the flat
+turtle, and the commands fly the airplane thru the three dimensional space.
+There are three kinds of rotations, one for each axis.
+The heading and rotations are kept as matrices, matrix multiplication used
+to compose rotations. 
+The heading is the rotation transformation necessary to 
+align the coordinate system with the direction in which the turtle is 
+facing. 
+
+. primitive walkforward, <steps>, WFD
+
+Like %2FORWARD%1, moves in the direction the turtle is currently pointed, drawing
+if the pen is down. 
+The "nose" of the airplane representing the turtle points in the direction of the heading.
+
+. primitive walkback, <steps>, WBK
+
+Like %2BACK%1.
+
+. primitive fallforward, <turns>, FFD
+
+The turtle falls forward some number of degrees. 
+Like "pitch" on an airplane.
+
+. primitive fallback, <turns>, FBK
+
+Rotate in the opposite direction to %2FALLFORWARD%1.
+
+. primitive leanright, <turns>, LRT
+. break
+. primitive leanleft, <turns>, LLT
+
+Leans to the right or left, like "yaw".
+This rotation doesn't change the way the turtle will draw if a %2WALKFORWARD%1
+immediately follows, since it rotates the turtle about the axis of its heading.
+
+. primitive turnright, <turns>, TRT
+. break
+. primitive turnleft, <turns>, TLT
+
+Turns to the right or left, like "roll".
+This is like 2D %2RIGHT%1 and %2LEFT%1.
+
+. primitive 3dsetheading, <new-heading>, 3dsh
+. break
+. primitive 3dheading 
+. break
+
+The heading is a list of nine numbers, representing a three-by-three matrix.
+These functions access and retrieve it.
+
+. skip
+. begin preface 0
+. primitive 3dsetxyz, <x> <y> <z>, setxyz
+. break
+. primitive 3dxcor
+. break
+. primitive 3dycor
+. break
+. primitive 3dzcor
+. break
+. primitive 3dsetx, <x>
+. break
+. primitive 3dsety, <y>
+. break
+. primitive 3dsetz, <z>
+. break
+. primitive 3dsetturtle, <turtle-state>, 3dsett
+. break
+. primitive 3ddelx, <x>
+. break
+. primitive 3ddely, <y>
+. break
+. primitive 3ddelz, <z>
+. end
+
+Like %2SETXY%1, etc., but takes a z, too.
+
+. skip
+. begin preface 0
+. primitive 3dhome
+. break
+. primitive 3dpenup,,3dpu
+. break
+. primitive 3dpendown,,3dpd
+. break
+. primitive 3deraserup,,3deru
+. break
+. primitive 3deraserdown,,3derd
+. break
+. primitive 3dxorup,,3dxu
+. break
+. primitive 3dxordown,,3dxd
+. break
+. primitive 3dwrap
+. break
+. primitive 3dnowrap
+. break
+. primitive 3dclip
+. break
+. primitive 3dnoclip
+. break
+. primitive 3dshowturtle,,3dst
+. break
+. primitive 3dhideturtle,,3dht
+. break
+. primitive 3ddrawstate
+. break
+. primitive 3dstartdisplay,,3dsd
+. break
+. primitive 3dwipeclean,, 3dwipe
+. break 
+. primitive 3dclearscreen,, 3dcs
+. break
+. primitive 3dpoint
+. break 
+. primitive 3darc, <radius> <degrees>
+. break 
+. primitive 3dcircle, <radius>
+. end
+.
+
+These are all like their 2D counterparts.
+
+. primitive disparity, <new-disparity>
+. break
+. primitive *disparity
+
+The disparity is the distance by which the two images are shifted 
+with respect to each other. 
+Higher values give more depth but make it harder to fuse the two images.
+
+. primitive eyedistance, <new-eyedistance>
+. break 
+. primitive *eyedistance
+
+The distance "between your eyes".
+
+. primitive *aperture
+
+How much of the 3d space the observer can view.
+
+. primitive *leftcolor
+. break 
+. primitive *rightcolor
+
+The colors used to display the views of each turtle. Currently
+%2RED%1 and %2BLUE%1. 
+You should change it if you have red and green glasses instead.
+
+
+.
+. back

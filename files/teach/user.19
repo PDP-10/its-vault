@@ -1,0 +1,41 @@
+; -*- LISP -*-
+
+; user-interface macros.
+
+(eval-when (compile eval)
+   (load '|teach;simul macros|))
+
+(declare (special error-output standard-output terminal-output))
+
+(defun wops (frob)
+   (let ((wops (wops1 frob)))
+
+      (format T
+'|~&The ~:[entity~;SFA~] "~,,0S" has the handler "~,,0S"~:[,/
+implementing the following operations:~;~]~&|
+	      (sfap frob)	   ;entity/SFA
+	      frob		   ;the thing itself
+	      (cond ((sfap frob) (sfa-get frob 'function))  ;handler, either
+		    (T (get-entity-handler frob)))  ;as SFA or ENTITY
+	      (null wops))	   ;is there anything below?
+
+      (let ((size (+ 2 (apply 'max
+			      (cons 8 (mapcar 'flatsize wops)))))
+	    (tty-width (cdr (status ttysize
+				    (cond ((boundp 'terminal-output)
+					   terminal-output)
+					  (T tyo))))))
+	 (do ((n 0 (\ (1+ n) (// tty-width size)))
+	      (wops wops (cdr wops)))
+	     ((null wops) (fresh-line T))
+	   (format T '|~[~&~]~V,2T:~,,0S|
+		   n (* n size) (car wops))))))
+
+(defun wops1 (frob)
+   (cond ((sfap frob)
+	  (sfa-call frob 'which-operations nil))
+	 ((entity-p frob)
+	  (e-call frob 'which-operations))
+	 (T (format (cond ((boundp 'error-output) error-output)
+			  (T tyo))
+		    '|~&~Sis not an SFA or ENTITY -- WOPS| frob))))

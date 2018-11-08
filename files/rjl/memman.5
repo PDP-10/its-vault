@@ -1,0 +1,109 @@
+.dummy %
+.adjust
+.line 65
+.indent 2
+.fill
+.double
+MEMORY MANAGEMENT
+.br
+	Two of the most important resources that a time sharing
+system must manage for  the benifit of its  users are CPU  time
+and  core memory.   Here  we will deal  with memory management,
+that is, the allocation of  core storage and swapping space  to
+the  various users of the system.   There are two major aspects
+to   this  management:  keeping  track  of  all  the  necessary
+information about  the  system's  and users'  memory  (real  or
+virtual)  at any  given momement  and allocating  core storage,
+according to  various  priorities,  in an  efficient  and  fair
+manner.   The  latter seems to be  more a matter of scheduling,
+and will  be dealt  with in  a later  paper.   Instead we  will
+describe  the various tables needed,  how they are manipulated,
+and other details of keeping track of the world.
+.br
+MOTIVATION
+	A time sharing  system which  is designed to  run on a
+small  computer must be as efficient  as possible in its use of
+core;   when at all possible,  system tables and programs  must
+not  permanently occupy core.   Therefore, swapping and sharing
+facilities are  basic  to the  system;  all  but a  very  small
+amount  of information about  a user must  be swappable, and it
+must be easy for pure code to be shared.  On the other hand, we
+must realize that a certain minimum of hardware is necessary to
+provide both good service and a reasonable number of  features;
+for many systems, the "minimum" configuration provides neither.
+	The table which
+provides most of the needed information is the user page table.
+Each user has his own UPT as part of his user variables.   When
+none of the pages described in a particular UPT are actually in
+core,  the UPT  need not be  either.   Most systems dynamically
+allocate secondary storage when it  is necessary to swap out a
+page.   This  leads to serious problems  (often a system crash)
+when secondary storage becomes  full.   Also it means that  the
+map  of free space on secondary storage must always be in core.
+We avoid this  by assigning  disk space to  any swappable  page
+when  it  is created.   This  costs us  an amount  of secondary
+storage equal  to the  size of  core available  to users,  but,
+since  this  is  usually  only a  small  fraction  of available
+secondary storage space, it seems worth it.   The UPT entry for
+a  page contains a description  of the page's secondary storage
+allocation   and  other  miscellaneous   information  which  is
+relevant whether or not the page is in core.   This includes a
+pointer  to any  other UPT entries  (possibly not  in this UPT)
+which share  the  described  page  and  a  page  identification
+number.   If  no other UPT entries share this page, the pointer
+points at itself;  otherwise  all UPT entries  which share  the
+page  will point at  each other in  a circular list.   The page
+number is  a  24 bit  quantity  which uniquely  identifies  any
+shared  page;  it is assigned either at the time the page first
+becomes shared, or at the time the page is loaded, if it is  to
+be  shared automatically (see IPT below).   This number is used
+to avoid searching the circular  UPT list, part of which  might
+be  swapped out,  every time we  wish to determine  if a shared
+page is already in core.
+	Pages which are not simply user core, but also have
+special signifigance such as disk directories, bit tables,
+and display lists, often require that more information about
+them be available than for an ordinary user page. To solve this problem, we create the
+special page table, which is very similar to
+a UPT but contains special information about what the page is
+being used for. The SPT is always core resident, since it
+is shared by all users. A user refers to it by having a pointer
+to it in his UPT in place of a pointer into the UPT.
+	When a page is acctually  in core, more information  is
+needed  about it  than is  provided by  the UPT entries.   This
+information is provided  by the  core page table  and the  core
+status  table.   The CST is intended to provide information, or
+pointers to information, about every block of physical core  on
+the system.  If a block of core is currently assigned to a page
+that  is in  core the  CST entry for  that block  points at the
+proper CPT entry for that page.   If a page is longer than  one
+block,  all of  the CST  entries for  that page  (which must be
+contigous) point at the same CPT entry.  The CPT entry contains
+the values  to be  loaded into  the segmentation  registers  in
+order  to access the page,  the page id number,  a pointer to a
+CPT entry and a pointer to a UPT entry.  The UPT pointer points
+at the UPT  entry which caused  this CPT entry  to be  created.
+The  CPT pointer  is used  to form a  circular list  of the CPT
+entries  for  UPT  entries  which  share  this  page  and  have
+referenced  it  since it  was last  swapped in.   Thus  the CPT
+provides a list of  "next of kin" who  must be informed if  the
+page is molested by the system.  The UPT entries of course have
+pointers  back to the  appropriate CPT entry,  if there is one.
+Keep in mind that UPT  entries are relatively permanetent,  but
+can  be  swapped out,  while the  contents of  the CST  and CPT
+change rapidly as swapping  and shuffling happen.   As long  as
+the  system  manages  to  keep  this  rat's  nest  of  pointers
+straight, it should be able to determine the state of all  core
+and pseudo-core fairly easily.  
+	There  is only  one more  table associated  with memory
+management, and it is relatively indepentent of the  others.
+This is the identified page table. Since it is desirable to provide
+a mechanisim for automatically sharing parts of a program
+when it is loaded form a file, we must maintain information
+about which pages are to be shared in this manner. The IPT contains
+an entry for each extant page which should be automatically shared.
+THe entry includes the page id number, which is the address of
+the first block of the page on disk combined with the disk id number,
+a reference count, and a pointer to a UPT entry which further describes
+the page.
+

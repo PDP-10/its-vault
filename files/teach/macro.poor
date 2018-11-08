@@ -1,0 +1,68 @@
+RWK@MIT-MC 03/10/79 01:32:59 Re: Questions
+To: MARTY at MIT-MC
+CC: (FILE [TEACH;MACRO POOR]) at MIT-MC, KMP at MIT-MC
+1)  Your idea for how to get the fixnum equivalent of a char is right.
+    It's not the most winning semantics for this operation, but that's
+    the language's fault, not yours.  In NIL (New Implementation of LISP)
+    which I'm working on, this will be done MUCH better.
+2)  MACRO's are VERY VERY useful.  They are a way of extending the capabilities
+    of the language.  For example:  Say I want to have a way to add an item
+    to a list that's stored somewhere inside something complex.  I have a
+    macro SETF which sets an element of a complex object (list, hunk, etc.)
+    when given how to extract that element.  I say (SETF (CAR X) 15)
+    and it "expands" (I'll explain that term in a bit) into
+    (RPLACA X 15).  I say (SETF (GET-FROB MUMBLE) 16) where GET-FROB is
+    a macro which knows how to get the frob part of mumble.  The SETF figures
+    out from the GET-FROB how to find the FROB part, and figures out how to
+    set it to 16.  (The source for SETF lives in TEACH;SETF >, if you're
+    curious, but it's moderatly hairy).  One advantage of programming in this
+    way is that it lets you modify the program easily.  I.e. if I change the
+    shape of mumble, all I have to do is to change GET-FROB and my code still
+    works.  Another advantage is that (SETF (LEADING-COEFFICIENT POLY) 15)
+    is much easier to understand (and to write) than (RPLACA (CDDDR POLY) 15).
+
+    As to how to use macros, here's a brief overview:
+    (DEFUN (<name> MACRO) (FORM)
+       <body>).  FORM will get bound to the ENTIRE form being called.  I.e.
+    (DEFUN (FOO MACRO) (FORM)
+       (PRINT FORM)
+       6)
+    (FOO BAR)
+    will print "(FOO BAR)".  If you want argument destructuring, you can use
+    (DEFMACRO FOO (ARG1 ARG2 AR3 . REST-OF-THE-ARGS)
+      ....)
+    DEFMACRO is a macro which expands into a defun which defines a macro.
+    Sounds a little incestuous, but macros have no cultural taboos against
+    such things.  Probably 90% of all macros in advanced code are defined
+    by macros.  (my GET-FROB and LEADINg-COEFFICIENT examples are typically
+    defined automatically by macros used to define what a "structure" looks
+    like).
+
+    When FOO is called, ARG1 through ARG3 will get bound to the first 3
+    arguments, and REST-OF-THE-ARGS (which is the CDR of the argument
+    list in the DEFMACRO) will get bound to all the rest.  (CDR = REST)
+    Now, a macro's sole purpose in life is to compute up a piece of code
+    to be used instead.  So a macro should return some code, which will
+    then be used instead of the macro.  For example, say I use the CADR
+    of a list to mean the leading coefficient of a polynomial.  I might write
+    (DEFMACRO LEADING-COEFFICIENT (POLY)
+       (LIST 'CADR POLY))
+    Thus (LEADING-COEFFICIENT (CAR POLY-LIST))
+    will expand into
+    (CADR (CAR POLY-LIST))
+    Note that generally, hand-written code would be written
+    (CADAR POLY-LIST), which is of course, an abortion, and neither is
+    understandable.  They both compile identically the same.
+    Now (LIST 'CADR POLY) is a little odd looking.  Really, what you want
+    to end up with should look like (CADR POLY) except instead of actualy
+    having POLY there, we want POLY's value (remember, poly was bound to
+    (CAR POLY-LIST) in our example).  The BACK-QUOTE character is designed
+    to help this situation.  Backquote is like QUOTE, but it allow's the
+    character COMMA to have special meaning:  Wherever there is a comma,
+    the VALUE of the immediately following thing is substituted.  I.e.
+    instead of (LIST 'CADR POLY), we could write `(CADR ,POLY), which looks
+    much more like what we want to end up with.
+
+I don't feel like writting any more on this right now; suggest you digest
+this and come up with questions.
+

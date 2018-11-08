@@ -1,0 +1,240 @@
+; -*- LISP -*-
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file contains the definitions of all of the macros that are	;;;
+;;; used in accessing named slots of hunks.  For information contact	;;;
+;;; RWK@MC.								;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; The purpose of this file is to facilitate named structures and closures.
+;;; They both have a data-type in slot 0, and a PNAME in slot 1.  This PNAME
+;;; is used for the special print-stream which will print a structure something
+;;; like #STRUCT-<TYPE>-<PNAME>
+;;; 
+;;; STRUCTs are defined with the DEFSTRUCT macro.  It is used as follows:
+;;;
+;;; (DEF-STRUCT <type> . <slot-specs>) where the slot-specs are a list of
+;;; elements as follows:
+;;;    <symbol> -- Name of the slot
+;;;    (<symbol> <default>) -- <symbol> is name of the slot, and
+;;;			       <default> is a form to be evaluated on
+;;;			       creation of one of these structs, if a
+;;;			       value for that slot is not specified.
+;;; 
+;;; When a STRUCT is defined, two macros are also defined:  A STORE and a GET
+;;; macro.  They are named by taking the data-type name and appending on a
+;;; "-SET" or "-GET".  These macros are used as follows:
+;;; 
+;;; (<type>-GET <struct> <slot-name>) or
+;;; (<type>-SET <struct> <slot-name> <value>)
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+;;; 
+
+(declare (macros t))
+(declare (special hacked-by-prin1-list list-of-structs))
+
+(declare (eval (read)))
+(cond ((null (plist 'maclisp-back-quotify))
+       (load '|DSK:LIBLSP;BACKQ FASL|)))
+
+(declare (eval (read)))
+(cond ((null (plist 'fn))
+       (load '|DSK:TEACH;*MACROS FASL|)))
+
+(declare (eval (read)))
+(cond ((null (get 'let 'macro))
+       (load '|DSK:LIBLSP;LET FASL|)))
+
+(defun (struc-get macro) (form)
+       (apply 'struc-get-expander (cdr form)))
+
+(defun (struct-set macro) (form)
+       (apply 'struct-set-expander (cdr form)))
+
+
+;; Define the canonical form of a structure type.  Called
+;; by: (DEF-STRUCT type (slot default) ... slot)
+;; Where type is the type of the structure, and then a list of
+;; slots and their defaults (optional).
+
+(defun (def-struct macro) (form)
+   (struct-expand form 
+		  `((structure-datatype 1
+					',(implode (append '(D T P -)
+							   (explode (cadr form)
+								    ))))
+		    (structure-plist 0 nil))))
+
+(defun (def-struct-unnamed macro) (form)
+    (struct-expand form nil))		   
+
+(defun struct-expand (form initial-alist)
+   (do ((slot-list (cdddr form) (cdr slot-list))
+	(slot (caddr form) (car slot-list))
+	(slot-counter (length initial-alist) (1+ slot-counter))
+	(type (cadr form))
+	(slot-alist initial-alist))
+       ((null slot)
+	(setq slot-alist (reverse slot-alist))
+	(setq slot-alist
+	      (nreverse (cons (car slot-alist)
+			      (nreverse (cdr slot-alist)))))
+	(putprop type slot-alist
+		 'access-alist)
+	`(progn 'compile
+	   ,(cond ((not (null initial-alist))
+		   `(setq hacked-by-prin1-list
+			  (cons ',(implode (append '(D T P -) (explode type)))
+				hacked-by-prin1-list))))
+           (defprop ,type ,slot-alist
+		    access-alist)
+	   (defun (,(implode (nconc (explode type) '(- G E T))) macro) (form)
+		  (struc-get-parse-expander ',type form))
+	   (defun (,(implode (nconc (explode type) '(- S E T))) macro) (form)
+		  (struct-set-parse-expander ',type form))))
+     (cond ((atom slot)
+	    (setq slot-alist (cons (list slot slot-counter)
+				   slot-alist)))
+	   (t (setq slot-alist
+		    (cons (list (car slot) slot-counter (cadr slot))
+			  slot-alist))))))
+
+(defun struc-get-parse-expander (type form)
+       (struc-get-expander type (cadr form) (caddr form)))
+
+(defun struct-set-parse-expander (type form)
+       (struct-set-expander type (cadr form) (caddr form) (cadddr form)))
+
+(defun struc-get-expander (type entry-name object)
+   (let ((access-alist (get type 'access-alist)))
+     `(cxr ,(cadr (assq entry-name access-alist))
+	   ,object)))
+
+(defun struct-set-expander (type entry-name object entry-value)
+   (let ((access-alist (get type 'access-alist)))
+     `(rplacx ,(cadr (assq entry-name access-alist))
+	      ,object
+	      ,entry-value)))
+
+
+(cond ((not (boundp 'hacked-by-prin1-list))
+       (setq hacked-by-prin1-list '(DTP-CLOSURE))))
+
+
+;;; (CREATE <type> (<slot> <value) ....)
+
+(defun (CREATE macro) (form)
+  (declare (special slot-specs))
+   (let (((nil structure-data-type . i-slot-specs) form))
+    (let ((access-alist (get structure-data-type 'access-alist))
+	  (slot-specs (subst nil nil i-slot-specs)))
+     (prog2
+      nil
+      `(hunk
+	 ,@(mapcar
+	    (fn (x)
+		(let ((slot-spec (delassq (car x)
+					  'slot-specs)))
+		   (cond ((null slot-spec)
+			  (cond ((null (cddr x))
+				 (error
+				  '|No default for unspecified slot -- CREATE|
+				  x))
+				(T (caddr x))))  ;else use the default
+			 (t (cadr slot-spec)))))
+	    access-alist))
+      (cond ((not (null slot-specs))
+	     (error '|Garbage in slot specs -- CREATE| slot-specs)))))))
+
+(defun numsign-handler ()
+       (let ((input (explodec (read))))
+	    (cadr (assq (implode (cdr (memq '- input)))
+		       list-of-structs))))
+
+(setsyntax '/# 'macro 'numsign-handler)		;Handle read of numbersign
+
+;;; ITEM is to be assq'in into the ALIST which is the value of the second arg.
+;;; That item is then deleted from the list
+
+(defun delassq (item alist)
+       (let ((frob (assq item (symeval alist))))
+	    (set alist
+		 (delq frob (symeval alist)))
+	    frob))
+
+
+(defun struct-prin1 fucked
+       (cond ((= fucked 1)
+	      (cond ((and (hunkp (arg 1))
+			  (memq (cxr 1 (arg 1))
+				hacked-by-prin1-list))
+		     (princ '|#Struct-<|)
+		     (princ (cxr 1 (arg 1)))
+		     (princ '|>-<|)
+		     (princ (cxr 0 (arg 1)))
+		     (princ '|> |))
+		    ((hunkp (arg 1))
+		     (princ '|[|)
+		     (do ((n (hunksize (arg 1)) (1- n)))
+			 ((= n 0))
+			 (struct-prin1 (cxr (1- n) (arg 1))))
+		     (princ '|] |))
+		    ((atom (arg 1))
+		     (prin1 (arg 1))
+		     (princ '| |))
+		    (t (princ '|(|)
+		       (do ((frob (car (arg 1))
+				  (car list))
+			    (list (cdr (arg 1))
+				  (cdr list)))
+			   ((progn (struct-prin1 frob)
+				   (cond ((null list) t)
+					 ((or (atom list)
+					      (hunkp list))
+					  (princ '| . |)
+					  (struct-prin1 list) t)))))
+		       (princ '|)|))))
+	     ((= fucked 2)
+	      (cond ((and (hunkp (arg 1))
+			  (memq (cxr 1 (arg 1))
+				hacked-by-prin1-list))
+		     (princ '|#Struct-| (arg 2))
+		     (princ (cxr 1 (arg 1)) (arg 2))
+		     (princ '| | (arg 2))
+		     (princ (cxr 0 (arg 1)) (arg 2))
+		     (princ '| | (arg 2)))
+		    ((hunkp (arg 1))
+		     (princ '|[| (arg 2))
+		     (do ((n (hunksize (arg 1)) (1- n)))
+			 ((= n 0))
+			 (struct-prin1 (cxr (1- n) (arg 1)) (arg 2)))
+		     (princ '|] | (arg 2)))
+		    ((atom (arg 1))
+		     (prin1 (arg 1) (arg 2))
+		     (princ '| | (arg 2)))
+		    (t (princ '|(| (arg 2))
+		       (do ((frob (car (arg 1))
+				  (car list))
+			    (list (cdr (arg 1))
+				  (cdr list))
+			    (file (arg 2)))
+			   ((progn (struct-prin1 frob file)
+				   (cond ((null list) t)
+					 ((or (atom list)
+					      (hunkp list))
+					  (princ '| . | file)
+					  (struct-prin1 list file) t)))))
+		       (princ '|)| (arg 2)))))))
+
+
+(defun (fn macro) (form)
+       `(function (lambda ,@(cdr form))))

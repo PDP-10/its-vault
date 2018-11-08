@@ -1,0 +1,40 @@
+;;; -*- LISP -*-
+;;; INITALIZE: A package for doing lisp variable declarations
+
+(EVAL-WHEN (EVAL COMPILE)
+	(SSTATUS MACRO /# '+INTERNAL-/#-MACRO SPLICING))
+
+;;;    (INITIALIZE <descriptor1> <value1> <descriptor2> <value2> ...)
+;;;
+;;;    <descriptor> ::= <symbol>  ! (<symbol> <attribute1> <attribute2> ...)
+;;;
+;;;    Expands to:
+;;;
+;;;    (PROGN 'COMPILE
+;;;           (DECLARE (<attribute1> ... things with that attribute ... )
+;;;		       (<attribute2> ... things with that attribute ... ) ...)
+;;;           (SETQ <var1> <value1>)
+;;;           (SETQ <var2> <value2>) ...)
+;;;
+
+(DEFMACRO INITIALIZE (&REST INFO)
+	  (DO ((L INFO     (CDDR L))
+	       (INITS      ())
+	       (NAME       ())
+	       (ATTRIBUTES (NCONS NIL)))
+	      ((NULL L) 
+	       `(PROGN 'COMPILE
+		       (DECLARE ,@(DO ((A (CDR ATTRIBUTES) (CDDR A))
+				       (L () (CONS (CONS (CAR A) (CADR A)) L)))
+				      ((NULL A) L)))
+		       ,@(NREVERSE INITS)))
+	      (COND ((ATOM (CAR L)) (SETQ NAME (CAR L)))
+		    (T (SETQ NAME (CAAR L))
+		       (MAPCAR #'(LAMBDA (X)
+					 (PUTPROP ATTRIBUTES
+						  (CONS NAME
+							(GET ATTRIBUTES X))
+						  X))
+			       (CDAR L))))
+	      (PUSH `(SETQ ,NAME ,(CADR L)) INITS)))
+

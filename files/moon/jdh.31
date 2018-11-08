@@ -1,0 +1,76 @@
+
+(DEFUN CAPTURE (DEVNAME TIME RDEVN)
+   ; (CLOSE BOJI)
+   (CLOSE BOJO)
+   (or (SYSCALL 0 'JOBREU (6BIT DEVNAME) 0 0 0 TIME)
+       (progn 
+   (OPEN BOJO)
+;   (ENDPAGEFN BOJO 'BOJ-INT)
+   (JOB-DEVICE-CALL BOJO ARGPTR)
+   (job-device-set-status bojo 22 RDEVN)
+   (or (JOB-DEVICE-RETURN BOJO 1)
+       (setq cretins
+	     (add2l (list (6bit-to-ascii (read-job-variable bojo 'uname))
+			  (6bit-to-ascii (read-job-variable bojo 'jname)))
+		    cretins))))))
+
+(defun add2l (item list)
+  (cond ((member item list) list)
+	((cons item list))))
+
+(cond ((and (boundp 'bojo) (filep bojo))
+	 (close bojo)
+	 (cnamef bojo 'nul/:)
+	 (open bojo '(out ascii single))     ;; make sure the modes ok
+	 )
+      (t (setq bojo (open 'nul: '(out ascii single)))))
+(close bojo)
+(cnamef bojo 'boj/:)
+(setq argptr (array nil fixnum 12))
+
+(or (boundp 'cretins) (setq cretins nil))
+
+(defun get-boj-priveleges ()
+  (job-device-set-option t)
+  (catch 
+    ((lambda (alarmclock)
+	(alarmclock 'time 1)
+	(syscall 0 'open 0 (6bit 'ojb) 0 (read-job-variable t 'jname)))
+     '(lambda (x) (nointerrupt nil)(throw nil ojb)))
+    ojb))  
+(get-boj-priveleges)
+
+(defun pgx ()
+ (do () (nil)
+  (capture 'xgp (lsh 1 33.) 'cretin)
+  (princ '|I ain't gonna show you what's in the xgp queue./
+You will get a message when your output starts anyway./
+Go away.     | bojo)
+  (job-device-call bojo argptr)
+  (job-device-return bojo 0)
+  (close bojo)))
+
+(defun win ()
+  (capture 'loss (lsh 1 33.) 'cretin)
+  (princ '|Silly wabbit.  Trix are for kids!                    /
+                                                                /
+                                                                /
+                                                                /
+                                                                /
+	 (HEY, ISN'T THAT MESSAGE SUPPOSED TO BE IN ALL         /
+	  UPPER CASE?)     | bojo)
+  (job-device-call bojo argptr)
+  (job-device-return bojo 0)
+  (close bojo))
+
+
+(defun haha ()
+ (do () (nil)
+  (capture 'xgp (lsh 1 33.) 'cretin)
+  (princ '|I ain't gonna show you whats in the xgp queue./
+You will get a message when your output starts anyway./
+Go away.     | bojo)
+  (job-device-call bojo argptr)
+  (job-device-return bojo 0)
+  (close bojo)
+  (sleep 300.)))

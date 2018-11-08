@@ -1,0 +1,55 @@
+||| -*- ULisp -*-
+
+(defun make-table () (list 'table))
+
+(defun store (key item table)
+       (cond ((is-table? table)
+	      (cons (car table)
+		    (cons (list key item)
+			  (cdr table))))
+	     (t (error '(bad argument to table)))))
+
+(defun lookup (key table)
+       (cond ((is-table? table)
+	      (cadar (find key (cdr table))))
+	     (t (error '(bad argument to table)))))
+
+(defun find (key alist)
+       (cond ((null alist) (error '(unknown key)))
+	     ((eq key (caar alist)) alist)
+	     (t (find key (cdr alist)))))
+
+(defun is-table? (object)
+       (cond ((atom object) nil)
+	     (t (eq 'table (car object)))))
+
+(defun make-algebr (operation-table object)
+       (list 'algebraic operation-table object))
+
+(defun obj (x)
+       (caddr x))
+
+(defun op-table (x)
+       (cadr x))
+
+(defun make-rational-algebr (numerator denominator)
+       (make-algebr rational-op-table
+		    (make-rational numerator denominator)))
+
+(defun perform (op x y)
+       (make-algebr (op-table x)
+		    ((lookup op (op-table x))
+		     (obj x)
+		     (obj y))))
+
+(defun init-rational-op-table ()
+       (setq rational-op-table
+	     (store 'add
+		    rplus
+		    (store 'subtr
+			   rminus
+			   (store 'mult
+				  rtimes
+				  (make-table)))))
+       'done)
+

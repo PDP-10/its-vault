@@ -1,0 +1,57 @@
+(EVAL-WHEN (EVAL COMPILE)
+	   (COND ((NOT (STATUS FEATURE IOTA))
+		  (LOAD '((DSK LIBLSP) IOTA FASL)))))
+
+(DEFUN (SRCCOM MACRO) (FORM)
+	`(SRCCOM1 ',(CADR FORM) ',(CADDR FORM)))
+
+(DEFUN SRCCOM1 (FILE1 FILE2)
+	(IOTA ((STREAM1 FILE1 'IN)
+	       (STREAM2 FILE2 'IN))
+	      (LET ((EOF (GENSYM)))
+		   (*CATCH 'SRCCOM-EXIT
+			   (DO ((FORM1 (READ STREAM1 EOF) (READ STREAM1 EOF))
+				(FORM2 (READ STREAM2 EOF) (READ STREAM2 EOF))
+				(FLAG NIL))
+			       (NIL)
+			       (SETQ FLAG
+				     (SRCCOM-PRINT FORM1
+						   FORM2
+						   STREAM1
+						   STREAM2
+						   EOF
+						   FLAG)))))))
+
+(DEFUN SRCCOM-PRINC N
+       (CURSORPOS 'A TYO)
+       (MAPC (FUNCTION (LAMBDA (X) (PRINC X TYO))) (LISTIFY N)))
+
+(DEFUN SRCCOM-PRINT (FORM1 FORM2 STREAM1 STREAM2 EOF FLAG)
+       (COND ((AND (EQ FORM1 EOF) (EQ FORM2 EOF))
+	      (*THROW 'SRCCOM-EXIT (OR FLAG 'FILES-ARE-IDENTICAL)))
+	     ((EQ FORM1 EOF)
+	      (SRCCOM-PRINC '|;;; File "|
+			    (TRUENAME STREAM1)
+			    '|" lacks everything after:|)
+	      (SRCCOM-DISPLAY FORM2)
+	      (*THROW 'SRCCOM-EXIT (CONS 'FILE1-ENDED-PREMATURELY FLAG)))
+	     ((EQ FORM2 EOF)
+	      (SRCCOM-PRINC '|;;; File "|
+			    (TRUENAME STREAM2)
+			    '|" lacks everything after:|)
+	      (SRCCOM-DISPLAY FORM1)
+	      (*THROW 'SRCCOM-EXIT (CONS 'FILE2-ENDED-PREMATURELY FLAG)))
+	     ((NOT (EQUAL FORM1 FORM2))
+	      (SRCCOM-PRINC '|;;; File "|
+			    (TRUENAME STREAM1)
+			    '|" has:|)
+	      (SRCCOM-DISPLAY FORM1)
+	      (SRCCOM-PRINC '|  ; where "|
+			    (TRUENAME STREAM2)
+			    '|" has:|)
+	      (SRCCOM-DISPLAY FORM2)
+	      'FILES-CONTAIN-DISCREPANCIES)))
+
+(DEFUN SRCCOM-DISPLAY (X)
+       (LET ((PRINLEVEL 3.) (PRINLENGTH 5.))
+	    (PRIN1 X TYO)))

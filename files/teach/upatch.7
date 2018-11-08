@@ -1,0 +1,102 @@
+;;; -*- LISP -*-
+
+(INCLUDE ((DSK KMP) UPATCH DECLS))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ULisp Printer ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; UNIX:SYSPRIN1 - The ULisp system printer (with slashifying)
+
+(DEFUN UNIX:SYSPRIN1 (OBJECT STREAM)
+       (LET ((MICRO:SLASHIFY T) (MICRO:PRINLEVEL-COUNT 1.))
+	    (UNIX:SYSPRIN OBJECT STREAM)))
+	     
+;;; UNIX:SYSPRINC - The ULisp system printer (without slashifying)
+
+(DEFUN UNIX:SYSPRINC (OBJECT STREAM)
+       (LET ((MICRO:SLASHIFY NIL) (MICRO:PRINLEVEL-COUNT 1.))
+	    (UNIX:SYSPRIN OBJECT STREAM)))
+
+;;; UNIX:SYSPRIN
+;;;
+;;;  This is the ULisp system printer. It will print a ULisp object
+;;;  in ULisp syntax to a specified stream.
+;;;
+;;;  The value of MICRO:SLASHIFY controls slashification (happens if non-())
+
+(DEFUN UNIX:SYSPRIN (OBJECT STREAM)
+   (LET ((MICRO:PRINLEVEL-COUNT (1+ MICRO:PRINLEVEL-COUNT)))
+       (COND ((ATOM OBJECT)
+	      (UNIX:SYSPRIN\ATOMIC OBJECT STREAM))
+	     ((MICRO:QUOTE? OBJECT)
+	      (TYO #/' STREAM)
+	      (UNIX:SYSPRIN (CADR OBJECT) STREAM))
+	     ((MICRO:CLOSURE? OBJECT)
+	      (PRINC '|(closure | STREAM)
+	      (UNIX:SYSPRIN (CADR OBJECT) STREAM)
+	      (PRINC '| closure_environment)| STREAM)
+	      OBJECT)
+	     ((UNIX:SUBRP OBJECT)
+	      (PRINC (MICRO-SUBR-POINTER OBJECT) STREAM)
+	      OBJECT)
+	     ((MICRO:ARRAY? OBJECT)
+	      (TYO #/# STREAM)
+              (PRINC 
+	       (CASEQ (ARRAY-TYPE OBJECT)
+		      (|flonum| 'F)
+		      (|fixnum| 'I)
+		      (|t|      'T)
+		      (T        '?))
+	       STREAM)
+	      (TYO #/- STREAM)
+	      (DO ((BASE 10.)
+		   (*NOPOINT T)
+		   (DIMS (ARRAY-DIMS OBJECT) (CDR DIMS)))
+		  ((NOT DIMS))
+		  (COND ((ATOM DIMS) (RETURN T))
+			(T (PRINC (CAR DIMS) STREAM)
+			   (COND ((NOT (ATOM (CDR DIMS)))
+				  (PRINC '/: STREAM))))))
+	      (TYO #/- STREAM)
+	      (LET ((BASE 8.))
+		   (PRINC (MAKNUM OBJECT) STREAM))
+	      OBJECT)
+	     ((AND MICRO:PRINLEVEL
+		   (> MICRO:PRINLEVEL-COUNT MICRO:PRINLEVEL))
+	      (PRINC '|(...)| STREAM)
+	      OBJECT)
+	     (T
+	      (TYO #/( STREAM)
+	      (DO ((L OBJECT (CDR L))
+		   (C 1. (1+ C))
+		   (FLAG () T))
+		  ((ATOM L)
+		   (COND (L (PRINC '| . | STREAM)
+			    (UNIX:SYSPRIN\ATOMIC L STREAM)))
+		   (TYO #/) STREAM)
+		   OBJECT)
+		  (COND ((AND MICRO:PRINLENGTH (> C MICRO:PRINLENGTH))
+			 (PRINC '| ...)| STREAM)
+			 (RETURN OBJECT)))
+		  (COND (FLAG (TYO #\SPACE STREAM)))
+		  (UNIX:SYSPRIN (CAR L) STREAM))))))
+
+(DEFUN UNIX:PRINLEVEL NARGS
+  (COND ((ZEROP NARGS) MICRO:PRINLEVEL)
+        ((= NARGS 1.)
+	 (COND ((OR (NULL (ARG 1.)) (FIXP (ARG 1.)))
+		(SETQ MICRO:PRINLEVEL (ARG 1.)))
+	       (T
+		(MICRO:ERROR '|BAD ARG TO PRINLEVEL| (ARG 1.)))))
+	(T
+	 (MICRO:ERROR '|TOO MANY ARGS TO PRINLEVEL| NARGS))))
+
+(DEFUN UNIX:PRINLENGTH NARGS
+  (COND ((ZEROP NARGS) MICRO:PRINLENGTH)
+        ((= NARGS 1.)
+	 (COND ((OR (NULL (ARG 1.)) (FIXP (ARG 1.)))
+		(SETQ MICRO:PRINLENGTH (ARG 1.)))
+	       (T
+		(MICRO:ERROR '|BAD ARG TO PRINLENGTH| (ARG 1.)))))
+	(T
+	 (MICRO:ERROR '|TOO MANY ARGS TO PRINLENGTH| NARGS))))

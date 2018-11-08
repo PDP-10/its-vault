@@ -1,0 +1,93 @@
+;;; -*- LISP -*-
+;;; MENU: A library for getting the menu into the :TEACH;LISP program
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (COND ((NOT (STATUS FEATURE IOTA))
+		  (LOAD '((DSK LIBLSP) IOTA FASL)))))
+
+(DECLARE (SPECIAL MENU-FILENAME MENU)
+	 (*EXPR DOCUMENT))
+
+(SETQ MENU-FILENAME '|DSK:TEACH;LESSON MENU|)
+
+;;; LOAD-MENU
+;;; Loads in a menu file, sets the variable MENU to the contents of file.
+
+(DEFUN LOAD-MENU ()
+       (SETQ MENU
+	     (IOTA ((STREAM MENU-FILENAME '(IN ASCII BLOCK DSK)))
+		   (READ-MENU STREAM)))
+       (DO ((L1 MENU (CDR L1)))
+	   ((NULL L1))
+	   (DO ((L2 (CAAR L1) (CDR L2)))
+	       ((NULL L2))
+	       (PUTPROP 'LESSON-INFO (CAR L1) (CAR L2)))))
+
+
+;;; (READ-MENU <file-object>)
+;;; Reads all the menu items out of a file.
+
+(DEFUN READ-MENU (STREAM)
+       (LET ((ECHOFILES NIL))
+	    (DO ((C (READ-MENU-ITEM STREAM) (READ-MENU-ITEM STREAM))
+		 (L () (CONS C L)))
+		((NULL C) (NREVERSE L)))))
+
+;;; (READ-MENU-ITEM <file-object>)
+;;; Reads the next menu item out of a file.
+;;;
+;;; Format for file is:
+;;;
+;;;     <name-list><tag>:<filename><crlf><description><control-underbar>
+;;;
+;;; Returns
+;;;
+;;;     (<tag-list> <tag> <filename> <description>)
+;;;
+
+(DEFUN READ-MENU-ITEM (STREAM)
+       (LET ((IBASE 10.))
+	    (COND ((= (TYIPEEK T STREAM) -1.) NIL)
+		  (T
+		   (LIST (PROGN (TYIPEEK T STREAM)
+				(READ STREAM))
+			 (PROGN (TYIPEEK T STREAM)
+				(DO ((C (READCH STREAM) (READCH STREAM))
+				     (L () (CONS C L)))
+				    ((EQ C '/:) (IMPLODE (NREVERSE L)))))
+			 (PROGN (TYIPEEK T STREAM)
+				(READLINE STREAM))
+			 (PROGN (TYI STREAM)
+				(DO ((C (READCH STREAM) (READCH STREAM))
+				     (L () (CONS C L)))
+				    ((EQ C '/) (IMPLODE (NREVERSE L))))))))))
+
+
+(DEFUN FIND-LESSON (NAME) (GET 'LESSON-INFO NAME))
+
+(DEFUN DESCRIBE-LESSON (NAME)
+  (*CATCH 'ERROR-EXIT
+       (LET ((INFO (FIND-LESSON NAME)))
+	    (CURSORPOS 'A TYO)
+	    (COND ((NOT INFO)
+		   (PRINC '|There's no lesson named "| TYO)
+		   (PRINC NAME TYO)
+		   (PRINC '|". Do (LESSON ??) for a list of topics.|)
+		   (*THROW 'ERROR-EXIT NIL)))
+	    (LET ((ALIASES (DELETE NAME (SUBST NIL NIL (CAR INFO)))))
+		 (PRINC '|Lesson | TYO)
+		 (LESSON-NAME-PRINC NAME ALIASES)
+		 (TERPRI TYO)
+		 (PRINC (CADDDR INFO) TYO)))))
+
+(DEFUN LESSON-NAME-PRINC (NAME ALIASES)
+       (PRINC NAME TYO)
+       (COND (ALIASES
+	      (PRINC '| (also called | TYO)
+	      (PRINC (CAR ALIASES) TYO)
+			(MAPC (FUNCTION
+			       (LAMBDA (X)
+				       (PRINC '|, | TYO)
+				       (PRINC X TYO)))
+			      (CDR ALIASES))
+			(PRINC '|)| TYO))))

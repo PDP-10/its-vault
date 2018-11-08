@@ -1,0 +1,409 @@
+; -*- LISP -*-
+
+;;; This file contains the stuff needed for system-level stuff for SIMUL
+
+(declare (special console-output terminal-output system-version error-output
+		  rubout-handler redirection-file princ prin1 standard-output
+		  special-structure-alist))
+
+(eval-when (compile eval)
+   (load '|TEACH;READER|)
+   (activate-character /%)
+   (package-hack))
+
+(eval-when (eval load compile)
+    (load '|teach;simul macros|))
+
+(eval-when (load eval)
+    (load '|teach;format fasl|)
+    (load '|teach;didl fasl|)
+    (load '|teach;gfn fasl|)
+    (load '|teach;user fasl|)
+    (load '|teach;reader fasl|)
+    (activate-character /%)
+    (package-hack)
+    (load '|teach;util fasl|)
+    (setq special-structure-alist nil))
+
+(declare (special hacked-by-prin1-list))
+
+(defun hairy-input (self op data)
+   (caseq op
+     (:which-operations '(tyi read readline open close deletef filepos filemode
+			  tyipeek clear-input renamef cnamef eoffn
+			  name))
+     (:tyi (let ((untyi-chars (sfa-get self 1)))
+	     (cond ((not (null untyi-chars))
+		      (prog2 nil (car untyi-chars)
+			     (sfa-store self 1 (cdr untyi-chars))))
+		     (T (tyi (sfa-get self 0) data)))))
+     (:read (read (sfa-get self 0) data))
+     (:tyipeek (tyipeek data (sfa-get self 0)))
+     (:readline (readline (sfa-get self 0) data))
+     (:open (open (sfa-get self 0) (cons 'in data))
+	    self)
+     (:close (close (sfa-get self 0)))
+     (:name (namelist (sfa-get self 0)))
+     (:truename (truename (sfa-get self 0)))
+     (:filepos (cond ((null data) (filepos (sfa-get self 0)))
+		     (T (filepos (sfa-get self 0) (car data)))))
+     (:filemode (cons 'hairy-input (status filemode (sfa-get self 0))))
+     (:deletef (deletef (sfa-get self 0)))
+     (:renamef (renamef (sfa-get self 0) data))
+     (:cnamef (cnamef (sfa-get self 0) data))
+     (:eoffn (cond ((null data)
+		    (eoffn (sfa-get self 0)))
+		   (T (eoffn (sfa-get self 0) data))))
+     (:clear-input (clear-input (sfa-get self 0))
+		   (sfa-store self 1 nil))  ;clear UNTYI'ed characters too.
+     (:untyi (sfa-store self 1 (cons data (sfa-get self 1))))
+     (:rubout-handler
+      (sfa-store self 2 nil)
+      (let ((RUBOUT-HANDLER T))
+	(hairy-reader self (car data) (cdr data))))
+
+     (T (unknown-op self op data))))
+
+(defun struct-printer (self op data)
+   (caseq op
+     (:which-operations '(:tyo :print :princ :prin1 :open :force-output
+			  :newline :cursorpos :deletef :close :open :renamef
+			  :name :cnamef :filepos :endpagefn :clear-output
+			  :linel :charpos :truename :fresh-line :ttycons
+			  :ttysize))
+     (:prin1 (s-printer-1 data T self))	 ;print with slashification
+     (:princ (s-printer-1 data nil self))  ;print without slashification
+     (:print (struct-printer self ':newline nil)
+	     (struct-printer self ':prin1 data)
+	     (tyo %/  (sfa-get self 0)))
+     (:tyo (cond ((not (minusp data))  ;can get negative control info
+		  (tyo data (sfa-get self 0)))))
+     (:charpos (cond ((fixp data) (charpos (sfa-get self 0) data))
+		     (T (charpos (sfa-get self 0)))))
+     (:filemode (cons 'STRUCT-PRINT (status filemode (sfa-get self 0))))
+     (:force-output (force-output (sfa-get self 0)))
+     (:cursorpos (apply 'cursorpos (append data (ncons (sfa-get self 0)))))
+     ((:fresh-line :newline)
+       (let ((output-file (sfa-get self 0)))
+	 (cond ((not (zerop (charpos output-file)))
+		(terpri output-file)))))
+     (:deletef (deletef (sfa-get self 0)))
+     (:renamef (renamef (sfa-get self 0) data))
+     (:name (namelist (sfa-get self 0)))
+     (:truename (truename (sfa-get self 0)))
+     (:cnamef (cnamef (sfa-get self 0) data))
+     (:close (close (sfa-get self 0)))
+     (:open
+       (let ((output-file (sfa-get self 0)))
+	 (close output-file)
+	 (open output-file)
+	 self))
+     (:filepos
+       (cond ((null data) (filepos (sfa-get self 0)))
+	     (T (filepos (sfa-get self 0) (car data)))))
+     (:read-cursorpos (charpos (sfa-get self 0)))
+     (:set-cursorpos
+       (do ((file (sfa-get self 0))
+	    (position (charpos (sfa-get self 0))
+		      (cond ((plusp (// (- data position) 8))
+			     (tyo 9 file)  ;tab over if possible
+			     (* (// (+ position 8) 8) 8))  ;new position
+			    ((> data position)
+			     (tyo 32. file)
+			     (+ position 1)))))
+	 ((not (< position data)))))
+     (:endpagefn (cond ((null data) (endpagefn (sfa-get self 0)))
+		       (T (endpagefn (sfa-get self 0) (car data)))))
+     (:linel (cond ((fixp data) (linel (sfa-get self 0) data))
+		   (T (linel (sfa-get self 0)))))
+     (:set-output-file (sfa-store self 0 data))
+     (:ttycons (cond ((null data) (status ttycons (sfa-get self 0)))
+		     (T (sstatus ttycons (sfa-get self 0) data))))
+     (:ttysize (status ttysize (sfa-get self 0)))
+     (T (unknown-op self op data))))
+
+
+(defun s-printer-1 (data slash-p self)
+      (let ((output-file (sfa-get self 0)))
+	(s-printer-2 data slash-p output-file)))
+
+(defun s-printer-2 (data slash-p file)
+   (caseq (typep data)
+	  (LIST (list-print data slash-p file))
+	  ((HUNK4 HUNK8 HUNK16 HUNK32 HUNK64 HUNK128)
+	   (hunk-print data slash-p file))
+	  (SYMBOL
+	   (cond ((null data) (princ '|()| file))
+		 (T (print-c data slash-p file))))
+	  (RANDOM
+	   (let ((temp))
+	     (setq temp
+		   (cadr (assq data special-structure-alist)))
+	     (cond ((not (null temp))  ;if we have a special name for this
+		    (princ data file)))))  ;PRINC, should be no funny chars
+	 (T (print-c data slash-p file))))
+
+(defun print-c (item slash-p file)
+   (cond (slash-p (prin1 item file))
+	 (T (princ item file))))
+
+(defun list-print (form slash-p output-file)
+   (tyo %/( output-file)
+   (do ((item (car form) (car rest))
+	(rest (cdr form) (cdr rest)))
+       ((or (atom rest) (hunkp rest))  ;no longer a cons?
+	(s-printer-2 item slash-p output-file)
+	(cond ((not (null rest))   ;dotted pair?
+	       (princ '| . | output-file)  ;print the dot
+	       (s-printer-2 rest slash-p output-file))) ;print the CDR
+	(tyo %/) output-file))	   ;print the close paren
+       (s-printer-2 item slash-p output-file)  ;print the CAR
+       (tyo %/  output-file)))	   ;print a space
+
+(defun hunk-print (form slash-p output-file)
+   (let ((data-type (car form)))
+      (cond ((memq data-type	   ;is this a structure?
+		   hacked-by-prin1-list)
+	     (format output-file (cond (slash-p '|#<~,,0S ~,,0A>|)
+				       (T '|#<~,,0A ~,,0A>|))
+		     (car form)
+		     (or (cond ((get data-type  ;first try is it's own
+				     'pname-finder)  ;handler
+				(funcall (get data-type 'pname-finder)
+					 form)))  ;returning nil or name
+			 (get form 'pname)  ;try PNAME property next
+			 (format nil '|#~O|  ;else unique-ize it
+				 (maknum form)))))  ;by core location
+	    (T (tyo %/[ output-file)
+	       (do ((n 1 (1+ n))
+		    (size (hunksize form)))
+		   ((= n size) (s-printer-2 (cxr 0 form) slash-p output-file))
+		  (s-printer-2 (cxr n form) slash-p output-file)
+		  (tyo %/  output-file))
+	       (tyo %/] output-file)))))
+
+
+(defun create-struct-file frobs
+   (let ((file (arg 1))
+	 (modes (cond ((> frobs 1) (arg 2))
+		      ((> frobs 2)
+		       (error '|Too many arguments to CREATE-STRUCT-FILE|))
+		      (T nil))))
+     (let ((sfa (sfa-create 'struct-printer 1 (namestring file))))
+       (sfa-call sfa ':set-output-file (open file (cons 'OUT modes))))))
+
+(defun initialize ()
+   (cond ((sfap tyo) '|Already initialized|)
+	 (T (setq terminal-output tyo)
+	    (setq console-output
+		  (sfa-create 'struct-printer 1 'console-output))
+	    (sfa-call console-output ':set-output-file terminal-output)
+	    (setq tyo console-output)
+	    (setq error-output console-output)
+	    (setq standard-output console-output)
+	    (setq defaultf `((dsk ,(status udir)) foo >))
+	    (cond ((probef `((DSK ,(STATUS HOMEDIR)) ,(STATUS USERID) SIMUL))
+		   (iota ((inifil `((DSK ,(STATUS HOMEDIR))
+				    ,(STATUS USERID) SIMUL)))
+		      (format console-output
+			 '|~&Loading init file from "~,,0A"~&|
+			 (pretty-namestring (truename inifil)))
+		      (load inifil)
+		      (format console-output '|~&Loading done~&|))))
+	    '|Initialized|)))
+
+(defun system-dumper ()
+   (iota ((sysver '|TEACH;[SYS] >|))
+      (setq SYSTEM-VERSION
+	    (1+ (readlist (explodec (caddr (truename sysver)))))))
+   (sstatus flush T)
+   (cond ((suspend nil '|TEACH;[SYS] >|)
+	  (format T '|~&Dumped as "TEACH; [SYS] ~D"~&
+Starting up new system.....~&|
+		  system-version)))
+   (initialize)
+   (format console-output '|~&Welcome to SIMUL ~,,0A| system-version)
+       '*)
+
+
+;; these next two crocks are for the sake of FORMAT and other things which
+;; look at the value of PRINC and PRIN1
+
+
+(defun redirect-princ nargs
+   (let ((form (arg 1))
+	 (princ nil)		   ;prevent infinite recursion
+	 (file))
+      (unwind-protect
+        (progn
+	  (setq file (sfa-get redirection-file 0))  ;remember old value
+	  (sfa-store redirection-file 0
+		     (cond ((= nargs 2) (arg 2))
+			   ((boundp 'standard-output) standard-output)
+			   (T tyo)))
+	 (princ form redirection-file))
+	(sfa-store redirection-file 0 file))))	;restore state on way out
+
+(defun redirect-prin1 nargs
+   (let ((form (arg 1))
+	 (prin1 nil)		   ;prevent infinite recursion
+	 (file))
+      (unwind-protect
+        (progn
+	  (setq file (sfa-get redirection-file 0))  ;remember old value
+	  (sfa-store redirection-file 0
+		     (cond ((= nargs 2) (arg 2))
+			   ((boundp 'standard-output) standard-output)
+			   (T tyo)))
+	 (prin1 form redirection-file))
+	(sfa-store redirection-file 0 file))))	;restore state on way out
+
+(defun cons-struct-printer (file)
+   (let ((sfa (sfa-create 'struct-printer 1 '||)))
+      (sfa-store sfa 0 file)
+      sfa))
+
+;; the SFA used in PRIN1 and PRINC
+(setq redirection-file (cons-struct-printer nil))
+(setq princ 'redirect-princ)
+(setq prin1 'redirect-prin1)
+
+
+(defun history-IO-handler (self op arg)
+   (caseq op
+      (:which-operations
+       (sfa-store self 2 (sfa-call (sfa-get self 0) ':which-operations nil))
+       (sfa-store self 3 (sfa-call (sfa-get self 1) ':which-operations nil))
+       (sfa-store self 4 (intersect (sfa-get self 2) (sfa-get self 3)))
+       (do ((all `(:set-input-stream  :get-input-stream
+		   :set-output-stream :get-output-stream
+		   ,@(sfa-get self 2)
+		   ,@(sfa-get self 3)))
+	    (illops `(,@(sfa-get self 4)  ;include things on both
+		      :filepos :close :open :name :cnamef :truename :deletef
+		      :renamef :ttycons :ttysiz)
+		    (cdr illops)))
+	 ((null illops) all)
+	 (setq all (delete (car illops) all))))
+      ((:ttycons :ttysize :renamef :deletef :truename :cnamef :name :open
+	:close :filepos)
+       (IO-ambiguous-operation self op))
+      (:set-input-stream (sfa-store self 0 arg))
+      (:set-output-stream (sfa-store self 1 arg))
+      (:get-input-stream (sfa-get self 0))
+      (:get-outut-stream (sfa-get self 1))
+      (T (cond ((memq op (sfa-get self 4))  ;a duplicated operation?
+		(IO-ambiguous-operation self op))
+	       ((memq op (sfa-get self 2))  ;input operation?
+		(let ((op-fun (car (assq op
+					 '((tyi . tyi)
+					   (read . read)
+					   (readline . readline)
+					   (tyipeek . tyipeek))))))
+		   (cond ((not (null op-fun))
+			  (funcall op-fun dat (sfa-get self 0)))
+			 (T (sfa-call (sfa-get 
+
+))))))))))
+
+(defun input-io-call (file op data)
+   (let ((input-caller (get op 'input-caller)))
+      (cond ((not (null input-caller))
+	     (cond ((eq (car input-caller) 'lsubr)
+		    (lsubrcall nil (cdr input-caller) file data))
+		   ((eq (car input-caller) 'subr)
+		    (subrcall nil (cdr input-caller) file data))
+		   (T (funcall (cdr input-caller) file data))))
+	    ((sfap file)
+	     (sfa-call file op data))
+	    ((eq op ':which-operations) '(tyi read readline open close filemode
+					  ttycons ttysize filepos renamef
+					  cnamef tyipeek eoffn name truename
+					  clear-input deletef))
+	    (T (format msgfiles
+		  '|~&; "~,,0S" is an unknown operation for a file./
+; File array involved is ~,,0S, and it's argument was ~,,0S~&|
+		  op file data)))))
+
+
+(eval-when (eval load)
+  (mapcar
+   (function
+    (lambda (frob)
+       (putprop frob `(lsubr . ,(get frob 'lsubr)) 'input-caller)))
+   '(tyi read readline open))
+
+  (putprop 'name `(subr . ,(get 'namelist 'subr)) 'input-caller)
+
+  (mapcar
+   (function
+    (lambda (frob)
+       (putprop frob `(subr . ,(get frob 'subr)) 'input-caller)))
+   '(close renamef cnamef truename deletef)))
+
+(defun (filemode input-caller-expr input-caller-subr) (file data)
+   (status filemode file))
+
+(defun (eoffn input-caller-expr input-caller-subr) (file data)
+   (cond ((null data) (eoffn file))
+	 (T (eoffn file (car data)))))
+
+(defun (ttysize input-caller-expr input-caller-subr) (file data)
+   (status ttysize file))
+
+(defun (ttycons input-caller-expr input-caller-subr) (file data)
+   (status ttycons file data))
+
+(defun (filepos input-caller-expr input-caller-subr) (file data)
+  (cond ((null data) (filepos file))
+	(T (filepos file (car data)))))
+
+(defun (tyipeek input-caller-expr input-caller-subr) (file data)
+   (tyipeek (cond ((eq (typep data) 'random) nil)  ;because of SFA bug
+		  (T data))))
+
+(eval-when (eval)
+  (mapcar
+   (function
+    (lambda (frob)
+      (putprop frob `(nil . ,(get frob 'input-caller-expr)) 'input-caller)))
+   '(filemode eoffn ttycons ttysize filepos tyipeek)))
+
+(eval-when (load)
+  (mapcar
+   (function
+    (lambda (frob)
+      (putprop frob `(subr . ,(get frob 'input-caller-subr)) 'input-caller)))
+   '(filemode eoffn ttycons ttysize filepos tyipeek)))
+
+(defun output-io-call (self op data)
+  (let ((output-caller (get op 'outut-caller)))
+     (cond ((not (null input-caller))
+	    (cond ((eq (car input-caller) 'lsubr)
+		   (lsubrcall nil (cdr input-caller) file data))
+		  ((eq (car input-caller) 'subr)
+		   (subrcall nil (cdr input-caller) file data))
+		  (T (funcall (cdr input-caller) file data))))
+	   ((sfap file)
+	    (sfa-call file op data))
+	   ((eq op ':which-operations) '(:tyo :princ :prin1 :print :terpri
+					 :open :closef :filemode :ttycons
+					 :ttysize :filepos :renamef :cnamef
+					 :deletef :name :truename
+					 :clear-output :force-output
+					 :linel :charpos :truename
+					 :fresh-line))
+	   (T (format msgfiles
+		 '|~&; "~,,0S" is an unknown operation for a file./
+; file array involved is ~,,0S, and it's argument was ~,,0S~&|
+		 op file data)))))
+
+
+(defun IO-ambiguous-operation (self op)
+   (format msgfiles
+      '|~&; "~,,0A" is an ambiguous operation in ~,,0A~&
+; Cannot tell whether to apply to input or output or both!~&|
+      op self)
+   (funcall wrng-type-arg (ncons op)))
+
+

@@ -1,0 +1,1036 @@
+;READ WOODS;MACROS > IN BEFORE TRYING TO THIS INTERPRETIVELY -*-LISP-*-
+
+(DECLARE (COND ((NULL (MEMQ 'NEWIO (STATUS FEATURES)))
+		(BREAK 'YOU-HAVE-TO-COMPILE-THIS-WITH-QCOMPL T))
+	       ((OR (NULL (GET 'IF-FOR-MACLISP 'MACRO))
+		    (GET 'POP 'MACRO))
+		(LOAD '(MACROS > DSK WOODS)))))
+
+(IF-FOR-LISPM
+(DECLARE (QUOTED-ARGS 
+  FORCE  PUSH  SCANSTACK  SYSCONJ  ADDL  ADDR 
+  CAT  GETF  GETR  JUMP  LIFTR  NULLR 
+  SENDR  SENDRQ  SETR  SETRQ  TO  TODO 
+  WRD  CHECKF  COMPARATIVE  GETROOT  MARKER  NPCHECK 
+  NPREP  PNCHECK  RESUMETAG  RFEAT  SCOMP  VPARTICLE 
+  VPASSIVE  VPREP  VTRANS  HELPER  MAPCV  RENAME 
+  SCANCV  SETQS  THOSEV  EDITD  EDITG  REMEX 
+  CTYPE  PLURAL  COMPFORM  SUPFORM  /#  MEM 
+  PRED  QUANT  SSUNIONF  NEWFRAG  TABFORM))
+);LISPM
+
+(DECLARE  (SPECIAL SEM-TRACE *SPOP *TRAIL REG WHERE *SQ-VAL*)
+	  (*LEXPR CONCAT))
+(DECLARE (*LEXPR APPLY* EVALA)(SPECIAL *LOC*))
+
+(DEFUN DEFINEG-GRAMMAR MACRO (X) (CONS 'DEFINEG (CDR X)))
+
+(DECLARE (GENPREFIX NASAGR)) 
+
+(DEFINEG-GRAMMAR
+ (COMPL// (WRD FOR T (TO FOR//FOR))
+	  (WRD THAT T (SETRQ NTYPE THAT) (TO COMPL//NTYPE))
+	  (WRD THAN T (SETRQ NTYPE THAN) (TO COMPL//NTYPE))
+	  (JUMP FOR//NP
+		T
+		(COND ((NULLR SUBJ NIL)
+		       (SETR SUBJ (BUILDQ (NP (PRO SOMETHING))))))))
+ (COMPL//S (POP (BUILDQ (NP + +) NTYPE S) T))
+ (COMPL//NTYPE (PUSH S// T (SETR S *) (TO COMPL//S)))
+ (FOR//FOR (PUSH NP// T (SETR SUBJ *) (TO FOR//NP)))
+ (FOR//NP (WRD TO T (TO FOR//TO))
+	  (CAT NEG (NULLR NEG NIL) (SETR NEG *) (TO FOR//NP)))
+ (FOR//TO (PUSH VP//V
+		(CHECKF V UNTENSED)
+		(SENDR SUBJ (GETR SUBJ NIL))
+		(SENDR OBJ (GETR OBJ NIL))
+		(SENDR NEG (GETR NEG NIL))
+		(SENDR TNS (GETR TNS 1.))
+		(SENDRQ TYPE FOR-TO)
+		(SETRQ NTYPE NOM)
+		(SETR S *)
+		(TO COMPL//S)))
+ (ING//BY (PUSH NP// T (SETR SUBJ *) (TO VP//VP)))
+ (NP// (CAT DET
+	    T
+	    (COND ((GETF POSSPRO)
+		   (ADDL ADJS (BUILDQ (POSS (NP (PRO *)))))
+		   (SETRQ DET THE))
+		  (T (SETR DET *)))
+	    (TO NP//ART))
+       (CAT PRO
+	    T
+	    (SETR N (BUILDQ (PRO *)))
+	    (SETR NU (GETF NUMBER))
+	    (TO NP//HEAD))
+       (MEM (WHETHER IF) T (SETR NTYPE *) (TO COMPL//NTYPE))
+       (CAT NEG (NULLR NEG NIL) (SETR NEG *) (TO NP//))
+       (JUMP NP//ART
+	     (OR (WRD MOST NIL)
+		 (NOR (CAT (DET PRO NEG))
+		      (WRD (WHOSE WHO WHAT WHETHER IF) NIL)))))
+)
+(DEFINEG-GRAMMAR
+ (NP///, (MEM (ETC/. ETC)
+	      T
+	      (ADDR BODY *)
+	      (SETRQ CONJ AND)
+	      (TO NP///,NP))
+	 (CAT ADV (RFEAT TRANSADV NIL) (SETR ADV *) (TO NP///,ESP))
+	 (CAT CONJ
+	      (NOR (WRD /, NIL) (GETR CONJ NIL))
+	      (SETR CONJ *)
+	      (TO NP///,))
+	 (PUSH NP// T (SENDR NPLIST T) (ADDR BODY *) (TO NP///,NP)))
+ (NP///,ESP (PUSH NP//
+		  T
+		  (ADDL NMODS (BUILDQ (ADVP (ADV +) *) ADV))
+		  (COND ((NULLR PPFLAG NIL) (SETRQ PPFLAG T)))
+		  (TO NP//HEAD)))
+ (NP///,NP (WRD /, T (TO NP///,))
+	   (POP (COND ((AND (NULLR CONJ NIL)
+			    (WRD (AND OR)
+				 (CADAR (LAST (GETR BODY NIL)))))
+		       (PROG (BODY CONJ LAST TEMP) 
+			     (SETQ BODY (COPY (GETR BODY NIL)))
+			     (SETQ LAST (LAST BODY))
+			     (SETQ CONJ (CADR (SETQ TEMP (CAR LAST))))
+			     (RPLACD LAST (CDDDR TEMP))
+			     (*RPLACA LAST (CADDR TEMP))
+			     (RETURN (CONS 'NP
+					   (CONS CONJ BODY)))))
+		      (T (BUILDQ (@ (NP /#) +)
+				 (COND ((GETR CONJ NIL))
+				       (T 'OR))
+				 BODY)))
+		(OR (GETR CONJ NIL)
+		    (WRD (AND OR) (CADAR (LAST (GETR BODY NIL))))
+		    (NULL STRING))))
+ (NP//// (CAT N T (SETR N (BUILDQ (N + // (N *)) N)) (TO NP//N))
+	 (PUSH NPR// T (SETR N (BUILDQ (N + // *) N)) (TO NP//N)))
+ (NP//ADV (CAT ADJ
+	       T
+	       (ADDL ADJS
+		     (BUILDQ (@ (ADJP) /# ((ADJ *)))
+			     (REVERSE (GETR ADVS NIL))))
+	       (TO NP//DET))
+	  (CAT ADV T (ADDL ADVS (BUILDQ (ADVS *))) (TO NP//ADV)))
+ (NP//ART (CAT ORD T (SETR POSTART (BUILDQ ((ORD *)))) (TO NP//ORD))
+	  (JUMP NP//SUPERLATIVE (AND (CAT ADJ) (WRD THE DET)))
+	  (MEM (MORE MOST)
+	       (AND (GET (NEXTWRD) 'ADJ) (WRD THE DET))
+	       (SETR MORE-MOST *)
+	       (TO NP//SUPERLATIVE))
+	  (CAT PRO
+	       (WRD ONE NIL)
+	       (SETR N (BUILDQ (PRO *)))
+	       (SETR NU (GETF NUMBER))
+	       (SETR DET (DETBUILD))
+	       (SETR HEAD (CADR (GETR N NIL)))
+	       (TO NP//HEAD))
+	  (JUMP NP//ORD T))
+)
+(DEFINEG-GRAMMAR
+ (NP//AVG (PUSH PP//
+		(CAT PREP)
+		(SENDR V (GETR V NIL))
+		(ADDL NMODS *)
+		(SETR HEAD (CADR (GETR N NIL)))
+		(TO NP//HEAD))
+	  (PUSH PP//PREP
+		(NOT (CAT PREP))
+		(SENDRQ PREP OF)
+		(SENDRQ NU/' PL)
+		(SENDR V (GETR V NIL))
+		(ADDL NMODS *)
+		(SETR HEAD (CADR (GETR N NIL)))
+		(TO NP//HEAD)))
+ (NP//DET (MEM (MORE MOST)
+	       (AND (GET (NEXTWRD) 'ADJ) (NOT (WRD THE DET)))
+	       (SETR MORE-MOST *)
+	       (TO NP//MORE))
+	  (CAT N
+	       (WRD (AVERAGE MAXIMUM MINIMUM MOST LEAST) NIL)
+	       (SETR N (BUILDQ (N *)))
+	       (SETR NU (GETF NUMBER))
+	       (TO NP//AVG))
+	  (PUSH NPR//
+		(WRD (SAMPLE ROCK LINE LINE/# APOLLO) NIL)
+		(SETR N *)
+		(SETRQ NU SG)
+		(TO NP//N))
+	  (CAT ADJ
+	       T
+	       (ADDL ADJS (BUILDQ (@ (ADJ) /# (*)) FEATURES))
+	       (TO NP//DET))
+	  (CAT N
+	       T
+	       (SETR N (BUILDQ (N *)))
+	       (SETR NU (GETF NUMBER))
+	       (TO NP//N))
+	  (CAT ADV T (SETR ADVS (BUILDQ ((ADVS *)))) (TO NP//ADV))
+	  (CAT V
+	       (OR (GETF PASTPART) (GETF PRESPART))
+	       (ADDL ADJS (BUILDQ (ADJ (PARTICIPLE /#)) LEX))
+	       (TO NP//DET))
+	  (CAT V
+	       (GETF PRESPART)
+	       (SETR N (BUILDQ (N /#) LEX))
+	       (SETRQ NU SG)
+	       (TO NP//N))
+	  (PUSH S//AUX
+		(OR (CAT (NEG ADV)) (CHECKF V PRESPART))
+		(SENDR SUBJ
+		       (COND ((WRD POSS (CAAR (GETR ADJS NIL)))
+			      (SETQ TEMP (CADAR (GETR ADJS NIL)))
+			      (SETR ADJS (CDR (GETR ADJS NIL)))
+			      TEMP)
+			     (T (SENDR SUBFLAG T)
+				(BUILDQ (NP (PRO SOMETHING))))))
+		(SENDRQ TYPE POSS-ING)
+		(SETRQ NTYPE NOM)
+		(SETR S *)
+		(TO COMPL//S))
+	  (PUSH NPR// T (SETR N *) (SETRQ NU SG) (TO NP//N)))
+)
+(DEFINEG-GRAMMAR
+ (NP//HEAD (VIR PP
+		(NPREP NIL)
+		(ADDL NMODS *)
+		(COND ((NULLR PPFLAG NIL) (SETRQ PPFLAG T)))
+		(TO NP//HEAD))
+	   (PUSH R//
+		 (AND (OR (WRD (WHO WHOM WHOSE WHICH THAT) NIL)
+			  (AND (WRD (WHICH WHOM WHOSE) (NEXTWRD))
+			       (CAT PREP)))
+		      (OR (CADR (GETR DET NIL))
+			  (WRD PL (GETR NU NIL))))
+		 (SENDRQ TYPE REL)
+		 (SENDR WH (BUILDQ (NP (DET WHR) + (NU +)) N NU))
+		 (SENDR ANAPHORFLG (CADR (GETR N NIL)))
+		 (ADDL NMODS *)
+		 (TO NP//R))
+	   (PUSH R//WH
+		 (AND (CAT V) (GETR RELVPFLG NIL))
+		 (! (COND ((WRD (WHICHQ HOWMANY)
+				(CADR (GETR DET NIL)))
+			   (SENDR ANAPHORFLG
+				  (COND ((WRD ONES
+					      (CADR (GETR N NIL)))
+					 (GETR ANAPHORFLG NIL))
+					(T (CADR (GETR N NIL))))))))
+		 (SENDRQ TYPE QREL)
+		 (SENDRQ RELVPFLG T)
+		 (SENDR WH
+			(BUILDQ (NP (DET WHR) /# (NU +))
+				(COND ((WRD ONES (CADR (GETR N NIL)))
+				       (GETR ANAPHORFLG NIL))
+				      (T (GETR N NIL)))
+				NU))
+		 (ADDL NMODS *)
+		 (TO NP//NP))
+	   (JUMP NP//NP
+		 (OR (NOT *)
+		     (AND (WRD TO NIL) (RFEAT INDOBJ V))
+		     (VPREP *)
+		     (NOR (NPREP *)
+			  (WRD (OF FOR) NIL)
+			  (AND (CAT PREP) (NOT (GETR N 2.)))))
+		 (LIFTR NPFEATURES (RESUMETAG NP//HEAD) NIL)
+		 (COND ((GETR PARTFLAG NIL)
+			(LIFTR ANAPHORFLG (GETR N) 2.))))
+	   (PUSH PP//
+		 (CAT PREP)
+		 (SENDR V (GETR V NIL))
+		 (ADDL NMODS *)
+		 (COND ((NULLR PPFLAG NIL) (SETRQ PPFLAG T)))
+		 (TO NP//HEAD))
+	   (PUSH FOR//NP
+		 (WRD TO NIL)
+		 (ADDL NMODS (BUILDQ (COMPL *)))
+		 (COND ((NULLR PPFLAG NIL) (SETRQ PPFLAG T)))
+		 (TO NP//HEAD))
+	   (TST R//NIL
+		(AND *
+		     (GETR PPFLAG NIL)
+		     (NOR (WRD (WHAT WHO WHOM WHICH THAT WHOSE) NIL)
+			  (GETR QDET NIL)
+			  (AND (WRD BE (GETROOT * V))
+			       (NOT (EQ * 'BEING)))))
+		(SUSPEND 1.)
+		(SENDRQ TYPE REL)
+		(SENDR WH (BUILDQ (NP (DET WHR) + (NU +)) N NU))
+		(PUSH R//NIL)
+		(ADDL NMODS *)
+		(TO NP//R))
+	   (JUMP NP//NP
+		 (NOR (NOT *)
+		      (AND (WRD TO NIL) (RFEAT INDOBJ V))
+		      (VPREP *)
+		      (NOR (NPREP *) (WRD (OF FOR) NIL)))
+		 (LIFTR NPFEATURES (RESUMETAG NP//HEAD) NIL)
+		 (COND ((GETR PARTFLAG NIL)
+			(LIFTR ANAPHORFLG (GETR N) 2.))))
+	   (PUSH R//NIL
+		 (NOR (GETR PPFLAG NIL)
+		      (WRD (WHAT WHO WHOM WHICH THAT WHOSE) NIL)
+		      (GETR QDET NIL)
+		      (AND (WRD BE (GETROOT * V))
+			   (NOT (EQ * 'BEING)))
+		      (NULL STRING))
+		 (SENDRQ TYPE REL)
+		 (SENDR WH (BUILDQ (NP (DET WHR) + (NU +)) N NU))
+		 (ADDL NMODS *)
+		 (TO NP//R))
+	   (PUSH COMPL//
+		 (AND (WRD THAT NIL)
+		      (WRD (A THE) (CADR (GETR DET NIL)))
+		      (RFEAT FACTN HEAD))
+		 (ADDL NMODS (BUILDQ (COMPL *)))
+		 (TO NP//NP))
+	   (PUSH COMPL//NTYPE
+		 (RFEAT FACTN HEAD)
+		 (SENDRQ NTYPE THAT)
+		 (ADDL NMODS (BUILDQ (COMPL *)))
+		 (TO NP//NP)))
+)
+(DEFINEG-GRAMMAR
+ (NP//HELDPART (JUMP NP//DET T)
+	       (JUMP NP//HEAD
+		     T
+		     (SETRQ N (PRO ONES))
+		     (SETRQ NU SG//PL)))
+ (NP//MORE (CAT ADJ
+		(GETR MORE-MOST NIL)
+		(ADDL ADJS
+		      (BUILDQ (@ (ADJ) (*) /#)
+			      (COND ((WRD MORE MORE-MOST)
+				     '(COMPARATIVE))
+				    (T '(SUPERLATIVE)))))
+		(TO NP//DET)
+		(COMMENT NP//MORE RECOGNIZES TWO-WORD INFLECTED
+			 ADJECTIVES AND PAST PARTICIPLES/. E/.G/.
+			 MORE/ BRECCIATED /, MORE/ METALLIC /,
+			 MOST/ REPRESENTATIVE))
+	   (CAT V
+		(AND (GETR MORE-MOST NIL) (GETF PASTPART))
+		(ADDL ADJS
+		      (BUILDQ (ADJ (PARTICIPLE /#) COMPARATIVE) LEX))
+		(TO NP//DET)))
+ (NP//N (CAT LIST
+	     (AND (WRD SG NU) (WRD (S ES) (CAR *)))
+	     (SETRQ NU SG//PL)
+	     (TO NP//N))
+	(WRD // T (TO NP////))
+	(CAT POSS
+	     T
+	     (SETR ADJS (BUILDQ ((POSS /#)) (NPBUILD)))
+	     (SETRQ DET THE)
+	     (TO NP//DET))
+	(JUMP NP//HEAD
+	      (CAT PREP)
+	      (COND ((GETR NU/' NIL) (SETR NU (GETR NU/' NIL))))
+	      (SETR HEAD (CADR (GETR N NIL))))
+	(CAT N
+	     (AND (NOT (WRD PL NU)) (NOT (EQ LEX 'BEING)))
+	     (ADDL ADJS (BUILDQ (ADJ (NP +)) N))
+	     (SETR N (BUILDQ (N *)))
+	     (SETR NU (GETF NUMBER))
+	     (TO NP//N))
+	(PUSH NPR//
+	      (NOR (CAT V) (CAT PREP) (NULL STRING))
+	      (ADDL ADJS (BUILDQ (ADJ +) N))
+	      (SETR N *)
+	      (SETRQ NU SG)
+	      (TO NP//N))
+	(CAT ADJ
+	     (NOT (WRD PL NU))
+	     (ADDL ADJS (BUILDQ (ADJ +) N))
+	     (ADDL ADJS (BUILDQ (@ (ADJ) /# (*)) FEATURES))
+	     (TO NP//DET))
+	(CAT V
+	     (AND (GETF PRESPART)
+		  (NOT (WRD PL NU))
+		  (NOT (VPARTICLE * (NEXTWRD)))
+		  (NOT (AND (GETR N NIL) (EQ LEX 'BEING))))
+	     (ADDL ADJS (BUILDQ (ADJ +) N))
+	     (SETR N (BUILDQ (N /#) LEX))
+	     (SETRQ NU SG)
+	     (TO NP//N))
+	(JUMP NP//HEAD
+	      (NOT (CAT PREP))
+	      (COND ((GETR NU/' NIL) (SETR NU (GETR NU/' NIL))))
+	      (SETR HEAD (CADR (GETR N NIL))))
+	(CAT N
+	     (OR (WRD PL NU) (EQ LEX 'BEING))
+	     (ADDL ADJS (BUILDQ (ADJ +) N))
+	     (SETR N (BUILDQ (N *)))
+	     (SETR NU (GETF NUMBER))
+	     (TO NP//N)))
+)
+(DEFINEG-GRAMMAR
+ (NP//NP (WRD /,
+	      (NULLR NPLIST NIL)
+	      (SETR BODY (LIST (NPBUILD)))
+	      (TO NP///,))
+	 (CAT LIST
+	      T
+	      (ADDL NR (PARSEPARENS * PAREN//))
+	      (COND ((NULL (CAR (GETR NR NIL))) (ABORT)))
+	      (TO NP//HEAD))
+	 (WRD : T (TO NP//NP:))
+	 (POP (GETR POPVAL NIL)
+	      (AND (SETR POPVAL (NPBUILD))
+		   (OR (NOT SIFLAG)
+		       (INTERP (GETR POPVAL NIL) NIL)
+		       T))))
+ (NP//NP: (PUSH NP// T (ADDL NR *) (TO NP//NP)))
+ (NP//ORD (PUSH QUANT//
+		(CAT (QUANT INTEGER ADV COMP))
+		(SETR POSTART (BUILDQ (@ + *) POSTART))
+		(TO NP//QUANT))
+	  (JUMP NP//QUANT T))
+ (NP//QUANT (PUSH PP//
+		  (AND (WRD OF NIL)
+		       (OR (GETR POSTART NIL)
+			   (WRD (WHICHQ HOWMANY
+					HOWMUCH
+					ALL
+					MOST
+					SEVERAL)
+				DET)))
+		  (SENDR PARTFLAG T)
+		  (ADDL NMODS *)
+		  (SETR DET (DETBUILD))
+		  (SETRQ N (PRO ONES))
+		  (SETRQ NU SG//PL)
+		  (TO NP//HEAD))
+	    (PUSH PP//PREP
+		  (WRD (ALL BOTH) DET)
+		  (SENDRQ PREP OF)
+		  (ADDL NMODS *)
+		  (SETR DET (DETBUILD))
+		  (SETRQ N (PRO ONES))
+		  (SETRQ NU SG//PL)
+		  (TO NP//HEAD))
+	    (VIR PP
+		 (AND (GETF PARTITIVE)
+		      (OR (GETR POSTART NIL)
+			  (WRD (WHICHQ HOWMANY HOWMUCH ALL SEVERAL)
+			       DET)))
+		 (SETR DET (DETBUILD))
+		 (ADDL NMODS *)
+		 (TO NP//HELDPART))
+	    (JUMP NP//DET T (SETR DET (DETBUILD))))
+ (NP//R (PUSH R//
+	      (WRD (WHO WHOM WHICH THAT) NIL)
+	      (SENDRQ TYPE REL)
+	      (SENDR WH (BUILDQ (NP (DET WHR) + (NU +)) N NU))
+	      (ADDL NMODS *)
+	      (TO NP//R))
+	(JUMP NP//NP T))
+)
+(DEFINEG-GRAMMAR
+ (NP//SUPERLATIVE (CAT ADJ
+		       (OR (GETR MORE-MOST NIL)
+			   (GETF SUPERLATIVE)
+			   (GETF COMPARATIVE))
+		       (SETR N
+			     (BUILDQ (@ (N) (*) /#)
+				     (COND ((WRD MORE MORE-MOST)
+					    '(COMPARATIVE))
+					   (T '(SUPERLATIVE)))))
+		       (SETRQ NU SG)
+		       (SETR DET (DETBUILD))
+		       (TO NP//SUPERSET))
+		  (JUMP NP//ORD T))
+ (NP//SUPERSET (PUSH PP//
+		     (WRD (OF AMONG) NIL)
+		     (SENDR V (GETR V NIL))
+		     (ADDL NMODS *)
+		     (SETR HEAD (CADR (GETR N NIL)))
+		     (COND ((OR (NULLR ANAPHORFLG NIL)
+				(EQ (GETR ANAPHORFLG NIL) T)
+				(SEMNET (GETR ANAPHORFLG NIL)
+					(HEAD (CADDR *)))))
+			   (T (ADDL NMODS
+				    (BUILDQ (PP (PREP OF)
+						(NP (DET THE)
+						    (N /#)
+						    (NU PL)))
+					    (GETR ANAPHORFLG NIL)))))
+		     (TO NP//HEAD))
+	       (PUSH PP//PREP
+		     (AND STRING (NOT (CAT PREP)))
+		     (! (COND ((GETR ANAPHORFLG NIL) (SENDRQ DET THE))
+			      (T (SENDRQ DET NIL))))
+		     (SENDRQ NU/' PL)
+		     (SENDRQ PREP OF)
+		     (SENDR V (GETR V NIL))
+		     (ADDL NMODS *)
+		     (SETR HEAD (CADR (GETR N NIL)))
+		     (TO NP//HEAD))
+	       (VIR PP
+		    (GETF PARTITIVE)
+		    (ADDL NMODS *)
+		    (SETR HEAD (CADR (GETR N NIL)))
+		    (TO NP//HEAD))
+	       (JUMP NP//HEAD
+		     (AND (NOT (WRD OF NIL)) (GETR ANAPHORFLG NIL))
+		     (SETR HEAD (CADR (GETR N NIL)))
+		     (ADDL NMODS
+			   (BUILDQ (PP (PREP OF)
+				       (NP (DET THE) (N /#) (NU PL)))
+				   (GETR ANAPHORFLG NIL))))
+	       (JUMP NP//HEAD
+		     (OR (WRD OF NIL) (NULLR ANAPHORFLG NIL))))
+ (NPR// (MEM (SAMPLE ROCK LINE LINE/# APOLLO)
+	     T
+	     (SETR TITLE *)
+	     (TO NPR//TITLE))
+	(CAT NPR T (SETR NPR (LIST *)) (TO NPR//NPR)))
+)
+(DEFINEG-GRAMMAR
+ (NPR//NPR (POP (BUILDQ (@ (NPR) +) NPR) T) (CAT CONJ NIL))
+ (NPR//TITLE (CAT NPR
+		  T
+		  (SETR NPR (BUILDQ (+ *) TITLE))
+		  (TO NPR//NPR)))
+ (NPU///; (CAT CONJ
+	       (OR (NULLR CONJ NIL) (EQ * (GETR CONJ NIL)))
+	       (COND ((NULLR CONJ NIL) (SETR CONJ *)))
+	       (TO NPU///;))
+	  (PUSH NP// T (ADDL NPU *) (TO NPU///;NP)))
+ (NPU///;NP (WRD /; T (TO NPU///;))
+	    (POP (BUILDQ (S NPU (@ (NP /#) /#))
+			 (COND ((GETR CONJ NIL)) (T 'OR))
+			 (REVERSE (GETR NPU NIL)))
+		 (NULL STRING)))
+ (PAREN// (PUSH NP// T (SETR PAREN *) (TO PAREN//PAREN)))
+ (PAREN//PAREN (POP (GETR PAREN NIL) T))
+ (PP// (CAT PREP T (SETR PREP *) (TO PP//PREP)))
+ (PP//NP (SPOP (BUILDQ (PP (PREP +) +) PREP NP) T))
+ (PP//PREP (WRD : T (TO PP//PREP))
+	   (CAT QDET (NULLR TYPE NIL) (SETR DET *) (TO PP//QDET))
+	   (CAT QWORD
+		(NULLR TYPE NIL)
+		(SETR NP *)
+		(LIFTR NP (GETR NP) NIL)
+		(TO PP//NP))
+	   (PUSH NP//
+		 T
+		 (! (COND ((GETR PARTFLAG NIL) (SENDR PARTFLAG T))))
+		 (SENDR RELVPFLG (GETR RELVPFLG NIL))
+		 (SENDR V (GETR V NIL))
+		 (SENDR DET (GETR DET NIL))
+		 (SENDR NU/' (GETR NU/' NIL))
+		 (SETR NP *)
+		 (TO PP//NP))
+	   (VIR NP T (RESUME) (SETR NP *) (TO PP//NP))
+	   (VIR ADV
+		(AND (WRD WHERE (CADR *)) (WRD (FROM TO AT) PREP))
+		(SETR NP (BUILDQ (NP (DET WHQ) (N PLACE) (NU SG))))
+		(TO PP//NP))
+	   (VIR ADV
+		(AND (WRD WHEN (CADR *)) (WRD AT PREP))
+		(SETR NP (BUILDQ (NP (DET WHQ) (N TIME) (NU SG))))
+		(TO PP//NP)))
+ (PP//QDET (PUSH NP//ART
+		 T
+		 (SENDR DET (GETR DET NIL))
+		 (SETR NP *)
+		 (LIFTR NP (GETR NP) NIL)
+		 (TO PP//NP)))
+ (QUANT// (CAT COMP (NULLR ADV NIL) (SETR ADV *) (TO QUANT//))
+	  (CAT QUANT T (SETR NUMB *) (TO QUANT//QUANT))
+	  (CAT INTEGER T (SETR NUMB *) (TO QUANT//QUANT)))
+ (QUANT//QUANT (TST UNIT-TST
+		    (MARKER UNIT *)
+		    (SETR UNIT *)
+		    (SETRQ FLAG MUCH)
+		    (TO QUANT//UNIT))
+	       (JUMP QUANT//UNIT T (SETRQ FLAG MANY)))
+ (QUANT//UNIT (POP (COND ((GETR ADV NIL)
+			  (BUILDQ ((COMP (ADV +)
+					 (@ (NP (INTEGER +)) /#))
+				   +)
+				  ADV
+				  NUMB
+				  (COND ((GETR UNIT NIL)
+					 (BUILDQ ((UNIT +)) UNIT))
+					(T NIL))
+				  FLAG))
+			 (T (BUILDQ ((@ (NP (INTEGER +)) /#) +)
+				    NUMB
+				    (COND ((GETR UNIT NIL)
+					   (BUILDQ ((UNIT +)) UNIT)))
+				    FLAG)))
+		   T))
+)
+(DEFINEG-GRAMMAR
+ (R// (MEM (WHICH THAT WHO) T (TO R//WH))
+      (WRD WHOM T (HOLD (GETR WH NIL) NIL) (SETR WH NIL) (TO R//WH))
+      (PUSH NP//
+	    (WRD WHOSE NIL)
+	    (SENDR ADJS (BUILDQ ((POSS +)) WH))
+	    (SETR WH *)
+	    (TO R//WH))
+      (CAT PREP T (SETR PREP *) (TO R//PREP)))
+ (R//NIL (CAT V
+	      T
+	      (COND ((AND (GETF PASTPART) (VPASSIVE *))
+		     (HOLD (GETR WH NIL) NIL)
+		     (SETR SUBJ (BUILDQ (NP (PRO SOMETHING))))
+		     (SETR AGFLAG T))
+		    ((GETF PRESPART)
+		     (SETR SUBJ (GETR WH NIL))
+		     (SETRQ ASPECT (PROGRESSIVE)))
+		    (T (ABORT)))
+	      (SETR V *)
+	      (TO VP//V))
+	 (PUSH NP//
+	       T
+	       (HOLD (GETR WH NIL) NIL)
+	       (SETR SUBJ *)
+	       (TO S//NP))
+	 (WRD THERE
+	      T
+	      (SETRQ THERE T)
+	      (SETR SUBJ (GETR WH NIL))
+	      (TO S//NP))
+	 (CAT ADJ
+	      T
+	      (SETR SUBJ (GETR WH NIL))
+	      (SETRQ V BE)
+	      (SETR OBJ (BUILDQ (@ (ADJ) /# (*)) FEATURES))
+	      (TO VP//NP))
+	 (CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO R//NIL)))
+ (R//PREP (MEM (WHICH WHOM)
+	       T
+	       (ADDL VMODS (BUILDQ (PP (PREP +) +) PREP WH))
+	       (SETR WH NIL)
+	       (TO R//WH))
+	  (PUSH NP//
+		(WRD WHOSE NIL)
+		(SENDR ADJS (BUILDQ ((POSS +)) WH))
+		(ADDL VMODS (BUILDQ (PP (PREP +) *) PREP))
+		(SETR WH NIL)
+		(TO R//WH)))
+)
+(DEFINEG-GRAMMAR
+ (R//WH (CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO R//WH))
+	(PUSH PP// (CAT PREP) (ADDL VMODS *) (TO R//WH))
+	(PUSH NP//
+	      (NOR (CAT V) (GETR RELVPFLG NIL))
+	      (COND ((GETR WH NIL) (HOLD (GETR WH NIL) NIL)))
+	      (SETR SUBJ *)
+	      (TO S//NP))
+	(WRD THERE
+	     T
+	     (SETR THERE T)
+	     (SETR SUBJ (GETR WH NIL))
+	     (TO S//NP))
+	(JUMP S//NP (AND (GETR WH NIL) (CAT V))))
+ (S// (JUMP S//Q (QSTART) (SETRQ TYPE Q))
+      (WRD PLEASE
+	   (NULL STACK)
+	   (ADDL VMODS (BUILDQ (ADV PLEASE)))
+	   (TO S//IMP))
+      (JUMP S//IMP (AND (CHECKF V UNTENSED) (NULL STACK)))
+      (JUMP S//DCL
+	    (NOR (CAT PREP) (QSTART) (NULL STRING))
+	    (SETRQ TYPE DCL))
+      (CAT ADV
+	   (RFEAT NEGADV NIL)
+	   (ADDL VMODS (BUILDQ (ADV *)))
+	   (SETRQ TYPE DCL)
+	   (TO S//NP))
+      (CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO S//))
+      (PUSH PP// (WRD OF NIL) (HOLD * '((PARTITIVE))) (TO S//))
+      (PUSH PP// (CAT PREP) (HOLD * '((FRONTED))) (TO S//QP1)))
+ (S///; (CAT CONJ
+	     (OR (NULLR CONJ NIL) (EQ * (GETR CONJ NIL)))
+	     (SETR CONJ *)
+	     (TO S///;))
+	(PUSH S// T (ADDL SBODY *) (TO S///;S)))
+ (S///;S (WRD /; T (TO S///;))
+	 (POP (BUILDQ (@ (S /#) /#)
+		      (COND ((GETR CONJ NIL)) (T 'OR))
+		      (REVERSE (GETR SBODY NIL)))
+	      T))
+ (S//AUX (CAT NEG
+	      (NULLR NEG NIL)
+	      (COND ((WRD DO MODAL) (SETR MODAL NIL)))
+	      (SETRQ NEG NEG)
+	      (TO S//AUX))
+	 (JUMP VP//V
+	       (OR (AND (GETR SUBJ NIL)
+			(PNCHECK (GETR SUBJ) (GETR PNCODE)))
+		   (GETR THERE NIL)))
+	 (JUMP S//NO-SUBJ (NOR (GETR SUBJ NIL) (GETR THERE NIL))))
+ (S//DCL (WRD THERE T (SETR THERE T) (TO S//NP))
+	 (PUSH NP// T (SETR SUBJ *) (TO S//NP))
+	 (PUSH COMPL//
+	       (OR (WRD (FOR TO THAT) NIL)
+		   (AND (WRD TO (NEXTWRD)) (CAT NEG)))
+	       (SETR SUBJ *)
+	       (TO S//NP)))
+ (S//HOW (CAT ADJ
+	      T
+	      (HOLD (BUILDQ (ADJ *)) NIL)
+	      (HOLD (BUILDQ (PP (PREP TO)
+				(NP (DET WHQ) (N DEGREE) (NU SG))))
+		    NIL)
+	      (TO S//NP))
+	 (CAT ADV
+	      T
+	      (HOLD (BUILDQ (ADV *)) NIL)
+	      (HOLD (BUILDQ (PP (PREP TO)
+				(NP (DET WHQ) (N DEGREE) (NU SG))))
+		    NIL)
+	      (TO S//NP)))
+)
+(DEFINEG-GRAMMAR
+ (S//IMP (CAT V
+	      (GETF UNTENSED)
+	      (SETRQ TYPE IMP)
+	      (SETR SUBJ (BUILDQ (NP (PRO YOU))))
+	      (SETR V *)
+	      (SETR HEAD *)
+	      (SETRQ TNS PRESENT)
+	      (TO VP//HEAD)))
+ (S//NO-SUBJ (WRD THERE
+		  (OR (NULLR WHQ NIL)
+		      (PNCHECK (GETR WHQ) (GETR PNCODE))
+		      (PNCHECK (GETR WH) (GETR PNCODE)))
+		  (COND ((GETR WHQ NIL) (SETR SUBJ (GETR WHQ NIL)))
+			((GETR WH NIL) (SETR SUBJ (GETR WH NIL))))
+		  (SETR THERE T)
+		  (TO S//THERE))
+	     (JUMP VP//V
+		   (AND (GETR WH NIL)
+			(WRD HAVE V)
+			(PNCHECK (GETR WH) (GETR PNCODE)))
+		   (SETR SUBJ (GETR WH NIL)))
+	     (PUSH NP//
+		   T
+		   (! (SETR HOLDNPFEATURES (GETR NPFEATURES NIL)))
+		   (SENDR ANAPHORFLG (GETR ANAPHORFLG NIL))
+		   (COND ((NULL (PNCHECK * (GETR PNCODE))) (ABORT)))
+		   (SETR SUBJ *)
+		   (COND ((GETR WHQ NIL)
+			  (HOLD (GETR WHQ NIL)
+				(GETR HOLDNPFEATURES NIL))))
+		   (COND ((GETR WH NIL)
+			  (HOLD (GETR WH NIL)
+				(GETR HOLDNPFEATURES NIL))))
+		   (COND ((WRD DO MODAL) (SETR MODAL NIL)))
+		   (TO VP//V))
+	     (JUMP VP//V
+		   (AND (GETR WH NIL)
+			(NOT (WRD HAVE V))
+			(PNCHECK (GETR WH) (GETR PNCODE)))
+		   (SETR SUBJ (GETR WH NIL)))
+	     (JUMP VP//V
+		   (AND (GETR WHQ NIL)
+			(PNCHECK (GETR WHQ) (GETR PNCODE)))
+		   (SETR SUBJ (GETR WHQ NIL))))
+ (S//NP (POP (GETR POPVAL NIL)
+	     (AND (NOR STRING HOLD STACK (GETR VMODS NIL))
+		  (SETR POPVAL
+			(COND ((WRD Q TYPE) (BUILDQ (S NPQ +) WHQ))
+			      (T (BUILDQ (S NPU +) SUBJ))))
+		  (OR (NOT SIFLAG) (INTERP (GETR POPVAL NIL) NIL))))
+	(CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO S//NP))
+	(CAT V
+	     (GETF TNS)
+	     (COND ((MODAL) (SETR MODAL *)) (T (SETR V *)))
+	     (COND ((AND (GETR WHQ NIL)
+			 (NOR (MODAL) (WRD (HAVE BE DO) NIL)))
+		    (SETR SUBJ (GETR WHQ NIL))
+		    (SETR WHQ NIL)))
+	     (COND ((AND (GETR WH NIL)
+			 (NOR (MODAL) (WRD (HAVE BE DO) NIL)))
+		    (SETR SUBJ (GETR WH NIL))
+		    (SETR WH NIL)))
+	     (SETR TNS (GETF TNS))
+	     (SETR PNCODE (GETF PNCODE))
+	     (TO S//AUX))
+	(WRD /; (NULL STACK) (ADDL NPU (GETR SUBJ NIL)) (TO NPU///;))
+	(JUMP S//DCL
+	      (WRD IDQ TYPE)
+	      (HOLD (GETR WHQ NIL) (GETR NPFEATURES NIL))
+	      (SETR WHQ NIL))
+	(JUMP S//AUX (GETR V NIL)))
+)
+(DEFINEG-GRAMMAR
+ (S//Q (WRD HOW T (TO S//HOW))
+       (CAT QWORD
+	    T
+	    (COND ((GETF SUBJ//OBJ) (SETR WHQ (COPY *)))
+		  (T (HOLD (COPY *) NIL)))
+	    (COND ((GETF ANAPHORIC) (SETRQ ANAPHORFLG T)))
+	    (TO S//NP))
+       (JUMP S//NP (CAT V))
+       (CAT QDET T (SETR DET *) (TO S//QDET)))
+ (S//QDET (PUSH NP//ART
+		T
+		(! (COND ((OR (ATOM (GETR DET NIL))
+			       (NEQ (CAR (GETR DET NIL))
+				    'POSTART))
+			  (SENDRQ RELVPFLG T))))
+		(SENDR DET (GETR DET NIL))
+		(SENDRQ QDET T)
+		(SETR WHQ *)
+		(TO S//NP)))
+ (S//QP1 (VIR PP
+	      (GETR NP NIL)
+	      (HOLD (RELATIVIZE (COPY *)) NIL)
+	      (SETRQ TYPE Q)
+	      (TO S//QP2))
+	 (JUMP S// (NOT (GETR NP NIL))))
+ (S//QP2 (PUSH S//NP
+	       T
+	       (SENDRQ TYPE REL)
+	       (SETR WHQ (APPEND (GETR NP NIL) (LIST *)))
+	       (TO S//NP)))
+ (S//S (POP (GETR POPVAL NIL) T))
+ (S//SADV (PUSH NP//
+		T
+		(ADDL VMODS (BUILDQ (ADVP (ADV +) *) SADV))
+		(TO S//VP)))
+ (S//THERE (TST DO
+		T
+		(SETQ FEATURES (GETR NPFEATURES NIL))
+		(RESUME)
+		(COND ((GETR NPFEATURES NIL) (SETR SUBJ *)))
+		(JUMP VP//V)))
+)
+(DEFINEG-GRAMMAR
+ (S//VP (WRD /, T (TO S//VP))
+	(CAT ADV (RFEAT TRANSADV NIL) (SETR SADV *) (TO S//SADV))
+	(VIR PP T (ADDL VMODS *) (TO S//VP))
+	(VIR ADJ
+	     (RFEAT COPULA V)
+	     (SETR V
+		   (BUILDQ (@ * /#)
+			   (COND ((WRD (SEEM APPEAR) V)
+				  '(SEEMING)))))
+	     (TO S//VP))
+	(VIR ADV T (ADDL VMODS *) (TO S//VP))
+	(MEM (/. ? !)
+	     (NULL STACK)
+	     (COND ((AND (WRD ? NIL) (NOT (WRD Q TYPE)))
+		    (SETRQ TYPE Q)))
+	     (TO S//VP))
+	(WRD /; (NULL STACK) (ADDL SBODY (SBUILD)) (TO S///;))
+	(JUMP S//S
+	      T
+	      (SETR POPVAL (SBUILD))
+	      (COND ((OR (NOT SIFLAG) (WRD REL TYPE)) T)
+		    ((AND (OR STACK (NOR STRING HOLD))
+			  (NOT (INTERP (GETR POPVAL NIL) NIL)))
+		     (SUSPEND 2.)))))
+ (VP//ADJ (WRD THAN (COMPARATIVE V) (TO VP//ADJ-COMP))
+	  (PUSH COMPL//
+		(AND (COMPARATIVE V) (WRD THAN NIL))
+		(SETR COMPL *)
+		(TO S//VP))
+	  (PUSH COMPL//
+		(AND (WRD (FOR TO THAT) NIL)
+		     (EQUAL (GETR SUBJ NIL)
+			    '(NP (PRO IT) (NU SG))))
+		(SETR SUBJ *)
+		(TO S//VP))
+	  (PUSH COMPL//
+		(AND (WRD FOR NIL)
+		     (RFEAT FORCOMP (CADR (GETR V NIL))))
+		(SETR COMPL *)
+		(TO S//VP))
+	  (PUSH FOR//NP
+		(AND (RFEAT TOCOMP (CADR (GETR V NIL))) (WRD TO NIL))
+		(! (COND ((RFEAT SUBJLOW (CADR (GETR V NIL)))
+			  (SENDR SUBJ (GETR SUBJ NIL)))
+			 (T (SENDR SUBJ
+				   '(NP (PRO SOMETHING) (NU SG)))
+			    (SENDR OBJ (GETR SUBJ NIL)))))
+		(SETR COMPL *)
+		(TO S//VP))
+	  (JUMP VP//VP T))
+ (VP//ADJ-COMP (PUSH NP//
+		     T
+		     (SENDR V (GETR V NIL))
+		     (SENDR ANAPHORFLG (GETR ANAPHORFLG NIL))
+		     (SETR OBJ *)
+		     (TO VP//NP)))
+)
+(DEFINEG-GRAMMAR
+ (VP//AGT (PUSH NP// T (SETR SUBJ *) (SETR AGFLAG NIL) (TO VP//VP))
+	  (VIR NP
+	       T
+	       (RESUME)
+	       (SETR SUBJ *)
+	       (SETR AGFLAG NIL)
+	       (TO VP//VP)))
+ (VP//COMP-ADJ (CAT ADJ
+		    T
+		    (SETR V
+			  (BUILDQ (@ (ADJ) (*) /# /#)
+				  (COND ((WRD MORE MORE-MOST)
+					 '(COMPARATIVE))
+					(T '(SUPERLATIVE)))
+				  (COND ((WRD (APPEAR SEEM) V)
+					 '(SEEMING)))))
+		    (TO VP//ADJ)))
+ (VP//HEAD (CAT PREP
+		(SETQ TEMP (VPARTICLE V NIL))
+		(SETR V TEMP)
+		(SETR HEAD TEMP)
+		(TO VP//V))
+	   (PUSH NP//
+		 (AND (WRD BE V) STRING)
+		 (SENDRQ V BE)
+		 (SENDR ANAPHORFLG (GETR ANAPHORFLG NIL))
+		 (SETR OBJ *)
+		 (TO VP//NP))
+	   (JUMP VP//NP
+		 (OR (RFEAT INTRANS V)
+		     (AND (VTRANS V) (GETR OBJ NIL))
+		     (ADJVERB)))
+	   (PUSH S//Q
+		 (AND (VTRANS V) (WRD (WHICH WHO WHAT WHOSE) NIL))
+		 (SENDRQ TYPE IDQ)
+		 (SETR OBJ (BUILDQ (NP *)))
+		 (TO VP//NP))
+	   (VIR NP (VTRANS V) (RESUME V) (SETR OBJ *) (TO VP//NP))
+	   (PUSH NP//
+		 (AND (VTRANS V) (NOT (WRD BE V)))
+		 (SENDR V (GETR V NIL))
+		 (SENDR ANAPHORFLG (GETR ANAPHORFLG NIL))
+		 (SETR OBJ *)
+		 (TO VP//NP))
+	   (WRD MORE
+		(AND (RFEAT COPULA V) (GET (NEXTWRD) 'ADJ))
+		(TO VP//MORE))
+	   (PUSH COMPL//
+		 (AND (WRD THAT NIL) (RFEAT THATCOMP V))
+		 (SETR COMPL *)
+		 (TO VP//NP))
+	   (PUSH COMPL//
+		 (AND (WRD (FOR TO) NIL) (RFEAT FORCOMP V))
+		 (! (COND ((WRD TO NIL)
+			   (SENDR SUBJ (GETR SUBJ NIL)))))
+		 (SETR COMPL *)
+		 (TO VP//VP))
+	   (PUSH COMPL//NTYPE
+		 (SCOMP V)
+		 (SENDRQ NTYPE THAT)
+		 (SETR COMPL *)
+		 (TO VP//NP)))
+)
+(DEFINEG-GRAMMAR
+ (VP//MORE (CAT ADJ
+		T
+		(SETR V (BUILDQ (ADJ * COMPARATIVE)))
+		(TO VP//ADJ)))
+ (VP//NP (PUSH COMPL//
+	       (OR (AND (WRD (FOR THAT) NIL)
+			(EQUAL (GETR SUBJ NIL)
+			       '(NP (PRO IT) (NU SG))))
+		   (AND (WRD THAT NIL) (GETR AGFLAG NIL)))
+	       (COND ((GETR AGFLAG NIL) (SETRQ AGFLAG NIL)))
+	       (SETR SUBJ *)
+	       (TO VP//VP))
+	 (PUSH FOR//NP
+	       (AND (RFEAT TOCOMP V) (GETR OBJ NIL))
+	       (SENDR SUBJ
+		      (COND ((RFEAT SUBJLOW V) (GETR SUBJ NIL))
+			    (T (GETR OBJ NIL))))
+	       (COND ((NOT (RFEAT TRANSCOMP V)) (SETR OBJ NIL)))
+	       (SETR COMPL *)
+	       (TO VP//VP))
+	 (CAT PREP
+	      (SETQ TEMP (VPARTICLE V NIL))
+	      (SETR V TEMP)
+	      (SETR HEAD TEMP)
+	      (TO VP//VP))
+	 (CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO VP//NP))
+	 (PUSH NP//
+	       (AND (RFEAT INDOBJ V) (GETR OBJ NIL))
+	       (ADDL VMODS (BUILDQ (PP (PREP TO) +) OBJ))
+	       (SETR OBJ *)
+	       (TO VP//VP))
+	 (PUSH COMPL//
+	       (AND (WRD (FOR THAT) NIL) (RFEAT INDOBJ V))
+	       (ADDL VMODS (BUILDQ (PP (PREP TO) +) OBJ))
+	       (SETR OBJ NIL)
+	       (SETR COMPL *)
+	       (TO VP//VP))
+	 (JUMP VP//VP T))
+ (VP//V (CAT V
+	     T
+	     (COND ((GETF PASTPART)
+		    (COND ((AND (WRD BE V) (VPASSIVE *))
+			   (HOLD (GETR SUBJ NIL)
+				 (GETR NPFEATURES NIL))
+			   (SETR SUBJ (BUILDQ (NP (PRO SOMETHING))))
+			   (SETR AGFLAG T))
+			  ((AND (NULLR ASPECT NIL) (WRD HAVE V))
+			   (SETRQ ASPECT (PERFECT)))
+			  (T (ABORT))))
+		   ((GETF PRESPART)
+		    (COND ((WRD BE V)
+			   (ADDR ASPECT 'PROGRESSIVE))
+			  ((WRD POSS-ING TYPE))
+			  (T (ABORT))))
+		   ((OR (NOT (GETF UNTENSED)) (GETR V NIL)) (ABORT)))
+	     (SETR V *)
+	     (TO VP//V))
+	(CAT ADJ
+	     (RFEAT COPULA V)
+	     (SETR V
+		   (BUILDQ (@ (ADJ) (*) /# /#)
+			   (COND ((GETF COMPARATIVE)
+				  '(COMPARATIVE))
+				 ((GETF SUPERLATIVE)
+				  '(SUPERLATIVE)))
+			   (COND ((WRD (APPEAR SEEM) V)
+				  '(SEEMING)))))
+	     (TO VP//ADJ))
+	(MEM (MORE MOST)
+	     (AND (RFEAT COPULA V) (GET (NEXTWRD) 'ADJ))
+	     (SETR MORE-MOST *)
+	     (TO VP//COMP-ADJ))
+	(PUSH NP//
+	      (AND (GETR THERE NIL)
+		   (NULLR SUBJ NIL)
+		   (WRD (BE EXIST) V))
+	      (COND ((NOT (PNCHECK * (GETR PNCODE))) (ABORT)))
+	      (SETR SUBJ *)
+	      (TO VP//V))
+	(JUMP VP//HEAD
+	      (GETR SUBJ NIL)
+	      (COND ((NULLR V NIL)
+		     (COND ((WRD DO MODAL)
+			    (SETRQ V DO)
+			    (SETR MODAL NIL))
+			   (T (ABORT))))
+		    (T (COND ((AND (GETR THERE NIL) (WRD BE V))
+			      (SETRQ V EXIST)))))
+	      (SETR HEAD (GETR V NIL)))
+	(CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO VP//V)))
+ (VP//VP (WRD BY (GETR AGFLAG NIL) (TO VP//AGT))
+	 (WRD BY
+	      (AND (WRD POSS-ING TYPE)
+		   (NULLR OBJ NIL)
+		   (NULLR SUBFLAG NIL))
+	      (SETR OBJ (GETR SUBJ NIL))
+	      (TO ING//BY))
+	 (MEM (OF BY)
+	      (GETR SUBFLAG NIL)
+	      (SETR SUBFLAG NIL)
+	      (TO ING//BY))
+	 (CAT ADV T (ADDL VMODS (BUILDQ (ADV *))) (TO VP//VP))
+	 (PUSH PP// (CAT PREP) (ADDL VMODS *) (TO VP//VP))
+	 (JUMP S//VP T))) 
+
