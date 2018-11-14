@@ -1,0 +1,272 @@
+;-*- Mode: Midas -*-
+
+	title	EXPN -- expand mailing list over internet
+
+NIL=0		;Super temporary register.
+A=1		;General registers.
+B=2
+C=3
+D=4
+E=5
+BP=6		;Byte pointer.
+CHAR=7		;Character being manipulated.
+T=10		;Temporary
+TT=11		;Temporary+1.
+OC==12		;OUT register.
+U1==13		;4 UUO Registers.
+U2==14
+U3==15
+U4==16
+P=17		;Stack pointer.
+
+;;; I/O Channels
+
+dski==12	;Disk input for host table.
+neti=13
+neto=14
+ttyi=15
+ttyo=16
+
+SMTP==25.	;SMTP port number
+
+;;; Macros and output routines.
+
+$$OUT==1
+.INSRT KSC;MACROS >
+.INSRT KSC;IVORY >
+.INSRT KSC;OUT >
+
+
+SUBTTL	Interrupt Handler and various returns
+
+POPJ1:	aos (p)			   ;Skip
+CPOPJ:	ret			   ;Return
+
+SYSLOS::
+AUTPSY:	0			   ;Fatal error JSR here.
+
+DEATH:	SKIPE DEBUG		   ;Come here to log out.
+	 .VALUE [0]
+	.LOGOUT 1,
+
+
+TMPLOC 42,{-TSINTL,,TSINT}	   ;New style interrupts.
+
+INTACS==T_6+7			   ;T,TT, and OUT registers preserved.
+
+
+TSINT:	INTACS,,P
+	0 ? 1_TTYI ? 0 ? <1_TTYO>\<1_TTYI> ? CHRINT
+	0 ? 1_TTYO ? 0 ? 0 ? MORINT
+TSINTL==:.-TSINT
+
+;;; Interrupt dismissal
+
+INTRET:	SYSCAL DISMIS,[%CLBIT,,INTACS ? P]
+	 JSR SYSLOS
+
+;;; Console interrupts.
+
+CHRINT:	MOVEI T,TTYI		   ;INTERRUPT CHAR.
+	.ITYIC T,
+	 JRST INTRET
+	CAIE T,^S
+	 CAIN T,^G
+	  JRST [.RESET TTYO,
+		SYSCAL TTYFLS,[	%CLBIT,,1 ? %CLIMM,,TTYI]
+		 .LOSE %LSSYS
+		JRST FLSIT1]
+	JRST INTRET
+MORINT:	OUT(TTYO,("--More--"))	   ;MORE BREAK.
+	SYSCAL IOT,[%CLBIT,,%TIPEK ? %CLIMM,,TTYI ? %CLOUT,,T]
+	 .LOSE %LSFIL
+	CAIE T,40
+	 CAIN T,177
+	  .IOT TTYI,T
+	CAIE T,40
+	 JRST FLSIT
+	OUT(TTYO,("A"))
+	JRST INTRET
+FLSIT:	OUT(TTYO,("Flushed"))
+FLSIT1:	JRST DEATH		   ;means we are done.
+
+
+
+SUBTTL Main program
+
+GO:	MOVE P,[-PDLLEN,,PDL-1]	   ;Init the stack.
+	MOVEI A,LSTPAG
+	MOVEM A,FREPAG		   ;Remember where unallocated core is.
+	SYSCAL OPEN,[%CLBIT,,<.UAO\%TJDIS> ? %CLIMM,,TTYO ? [SIXBIT /TTY/]]
+	 .LOSE %LSFIL
+	SYSCAL RFNAME,[%CLIMM,,TTYO ? %CLOUT,,B]
+	 .LOSE %LSFIL		   ;Get truename of TTY.
+	CAMN B,['TTY,,]		   ;If device not "TTY"
+	 JRST [	SETOM TRITTY	   ; must have been translated.
+		SYSCAL OPEN,[%CLBIT,,.UAI ? %CLIMM,,TTYI  ? [SIXBIT /TTY/]]
+		 .LOSE %LSFIL
+		SYSCAL TTYSET,[	%CLIMM,,TTYI
+				[222222,,222222]
+				[230222,,220222]]
+		 NOP		   ;  Failure just means no interrupts.
+		JRST .+1 ]
+GO1:	.SUSET [.ROPTION,,A]	   ;Read job option bits.
+	TLO A,%OPINT\%OPOPC	   ;Turn on winning-PC and new interrupts.
+	.SUSET [.SOPTION,,A]	   ;Set option bits.
+	.SUSET [.SMASK,,[%PIPDL]]  ;PDL overflows are fatal (sure, why not?)
+	SKIPN TRITTY
+	 .SUSET [.SMSK2,,[<1_TTYI>\<1_TTYO>]]	   ;Arm TTY interrupts.
+	OUT(TTYO,OPEN(UC$IOT))
+	OUT(,CH(TTYO))		   ;Open typeout display as default device.
+	TLNN A,OPTCMD		   ;If user forgot JCL
+	 JRST jclerr
+	.BREAK 12,[..RJCL,,JCLBUF] ;Slurp JCL into buffer.
+	SETZ A,			   ;Count characters of JCL.
+	MOVE BP,[440700,,JCLBUF]
+GETJCL:	ILDB CHAR,BP
+	;; if JCL ends w/o "@" barf!
+	skipg char
+	 JRST jclerr
+	CAIN CHAR,^M		   ;So do these...
+	 JRST jclerr
+	CAIN CHAR,^_
+	 JRST jclerr
+	CAIN CHAR,^C
+	 JRST jclerr
+	cain char,"@		;if @ we must already have uname
+	 skipa			;so store it
+	  aoja a,GETJCL		;otherwise keep looking
+	movem a,lstlen
+;	ibp bp			;make BP point to host name
+	MOVE t,[440700,,hstnam]
+coplup:	ildb char,BP		;get character
+	skipg char
+	 JRST copdon
+	CAIN CHAR,^M		   ;So do these...
+	 JRST copdon
+	CAIN CHAR,^_
+	 JRST copdon
+	CAIN CHAR,^C
+	 JRST copdon
+	idpb char,t		;store it
+	jrst coplup
+
+copdon: setz char,
+	idpb char,t		;terminate host name with 0
+
+	MOVEI B,DSKI
+	MOVE A,FREPAG		   ;Find free page to use.
+	CALL NETWRK"HSTMAP	   ;Map in the host table.
+	 JSR AUTPSY
+	HRRZM A,FREPAG
+	AOS FREPAG		   ;Remember where next free page is.
+	MOVE A,[440700,,hstnam]
+;	MOVE A,bp		;bp should have host name now.
+	CALL NETWRK"HSTLOO
+	 JSR AUTPSY
+	MOVEM A,HSTADD		   ;Remember the address.
+
+CONECT:	MOVEI A,NETI
+	MOVEI B,NETO
+	SYSCAL TCPOPN,[	A ? B ? [-1] ? %CLIMM,,SMTP ? HSTADD ]
+	 JSR NETLUZ
+	NETHANG 900.,B,%NSRFS,[%NSOPN,%NSRFN] ;Wait until established.
+	 JSR  NETLUZ
+	OUT(NETO,OPEN(UC$IOT))	   ;Open network output channel.
+	setz e,
+	pushj p,copnet		;discard server response
+	HRRZI B,JCLBUF
+	HRL B,LSTLEN
+	OUT(NETO,("EXPN "),TC(B),EOL)	   ;Send the JCL to the server.
+	OUT(NETO,FRC)		   ; Ensure buffer forced out
+	SYSCAL FINISH,[%CLIMM,,NETO] ; Wait for transmission ACK
+	 JSR AUTPSY
+	seto e,
+	pushj p,copnet		;print server response
+	out(neto,("QUIT"),EOL)	;finish transaction
+	out(neto,frc)		   ; ensure buffer forced out
+	syscal finish,[%climm,,neto] ; wait for transmission ack
+	 jsr autpsy
+	jrst death		;ok, we're done.
+
+;;; get lines of input from network until no more follow.
+;;; E=0 means discard them
+;;; E=1 means print on tty, stripping first four characters of each line
+;;; clobbers T
+copnet: seto t,			;if no input yet, wait for it.
+statlp:	.status neti,t		;see if input available
+	move tt,[140600,,t]
+	ldb nil,tt
+	caie nil,%ntinp
+	 cain nil,%ntcli
+	  jrst tyi		;input waiting, so get it
+	jumpn t,statlp		;should we wait or return?
+	popj p,
+
+tyi:	.IOT NETI,A		   ;Get character.
+	skipge a		   ;If EOF, channel closed.
+	 jsr autpsy
+	skipe e			;are we printing or discarding?
+	 .IOT TTYO,A		   ;Print it on our console.
+	skipe a
+	 cain a,^M
+	  skipa
+	   cain a,^J
+	    jrst [setz t, ? jrst statlp]	;at EOL
+	seto t,		;in middle of line
+	jrst statlp
+
+;;; JSR here for network errors.
+;;; NETLUZ, expects (input) channel number in A.
+;;; Network errors are fatal and are handled in the standard fashion.
+
+NETLUZ:	0
+	CALL NETWRK"ANALYZ
+	 JSR AUTPSY
+	JRST DEATH
+
+PUTCHR:	.IOT TTYO,T
+	RET
+
+jclerr:	OUT(,("AUsage is :EXPN mailbox@host
+Connects to that host and asks it to expand the address."))
+	JRST DEATH
+
+SUBTTL	Storage
+
+PDLLEN==64.		;Stack length.
+LSRPGS==220.		;Number of pages reserved for LSR1.
+JCLBFL==10.		;Number of words for JCL buffer.
+
+PDL:	BLOCK PDLLEN	;The stack.
+DEBUG:	0		;-1 iff debugging.
+JCLBUF:	BLOCK JCLBFL	;JCL buffer.
+lstlen:	0		;length of list name to be expanded
+TRITTY:	0		;-1 iff TTY input translated
+FREPAG:	0		;Page number of next free page.
+HSTADD:	0		;Host address of requested host
+HSTNAM: block 30.	;Hostname of requested host.
+
+CONSTANTS
+VARIABLES
+
+VARCHK
+
+;;; Include network hacking routines:
+
+$$HST3==1
+$$HSTMAP==1		   ;HOSTS3 file.
+$$ARPA==1			   ;Hack the ARPA Internet.
+$$TCP==1			   ;Use TCP/IP.
+$$HOSTNM==1		   ;Host name file lookup routines.
+$$SYMLOOK==1		   ;table lookup routine.
+$$ANALYZE==1		   ;Network Error Analysis Routine
+
+.INSRT SYSENG;NETWRK >
+
+CONSTANTS
+VARIABLES
+
+LSTPAG==<.+1777>/2000
+
+END GO

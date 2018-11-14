@@ -1,0 +1,111 @@
+;-*-Midas-*-
+
+	Title :UJ - Terse :WHOJ for slow TTYs
+
+;;;
+;;;	(Previously written in Teco)
+;;;
+
+A=1	;General porpoise
+B=2
+C=3
+D=4
+T1=6
+T2=7
+P=17
+
+TTYo==1
+Pdlen==10
+
+MapTop==5
+MapBot==177
+MapLen==MapBot-MapTop+1
+
+Define SYSCAL op,args
+	.Call [Setz ? Sixbit /op/ ? args ((Setz))]
+	Termin
+
+TerWid:	0
+
+You:	0	;Your uname
+
+Uname:	0
+Jname:	0
+TTYSTS:	0
+First:	0
+
+Pdlist:	-Pdlen,,Pdlist
+	Block Pdlen
+
+Start:	Move P,Pdlist
+	.Suset [.rUname,,You]
+	.Suset [.rCnsl,,A]
+	Syscal TTYVAR,[%Climm,,400000(A)
+		       [Sixbit /WIDTH/]
+		       %Clout,,TerWid]
+	  .Lose %LsSys
+	Syscal OPEN,[%Clbit,,.uao	;Open TTY for output
+		     %Climm,,TTYo
+		     [Sixbit /TTY/]]
+	  .Lose %LsFil
+	Syscal CORBLK,[%Climm,,%Cbndr	;Read-only
+		       %Climm,,%Jself	;Map into this job
+		     [-MapLen,,MapTop]
+		       %Climm,,%Jsnum]	;From system pages
+	  .Lose %LsSys
+	Move C,[Squoze 0,NCT]
+	.Eval C,			;Number Console Terminals (?)
+	  .Lose
+	Move T1,[Squoze 0,TTYSTS]
+	.Eval T1,			;Start of TTY data
+	  .Lose
+	Add T1,[(C)]	;Indexed by C
+	Movem T1,TTYSTS
+	Move T2,[Squoze 0,UNAME]
+	.Eval T2,
+	  .Lose
+	Add T2,[(B)]	;Indexed by ac B
+	Movem T2,UNAME
+	Move T1,[Squoze 0,JNAME]
+	.Eval T1,
+	  .Lose
+	Add T1,[(B)]	;Also...
+	Movem T1,JNAME
+	Move D,TerWid
+
+Active:	Hrre B,@TTYSTS
+	Jumple B,Next
+	Move T1,@Uname
+	Camn T1,You
+	  Jrst Next
+	Camn D,TerWid
+	  Jrst Urg
+	.Iot TTYo,[" ]
+	Soj D,
+Urg:	Move A,["(]
+	Pushj P,6type
+	Move T1,@Jname
+	Move A,[" ]
+	Came T1,[Sixbit /HACTRN/]
+	  Pushj P,6type
+	.Iot TTYo,[")]
+	Soj D,
+
+Next:	Sojge C,Active
+	.Logout 1,
+
+6type:	Caig D,8.
+	  Jrst [.Iot TTYo,[^M]
+		Move D,TerWid
+		Jrst .+1]
+	.Iot TTYo,A
+	Soj D,
+6tloop:	Setz T2,
+	Rotc T1,6
+	Addi T2,40
+	.Iot TTYo,T2
+	Soj D,
+	Jumpn T1,6tloop
+	Popj P,
+
+	END START

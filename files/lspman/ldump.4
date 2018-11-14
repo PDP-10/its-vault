@@ -1,0 +1,38 @@
+;;; -*- LISP -*-
+;;;
+;;; LDUMP: Support for the interface to LSPDOC
+
+(EVAL-WHEN (EVAL COMPILE)
+  (COND ((NOT (GET 'IOTA 'VERSION))
+	 (LOAD '((LIBLSP) IOTA)))))
+
+(DEFUN LSPMAN-FILES ()
+  (LET ((C (CACHED-LSPMAN-FILES))
+	(A (ALL-LSPMAN-FILES))
+	(OK? T))
+    (DO ((L C (CDR L))) ((NULL L))
+      (COND ((NOT (MEMQ (CAR L) A))
+	     (FORMAT T "~&File ~A in standard order doesn't exist.~%"
+		     (CAR L))
+	     (SETQ OK? (AND OK? (Y-OR-N-P "~&Ignore this? "))))))
+    (DO ((L C (CDR L))) ((NULL L))
+      (COND ((NOT (MEMQ (CAR L) C))
+	     (SETQ OK? NIL)
+	     (FORMAT T "~&File ~A not defined in standard order.~%"
+		     (CAR L)))))
+    (COND (OK? C))))
+
+(DEFUN CACHED-LSPMAN-FILES ()
+  (LET ((FILE "LSPDOC;.ORDER LSPMAN"))
+    (COND ((PROBEF FILE)
+	   (IOTA ((STREAM FILE 'IN))
+	     (READ STREAM)))
+	  (T NIL))))
+
+(DEFUN ALL-LSPMAN-FILES ()
+  (DO ((F (MAPCAR 'CADR (ALLFILES '(((LSPDOC) * *)))) (CDR F))
+       (L NIL))
+      ((NULL F) L)
+    (COND ((AND (NOT (EQ (CAR F) (CADR F)))		;assumes sortedness!
+		(NOT (ALPHABETP (GETCHARN (CAR F) 1))))
+	   (PUSH (CAR F) L)))))

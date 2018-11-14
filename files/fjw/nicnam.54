@@ -1,0 +1,1384 @@
+.symtab 8003.,8003.
+title whois
+.decsav
+
+subttl Defs & macros
+
+p=:17
+irp ac,,[a,b,c,d,e,g,h,r10,r11,r12,u1,u2,u3,u4]
+ac=:.irpcnt+1
+termin
+r1=1
+r2=2
+r3=3
+ma==r10	   ; Very temp AC that can be smashed (mainly for BLT of ACs)
+
+%%%asc==1  ; use ascnt /str/ style.
+.insrt macros.mid
+
+tyoc==1
+lc==2
+tmpc==3	; temp UUO chan
+dbc==4	; debugging output chan.
+
+ifndef gtblt,[gtblt=:104000000634]
+call=:<pushj p,>
+ret=:<popj p,>
+
+define type &str&
+outc tyoc,[ascnt str]
+termin
+
+define error &str&,(loc)
+pushj p,[type "?"
+	type str
+	ifnb loc, outpz tyoc,loc
+	jrst die
+]
+termin
+
+it$hdl==:0
+it$hty==:1.
+it$idn==:2.
+it$lnm==:3.
+it$fnm==:4.
+it$adr==:5.
+
+it$phn==:7.
+it$nta==:8.
+it$hst==:9.
+it$typ==:10.
+it$oty==:11.
+it$exp==:12.
+it$mbr==:13.
+it$cor==:14.
+it$grp==:15.
+it$usr==:16.
+it$nht==:17.
+it$fnc==:18.
+
+it$cap==:20.
+it$dlv==:21.
+it$com==:22.
+it$sbc==:23.
+it$dmy==:24.
+
+it$upd==:50.
+
+
+	patlen==50
+pat: patch:	block patlen
+
+	pdllen==250.
+pdl:	-pdllen,,.
+	block pdllen
+
+
+	jclbfl==100
+jclbuf:	block jclbfl
+jclptr:	0
+
+;;;	USTRGS==1
+.insrt <nicprog>nuuos.mid	; but of course...
+	$$DBUG==1	; Enable debug rtns, and
+.insrt <nicprog>ifpack.mid	; insert the ID package.
+
+charf:	chtmac		; Insert character-class table
+
+.scalar netflg, infflg
+
+entvec:	jrst local		; We are running locally
+	jrst server		; We are running as Arpanet server
+	jrst inferi		; Inferior with JCL argument
+
+inferi:	setom infflg		; Running as inferior -- set flag
+	setzm netflg		; Clear network server flag (at first)
+	jrst go			;  and start program
+
+local:	tdza a,a
+server:	 seto a,
+	movem a,netflg		; Save away whatever as network flag
+	setzm infflg		; Say we are not in (normal) inferior mode
+go:	move p,pdl
+	reset
+;;;	uarinit [100,,100]
+;;;	strinit
+	outopn tyoc,[$uciot,,[.priou]]
+	skipe netflg		; If we are running server skip jcl
+	  jrst go3
+	call jclini		; Pull in JCL if any
+	skipe a,jclptr
+	 jrst [	camn a,[-1]	; if -1 then
+		 jrst go3	; skip prompt but get tty input.
+		jrst go5]
+
+minput:	outz tyoc,prmpbf
+go3:	call gettxt		; pull in text from TTY
+
+go5:	skipe infflg		; If we are running inferior
+	 jrst [	setom netflg	;  make rest look like network WHOIS
+		jrst .+2]	;  and SKIP the statistics
+	 call staput		; Put out statistics (this might be skipped)
+	call fixup		; Set various flags & canonicalize input.
+	skipe a,argvec
+	 cain a,mhelp		; For now check specifically for "?"
+	  jrst [call mnull
+		skipe netflg	; If we are running netserver
+		 jrst die	;  then do not reread.
+		crlf tyoc,	; Otherwise go reprompt and reread.	 
+		jrst minput]
+	crlf tyoc,
+	call .load		; Load up data file
+	call @argvec
+
+mdone:	crlf tyoc,
+die:	haltf
+	jrst go
+
+mnull:
+mhelp:	type |
+    Please enter a lastname or handle ("ident"), such as
+"Smith" or "SRI-NIC".  Starting with a period forces only
+a lastname check; starting with an exclamation point forces
+a handle check.  E.g. ".Smith" or "!SRI-NIC".
+Adding "..." will match anything from that point,
+e.g. "ZU..." will match ZUL, ZUM, etc.
+    To have the ENTIRE membership list of a group or org--if
+you are asking about a group or org--typed with the record,
+use an asterisk character "*" directly preceding the ident.
+[Caution: If there are a lot of members will take a long time]
+You may of course use exclamation and asterisk, or period
+and asterisk.
+|
+	ret
+
+
+subttl statistics
+
+; Output a line in the stats file of the form
+; <time> <idx> <username> <site>? <argument string>
+
+	; Put out some stats on usage...
+staput:	movsi a,(gj%old+gj%sht)
+	hrroi b,[asciz /<ID>USE-STATS.WHOIS/]
+	gtjfn
+	 erjmp apopj		; If error, just do nothing.
+	movei a,(a)
+	move c,a
+	move b,[070000,,of%app+of%thw]
+	openf
+	 erjmp [move a,c
+		closf
+		 jfcl
+		ret]
+
+
+	; Have stats file open, now output stuff quick.
+	push p,a		; save jfn
+	call setlin
+	move a,(p)
+	hrroi b,[asciz /	Arg: /]
+	setz c,
+	sout
+	move a,jclptr
+	call fixstr
+	movn c,a		; -cnt
+	move a,(p)
+	sout
+	hrroi b,[asciz /
+/]
+	setz c,
+	sout
+	closf
+	 jfcl
+	pop p,a
+	ret
+
+setlin:	push p,a	; save JFN
+	move	1, [sixbit /LHOSTN/]
+	sysgt
+	movem	1, lhostn
+	movei	1, (2)
+	hrli	1, 1
+	getab
+	 setz	1,
+	movem	1, lhostn+1
+
+	move a,(p)
+	seto	2,	; Output current time
+	setz	3,
+	odtim
+
+	gjinf
+	exch a,(p)	; Save user #, restore jfn
+	move b,c
+	move c,[no%lfl+no%oov+<4,,8.>]	; 4 so spaces out from 3 digits.
+	nout		; output job #
+	 jfcl
+	movei b,40
+	bout		; space out
+	call	fndnet			; See if coming in from net
+	 jrst [	hrroi b,[asciz /TTY/]
+		caige d,
+		 hrroi b,[asciz /Det???/]
+		setz c,
+		sout
+		skipge b,d
+		 jrst stln7
+		move c,[no%oov+<3,,8.>]
+		nout
+		 jfcl
+		jrst stln7]
+	movei	3, 10
+	cvhst
+	 nout
+	 trn
+stln7:	movei b,40
+	bout
+	pop p,b		; Restore user #.
+	dirst		; Output user name
+	 jfcl		; screwed?
+	ret
+
+.scalar netbuf(300),lhostn(2),netsts,netawd
+
+fndnet:	push p,d
+	call fndnt
+	 caia
+	  aos -1(p)
+	pop p,d
+	ret
+
+fndnt:	push	p, 1
+	gjinf
+	hrrz	1, lhostn+1		; 1st NVT
+	caige	4, (1)			; At least that much?
+	 jrst	cpop1j			; No, not on nvt
+	hlre	2, lhostn+1		; Number of nvts
+	movm	2, 2
+	addi	2, (1)			; Last nvt
+	caile	4, (2)			; Within range?
+	 jrst	cpop1j
+	move	1, [sixbit /NETBUF/]
+	sysgt
+	hllz	e, 2
+	hrro	1, 2
+	movei	2, netbuf
+	gtblt
+	 jrst	cpop1j
+	move	1, [sixbit /NETAWD/]
+	sysgt
+	movem	2, netawd
+	move	1, [sixbit /NETSTS/]
+	sysgt
+	movem	2, netsts
+fndnt1:	hrrz	1, netbuf(e)		; Get nvt assigned
+	caie	1, (4)			; Mine?
+	 jrst	fndnt2			; No
+	hrrz	1, netsts
+	hrli	1, (e)			; Index
+	getab
+	 setz	1,
+	tlc	1, 340000		; Look for OPND
+	tlne	1, 740000
+	 jrst	fndnt2			; Not in right state
+	hrrz	1, netawd
+	hrli	1, (e)
+	getab
+	 jrst	cpop1j
+	ldb	2, [221100,,1]
+	aosa	-1(p)			; Skip return
+fndnt2:	aobjn	e, fndnt1
+cpop1j:	pop	p, 1
+	ret
+
+
+.scalar nhits,repos
+maxhts==1000.
+.vector hittab(maxhts)
+	0
+
+mtext:	setzm nhits		; Zero # matches found.
+	setzm repos		; Initialize to no repeat entries possible.
+	skipe hdlflg		; Initial point...is handle only?
+	 skipn lstflg		; Or last name only?
+	  setom repos		; No, then repeats are possible
+mfnd02:	movei a,it$hdl
+	skipe lstflg
+	 movei a,it$fnm
+	move b,argbp
+	move c,argct
+	movei g,id"fndidx	; default to full match
+	skipn pfxflg
+	 skipe lstflg
+	  movei g,id"fndpfx	; and use prefix match if spec'd or if lastname
+	seto d,			; 1st time starts from scratch
+mfndl2:	call (g)		; Find stuff
+	 jrst [	skipn hdlflg	; Not found, maybe done.  Wanted handle only?
+		 skipe lstflg	; or lastname only?
+		  jrst mfndl4	; Yes, done.
+		caie a,it$hdl	; Hmm, no force specified, was this handle?
+		 jrst mfndl4	; nope, really done.
+		setom lstflg	; Yes, switch to check lastname now.
+		jrst mfnd02]
+	skipn pfxflg		; If prefix wasn't explicitly asked for,
+	 skipn lstflg		; and doing lastname, must handle specially.
+	  jrst [pushae p,[a,b]	; else ok, mark as hit.
+		move a,e
+		call id"getcur
+		 error "Couldn't retrieve a record!  Inform NIC."
+		popae p,[b,a]
+		jrst mfndl3]
+
+	; Must ensure match ended at period/space.
+	pushae p,[a,b,c,d]
+	move a,e
+	call id"getcur
+	 error "Couldn't retrieve a record!  Inform NIC."
+	movei a,it$fnm
+	call id"itmfnd
+	 jrst mfnd26
+	move a,-1(p)		; Recover # chars in template
+	caile a,(c)
+	 jrst mfnd26		; make sure match string = or larger
+	cain a,(c)
+	 jrst mfnd25		; If same, won.
+	ptskip a,b		; Point at end of match
+	ildb c,b		; get next char
+	move c,charf(c)
+	tlnn c,ch%l+ch%d	; If a letter or digit, didn't match lastname.
+mfnd25:	 tdza h,h
+mfnd26:	  seto h,
+	popae p,[d,c,b,a]
+	jumpl h,mfndl2
+
+mfndl3:	call xdtst		; Is this record in limbo?
+	 caia			;  No, it's active.  Check it.
+	jrst mfndl2		; Yes, in limbo.  Ignore it.
+	skipe repos		; Are repeats possible or
+	 skipn h,nhits		;  is this the first hit?
+	  jrst mfndl5		;   Yes, accept without check
+	camn e,hittab-1(h)	; See if we already have one like it
+	 jrst mfndl2		; We do--don't repeat
+	sojg h,.-2		; Keep looking until done.
+mfndl5:	aos h,nhits		; One way or another, it's a hit.
+	caile h,maxhts
+	 jrst mfndl4		; Too many hits, must stop.
+	movem e,hittab-1(h)
+	jrst mfndl2
+
+mfndl4:	skipn h,nhits
+	 jrst [	skipn pfxflg
+		 error "No record for that name"
+		error "No records for that name"]
+	caig h,1
+	 jrst mone	; Go handle one hit.
+	caile h,maxhts
+	 jrst [	fwrite tyoc,[[There are over ],n9,h,[ matching entries.  Please
+try something more reasonable...]]
+		ret]
+
+	; Handle several hits.
+nhtask==10.	; > this # of hits will cause "more?" question to appear.
+nhtpau==5	; If asking "more?", question is asked after this many entries.
+
+	skipe netflg		; If net server, output everything.
+	 jrst  [fwrite tyoc,[[There are ],n9,h,[ matching entries.
+
+]]
+		jrst mfndl7]
+	caig h,nhtask		; If less than 10 hits,
+	 jrst mfndl7		; just go output all.
+	subi h,nhtpau		; Else do this many first.
+	move g,[-nhtpau,,hittab]
+	call mnsev		; Print several.
+	fwrite tyoc,[[There are ],n9,h,[ more entries.  Show them? ]]
+	call qcnfrm
+	 ret		; nope.
+	skipa g,[hittab+nhtpau]
+mfndl7:	 movei g,hittab
+	movn h,h
+	hrl g,h
+	call mnsev
+	skipe netflg
+	 jrst  [fwrite tyoc,[[
+To select any one, repeat command using the proper IDENT.
+]]
+		ret]
+	ret
+
+	; Take AOBJN ptr in G.
+mnsev:	move a,(g)
+	call id"getcur
+	 error "Record exists but cannot be retrieved, notify NIC."
+	call ptlrec
+	aobjn g,mnsev
+	ret
+
+	; Plain handle specified...
+mone:	move a,hittab		; Get 1st (and only?) hit
+	call id"getcur		; Get record for handle.
+	 error "Record exists but cannot be retrieved, notify NIC."
+	call ogtst		; Org or group?
+	 jrst [	skipn allflg	; No, just output appropriately
+		 pjrst ptarec
+		pjrst show]
+
+memlsz==<id"maxiln*5>	; Max length of membership list
+.vector memlst(<<memlsz+4>/5>)
+.scalar membpt,memfre
+
+	; Output org/group and ask about membership list.
+	skipn allflg
+	 jrst [	call ptarec
+		movei a,it$cor
+		call itmexs
+		 jrst .+1
+		skipe netflg
+		 crlf tyoc,
+		call inshfo
+		jrst .+1]
+	skipe allflg
+	 call show
+	movei a,it$mbr
+	call id"itmfnd		; Has membership list?
+	 ret			; Nope
+	move d,b
+	setz e,
+	pushae p,[c,d]
+	call id"lkgetw		; Find word in string
+	 caia
+	  aoja e,.-2
+	popae p,[d,c]
+	jumple e,apopj
+	skipe netflg		; Are we running locally or
+	 skipe expflg		;  is the "expand" flag set?
+	  caia			;   Yes, maybe go expand membership.
+	ret			; No, don't expand.
+ifn 0,[
+	crlf tyoc,
+	cain e,1
+	 jrst [	fwrite tyoc,[[There is 1 member.]]
+		jrst mgrp4]
+	fwrite tyoc,[[There are ],n9,e,[ members.]]
+];; end ifn 0
+mgrp4:	skipe expflg		; Is expflg set?
+	 jrst mgrp8		;  Yes, then don't even ask -- go do it.
+ifn 0,[
+	cain e,1
+	 jrst [ fwrite tyoc,[[  Show it?]]
+		jrst mgrp7]
+	fwrite tyoc,[[  Show them?]]
+];; end ifn 0
+ifn 1,[
+	crlf tyoc,
+	fwrite tyoc,[[  Show members?]]
+];; end ifn 1
+mgrp7:	call qcnfrm
+	 ret
+	caia
+mgrp8:	 crlf tyoc,
+	caile e,mxmbrs
+	 jrst [	fwrite tyoc,[[Too many members to print -- ],n9,e,[ .]]
+		ret]
+	call mrgini
+;;;	makstr memstr,[ts,c]	; ** Not needed anymore with DOMEM **
+	call domem		; Go merge all the members
+	move a,mrgnum
+	cain a,1
+	 jrst [	fwrite tyoc,[[There is 1 individual member:]]
+		jrst mgrp85]
+	fwrite tyoc,[[There are ],n9,mrgnum,[ individual members:]]
+mgrp85:	crlf tyoc,
+; h is counter so list is given in groups of 10 (presently).
+mgrp9:	movsi g,-mrgtln		; Initialize AOBJN ptr
+	crlf tyoc,		; Type an extra CRLF for looks
+	movsi h,-10.		; Initialize this for grouping
+mgr10:	move e,mrgtab(g)	; Get address of first entry in the list
+mgr11:	trnn e,-1		; Is pointer to next nil?
+	 jrst mgr12		;  Yes, go try the table again
+	move e,(e)		; Get the next node
+	hlrz a,e		; Index number of record from left half
+	call id"getcrx		; Make this the current record
+	 error "Couldn't get record -- ",id"emsgpt
+	call ptlrec		; Print out the record in short format
+	aobjn h,mgr11		; Continue if group of 10 not done yet
+	fwrite tyoc,[[
+__________
+
+]]				; Type this as a separator
+	movsi h,-10.		; Re-initialize counter for 'several'
+	jrst mgr11		;  and go to type another several
+
+mgr12:	aobjn g,mgr10		; Go to next word if table not exhausted
+	ret			; Otherwise we are done
+
+
+hshtln==509.			; Length of hashtable (should be prime)
+.vector hshtab(hshtln)		; Hash table (initialized in MRGINI)
+
+	;; Record fields
+hshnxt==0			; Pointer next
+hshstr==1			; <count>,,<addr of string>
+	;; End record
+
+;; DOMEM -- Given a current record with a membership list, do the merge
+;; of all non-org entities within that membership group.  This may cause
+;; recursion (if a group has sub-groups, etc).  Assumes current record
+;; gotten with GTCRx is the one to be expanded.
+
+domem:	pushae p,[a,b,c,d,e]	; Save some ACs
+	pushae p,[memfre,membpt]
+	movei a,it$mbr		; Membership list
+	call id"itmfnd		; Try to get it
+	 jrst dome8		;  Could not, so leave
+	jumple c,dome8		; If null, leave also
+	move d,memfre		; Get free space counter
+	caig d,(c)		; Compare number bytes with free space
+	 error "Membership list free space exhausted -- notify NIC."
+	subi d,(c)		; Update free space count
+	movem d,memfre		;  and store it away as new free count
+	move d,membpt		; Get memlst byte pointer
+	pushae p,[c,d]		; Save BP and count
+	ildb a,b
+	idpb a,d
+	sojg c,.-2		; Copy the membership list
+	movem d,membpt		; Save new memlst byte pointer
+	popae p,[d,c]		; Restore BP and count
+dome1:	call id"lkgetw		; Get a word from membership list
+	 jrst dome8		;  Could not, so we are done.
+	pushae p,[c,d,e]	; Save current state info
+	move c,a		;  and get parameter into reg
+	call srchtb		; Already a handle we have looked at?
+	 caia			;  No, keep with it.  Skip into next.
+	jrst dome7		; Yes, ignore it and go to next handle.
+	call puttb		; Put it in table now.
+	movei a,it$hdl		; Try using this word as a handle
+	call id"getrec		; Attempt to get this record
+	 jrst [	skipe netflg	;  Handle error.  Are we over the net?
+		 jrst dome7	;   Yes, just quietly ignore it.
+		hrlz c,c	;  No, then make an quickie
+		hrri c,b	;  descriptor for handle string.
+		fwrite tyoc,[[   Entry "],tpc,c,[" doesn't exist.]]
+		crlf tyoc,	;  Announce error
+		jrst dome7]	;    and continue loop
+	call xdtst		; Is record in limbo?
+	 caia			;  No, continue with it.
+	jrst dome7		; Yes, go on to next one.
+	call ogtst		; Is current record org or group?
+	 jrst [	call mrgrec	;  No, so merge this record
+		jrst dome7]	;  and continue
+	call domem		; A group, so go expand its list also
+dome7:	popae p,[e,d,c]
+	jrst dome1		; Continue with loop
+
+dome8:	popae p,[membpt,memfre]	; Restore state of memberships block
+	popae p,[e,d,c,b,a]	; Restore the regs
+	ret			; Leave.
+
+;; SRCHTB -- Routine to search records of 'seen' handle entries, and
+;; determine if current handle has already been considered.  This was
+;; added for DOMEM merely as an effeciency improvement, and is not
+;; necessary for proper membership list merging.
+;; Takes:
+;;	B/	BP to string
+;;	C/	Count of characters
+;; Returns:
+;;	+1	Not found -- end of chain ptr in D
+;;	+2	Found -- ptr to record in D
+;; Preserves B and C.
+
+srchtb:	pushae p,[b,c]		; Save some regs
+	call hshcd		; Compute hash code for this string
+	movei d,hshtab(a)	; Init "last" pointer to be in table
+	caia			; Skip into loop
+srcht1:	 pop p,d		; Retrieve new pointer to last entry
+	skipn a,hshnxt(d)	; Any more records in bucket?
+	 jrst srch1r		;  No, failed to find it.  Return +1
+	push p,a		; Yes, save pointer to current entry
+	hlrz c,hshstr(a)	; Get count of chars into C
+	hrrz b,hshstr(a)	; Address of string into B
+	hrli b,440700		; Make into into a byte pointer
+	movei d,-2(p)		; Get address of compare string into D
+	call cmpstr		; Are they equal?
+	 jrst srcht1		;  No, keep looping
+	pop p,d			; Yes, retrieve record pointer
+	aos -2(p)		; Indicate success
+srch1r:	popae p,[c,b]		; Restore saved ACs
+	ret
+
+;; HSHCD -- Routine to compute the hash code for a string.  Ignores
+;; upper/lower case differences.  Uses HSHTLN as constant length of
+;; hashtable.
+;; Takes:
+;;	B/	BP to string
+;;	C/	Count of chars in string
+;; Returns +1 always, with hash code in A.
+;; Clobbers B and C.
+
+hshcd:	push p,d		; Save register
+	setz d,			; Initialize hashing sum
+	jumple c,hshcd2		; Go finish up if no string
+hshcd1:	ildb a,b		; Get a character
+	cail a,"a		; Is this character a
+	 caile a,"z		;  lowercase letter?
+	  caia			;   No, skip uppercasing
+	trz a,40		; Yes, uppercase it
+	imuli d,35		; Multiply total by strange constant
+	addi d,(a)		;  and sum with new character
+	sojg c,hshcd1		; Loop if more characters
+hshcd2:	move a,d		; Get sum into A
+	idivi a,hshtln		; Find <sum> mod <table length>
+	movm a,b		; Make that ABS(<sum> mod <length>)
+	pop p,d			; Restore clobbered AC
+	ret
+
+;; CMPSTR -- Compare two character strings, ignoring upper/lower
+;; case differences.
+;; Takes:
+;;	B/	BP of first string
+;;	C/	Number of characters in first string
+;;	D/	Address of BP and number chars of second string.
+;; Returns:
+;;	+1	Not equal
+;;	+2	Equal (upper/lower case equivalent)
+;; Clobbers A,B,C,D.
+
+cmpstr:	came c,1(d)		; Lengths of strings equal?
+	 ret			;  No, just return +1 now
+	push p,e		; Save register
+	move d,(d)		; Get second BP into D
+cmpst1:	jumpe c,cmps2r		; When count exhausted, return +2
+	ildb a,b		; Get character from first string
+	cail a,"a		; Is this character a
+	 caile a,"z		;  lowercase letter?
+	  caia			; No, skip uppercasing
+	trz a,40		; Yes, uppercase it
+	ildb e,d		; Get char from second string
+	cail e,"a		; Lowercase letter?
+	 caile e,"z		;  ...
+	  caia			; No, don't uppercase
+	trz e,40		; Uppercase
+	cain a,(e)		; Equal?
+	 soja c,cmpst1		;  Yes, keep looping
+	caia			; No, skip +2 return
+cmps2r:	 aos -1(p)		; Bump return address
+cmps1r:	pop p,e			; Restore clobbered AC
+	ret
+
+;; PUTTB -- Make a new entry in the 'seen' handle data structure.
+;; Takes:
+;;	B/	BP to string
+;;	C/	Count of chars in string
+;;	D/	Pointer to previous entry in chain
+;; Returns +1 always. Clobbers A.
+
+puttb:	pushae p,[b,c,d,e]	; Save some ACs
+	hrrz a,freesp		; Current freespace ptr
+	caile a,<freblk+frbln1-2>
+	 error "Record hashing free space exhausted -- notify NIC"
+	movei e,2(a)		; Allocate space we want to use
+	movem e,freesp		;  ...
+	hrrz e,hshnxt(d)	; Get link out of previous
+	hrrzm e,hshnxt(a)	; Save as link out of current
+	hrrzm a,hshnxt(d)	;  and link in current record
+	hrlzm c,hshstr(a)	; Save count of chars in record
+	move e,txtbpt		; Get current text ptr
+	aos e			; Bump address by one
+	hrrm e,hshstr(a)	; Save address in record
+	hrli e,440700		;  and then make a BP out of it
+	jumpe c,puttb1		; Exit if string length zero
+	ildb d,b		; Copy the string
+	idpb d,e		;  ...
+	sojg c,.-2		;  ...
+puttb1:	movem e,txtbpt		; Save new byte pointer
+	popae p,[e,d,c,b]	; Restore saved ACs
+	ret
+
+;;; strnam memstr
+
+mxmbrs==5000.			; Maximum sortable members
+mxnmln==28.			; Max sorted length of name minus 2
+mrgtln==<26.*27.*<27./4>>	; Table length (two full, one partial index)
+frbln1==<<2+3>*mxmbrs>		; Length of free list space
+txtblb==<3*mxmbrs*mxnmln>/2	; Max bytes for text block string storage
+txtbln==<<txtblb+4>/5>		; Length of text block for strings
+
+.scalar freesp,txtbpt,mrgnum
+.vector mrgtab(mrgtln)
+.vector freblk(frbln1)
+.vector txtblk(txtbln)
+
+; Merge current record into existing table of lists, in
+; alphabetical order by full name.
+; Takes:
+;	A/	Index # of record (suitable for GETCRX routine).
+; Returns +1 always.
+
+mrgrec:	movei ma,1(p)		; Start of destination
+	add p,[h+1,,h+1]	; Update the pointer
+	blt ma,(p)		;  and save the ACs
+	movei a,it$fnm
+	call id"itmfnd		; Get full name field of current record
+	 jrst mrgre5		; If fails, just ignore this entry
+mrgre1:	call scnlet
+	 tdza e,e		; If failed, use zero
+	movei e,-"A(a)		; Reduce to ordinal and put in e
+	imuli e,<27.*<27./4>>	; Scale to match first letter lookup
+	setz d,			; Clear this so next jump is coherent
+	sojl c,mrgr01		; Decrement count, move on if no chars left
+	movei d,(c)		; Save what will be current count and
+	call chklet		;  call routine to just check next char
+mrgr01:	 tdza a,a
+	movei a,-<"A-1>(a)	; Reduce to ordinal
+	imuli a,<27./4>		; Scale for second letter index
+	addi e,(a)		; Get sum so far into e
+	push p,b		; Save current bp so we can look ahead
+	sojl d,mrgr02		; Decrement count, move on if nothing left
+	call chklet		; Do we have a letter?
+mrgr02:	 tdza a,a
+	movei a,-<"A-1>(a)	; Reduce to ordinal
+	lsh a,-2		; Downscale -- make 3rd a partial index
+	addi a,(e)		; Compute index into mrgtab for this string
+	movei c,1(d)		; Retrieve count before lookahead into c
+	pop p,b			; Retrieve bp before lookahead
+	move e,mrgtab(a)	; Get proper list pointer for 'current'
+	movei g,mrgtab(a)	; Initialize 'old' pointer to addr of entry
+	jrst mrgre3		; And go do list traversal
+
+mrgre2:	movei g,(e)		; Save current list ptr as old and
+	move e,(e)		;  step forward one entry
+mrgre3:	hlrz h,(e)		; Get record index for current entry
+	camn h,-6(p)		; Same as index we are checking?
+	 jrst mrgre5		;  Yes, never repeat same entry.
+	movei e,(e)		; Clean out left half now -- not needed.
+	jumpe e,mrgre4		; If list exhausted go put it on the end,
+	movei d,1(e)		;  else get addr of ASCNT sorted name string
+	call cmpnam		; Compare with target value
+	 caia			;  Less than current -- go insert here
+	jrst mrgre2		; Still too low, step one more
+mrgre4:	hrrz a,freesp		; Get the free space ptr
+	caile a,<freblk+frbln1-3>
+	 error "Record merging free space exhausted, please notify NIC."
+	hrrm a,(g)		; Make old rec point to one we will make
+	move d,txtbpt		; Get ptr to first free byte in stringspace
+	push p,d		; Save target pointer for later
+	call cpscnt		; Copy sortable portion into private space.
+	movem d,txtbpt		; Save the new ffb pointer.
+	hrl e,-7(p)		; Get rec index from stack into left half
+	movem e,0(a)		; Save <record index>,,<ptr next> in record
+	pop p,1(a)		; Retrieve bp to our string into entry+1
+	movem c,2(a)		; Save count of chars in entry+2
+	addi a,3		; Compute new freespace ptr
+	movem a,freesp		;  and save it away
+	aos mrgnum		; Count one more record merged
+mrgre5:	sub p,[h+1,,h+1]	; Set the stack pointer back
+	movsi ma,1(p)		; Get ready to restore ACs
+	blt ma,h		; Do the restore
+	ret			;  and leave (+1 always)
+
+; Copies ASCNT string until either the first line is exhausted or
+; the maximum number of sortable characters is copied, whichever
+; happens first.
+; Takes:
+;	B/	BP to source
+;	C/	Number of chars in source string
+;	D/	BP to destination
+; Returns +1 always, count of chars copied in C, updated BP in D.
+
+cpscnt:	pushae p,[a,b]
+	jumple c,cpscn3		; Exit if count is unreasonable
+	caile c,mxnmln		; Is given length more than maximum?
+	 movei c,mxnmln		;  Yes, make it exactly the maximum
+	movni c,(c)		; Negate the current maximum
+	movsi c,(c)		; And left half it for aobjn ptr
+cpscn1:	ildb a,b		; Get a char
+	caie a,15		; If carriage return or
+	 cain a,12		;  linefeed then
+	  jrst cpscn2		;  assume we are done.
+	idpb a,d		; Otherwise copy byte and
+	aobjn c,cpscn1		;  maybe go for more.
+cpscn2:	movei c,(c)
+cpscn3:	popae p,[b,a]
+	ret
+
+; Scans an ASCNT string for a letter.  CHKLET just gets the next char
+; and checks if it is a letter.
+; Takes:
+;	B/	BP to source
+;	C/	Count of chars in source
+; Returns:
+;	+1	failed, end of string before letter found
+;	+2	success, capital letter in A
+; In either case, updated BP in B and count in C
+
+chklet:	jumple c,scnle2		; Leave if no chars are left
+	skipa c,[1]		; Only look at one character
+scnlet:	 jumple c,scnle2
+scnle1:	ildb a,b		; Get a character
+	trz a,40		; Make sure we have no lower case
+	cail a,"A		; Skip if not letter
+	 caile a,"Z		;  Skip if letter
+	  sojg c,scnle1		;   Decrement count and maybe try more
+	jumpe c,scnle2		; Leave if count was exhausted first
+	aos (p)			; It wasn't.  Indicate success finding letter
+	soj c,			; Decrement character count
+scnle2:	ret
+
+; Compares two ASCNT strings to determine if first > second.  Only alphameric
+; characters are considered.  Comparison is by words (returned from ID"LKGETW).
+; Takes:
+;	B/	BP to first string
+;	C/	count of characters in first string
+;	D/	address of two word desc (BP and count) of second string
+; Returns:
+;	+1	first <= second, counting only alphameric chars
+;	+2	first > second
+
+cmpnam:	movei ma,1(p)		; Set up BLT ptr to stack from AC0
+	add p,[g+1,,g+1]	; Adjust the pointer
+	blt ma,(p)		; Save the ACs
+	move g,(d)		; Get byte pointer for string2
+	move e,1(d)		; Get char count of string2
+	move d,b		; Set up for LKGETW call
+cmpna1:	call id"lkgetw		; Get a word
+	 jrst cmpna6		;  No more string1, so string1 <= string2
+	pushae p,[b,a]		; Save the results -- bp and count
+	exch c,e		; Exchange char counts with string2
+	exch g,d		;  and byte pointers
+	call id"lkgetw		; Repeat call for string2
+	 jrst cmpna4		;  Done, string1 > string2, go to +2 return
+	exch c,(p)		; Swap with word's count from the stack
+	exch d,-1(p)		; Swap bp with word's bp on stack
+	call cmpwd		; Compare words (+1 ">", +2 "<", +3 "=")
+	 jrst cmpna4		;  Word1 < Word2, go do +2 return
+	 jrst cmpna5		;  Word1 > Word2, go to +1 return
+	move c,e		; Words are equal -- retrieve string1 count
+	move d,g		;  and byte pointer
+	popae p,[e,g]		; Retrieve string2 count and bp
+	jrst cmpna1		; Try some more since we don't know yet
+
+cmpna4:	aos -11(p)		; Indicate string1 > string2
+cmpna5:	sub p,[2,,2]
+cmpna6:	sub p,[g+1,,g+1]	; Adjust the stack back
+	movsi ma,1(p)		; From stack back to ACs
+	blt ma,g		; Restore clobbered ACs
+	ret
+
+; Compares two ASCNT strings.  Only alphanumeric characters are
+; considered.  Case is independent.
+; Takes:
+;	A/	char count of first string (less than 2^18)
+;	B/	bp to first string
+;	C/	char count of second string (less than 2^18)
+;	D/	bp to second string
+; Returns (!):
+;	+1	string2 > string1
+;	+2	string1 > string2
+;	+3	strings equal
+; Freely clobbers A,B,C and D
+
+cmpwd:	pushae p,[e,g]		; The next free ACs
+cmpwd1:	jumple a,cmpwd4		; If str1 empty, check for equality
+cmpw01:	ildb e,b
+	cail e,"0
+	 caile e,"9		; Is char numeric?
+	  trza e,40		;  No, make capital if letter and skip
+	jrst cmpwd2		; Yes, go check other string
+	cail e,"A
+	 caile e,"Z		; Is char alphabetic?
+	  soja a,cmpwd1		;  No, decrement count and try again.
+cmpwd2:	jumple c,cmpwd5		; If str2 empty, go say str1 is greater
+	ildb g,d
+	cail g,"0
+	 caile g,"9		; Is char numeric?
+	  trza g,40		;  No, make capital if letter and skip
+	jrst cmpwd3		; Yes, go compare the two chars
+	cail g,"A
+	 caile g,"Z		; Is char a letter?
+	  soja c,cmpwd2		;  No, decrement count and try for more.
+cmpwd3:	caile e,(g)		; Is char1 greater?
+	 jrst cmpwd5		;  Yes, then say str1 is greater
+	caie e,(g)		; Are chars equal?
+	 jrst cmpwd6		;  No, then say str2 is greater
+	soj c,			; Chars are equal.  Indicate that char used.
+	sojg a,cmpw01		; Decrement count and continue if positive
+cmpwd4:	jumpg c,cmpwd6		; If str2 not empty then str2 is greater
+	aos -2(p)		; Otherwise equal.  Bump return address
+cmpwd5:	aos -2(p)		; Bump return address
+cmpwd6:	popae p,[g,e]
+	ret
+
+; Parameterless routine to initialize pointers and such for MRGREC
+; and DOMEM.  Returns +1 always.
+
+mrgini:	push p,a
+	movei a,freblk		; Pointer to freeblock
+	movem a,freesp		;  is initialized here
+	move a,[440700,,txtblk]
+	movem a,txtbpt		; Initialize pointer to string block
+	setzm mrgtab		; Clear first location in sorting table
+	movsi a,mrgtab		; Zero out the table
+	hrri a,mrgtab+1		;  ...
+	blt a,mrgtab+<mrgtln-1>	;  ...
+	movei a,memlsz		; Initialize number free chars in
+	movem a,memfre		;  membership list block storage
+	move a,[440700,,memlst]	; Initialize BP to membership free block
+	movem a,membpt
+	setzm mrgnum		; Init to no records yet merged
+;; Now initialize things for DOMEM handle hashing
+	setzm hshtab		; Clear first location in hash table
+	movsi a,hshtab		; Zero out table
+	hrri a,hshtab+1		;  ...
+	blt a,hshtab+<hshtln-1>	;  ...
+	pop p,a
+	ret
+
+
+	; Loads up ID data etc.
+.load:	push p,a
+	move a,[-2,,[400,,200 ? 440700,,[asciz /ID/]]]
+	pushj p,id"init
+	 error "Init failed: ",id"emsgpt
+	pushj p,id"load
+	 error "Loading failed: ",id"emsgpt
+	pop p,a
+	popj p,
+
+	; Show verbose record for user
+show:	seto a,
+	call id"itmnxt
+	 jrst [	type "Empty - no data in record??"
+		popj p,]
+	jrst show6
+show5:	call id"itmnxt
+	 popj p,		; no more items in record
+show6:	push p,a
+	fwrite tyoc,[[(],n9,a,[) ]]
+	call id"itmstc		; find ASCNT string for item
+	exch b,c
+	fwrite tyoc,[tc,a,[: ],ts,b,[
+]]
+	pop p,a
+	jrst show5
+
+
+prmpbf:	asciz /Ident: /
+
+gettxt:	move a,[440700,,jclbuf]
+	movem a,jclptr
+	move b,[rd%bel+jclbfl*5]
+	setz c,			; Initialize for next check
+	skipn netflg		; No ^R buffer for server program
+	 move c,[440700,,prmpbf]
+	rdtty
+	 error "RDTTY failed"
+ifndef apopj,apopj:
+	popj p,
+
+
+fixstr:	call id"lbpasz		; Find string length
+	move b,jclptr
+	call spfls		; Flush spaces from beg
+	pjrst enptfl		; Flush spaces/crlfs from end
+
+fixup:	move a,jclptr
+	call fixstr
+	setzm argvec
+	jumple a,apopj
+	movem a,argct
+	movem b,argbp
+	setzm allflg
+	setzm lstflg
+	setzm pfxflg
+	setzm expflg
+	movei d,mtext
+	jrst fixu4
+fixu3:	sosg a,argct
+	 ret
+	movem b,argbp
+fixu4:	ildb c,b		; Get 1st char
+	cain c,"?
+	 jrst [	movei d,mhelp		; wants help
+		jrst fixu9]
+	cain c,"#		; wants all info?
+	 jrst [	setom allflg
+		jrst fixu3]
+	cain c,"!
+	 jrst [ setom hdlflg	; Handle?
+		setzm lstflg
+		jrst fixu3]
+	cain c,".		; Lastname?
+	 jrst [	setom lstflg
+		setzm hdlflg
+		jrst fixu3]
+	cain c,"*		; Auto-expand?
+	 jrst [	setom expflg
+		jrst fixu3]
+
+	; see if want prefix or full match.
+	move b,argbp		; Restore BP
+	ptskip a,b		; Point at last char
+fixu7:	ldb c,b
+	caie c,".
+	 jrst fixu9		; If not period, done.
+	setom pfxflg
+	md7bpt b,
+	sojg a,fixu7
+	setzm argvec		; If run out, was just periods!
+
+fixu9:	movem a,argct		; Set count, and restore BP.
+	move b,argbp
+	movem d,argvec
+	ret
+
+.scalar allflg	; -1 to print all info in record if not 1-liner.
+.scalar lstflg	; -1 if hacking lastname
+.scalar hdlflg	; -1 if hacking handle
+.scalar pfxflg	; -1 if hacking prefix match
+.scalar expflg  ; -1 if want to expand group/org always
+.scalar argct
+.scalar argbp
+.scalar argvec
+
+
+JCLINI:	SETZM JCLPTR
+IFN OS%10X,[
+	MOVEI R1,.PRIIN
+	BKJFN		; see what previous character was
+	 POPJ P,	; *Gasp*
+	PBIN
+	CAIE R1,^_	; Tenex newline?
+	 SETOM JCLPTR	; No, set flag saying "TTY but no prompt"
+	POPJ P,		; and skip the Twenex hackery below
+]
+IFN OS%20X,[
+	SETZ R1,	; If not, check RSCAN.
+	RSCAN		; See if have anything in RSCAN buffer.
+	 POPJ P,	; Huh?  Shouldn't happen, but ignore it.
+	JUMPLE R1,APOPJ	; Also return if char cnt says nothing there.
+	MOVNI R3,(R1)	; Aha, set up cnt for SIN
+	HRROI R2,JCLBUF
+	MOVEI R1,.PRIIN	; Now ready for business...
+	SIN
+	LDB R1,R2	; Now examine wages thereof
+	CAIE R1,^M	; Last char CR?
+	 JRST [	MOVEI R1,^M
+		IDPB R1,R2	; If not, make it so.
+		JRST .+1]
+	SETZ R1,
+	IDPB R1,R2		; Must also ensure ASCIZ.
+	MOVE B,[440700,,JCLBUF]	; Now must flush cruft that crufty EXEC
+	ILDB A,B		; sticks in crufty front of crufty line!
+	CAILE A,40
+	 JRST .-2		; Flush until random ctl seen (space, ^M)
+	CAIE A,40		; If it wasn't a space,
+	 POPJ P,		; then forget about the whole thing.
+JCLIN3:	MOVE C,B		; Now flush spaces.  Save last ptr for chars.
+	ILDB A,B
+	CAIN A,40
+	 JRST JCLIN3
+	CAIN A,^M		; And is first non-space something besides CR?
+	 POPJ P,		; Bah, there wasn't anything in the JCL!!
+	MOVEM C,JCLPTR		; Else save ptr to start of real goods.
+	POPJ P,
+]
+
+
+; PTLREC - Print out current record in form
+; "Lastname, Fname (hdl)     Org  Phone  Netaddr"
+
+ptlrec:	pushae p,[a,b,c,d]
+	skipn id"itmbgp		; Make sure current record exists
+	 error "No current record??"
+	movei a,it$fnm
+	setz b,
+	call ifmto
+	fwrite tyoc,[[ (]]
+	movei a,it$hdl
+	seto b,
+	call ifmto
+	fwrite tyoc,[[) ]]
+	skipe netflg
+	 jrst  [fwrite tyoc,[[   ]]
+		jrst ptlre1]
+	move b,[20.,,50.]
+	call adjcol
+ptlre1:	call itonta
+	movei a,it$phn
+	skipe netflg
+	 jrst  [crlf tyoc,
+		fwrite tyoc,[[     ]]
+		call itmout
+		fwrite tyoc,[[   ]]
+		jrst ptlre2]
+	move b,[40.,,55.]
+	call ifmto
+	move b,[60.,,68.]
+	call adjcol
+ptlre2:	call itoorg
+	crlf tyoc,
+	popae p,[d,c,b,a]
+	ret
+
+itoorg:	movei a,it$grp
+	call id"itmfnd
+	 jrst [	fwrite tyoc,[[--]]
+		ret]
+	movei a,(c)
+	call spfls
+	pjrst nspprt
+
+itonta:	movei a,it$nta
+	call itmout
+	outi tyoc,"@
+	movei a,it$hst
+	call itmout
+	ret
+
+
+; NSPPRT - Print up to space/tab, munging argument.
+; A/ # chars
+; B/ <BP>
+
+nspprt:	jumple a,apopj
+	pushae p,[b,c]
+nsppr2:	movem b,-1(p)
+	ildb c,b
+	caie c,40
+	 cain c,^I
+	  jrst nsppr9
+	outi tyoc,(c)
+	sojg a,nsppr2
+nsppr9:	popae p,[c,b]
+	popj p,
+
+; SPFLS - Flush spaces/tabs.
+; A/ # chars
+; B/ <BP>
+
+spfls:	jumple a,apopj
+	pushae p,[b,c]
+spfls2:	movem b,-1(p)
+	ildb c,b
+	caie c,40
+	 cain c,^I
+	  sojg a,spfls2
+	popae p,[c,b]
+	popj p,
+
+; ENPTFL - Flush non-printing chars from end of string
+
+enptfl:	jumple a,apopj
+	pushae p,[c,d]
+	move d,b
+	ptskip a,d	; Increment bp in D by c(A) bytes
+enptf2:	ldb c,d		; get ch
+	move c,charf(c)
+	tlnn c,ch%pt	; Skip if printing char
+	 sojg a,[md7bpt d,	; Decrement BP
+		jrst enptf2]
+	popae p,[d,c]
+	ret
+
+crif:	push p,a
+	call gtcol
+	caie a,
+	 crlf tyoc,
+	pop p,a
+	popj p,
+
+gtcol:	push p,b
+	movei a,.priou
+	rfpos
+	movei a,(b)
+	pop p,b
+	popj p,
+
+qcnfrm:	type " [Confirm]"
+	push p,a
+	pbin
+	cain a,^M
+	 jrst qcnfr1
+	caie a,"Y
+	 cain a,"y
+	  pjrst popa1
+	type " No"
+	pjrst popaj
+qcnfr1:	movei a,.priin
+	sibe
+	 caia
+	pjrst popa1
+	pbin
+	cain a,^J
+	 pjrst popa1
+	movei a,.priin
+	bkjfn
+	 caia
+popa1:	aos -1(p)
+popaj:	pop p,a
+	popj p,
+
+itmexs:	pushae p,[a,b,c,d]
+	call id"itmfnd
+	 caia
+	  aos -4(p)
+	popae p,[d,c,b,a]
+	ret
+
+ogtst:	pushae p,[a,b,c,d]
+	movei a,it$hty
+	call id"itmfnd
+	 jrst ogtst9
+	jumple c,ogtst9
+ogtst2:	ildb a,b
+	caie a,"G
+	 cain a,"g
+	  jrst ogtst8
+	caie a,"O
+	 cain a,"o
+	  jrst ogtst8
+	caie a,"H
+	 cain a,"h
+	  jrst ogtst8
+	caie a,40
+	 cain a,"I-100
+	  sojg c,ogtst2
+	caia
+ogtst8:	 aos -4(p)
+ogtst9:	popae p,[d,c,b,a]
+	ret
+
+xdtst:	pushae p,[a,b,c,d]
+	movei a,it$hty
+	call id"itmfnd
+	 jrst xdtst9
+	jumple c,xdtst9
+xdtst2:	ildb a,b
+	caie a,"X
+	 cain a,"x
+	  jrst xdtst8
+	caie a,40
+	 cain a,"I-100
+	  sojg c,xdtst2
+	caia
+xdtst8:	 aos -4(p)
+xdtst9:	popae p,[d,c,b,a]
+	ret
+
+
+
+; PTAREC - Prints info for current record on several lines
+;	including address.
+
+ptarec:	skipn id"itmbgp
+	 error "No current record??"
+	movei a,it$fnm
+	setz b,
+	call ifmto	; itm format output
+	fwrite tyoc,[[ (]]
+	movei a,it$hdl
+	seto b,
+	call ifmto
+	fwrite tyoc,[[) ]]
+	move b,[30.,,-1]
+	call adjcol
+	call itonta	; output netaddr
+	crlf tyoc,
+	movei a,it$adr
+	call ishfo	; itm shifted out
+	skipe netflg	; If running network server
+	 crlf tyoc,	;  start a new line here
+	movei a,it$phn
+	call inshfo	; itm, named, shifted out
+	movei a,it$com
+	call itmexs	; exists?
+	 ret
+	skipe netflg	; Network server?
+	 crlf tyoc,	;  Yes, start on new line
+	call inshfo	; output if so.
+	ret
+
+ifmto:	call adjcol
+itmout:	call id"itmfnd
+	 jrst [	fwrite tyoc,[[--]]
+		ret]
+	movei a,(c)
+	outs tyoc,a
+	ret
+
+
+adjcol:	jumpl b,apopj		; Ignore if arg -1.
+	pushae p,[a,b,c]
+	movei c,(b)
+	hlrz b,b
+	call gtcol	; A - col #, B - desired beg, C - max beg
+	subi b,(a)
+	jumple b,adjcl2
+	outi tyoc,40
+	sojg b,.-1
+	jrst adjcl9
+adjcl2:	jumple a,adjcl9
+	jumpe b,adjcl8		; 1 space before.
+	subi c,(a)
+	jumpge c,adjcl7		; 2 spaces before.
+	addi b,(a)
+	crlf tyoc,
+	jumple b,adjcl9
+	outi tyoc,40
+	sojg b,.-1
+	jrst adjcl9
+
+adjcl7:	outi tyoc,40
+adjcl8:	outi tyoc,40
+adjcl9:	popae p,[c,b,a]
+	ret
+
+shfstr:	ascnt /   /
+
+inshfo:	call crif
+	outc tyoc,shfstr
+	push p,a
+	call id"itmstc
+	 jumple a,[error "Bad item internal number"]
+	fwrite tyoc,[tc,a,[: ]]
+	pop p,a
+	jrst ishfo1
+
+ishfo:	call crif
+	outc tyoc,shfstr
+ishfo1:	pushae p,[a,b,c,d]
+	call id"itmfnd
+	 jrst [	fwrite tyoc,[[--]]
+		jrst ishfo9]
+	jumple c,.-1
+	skipa a,c
+ishfo2:	 outc tyoc,shfstr
+	call linprt
+	jumpg a,ishfo2
+ishfo9:	call crif
+	popae p,[d,c,b,a]
+	ret
+
+linprt:	jumple a,apopj
+	pushae p,[b,c]
+linpt2:	movem b,-1(p)
+	ildb c,b
+	outi tyoc,(c)
+	cain c,^M
+	 sojg a,[movem b,-1(p)
+		ildb c,b
+		caie c,^J
+		 jrst linpt7
+		outi tyoc,^J
+		movem b,-1(p)
+		soja a,linpt7]
+	sojg a,linpt2
+linpt7:	popae p,[c,b]
+	ret
+
+
+;;;	strblk
+
+end 3,,entvec
+ 

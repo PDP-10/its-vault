@@ -1,0 +1,989 @@
+!* -*-TECO-*-
+This file has enough of Babyl to generate a library that can be autoloaded
+to send mail (e.g. via C-X M) quickly (and not take up much library space).
+Note that BABYL proper (the mail reader) must be generated from BABYL > and
+BABYLM > -- it is NOT true that BABYL > has enough to read but not send
+mail, since they both share some utility routines and those are in here.
+
+Modification history:
+
+11/10/81   79	ECC	Removed & Expand Mailing Lists, since MMcM claims that
+			XMAILR now performs mailing list expansion.
+11/02/81   78	ECC	Fixed & Expand Mailing Lists infinite loop bug.  Was
+			looping for non-mailing-list entries.
+ 6/11/81   76	EAK	Removed DM hack because PDL claims COMSYS will handle
+			COMSAT input files now.  Deleted the following line:
+			fsMachine-(f6DM)"e etAI:'
+ 4/20/81   74   Moon	Mailing lists for Tenex (see & Expand Mailing Lists)
+ 3/25/81   73	ECC	F, V, R, and & Setup Reply Template moved into BABYL
+			proper since are either only for mail-reading (F and
+			R) or is a dispatch (V) command.  Make BABYLM smaller.
+ 2/16/81   72	ECC	F and R only use 1 line of subject, since ITS mailer
+			cannot handle (I think).
+12/20/80   69	ECC	Changed yanker in accordance with Babyl changes to set
+			bounds just around message.
+11/07/80   64	ECC	Work on F: fixed so done hook goes off in *Babyl*, not
+			*Mail*.  Added variable and argument options to
+			control reading To/Subject, whether into .
+			Mail edit level binds C-M-\ to filler.
+11/07/80   61	EAK,ECC	Made F use @:F to optimize redisplay by
+			scrolling the message down to where the yanked
+			message will be, and back up when done.
+ ??? -- what JP work in here? -- ???
+ 9/17/80   52	ECC	Changed Edit and Mail Buffer to print only header and
+			current line if printing terminal.  Used to print
+			whole buffer, bad for C, 3R, 4R, F.
+ 8/27/80   50	ECC	Added pruning of BBOARD@ to INFO- and * pruning.  Also
+			made Babyl Dont Reply To search bounded over <CRLF>
+			<mailbox> <CRLF> so username can be fully delimited.
+ 8/24/80   48	ECC	Added 2-window control to M, C, F, and V (new template
+			command).  Renamed # Babyl ^F to # Babyl F.  Should do
+			the opposite in BABYL for the finder function.
+ 8/24/80   45	ECC	Split up the R/M/C/F shared code in # Babyl R and
+			distributed it among R, M, C, and F for clarity and
+			better modularity.  New routine & Push to Edit Mail
+			which they call.  Renamed # Edit Mail to Edit and Mail
+			Buffer, since it can conceivably now be user callable
+			on any buffer, and since it now sends the mail.  #
+			Babyl ^F keeps same subject or makes one, and calls
+			the parser.  Deleted the obsolete idea-file RMCF >.
+ 8/24/80   40	ECC	Added mail template hacking to # Babyl R and added
+			Mail With Template (# Babyl V) and Set Mail Template.
+			Changed some variable names and declared all of them
+			so user can use Edit Options etc.  Names changed to
+			include "Babyl" in their names to allow giving "Babyl"
+			as filter to Edit Options.  Changes (<...> is added):
+			<Babyl> Dont Reply To
+			<Babyl> CC To
+			<Babyl> Require Subjects
+			Babyl Reply Hook -> Babyl Edit Mail Hook
+			<Babyl> Day of Week Flag
+			<Babyl> User Name
+			<Babyl> Personal Name
+
+ 8/23/80   38	ECC	& Process Recipient Field modified, primarily to leave
+			recipient buffer with pairs of lines, not only mailbox
+			names, but full recipients as well for more general
+			use as a parser.  # Babyl R uses it to remove
+			duplicate and unwanted recipients.  Semantics of Dont
+			Reply To changed a little, and INFO-xxx and *xxx
+			always removed.  Added option Babyl Trim Recipient List
+			to control whether any of this is done.
+ 7/17/80   20	ECC	& TNX Mail Buffer ensures that there is a final CRLF.
+			Was necessary for XMAILR, though XMAILR claims now to
+			be fixed so it could possibly be removed.  Changed
+			recipient pruning to (1) use just the mailbox part of
+			TO (not host, not rfc733 personal name), and (2)
+			delete the entire recipient, not just a stupid FKD.
+			Also it will remove a lone Cc: line with no recipients.
+ Pre-history...!
+
+!~FILENAME~:! !Mail-sending part of the Babyl mail subsystem.!
+BABYLM
+
+!# Babyl C:! !C# Continue editing the last message sent or aborted.
+If you give a numeric argument of 2 we will use 2 windows, with the
+    current message in the top and the message being sent in the
+    bottom one.
+Runs any Teco program in the variable Babyl C Hook after the message
+    template has been set up.!
+ !* 1, numeric argument inhibits our setting abort message.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl C Hook, 0 or a Teco program to run after C sets up its template: 0
+
+ [1
+ ff&2"e :i*To continue editing this message use the C command.(
+    )[Abort Resumption Message'	!* For Abort Recursive Edit.!
+
+ -2"'e,0m(m.m& Push To Edit Mail)	!* Use 2 windows if NUMARG=2 but dont!
+					!* reset buffer.!
+
+ qBabyl C Hookf"nu1 m1'w		!* Run M hook if any.!
+
+ :m(m.mEdit and Mail Buffer)		!* Let user edit the mail and then!
+					!* mail it off.!
+
+
+!& Mail Message:! !S Edit and then send a message.
+To continue editing a message aborted earlier, provide a numeric
+    argument.!
+
+ :i*To resume, invoke the Send Mail command again with a numeric argument[Abort Resumption Message
+					!* C-] will not ask for a confirmation.!
+ ff&1"n 1,:m(m.m# Babyl C)'	!* Continue editing mail and send.!
+ 1,:m(m.m# Babyl M)			!* Edit new mail and send.!
+
+!# Babyl M:! !C# Edit and then send a message.
+If you give a numeric argument of 2 we will try to use 2 windows, the
+    mail in the bottom window, the current message in the top one.
+To continue editing a message aborted earlier, use the C command.
+You may set the variable Babyl M Hook to a Teco program to run after
+    the header is initialized.!
+!* Pre-comma numeric argument means caller has already bound the abort!
+!* message.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Current Babyl Template Name, 0 or name of template in use: 0
+    Babyl CC To, * Automatic CC field in mail if non-0: 0
+    Babyl Header/Text Separator,
+	* 1 line that separates header and text in recursive mail edit:
+	|--Text follows this line--|
+    Babyl M Hook, 0 or a Teco program to run after M sets up its template: 0
+
+
+
+
+ [1
+ ff&2"e :i*To continue editing this message use the C command.(
+    )[Abort Resumption Message'	!* For Abort Recursive Edit.!
+
+ -2"'e,1m(m.m& Push To Edit Mail)	!* Use 2 windows if NUMARG=2 and reset!
+					!* buffer mode and filenames.!
+
+ !* Now set up the message template for editing.  If we were called by Mail!
+ !* With Template the variable Current Babyl Template Name will be non0 with!
+ !* the name.!
+
+ qCurrent Babyl Template Nameu1	!* 1: 0 or template name.!
+ q1"n 0@fo..qBabyl Template 1u1'	!* 1: 0 or template object.!
+ 0fsWindoww				!* Dont use any previous one.!
+ q1"n hk g1'				!* Just use the template if we have!
+					!* one.!
+ "#					!* Use standard M template.!
+    hk iTo: 
+   .-2(				!* Empty TO field.!
+	qBabyl CC Tof"nu1 icc:  g1 i
+	  'w				!* Insert automatic-CC if one.!
+	gBabyl Header/Text Separator i
+
+	)j'				!* Leave point after To: .!
+
+
+ qBabyl M Hookf"nu1 m1'w		!* Run M hook if any.!
+
+ :m(m.mEdit and Mail Buffer)		!* Let user edit the mail and then!
+					!* mail it off.!
+
+!Mail With Template:! !C Edit and send mail, with template initialization.
+The message is initialized from a template, which may specify any
+    header or text components.  The template is a variable, containing
+    a copy of what the mail editing buffer should be initialized to.
+String argument is a template name.  The template variable name is
+    formed from this name -- e.g. for a template named "Foo", the
+    variable is named Babyl Template Foo.  If you are using the Babyl
+    V command the template name is read with completion.
+If you give a numeric argument of 2, we will try to use 2 windows,
+    current message in top one, message being sent in bottom one.
+See the M-X Set Mail Template command for aid in creating templates.
+Runs the Teco program in the variable Babyl M Hook if one.  This
+    program can check the variable Current Babyl Template Name, 0 for
+    normal mailing, if it wants to further process the template.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Current Babyl Template Name, 0 or name of template in use: 0
+    CRL Prefix,:0
+    CRL List,:0
+
+
+ [Current Babyl Template Name
+ fsQPPtr(				!* Cant leave completer arguments!
+					!* pushed since theyd interfere with!
+					!* other commands.!
+    :i*Babyl Template [CRL Prefix	!* Completer arguments.!
+    q..q[CRL List			!* ...!
+    8+2,fTemplate: uCurrent Babyl Template Name	!* Read template name.!
+    )fsQPUnwindw			!* Pop completer arguments.!
+ f:m(m.m# Babyl M)			!* Compose and mail.  It will use the!
+					!* current template name if non-0.!
+
+!Set Mail Template:! !C Create or reset a mail template from buffer contents.
+See the M-X Mail With Template or # Babyl V command for using
+    templates.
+String argument is a template name.
+Providing a numeric argument means that you are resetting an existing
+    template, and completion can be used to read the template name (if
+    you call this with ^R Instant Extended Command).
+The template is taken to be the entire contents of the buffer.  This
+    command is generally given while in a recursive mail edit level.!
+
+ m(m.m& Declare Load-Time Defaults)
+    CRL Prefix,:0
+    CRL List,:0
+
+
+ [0
+ :i*Babyl Template [CRL Prefix	!* Completer arguments.!
+ q..q[CRL List			!* ...!
+ ff&1"n 8+2'"# 1',fTemplate: u0	!* 0: Template name.!
+ hx*m.vBabyl Template 0w		!* Set the template.!
+ 0
+
+!Edit and Mail Buffer:! !S Edit some mail to send in recursive edit level.
+To send the mail, exit the recursive edit level with ^R Exit.
+To abort, use Abort Recursive Edit.  If you abort, you can
+    continue editing the message later with the C command from Babyl
+    or by giving Send Mail an argument.
+The ^R Babyl Yank command will insert a copy of the current Babyl
+    message if there is one.  (E.g. the one being replied to.)
+Paragraph Delimiter is temporarily set so lines starting with "-"
+    won't be considered part of a paragraph.  Thus the --Text...  line
+    won't get in the way of a ^R Fill Paragraph.
+If the variable Babyl Require Subjects is non-0, you will be asked to
+    supply a subject line if you forgot to include it while editing.
+The variable Babyl Edit Mail Hook may be set to a Teco program to run
+    just before entering the recursive edit level.  If this variable
+    is 0, we will connect C-M-Y to ^R Babyl Yank, C-M-\ to ^R Fill
+    Indented Mail Region, and set the Paragraph Delimiter variable.!
+
+ !* Note:  This function cannot be named & Edit Mail, since the "&" will cause!
+ !* HELP-R not to consider it for describing.  It used to be called # Edit!
+ !* Mail for that reason before it became a user-callable (if ever desired)!
+ !* command.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Edit Mail Hook,
+	0 or a Teco program to run before recursive edit on mail to send: 0
+    Babyl Require Subjects,
+	* If non-0 Babyl will require you to have a subject in outgoing mail: 0
+
+
+ [2
+
+ qBabyl Edit Mail Hookf"nu2 m2'	!* Run user hook before into edit.!
+ "#					!* Or do the standard binding.!
+    m.m^R Babyl Yank[...Y		!* C-M-Y: yanker.!
+    1,m.m^R Fill Indented Mail Region[...\	!* C-M-\: yank filler.!
+    qParagraph Delimiteru2		!* Paragraph delimiting characters.!
+    fq2"g :i22-'"# :i2-'	!* Make a line starting with - a!
+    q2[Paragraph Delimiter'		!* separate paragraph.!
+
+
+ !Re-edit!
+ 0u..h					!* Get rid of any typeout on screen.!
+ fsRGetty"e ft
+					!* Printing terminal.!
+    qBabyl Header/Text Separatoru2	!* 2: Will print just header and line.!
+    .(	j s
+2
+	-l )u2				!* 2: Original point.  Point now at!
+					!* end of header.!
+    q2-."l b,q2t ft..a q2,.t'	!* Original point in header.  Type!
+					!* header with point indicated.!
+    "# b,.t'				!* Original point after header.  Type!
+					!* whole header.!
+    q2j f+'				!* Now back to original point and!
+					!* redisplay that line.!
+ 
+ 					!* let user do his part!
+
+ qBabyl Require Subjects"n		!* Some people want to be reminded!
+					!* if the message has no subject.!
+   j 0sSubjectReS 0u2	!* 2: 0 until find subject.!
+   <:s; 12.,(fk)a-12."n !<!>' r @f	 l 0,1a-:"e 1u2 1;'>	!* 2: 1 if!
+								!* found.!
+   q2"e 1,m(m.m& Read Line)Subject: u2
+	fq2"g j iSubject: 2
+'''					!* If user gave a subject, use it.!
+					!* (Typing Rubout or just Return means!
+					!* include no subject field.)!
+
+ z"e 0fsModifiedw 0fsXModifiedw '	!* Nothing to mail, just quit.!
+
+ 1:< fsOSTeco"e m(m.m& ITS Mail Buffer)'
+     "# m(m.m& TNX Mail Buffer)' >f"n @:fg oRe-edit'w	!* If any trouble!
+					!* sending the mail, e.g. parsing, let!
+					!* user re-edit the message and try!
+					!* again.!
+
+ 0fsModifiedw 0fsXModifiedw		!* Leave *Mail* unmodified if mail!
+					!* sent ok.!
+ 
+
+!^R Babyl Yank:! !^R Yank message being replied to and grow reply window.
+Message is indented 4 spaces, and MARK is left before, point after,
+    message.
+Numeric argument of 4 ():  Message is not indented.
+The original header is discarded; only the reformed one is yanked.
+Numeric argument of 16 (): Original header is used instead.!
+!* Giving "1," means dont go into 1 window.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Pre-*Mail* Buffer,: 0
+
+
+ [0[1[2
+ -1"n					!* Unless given 1,...!
+  fsTopLine"g				!* If in bottom window,!
+    f~Window 1 Buffer*Babyl*"e	!* and top window is Babyl buffer,!
+       1:<4@m(m.m^R One Window)>w'''	!* Dont need to show old message in!
+					!* other window now.  The NUMARG!
+					!* means the bottom window is the one!
+					!* that fills the whole screen.!
+ fsQPPtr(  qPre-*Mail* Buffer[..o	!* Select Babyl buffer.!
+	    0f[VB 0f[VZ		!* Wide bounds to find message.!
+	    .u0 fnq0j			!* Leave point alone.!
+	    :s"l r'"# zj' .u2	!* 2: end of text.!
+	    m(m.m& Bounds Of Header)u1j	!* .,1: header.!
+	    q1,q2x2			!* 2: Message text.!
+	    -16"n .,q1x1'		!* 1: Reformed.!
+	    "# m(m.m& Bounds Of Original Header)x1'	!* 1: Original.!
+	    )fsQPUnwindw		!* Restore buffer.!
+ .:w					!* MARK: point before yanked message.!
+ .f[VB fsZ-.f[VZ g1 g2		!* Yank and bound message.!
+
+ -4"n					!* If NUMARG not 4, indent message.!
+    j					!* To top of message.!
+    < .-z;				!* Stop when to end of message.!
+      2  f=
+     "n 4,32i '			!* Indent unless blank line.!
+      l > '				!* Next line, until end of message.!
+
+ zj					!* To end of message.!
+ 0fsZw					!* Widen bounds below!
+ 0 f   "g i
+  '
+ b,.
+
+!^R Babyl Add Subject: Field:! !^R Calls & Read Line for subject field.!
+ f~Buffer Name*Mail*"n		!* Must be composing a message. *!
+    :i*Must be in *Mail* buffer fsErr'
+ 1,m(m.m& Read Line)Subject: [.1	!* .1: subject field. *!
+ q.1"n fq.1"g				!* If user gave us a field. *!
+    .-z(bjl .,(iSubject: .1
+	      ).f w)+zj		!* Then go put it in. *!
+    ''
+ 1
+
+!^R Babyl Add To-Recipient:! !^R Calls & Read Line for new To-recipient.
+NUMARG of 4 means ^R Babyl Add Cc-Recipient.
+Negative NUMARG means ^R Babyl Delete Recipient.!
+
+ [1[2
+ f~Buffer Name*Mail*"n		!* Must be composing a message. *!
+    :i*Must be in *Mail* buffer fsErr'
+ 0f[VB					!* Wide bounds above.!
+ z-.:\u1 fn z-1:j"e zj' 		!* Auto-restoring point.!
+ j i
+					!* CRLF at top for boundary.!
+ "l :i1Un-To'			!* 1: Prompt.!
+ "# -4"e :i1Cc'			!* 1: ...!
+ "# :i1To''				!* 1: ...!
+
+ 1,m(m.m& Read Line)1: u2		!* 2: recipient name.!
+ q2"n fq2"g				!* If user gave us a field... *!
+    "l q2m(m.m& Babyl Delete Recipient)'	!* ...delete or...!
+    "# q2,q1m(m.m& Babyl Add Recipient)'''	!* ...add it.!
+ j @f
+k					!* Kill CRLF at top.!
+ 1
+
+!^R Babyl Add Cc-Recipient:! !^R Add new name to Cc field.!
+ 4:m(m.m^R Babyl Add To-Recipient)
+
+!^R Babyl Delete Recipient:! !^R Delete To- or Cc-recipient.!
+ -1:m(m.m^R Babyl Add To-Recipient)
+
+!& Babyl Add Recipient:! !S NUMARGs: name,fieldName.!
+!* Reuses existing fields, uses continuations.!
+
+ [1[2				!* 1,2: Field, recipient names.!
+ j :s
+1:"l 				!* Field already here.!
+    <l 1af	 :;>			!* Past contin lines.!
+    0:l					!* To end of field.!
+    0f  +fq2-70"g -@f, 	k i,
+	 '				!* Continuation needed.!
+    "# i, ''				!* No continuation needed.!
+ "# bjl i1: 
+   0:l'				!* Put in field.!
+
+ i2				!* Add the field.!
+ 
+
+!& Babyl Delete Recipient:! !S NUMARG is recipient name.!
+!* Deletes name from either To- or Cc-fields.!
+
+ u1					!* 1: Name.!
+ j < :s
+To:
+Cc: ;					!* Next To-/Cc-field.!
+     < < :fb1;			!* Find name in line.!
+	 1af,î@ :"l			!* Ends ok...!
+	   fkc -@f	 l
+	   0af:,
+	   :"l				!* ...starts ok, so is it.!
+	       .,(:fb,"e :l').k'' >	!* ...Kill it.!
+       l 1af	 "l 0:l 1;'		!* No continuation line.!
+       >				!* Repeat for contin lines.!
+     >					!* Repeat for each field.!
+ w					!* Cant figure damn redisplay...!
+
+!& Push To Edit Mail:! !S Set up *Mail* buffer and window for editing.
+Selects back when caller returns.
+Non-0 pre-comma numeric argument means use 2-window mode.
+Non-0 post-comma numeric argument means reset the buffer (no buffer filenames,
+    default filename of *Mail* or MAIL.TEMP, Text Mode.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Pre-*Mail* Buffer,:0
+    Window 1 Size,:0
+
+
+ qPre-*Mail* Buffer"n			!* No recursion allowed.!
+    :i*You are already in the process of sending mailfsErr'
+ q..o[Pre-*Mail* Buffer		!* Save original buffer for yanker.!
+
+ "n					!* Use 2 windows if 1,.!
+    0fo..qWindow 2 Size"e		!* Unless now in 2-window mode.!
+      qWindow 1 Size"N [Window 1 Size ' !* Push old size, if set.!
+      (fsHeight)-(fsEchoLines)-1/2-1uWindow 1 Size	!* 1/2 screen.!
+      1:< 4m(m.m^R Two Windows)f >w	!* Ensure in two window mode.!
+      @fn|1:<@m(m.m^R One Window)f>w|	!* When done, back to one!
+      ''				!* window, unless C-M-Y already did.!
+
+ m(m.m& Push to Buffer)*Mail*		!* Mail is sent in its own buffer.!
+					!* Temporarily select it.  When our!
+					!* caller returns, we will select back!
+					!* to original buffer.!
+
+ "n					!* If ,1 then we reset the buffer.!
+    f~ModeText"n m(m.mText Mode)'	!* If not in text mode now, be.!
+    0uBuffer Filenames		!* No buffer filenames.!
+    fsOSTeco"e !<! et*Mail* >'	!* Set a nice default.!
+    "# etMAIL.TEMP''			!* ... (careful of *s on TNX)!
+
+ m.m& Set Mode Linef[ModeMac		!* Dont use the Babyl mode macro.!
+ qEditor Name[..j :i..j..j 	!* Force recompute of mode line.!
+ 1fsModeChangew			!* ...!
+
+ :					!* Dont let any of our stuff pop off!
+					!* -- only when caller returns can!
+					!* that happen.!
+
+!& Push To Buffer:! !S Push-select buffer STRARG.
+When caller returns, the original buffer will be re-selected.!
+!* Minor assumption: caller cant use a STRARG with ^]..N (heh heh...)!
+
+ [Previous Buffer			!* save previous buffer!
+ qBuffer Name[0			!* 0: Original buffer name.!
+ @:i*|m(m.mSelect Buffer)0|(]0)[..n	!* Make cleanup handler that will!
+					!* select back to the original buffer.!
+					!* Pop Q0 since not needed any more.!
+ m(m.mSelect Buffer)		!* Select the buffer that caller wants!
+ :					!* Exit without popping ..N etc. so!
+					!* that when caller returns, we!
+					!* select back.!
+
+!& ITS Mail Buffer:! !S Mail message as specified by buffer contents.!
+!*
+Buffer should contain header information followed by a line containing
+Babyl Header/Text Separator, followed by the text.
+Header info is as described in .MAIL.;MAILRQ INFO
+except that To: allows several recipients separated by commas,
+and Cc: is allowed.  Also, use From: to say who you are.
+S: or Re: may be used for Subject: if desired.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Header/Text Separator,
+	* 1 line that separates header and text in recursive mail edit:
+	|--Text follows this line--|
+					!* End of declare.!
+
+ [1[2[3[4[5 g(q..o(f[BBind))		!* Make copy of buffer to do munging!
+					!* in, so C command will win!
+ m.m& Process Recipient Field[P	!* P: Parser.!
+ 0[Babyl Strip Local Host		!* Dont strip local host name in mail!
+					!* ..we send (something about the pot!
+					!* ..calling the kettle black).!
+ qBabyl Header/Text Separatoru2	!* 2: E.g. --Text Follows...!
+ j 1f[BothCase :s
+2
+"e :i*No text, just header fsErr'
+
+ 0u4					!* 4: counts number of recipients.!
+ -l fsZ-.fsVZw			!* Narrow bounds to just the header!
+					!* information!
+
+ j < .-z;				!* look at each line of header!
+     1af	 :"l l !<!>'		!* ok if line begins with whitespace!
+     :fb:"l r -@f	 k		!* remove whitespace before colon!
+	0@fc l !<!>'			!* convert item name to upper case!
+     1a-15."e k !<!>'			!* If no colon on line, but not!
+					!* empty, its garbage!
+     :i*Garbage in message header fsErr	!* ...!
+     >
+
+
+ !* Now parse the TO, CC, and BCC fields to get a list of the recipient!
+ !* mailboxes (and full recipient fields, which we must ignore) in buffer in!
+ !* Q2.  This list is converted to form the ITS-mailer wants, e.g.: !
+
+ !*	RCPT:(EKillian @BBNA)
+	RCPT:(EAK @MC)
+	RCPT:(JPershing @BBNA)
+	RCPT:("Eugene Ciccarelli" @MC)
+	RCPT:(BUG BABYL @MC)
+	RCPT:([ECC;TEST MAIL] @MC)
+	RCPT:(Babyl-Bug-File @MC (R-OPTION CC))
+    *!
+
+
+ q..ou3 f[BBind q..ou2 q3[..o		!* 2,3: Recipient, message buffers.!
+
+ fsMachine:f6,q2 mpTO			!* Parse TO and leave point at it.!
+ fq2"g	0l <k 0,1af	 :;>		!* There was a TO, kill the field,!
+					!* including any continuation lines.!
+	q2[..o j			!* To recipient buffer.!
+	< .-z; fb@ r :fx1		!* 1: Removed @host of next TO.!
+	  0l 1a-("n			!* Not a (...) form (yet).!
+	    1af"[!'!"l		!* If not a [...] must quote if any!
+					!* spaces inside it if not already.!
+	      :fb "l 0l i" :l i"!''!''	!* ...!
+	    0l i( :l i)'		!* Since not a (...), make it one.!
+	  0l iRCPT: :lr i 1	!* Finish it off.!
+	  %4w				!* 4: Increment recipient count.!
+	  l k >				!* Get rid of the full recipient line.!
+	hfx1				!* 1: ITS-mailer recipient list.!
+					!* Empty the parser buffer.!
+	]..o g1'			!* Back to message.  Get ITS-TO-list.!
+
+ !* Now do a similar thing for the CC field, though they have an (R-OPTION CC)!
+ !* inside the recipient specification.!
+
+ fsMachine:f6,q2 mpCC			!* Parse CC and leave point at it.!
+ fq2"g	0l <k 0,1af	 :;>		!* There was a CC, kill the field,!
+					!* including any continuation lines.!
+	q2[..o j			!* To recipient buffer.!
+	< .-z; fb@ r :fx1		!* 1: Removed @host of next CC.!
+	  0l 1a-("n			!* Not a (...) form (yet).!
+	    1af"[!'!"l		!* If not a [...] must quote if any!
+					!* spaces inside it if not already.!
+	      :fb "l 0l i" :l i"!''!''	!* ...!
+	    0l i( :l i)'		!* Since not a (...), make it one.!
+	  0l iRCPT: :lr i 1 (R-OPTION CC)	!* Finish it off.!
+	  %4w				!* 4: Increment recipient count.!
+	  l k >				!* Get rid of the full recipient line.!
+	hfx1				!* 1: ITS-mailer recipient list.!
+					!* Empty the parser buffer.!
+	]..o g1'			!* Back to message.  Get ITS-CC-list.!
+
+
+ !* Now do a similar thing for the BCC field, though they have an (R-OPTION!
+ !* BCC) inside the recipient specification.!
+
+ fsMachine:f6,q2 mpBCC		!* Parse BCC and leave point at it.!
+ fq2"g	0l <k 0,1af	 :;>		!* There was a BCC, kill the field,!
+					!* including any continuation lines.!
+	q2[..o j			!* To recipient buffer.!
+	< .-z; fb@ r :fx1		!* 1: Removed @host of next BCC.!
+	  0l 1a-("n			!* Not a (...) form (yet).!
+	    1af"[!'!"l		!* If not a [...] must quote if any!
+					!* spaces inside it if not already.!
+	      :fb "l 0l i" :l i"!''!''	!* ...!
+	    0l i( :l i)'		!* Since not a (...), make it one.!
+	  0l iRCPT: :lr i 1 (R-OPTION BCC)	!* Finish it off.!
+	  %4w				!* 4: Increment recipient count.!
+	  l k >				!* Get rid of the full recipient line.!
+	hfx1				!* 1: ITS-mailer recipient list.!
+					!* Empty the parser buffer.!
+	]..o g1'			!* Back to message.  Get ITS-BCC-list.!
+
+
+ q4"e :i*No Recipients fsErr'		!* Message is illegal if not mailed!
+					!* to anybody.!
+
+ j iFROM-PROGRAM:BABYL
+FROM-XUNAME: fsXUnamef6 i
+FROM-UNAME: fsUnamef6 i
+					!* Insert information about us.!
+					!* Provide CRLF for beginning of!
+					!* line searches.!
+ j :s
+FROM:"e 3l iAUTHOR: fsXUnamef6 i
+'"# 
+AUTHOR:'				!* Change FROM to AUTHOR or insert one!
+ j :s
+H:"l 
+HEADER-FORCE: @fc'			!* Convert line following H: to U.C.!
+ "# 3l iHEADER-FORCE:RFC733
+'					!* Say which header to use.!
+
+ j :s
+S:
+Re:"l 
+SUBJECT:'				!* Allow S: and Re: for Subject:.!
+
+ j :s
+R:"l 
+REGISTERED: @fc'			!* R becomes REGISTERED and line!
+					!* after it is uppercased.!
+ zj iTEXT;-1
+					!* Separate text from header.!
+ 0,(fsZ)fsBoundariesw k		!* Kill --Text follows... line!
+
+ f[DFile etDSK:.MAIL.;MAIL >		!* Set filename default to the place!
+					!* to write the mail to so mailer!
+					!* will find it.!
+ e\ fn e^				!* Push output transaction.!
+ eihpef				!* Write the mail out.!
+ @ft(mail queued) 0fsEchoActivew	!* Tell user we are done.!
+ 
+
+!& TNX Mail Buffer:! !S Write buffer out to unsent-mail file.!
+!*
+Allows multiple To:s, Cc:s.  They are merged and auto-filled by & Process
+    Recipient Field.
+The original buffer stays the same -- we do all message-massaging in a
+    temporary buffer.  This way the original buffer is available for
+    resending if desired.
+!
+
+ 0f[VB 0f[VZ				!* Widen bounds of message.!
+ g(q..o( f[BBind ))			!* Temporary buffer, with copy of!
+					!* the message to send.!
+ zj -2 f=
+"n i
+'					!* Make sure message ends in a CRLF,!
+					!* since XMAILR needs that.!
+
+ m(m.m& Complete TNX Header)		!* Add date, from, ensure good header.!
+					!* It ensures that date is top line,!
+					!* and header ends with blank line.!
+ f[DFile [1[2[3[4[5 q..ou3		!* 3: Message copy buffer.!
+
+ fsMachine:f6u2 f[BBind q..ou4 q3[..o	!* 4: Temporary buffer for mailbox!
+					!* list.  Push (so f[BBind pops and!
+					!* kills ok) to message buffer.!
+ m.m& Process Recipient Field[p	!* P: Parser.!
+ 0[Babyl Strip Local Host		!* Dont strip local host name in mail!
+					!* ..we send (something about the pot!
+					!* ..calling the kettle black).!
+ q2,q4mpTo				!* Parse, pull together, and auto-fill!
+					!* the TO fields.!
+ q2,q4mpcc				!* Ditto for CCs.!
+					!* 4: Now filled in with mailbox and!
+					!* full recipient lines (though we!
+					!* dont actually want the recipient!
+					!* lines).!
+ j <:s
+Fcc; @f	 l 1a-:"e c :x2 l-k	!* get filename!
+    etDSK:FOO.TXT fsHSnamefsDSnamew et2	!* set default!
+    0f[VZ m(m.m& Append to TNX Mail File) f]VZ	!* append to file!
+    '>
+
+ 0,fsZfsBoundw			!* Wide bounds.!
+ q4u..o j				!* Select recipient buffer.!
+ etPS: :i5EMACS:			!* Main structure;  EMACS directory.!
+ fsOSTeco-2"e etDSK: :i5DSK:<EMACS>'	!* If TNX use DSK: and <EMACS>.!
+ e?<SYSTEM>XMAILR.FLAGS"n		!* If this exists, use XMAILR.!
+					!* Does not exist, use MAILER.!
+   etDSK: fsHSnamefsDSnamew		!* Default filename to home dir.!
+   < .-z; :x2 q3u..o			!* 2: Mailbox name.  Switch to message!
+					!* copy buffer.!
+     et[--UNSENT-MAIL--].2 eihpef	!* Write mail file for this recipient.!
+     @ft(Mail to 2 queued)		!* And tell user.!
+     q4u..o 2l				!* Past mailbox and full recipient to!
+					!* next mailbox name.!
+     >					!* Repeat for other recipients in!
+					!* this line.!
+     -(@fz5QUEUE-MAIL.SAV)fz'	!* Use inferior to set bit!
+					!* in MAILER.FLAGS to queue it.!
+
+ "#					!* Will use XMAILR to send.!
+     :f : fb@$  :l  2l 		!* Sort recipients by host name, each!
+					!* being a pair of lines.!
+    j :i2				!* 2: Initialize current host name.!
+    <.-z; :f : fb@ d :f~2"e :k'"# :fx2 0l 14.i g2 i
+'   l k>				!* 2: Put recipients for one site on!
+					!* one page and update current host.!
+					!* The full recipient lines are!
+					!* discarded.!
+    14.ii
+   g3					!* Put message on next page.!
+    etDSK: fsHSnamefsDSnamew
+    et[--NETWORK-MAIL--]..0 eihpef	!* Write file for XMAILR.!
+    @ft(mail queued)			!* Tell user.!
+    -(@fz5QUEUE-XMAIL.EXE)fz'	!* User inferior to set bit in!
+					!* XMAILR.FLAGS to really queue it.!
+ 0fsEchoActivew			!* Keep echo printout there.!
+ 
+
+!& Complete TNX Header:! !S Make sure From and Date fields are there, etc.!
+!*
+Remove blank lines in header.
+Change S: and Re: to Subject:, and
+replace the Babyl Header/Text Separator line with a blank line.
+Leaves bounds around just header.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Header/Text Separator,
+	* 1 line that separates header and text in recursive mail edit:
+	|--Text follows this line--|
+    Babyl Day of Week Flag,
+	* If non-0 day of week is added to Date field of outgoing mail: 0
+    Babyl Personal Name,
+	* A full name to use with user name as in Personal Name <ME at HERE>: 0
+    Babyl User Name,
+	* A name to use in From field possibly overriding username: 0
+					!* End of declare.!
+
+ [1[3
+ qBabyl Header/Text Separatoru1	!* 1: E.g. --Text Follows...!
+ j :s
+1
+"e :i*No text, just header fsErr'	!* Didnt find separator.!
+ 0:l 0k					!* Replace separator with blank line.!
+ z-.fsVZ				!* set bounds to just header!
+
+ j 5 f~Date:"n			!* If date isnt at top,!
+    :s
+Date:"e				!* And isnt elsewhere,!
+      iDate: 				!* then make one.!
+      332221000000.,fsDatefsFDConvertw	!* Let TNX do the work.!
+      .-z(-s  i )+zj			!* Put a space between date and time.!
+      qBabyl Day of Week Flag"n	!* User wants day of week in there.!
+	.-z( b+6j .(s,r),.fx3 2d	!* 3: Day.!
+	     )+zj i (3)'		!* Use (day).!
+      i
+     '"# 0l fx1 bj g1'			!* If had a date field before, put!
+					!* it at the top.  Helps below as!
+					!* well as being standard.!
+    '					!* End of date field.!
+
+ j < :s
+
+; -k 2r >				!* delete blank lines!
+
+ j :s
+From:"e				!* If no from field yet, make one.!
+      l iFrom: 
+     2r .u1				!* 1: Start FROM field!
+      g(fsXUname:f6)			!* Put in user name.!
+      fsMachine:f6u3			!* 3: host name.!
+      fq3"g i at  g3'			!* Put in " at <host>'!
+      qBabyl User Nameu3 q3fp"g	!* 3: If Babyl User Name then maybe!
+					!* hack Sender.!
+	q1,.f~3"n q1j g3 :fx3 0l iSender: 3
+	  :l''
+      qBabyl Personal Nameu3		!* 3: Full name.!
+      q3fp"g 0l 6c g3 i < :l i> l'	!* Maybe put in RFC733 style from with!
+					!* personal name.!
+      '					!* Done from field.!
+
+ j :s
+S:
+Re:"l					!* Can do search with CRLF since!
+					!* date appears on top line.!
+    0k iSubject:'			!* Change S: and Re: to Subject:.!
+
+
+					!* Now clean up To/Cc fields: *!
+ j < :s
+To:
+Cc: ;					!* A start of a To/Cc field.!
+     @f 	,k i 			!* Ensure one space after colon.!
+     <:fb,; @f 	k i >		!* Only one space after commas.!
+     0l <:fb, , ; ,  2r>		!* Eliminate empty entries.!
+     0l 4c 0,1a-15."e			!* If next line is not a continuation,!
+	0,3af	 "l			!* then this must be an empty field.!
+	  0lk 0:l''			!* So kill it.!
+     >					!* Done formatting To/Cc fields.!
+
+ 
+
+!& Process Recipient Field:! !S Merge, reform and parse.
+NUMARG is recipient buffer, pre-comma NUMARG is default host name.
+STRARG is field name, without any colon.
+Bounds should be set to just the header.
+All instances of the field are merged into one, with continuation
+    lines.  Some cleaning is done (of whitespace, @s), host name is
+    added if necessary, and field is auto-filled.
+If variable Babyl Strip Local Host is non-zero, then the local host
+    name is removed.
+Point is left at the start of the field body.
+Recipient buffer has the parse, a pair of lines per recipient:  1st
+    line is mailbox name, 2nd line is full (cleaned up) recipient
+    specification.  Host names are upper-case since TWENEX mailer
+    requires it.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl ..D,:0
+    Babyl Strip Local Host,* Non-zero removes local host from reformed header:1
+
+ [0[1[2[3[4[5[6[7[8[9 [..o		!* save regs!
+ qBabyl ..D[..d			!* All set up for nifty parsing,!
+					!* especially using s-expressions.!
+
+
+ !* Find all instances of this header field and merge them into the first one!
+ !* found.  And merge all its continuation lines into a long 1-line field for!
+ !* easier parsing.  (We will fill it later.)!
+
+
+ @fn|.-z(j 0,1a-15."e 2d')+z:j|		!* Will cleanup top blank line.!
+ j i
+					!* Boundary condition for search.!
+ f[VB f[VZ				!* Restore bounds before the top-line!
+					!* cleanup goes off.!
+ 0s
+					!* Initialize search string to CRLF!
+					!* field name.!
+
+ qBabyl Strip Local Host"N fsMachine:f6u7	!* 7: Local host.!
+    fsOSTeco"E :i7 at 7 at MIT-7 '  !* With ATs for stripping from!
+    "# :i7 at 7 ''			    !* ..header.!
+ "# 0u7 '				!* 7: Zero if keeping the local host.!
+
+ u8 q..ou9				!* 8: recipient buffer, 9: header!
+					!* buffer.!
+ j <:s"e 0' @f	 l 0,1a-:@; >    !* Find first such field.!
+ c @f	 k 5-(fsHPos)f"lw0',40.i .u0	!* 0: point just before first!
+					!* ..non-whitespace.!
+ < l 0,1af	 :; 0:k >		!* Merge continuations.!
+ 0:l .u1				!* 1: end of first field.!
+
+ < :s; @f	 l 0,1a-:"n ! <!>'	!* Find next such field.!
+   c 0k					!* Kill field name.!
+   < :l k 0,1af	 :; >		!* Merge continuations.!
+   0fx2 q1j i, g2 .u1			!* Remove it from here and go append!
+   >					!* field body to first.!
+					!* 1: Still end of first field.!
+
+ q0j .f[VB fsZ-q1f[VZ		!* Set bounds to just this field!
+					!* body.!
+
+
+
+ !* Now we parse this 1-line recipient field.!
+
+
+ <					!* Iterate over recipients.!
+   @f	 ,k .-z; .u1 i 		!* Move to beginning of next!
+					!* recipient.!
+					!* 1: Point where recipient starts,!
+					!* before one leading Space.!
+   -1u6 0u2				!* 6: <> state, 2: @ flag.!
+
+   <					!* Iterate over tokens.!
+     @f	  f"g di 'w .-z;	!* Skip over whitespace.!
+     1au5 q5"b c :o5 r'		!* Dispatch if break character.!
+     q6:"g				!* If not past <>...!
+	@flu4u3 q4j			!* 3,4: bounds of sexp.!
+	q3,q4f~at"e oAT'		!* If at then @.!
+	q3-b,q4-b(q8u..o)g9		!* Add sexp to recipient buffer.!
+	i  q9u..o ! <!>'		!* And go get another token.!
+     ! <!:i*Text after > in recipientfsErr	!* ...!
+     !<! q8u..o 0k q9u..o 0u2 %6"e ! <!>' :i*Extra < in recipientfsErr
+     !>! q6"e .-1u6 ! <!>' :i*Extra > in recipientfsErr	!* ...!
+     !,! r -@f k c 0;		!* Comma ends a recipient.!
+     !@! -d 0a-32"n i ' iat 1a-32"n i '	!* @ becomes at.!
+	 !AT! .u2			!* 2: Point after at, and a flag.!
+	 q8u..o 0f  "e		
+	    !* If mailbox line empty so far we either have a null recipient or!
+	    !* a parenthesis recipient.  (Parentheses usually surround!
+	    !* comments, but if there is ONLY a comment we assume it is an ITS!
+	    !* thing like (BUG FOO).)!
+	    q9u..o -2:@fll .u3		!* 3: Maybe point after (...).!
+	    -@fll .-q1-1"n :i*Null recipientfsErr'	!* Not just (...) as!
+							!* the recipient.!
+	    .-b,q3-b(q2j q8u..o)g9'	!* Ok, add (...) as the recipient.!
+	 -@f k i@ q9u..o ! <!>	!* Insert @ into recipient buffer and!
+					!* go get another token.!
+     !(! fll				!* Skip over comments, (...).!
+     >					!* End of token iteration.!
+
+   q8u..o -@f k			!* Select recipient buffer.!
+   q2"e 0f  "e			!* We havent had a @ yet; use default.!
+	    !* If mailbox line empty so far we either have a null recipient or!
+	    !* a parenthesis recipient.  (Parentheses usually surround!
+	    !* comments, but if there is ONLY a comment we assume it is an ITS!
+	    !* thing like (BUG FOO).)!
+	  q9u..o .u2 -:@fll .u3		!* 3: Maybe point after (...).!
+	  -@fll .-q1-1"n :i*Null recipientfsErr'	!* Not just (...) as!
+							!* the recipient.!
+	  .-b,q3-b(q2j q8u..o)g9'	!* Ok, add (...) as the recipient.!
+	i@ g()			!* Add default host name, if none, to!
+					!* recipient buffer.!
+	q9u..o .-z(q6"g q6j'"# -@f, l' i at  g())+zj  !* And header.!
+	q8u..o'				!* Back to recipient buffer.!
+   -s@ @fc :l				!* Uppercase host name.!
+   i
+					!* Finish off mailbox line.!
+   g(q9[..o q1+1,.x*(]..o)) 0a-,"e -d' i
+					!* Put in full recipient line, without!
+					!* any ending comma.!
+   q9u..o				!* Select header buffer.!
+
+   q7"N .-z( -:s7"N fkd ' )+zj '	!* Maybe flush local host name.!
+
+   !* Done that recipient.  See if we need to auto-fill here.  We fill at!
+   !* column 70.!
+
+   fsSHPos-70"g q1-b-4"g .(q1j i
+     )+7j''				!* Auto fill, making next line a!
+					!* continuation, indented 6 spaces!
+					!* (these 5 plus the standard 1 we put!
+					!* on).!
+
+   >					!* End of recipient iteration.!
+
+
+
+ !* Done parsing this recipient field.  Do minor final cleanup.!
+
+ -@f, k				!* Remove any trailing commas or!
+					!* spaces.!
+ j					!* Leave point at start of field body.!
+ 
+
+!& Append to TNX Mail File:! !S Append buffer to default file, with header!
+ j h (20000000.,fsDatefsFDConvert ,i)\ i;000000000000
+					!* insert TNX message header!
+ j e?"e fsDFilem(m.m& Babyl Append)"n jk'	!* append to old file if any!
+    z-.fsVZw er fsIFilefsDfilew @y	!* prepend old file to buffer!
+    zj 0fsVZw'				!* ...!
+ eihpef				!* Write out new contents of file.!
+ b,.k k					!* kill old contents and header line!
+ 
+
+!& Babyl Append:! !S Append B,Z to NUMARG file. Returns non0 iff success.!
+[1 e[e\fne^e]			!* 1: filename.  push input, output!
+ er1 fsIFLengthu1 q1/5*5-5fsIFAccessw
+ j @fn|b,.k| fsZ-.f[VZ @y zj f]VZ	!* Preserve Z-bound.!
+ 1:<@:ei>"n 0' fsOFLength-q1"n :i*File changed size??fsErr'
+ q1/5*5-5fsOFAccessw hp :ef 1	!* Make sure to not write out tail!
+					!* end of the Babyl file.!
+
+!& Setup BABYLM Library:! !S Create some variables needed.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl ..D,:0
+
+
+ !* Set up Babyl ..D, used for parsing: !
+
+ qBabyl ..D"e				!* If 0 hasnt been set up yet.!
+    [1[2 128*5,40.:i1			!* 1: Everythying starts out as a!
+					!* break character.!
+    40.u2 176.-40.<%2*5:f1AA>	!* 2: Set up normal characters to be!
+					!* letters, both for words and!
+					!* s-expressions.!
+    "*5:f1 | !'!			!* Double-quote delimits a string.!
+    \*5:f1 /			!* Backslash is an escape character.!
+    (*5:f1 (			!* Parentheses are parentheses.!
+    )*5:f1 )			!* ...!
+    <*5:f1  			!* Brackets are random break!
+    >*5:f1  			!* characters.!
+    ,*5:f1  			!* So is comma,!
+    @*5:f1  			!* and atsign.!
+    q1uBabyl ..Dw'			!* Save that away for the parser.!
+
+
+
+!* 
+ * Local Modes:
+ * Fill Column:78
+ * Comment Column:40
+ * End:
+ *!

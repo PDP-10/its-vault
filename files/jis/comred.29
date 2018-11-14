@@ -1,0 +1,107 @@
+;; -*- Lisp -*-
+
+(declare (special comred-escape comred-? comred-line comred-rubout))
+
+(setq comred-escape 27. comred-? 63. comred-line 13. comred-rubout 127.)
+
+
+(defun comred-assoc (case alist)
+       (do ((result nil (cond ((comred-assoc-test case (car item))
+			       (cons item result))
+			      (t result)))
+	    (item (car alist) (car alist))
+	    (alist (cdr alist) (cdr alist)))
+	   ((null alist) (cond ((comred-assoc-test case (car item))
+				(cons item result))
+			       (t result)))))
+
+(defun comred-assoc-test (case item)
+       (cond ((equal case item) t)
+	     ((null item) nil)
+	     ((null case) t)
+	     ((eq (car case) (car item))
+	      (comred-assoc-test (cdr case)
+				 (cdr item)))))
+
+(defun comred-display-choices (alist stream)
+       (prog ()
+	     loop
+	     (cond ((null alist) (return nil)))
+	     (terpri)
+	     (comred-print-list (caar alist) stream)
+	     (setq alist (cdr alist))
+	     (go loop)))
+
+(defun comred-print-list (list-of-chars stream)
+       (prog ()
+ 	     loop
+	     (cond ((null list-of-chars) (return nil)))
+	     (tyo (car list-of-chars) stream)
+	     (setq list-of-chars (cdr list-of-chars))
+	     (go loop)))
+
+(defun comred (item-list in-stream out-stream)
+       (prog (current char)
+	     loop
+	     (setq char (tyi in-stream))
+	     (cond ((= char comred-rubout)
+		    (cond (current
+			   (setq current (nreverse (cdr (reverse current))))))
+		    (comred-rubout-char out-stream))
+		   ((= char comred-escape)
+		    (let ((matches (comred-assoc current item-list)))
+			 (cond ((or (null matches)
+				    (cdr matches))
+				(comred-ring-bell out-stream))
+			       (t (comred-compare-and-print current
+							    (caar matches)
+							    out-stream)
+				  (setq current (caar matches))))))
+		   ((= char comred-?)
+		    (comred-display-choices (comred-assoc current
+							  item-list)
+					    out-stream)
+		    (terpri)
+		    (comred-print-list current out-stream ))
+		   ((= char comred-line)
+		    (let ((matches (comred-assoc current item-list)))
+			 (cond ((null matches)
+				(comred-ring-bell out-stream))
+			       ((cdr matches)
+				(let ((found (comred-unique-found current
+								  matches)))
+				     (cond (found (return found))
+					   (t (comred-ring-bell out-stream)))))
+			       (t (return (car matches))))))
+		   (t (setq current (append current (list char)))))
+	     (go loop)))
+
+(defun comred-unique-found (case item-list)
+       (cond ((null item-list) nil)
+	     ((equal case (caar item-list))
+	      (car item-list))
+	     (t
+	      (comred-unique-found case (cdr item-list)))))
+
+(defun comred-compare-and-print (current rest stream)
+       (setq rest (do ((rest rest (cdr rest))
+		       (i 0 (1+ i)))
+		      ((= i (length current)) rest)))
+       (comred-print-list rest stream))
+
+(defun comred-rubout-char (stream)
+       (tyo 8. stream)
+       (tyo 32. stream)
+       (tyo 8. stream))
+
+(defun comred-ring-bell (stream)
+       (tyo 7. stream))
+
+(defun comred-add-item macro (macro-arg)
+       ((lambda (name value data-list)
+		`(setq ,data-list
+		       (cons (cons (exploden ,name) ,value)
+			     ,data-list)))
+	(cadr macro-arg)
+	(caddr macro-arg)
+	(caddr (cdr macro-arg))))

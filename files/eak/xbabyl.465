@@ -1,0 +1,2733 @@
+!* -*-TECO-*-
+ The latest source for Babyl is MC: EAK; BABYL >.
+ When it is being tested it is MC:EAK;XBABYL :EJ.
+ The source for the installed EMACS; BABYL  :EJ is either some BABYL nnn
+    (see the automatically-generated description of & SetUp Compressed
+    BABYL Libraries) or MC: EAK; BABYL  SOURCE if patched.
+ The source for the installed EMACS; BABYL' :EJ is some BABYL nnn or MC:
+    EAK; BABYL' SOURCE.
+
+ Modification history:
+
+ 1/23/80   ???  JP      Removed dependencies on TMACS, as in the
+			uncirculated NBABYL 463.
+ 1/09/80   464	ECC	Added Babyl File Consistent flag, which is
+			bound to 0 locally by & Babylize Buffer.  & Read
+			Babyl File resets it locally to 0 before reading in
+			file, and then to 1 when done.  Note that killing
+			the *Babyl* buffer will allow a new MM Babyl (it
+			checkes if *Babyl* is empty), but doing MM Babyl on
+			a non-empty *Babyl* which is marked inconsistent
+			will err.
+12/07/79   461	ECC	Added cheap forward command (^F).  Made & Babyl
+			Parse Header set up its own ..D.
+10/29/79   454	EAK	Random cleanup.
+10/03/79   439	ECC	Changed format of modification history.  Don't you
+			wish you knew what it used to be?
+10/03/79   438	EAK	Changed Q and S to use Write File.  Finished
+			simplifying R's help.
+ 9/29/79	ECC	Removed R's Submode stuff -- awaiting better, more
+			general help.  Maybe should keep just [Mail] as
+			submode?  Simplified R since TMACS now doesn't have
+			help or abort -- Babyl alone provides that.
+ 9/23/79	ECC	Added Submode help message to R, added ^S command,
+			made F show its argument.
+ 9/19/79	ECC	& TNX Mail Buffer copies message into a temporary
+			buffer before editing it.  Original stays same, e.g.
+			for resending.
+ 9/18/79	ECC	Added Babyl R Done Hook and Babyl O Done Hook,
+			e.g. for autolabelling messages "answered" or
+			"filed".  Added Abort Babyl Mail Edit and Babyl R
+			Help Macro.
+ 9/13/79	EAK	Added K and Y commands.  Added 1R.
+ 9/06/79	ECC	Continuing Catch Errors change:  ^G is not rebound
+			by Babyl, and fsNoQuit is set to 0.
+ 9/03/79	ECC	Changed to use new TMACS Catch Errors and have
+			fs^REnter bind it to 0 so errors don't exit  modes.
+ 8/15/79	ECC	Worked on the survey commands:  fixed up the unseen
+			handling to work with version 4.  Spurious "Done"s
+			not printed by Survey Messages Containing String, B
+			prints "Done" or "Flushed".  B takes pre-comma
+			NUMARG for not-emptying survey 1st and
+			not-typing-as-go.  0B just prints the label.  &
+			Create Brief Variables is gone, replaced by &
+			Declare...  & Push Message doesnt smash qregs 0 and
+			1 now.  ? command takes "*" instead of "?" to
+			document all commands.  Survey Messages.. works on
+			the starting message too now. ' autoloads SVMENU.
+ 8/12/79	ECC	Changed ? command to automatically generate its output.
+ 8/04/79	ECC	Put & Babyl Get Message Keys into Babyl, from KEYSET.
+			Changed & Process Recipient Field to uppercase host
+			names in the recipient buffer, for TNX mailer.  Made
+			most subroutine descriptions one-liners, with a
+			comment following so that Babyl takes less pure space.
+ 8/03/79	EAK,ECC	Added & Process Recipient Field, used by & TNX Mail
+			Buffer and hopefully soon by lots of others -- is a
+			pretty fair RFC733 recipient field parser.
+ 8/02/79	EAK	Fixed & Complete TNX Header - it wasn't narrowing
+			the bounds to just the header.
+ 8/01/79	ECC	(And EAK a few days ago) Getting BABYL' ready for
+			installation.  KEYSET loaded by L, |.  Optional auto
+			labelling from subject fields.  Cacheing used in
+			mode line setting.  Status setting checks more
+			carefully that it is setting status bits, instead of
+			just bfing.
+ Bastille Day	ECC	Removed ..P to go into TMACS, changed to use & Declare
+			Load-Time Defaults, & Setup ensures that TMACS is
+			loaded.
+ 7/10/79	EAK	Removed EOOH subroutines in a few places to restore
+			reasonable functionality (if you can get the proper
+			functionality with them then go ahead).  Removed
+			blank line after ITS headers, and fixed bug in & Form
+			Header that deleted whitespace at beginning of message.
+			Fixed bug where things that begin with MSG: are
+			considered ITS messages.  Things still need work.
+ 7/04/79	ECC	Isolated EOOH handling into few subroutines, and
+			changed Babylization to start out by inserting EOOH
+			lines, simplifying other routines.  In addition,
+			after Babylization, there is always a blank line
+			after the header, even for ITS headers.  Added
+			routines for finding bounds of original and reformed
+			headers.  & Reform no longer creates and kills its
+			variables each time -- I put that into the & setup,
+			in order to speed up reformation.  The rest of the
+			changes were largely to help make Babyl more robust,
+			modular.
+ 7/03/79	ECC	Merged Tenex/Twenex SEND-MAIL library into Babyl, so
+			that the reply command works on ITS, Tenex, and
+			Twenex now.
+ 6/30/79	ECC	& Form Header trims away keywords in subject line, and
+			added & Push Message, new ..P, and Fill Mail Text.
+			Main command loop uses new ..p errset mechanism.
+ 4/30/79	ECC	O can take 1, argument.
+ 3/21/79	EAK	Added No Original option.
+ 3/18/79	EAK	Removed Comment:s, added REPLY-TO.
+ 3/06/79	ECC	Only set options if not exist already.
+ 3/05/79	ECC	Add key-display support, in B and & Babyl Set Mode Line
+ 2/27/79	ECC	Fix bugs and add minor features before doing major
+			keyset and survey- work.
+ <  2/79	EAK,ECC	Ancient history beyond all recall...
+ *!
+
+!~FILENAME~:! !Mail subsystem!
+BABYL
+
+!& SetUp BABYL Library:! !S Create option variables.!
+
+ 1:<:m(m.m& SetUp Compressed BABYL Libraries)>w 
+					!* Create default variables!
+					!* and options.  If Babyl is!
+					!* compressed in with other things,!
+					!* their setup will call the default!
+					!* creators.!
+
+!& KEYSET Function:! !S Load KEYSET if necessary.  Then STRARG.!
+!* Loads KEYSET library if function named by STRARG isn't around.
+ * Then calls function STRARG, passing any NUMARGs.
+ * Note that KEYSET is left loaded.  It may go away, if Babyl does.
+ *!
+ :i*[0				!* 0: STRARG, function name.!
+ 1,m.m0f"nu0 f:m(q0(]0))'w		!* If function around, go.!
+ m(m.mLoad Library)KEYSETw		!* Nope, so load KEYSET.!
+ f:m(m.m0(]0))			!* Now go.!
+
+!& Push To Buffer:! !S Push-select buffer STRARG.
+When caller returns, the original buffer will be re-selected.!
+!* Minor assumption: caller cant use a STRARG with ^]..N (heh heh...)!
+
+ [Previous Buffer			!* save previous buffer!
+ qBuffer Name[0			!* 0: Original buffer name.!
+ @:i*|m(m.mSelect Buffer)0|(]0)[..n	!* Make cleanup handler that will!
+					!* select back to the original buffer.!
+					!* Pop Q0 since not needed any more.!
+ m(m.mSelect Buffer)		!* Select the buffer that caller wants!
+ :					!* Exit without popping ..N etc. so!
+					!* that when caller returns, we!
+					!* select back.!
+
+!Babyl:! !<ENTRY>:! !C Mail file editor subsystem.
+String arg is Babyl filename.
+If *Babyl* buffer has already has a Babyl file in it, and that one is in a
+    consistent state, we just continue Babyl on that without reading in new mail.
+However, if *Babyl* contains an inconsistent Babyl file, e.g. from a
+    previous Babyl startup (or I command) that crashed midway through, we
+    cannot continue with that file.  The user or maintainers must fix up its
+    structure.  The user should write out the file in the *Babyl* buffer to
+    some file for later repair, and also rename any existing _BABYL _TEMP
+    file to something else for possible repair since it (which used to be
+    the input mail file) could have a format problem which caused the
+    startup failure.  So, after writing out *Babyl* and renaming _BABYL
+    _TEMP, kill the *Babyl* buffer and send a message to BUG-BABYL at
+    MIT-MC.  At this point, you might be able to use your Babyl file (though
+    you'll be missing those latest messages), unless the trouble
+    really stemmed from the original (old) Babyl file being broken.!
+
+ m(m.m& Push to Buffer)*Babyl*	!* Select BABYLs own buffer.!
+ 1f[^RMore				!* use --MORE-- in mode line!
+ fsZ"e					!* If buffer is new!
+    m(m.mText Mode)			!* initialize its mode!
+    :i*,m(m.m# Babyl I)		!* Read BABYL file!
+    '
+ "#					!* Something already in *Babyl*.!
+    qBabyl File Consistent"e		!* But is it a consistent Babyl file?!
+      0,fsZfsBoundariesw		!* Leave wide bounds for inspection!
+					!* or whatever.!
+      :i*Inconsistent Babyl filefsErr''	!* But dont continue.!
+
+ fs^RMode"n :m(m.m& Babyl Execute Options)'
+
+!* Babyl expects to be inside a ^R.  If that isnt so, we must call
+   a ^R, after arranging for the ^R to call & Babyl Execute Options.
+ *!
+
+ @:i*|	f]^REnter			!* Reset to old fs^REnter now that!
+					!* we are in  mode.  See below for!
+					!* where fs^REnter is pushed.!
+	m(m.m& Babyl Execute Options)	!* call command processor!
+	fs^RExit			!* exit stupid ^R mode!
+	| f[^REnter			!* push fs^REnter to reset once!
+					!* inside  mode.!
+ 					!* Enter  and call Babyl!
+ 
+
+!Shorten From Field For Stupid Local Mail Reader:! !C Only username.
+Nice for Hermes, so other people can see your subject line in a survey.
+Removes the "at ...." and the personal name part, e.g. leaves only:
+From: Ciccarelli
+This is an illegal header technically, but Hermes doesn't care!
+
+ fsOSTeco"e :i*Only intended for TNX fsErr'
+ z-.[1				    !* 1: Original Z-.!
+ bj :s
+From:"l 0lk'			    !* Kill old From if any.!
+ .,(iFrom:  g(fsHSName:f6) i
+   ).f   !* Just username.!
+ z-q1j 1			    !* Back to original point.!
+
+!Fill Mail Text:! !C On selected message.
+Uses ^R Fill Region, so is undoable, i.e. is saved on kill ring.!
+
+ m(m.m& Bounds Of Header)w		!* Jump to beginning of text!
+ z:					!* MARK end of text.!
+ @m(m.m^R Fill Region)f
+ bj 
+
+!Survey All Messages:! !C All messages after point. If NUMARG, all in buffer.
+Includes seen, unseen, and deleted messages -- everybody.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Brief Deleted Messages,
+	* Non-0 means survey includes deleted messages: 1
+    Brief Seen Messages,
+	* Non-0 means survey includes seen messages: 1
+    Brief Unseen Messages,
+	* Non-0 means survey includes unseen messages: 1
+
+
+ .[1 f[Window				!* 1: Original point.!
+ 1[Brief Deleted Messages		!* Save old values.!
+ 1[Brief Seen Messages		!* ...!
+ 1[Brief Unseen Messages		!* ...!
+
+ ff"n 1m(m.m# Babyl J)w'		!* NUMARG, show all, so move to!
+					!* 1st message.!
+ z m(m.m& Babyl Survey)		!* Brief all from point.!
+ 0f[VB 0f[VZ q1j			!* Set wide bounds to return home.!
+ :m(m.m& Babyl Select Message)
+
+!Survey Unseen Messages:! !C Those after point. If NUMARG, all in buffer.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Brief Deleted Messages,
+	* Non-0 means survey includes deleted messages: 1
+    Brief Seen Messages,
+	* Non-0 means survey includes seen messages: 1
+    Brief Unseen Messages,
+	* Non-0 means survey includes unseen messages: 1
+
+
+ .[1 f[Window				!* 1: Original point.!
+
+ 0[Brief Deleted Messages		!* Save old values.!
+ 0[Brief Seen Messages		!* ...!
+ 1[Brief Unseen Messages		!* ...!
+
+ ff"n 1m(m.m# Babyl J)w'		!* NUMARG, show all, so move to!
+					!* 1st message.!
+ z m(m.m& Babyl Survey)		!* Brief all from point.!
+ 0f[VB 0f[VZ q1j			!* Set wide bounds to return home.!
+ :m(m.m& Babyl Select Message)
+
+!Survey Deleted Messages:! !C After point. If NUMARG, all in buffer.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Brief Deleted Messages,
+	* Non-0 means survey includes deleted messages: 1
+    Brief Seen Messages,
+	* Non-0 means survey includes seen messages: 1
+    Brief Unseen Messages,
+	* Non-0 means survey includes unseen messages: 1
+
+
+ .[1 f[Window				!* 1: Original point.!
+
+ 1[Brief Deleted Messages		!* Save old values.!
+ 0[Brief Seen Messages		!* ...!
+ 0[Brief Unseen Messages		!* ...!
+
+ ff"n 1m(m.m# Babyl J)w'		!* NUMARG, show all, so move to!
+					!* 1st message.!
+ z m(m.m& Babyl Survey)		!* Brief all from point.!
+ 0f[VB 0f[VZ q1j			!* Set wide bounds to return home.!
+ :m(m.m& Babyl Select Message)
+
+!Survey Seen Messages:! !C After point. If NUMARG, all in buffer.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Brief Deleted Messages,
+	* Non-0 means survey includes deleted messages: 1
+    Brief Seen Messages,
+	* Non-0 means survey includes seen messages: 1
+    Brief Unseen Messages,
+	* Non-0 means survey includes unseen messages: 1
+
+
+ .[1 f[Window				!* 1: Original point.!
+
+ 0[Brief Deleted Messages		!* Save old values.!
+ 1[Brief Seen Messages		!* ...!
+ 0[Brief Unseen Messages		!* ...!
+
+ ff"n 1m(m.m# Babyl J)w'		!* No NUMARG, show all, so move to!
+					!* 1st message.!
+ z m(m.m& Babyl Survey)		!* Brief all from point.!
+ 0f[VB 0f[VZ q1j			!* Set wide bounds to return home.!
+ :m(m.m& Babyl Select Message)
+
+!Survey Messages Containing String:! !C From point, or top if NUMARG.
+Surveys all messages found by the F command.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Brief Deleted Messages,
+	* Non-0 means survey includes deleted messages: 1
+    Brief Seen Messages,
+	* Non-0 means survey includes seen messages: 1
+    Brief Unseen Messages,
+	* Non-0 means survey includes unseen messages: 1
+
+
+ [0 1,fSurvey messages containing string: f"e'u0	!* 0: STRARG.!
+ m(m.m& Push Message)			!* Return to message when done.!
+ m.m& Babyl Survey[B			!* B: Briefer.!
+ m.m# Babyl F[F			!* F: Finder.!
+ m.m& Maybe Flush Output[A		!* A: Toilet.!
+ 1[Brief Deleted Messages		!* Bind B mode.!
+ 1[Brief Seen Messages		!* ...!
+ 1[Brief Unseen Messages		!* ...!
+
+ 0mB					!* Print a survey label.!
+ ff"n 1m(m.m# Babyl J)w'		!* NUMARG, show all, so move to!
+					!* 1st message.!
+ j 0fsVBw -l				!* Move back a bit so that F will!
+					!* find the starting message if it!
+					!* matches.!
+
+ <  mA1;				!* Stop if user types ahead.!
+    1:<q0,1mFw>:@;			!* Find next matching message if any!
+    1,mBw				!* Survey it, no label, and dont!
+					!* kill the rest of the survey.!
+    zj >w				!* Move to end of message.!
+
+ fsListen"e ftDone.
+'					!* Since came out slowly.!
+ 
+
+!^R Babyl Yank:! !^R Yank message being replied to and grow reply window.
+Message is indented 4 spaces, and MARK is left before, point after, message.
+NUMARG of 4 ():  Message is not indented.
+The original header is discarded; only the reformed one is yanked.
+NUMARG of 16 (): Original header is used instead.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Pre-*Reply* Buffer,: 0
+
+
+ [0
+ 1:< 4@m(m.m^R One Window) >w		!* Dont need to show old message in!
+					!* other window now.  The NUMARG!
+					!* means show the bottom window.!
+ .:w					!* MARK: point before message.!
+ .f[VB fsZ-.f[VZ gPre-*Reply* Buffer
+					!* Yank and bound around message, so!
+					!* that is easy to work on it, and!
+					!* so header subroutines will treat!
+					!* it like a real message.!
+ -16"n j .( s
+*** EOOH ***
+),.k'					!* NUMARG not 16, so kill the!
+					!* orginal header!
+ "# m(m.m& Bounds of Header)k
+    -k j k'
+
+ -4"n					!* If NUMARG not 4, indent message.!
+    j					!* To top of message.!
+    < .-z;				!* Stop when to end of message.!
+      2  f=
+     "n 4,32i '			!* Indent unless blank line.!
+      l > '				!* Next line, until end of message.!
+
+ zj					!* To end of message.!
+ 0fsZw					!* Widen bounds below!
+ 0 f   "g i
+  '
+ b,.
+
+!^R Babyl Add To-Recipient:! !^R Calls & Read Line for new To-recipient.
+NUMARG of 4 means ^R Babyl Add Cc-Recipient.
+Negative NUMARG means ^R Babyl Delete Recipient.!
+
+ [1[2
+ f~Buffer Name*Reply*"n		!* Must be composing a message. *!
+    :i*Must be in *Reply* buffer fsErr'
+ 0f[VB					!* Wide bounds above.!
+ z-.:\u1 fn 1:<z-1j>"n zj' 		!* Auto-restoring point.!
+ j i
+					!* CRLF at top for boundary.!
+ "l :i1Un-To'			!* 1: Prompt.!
+ "# -4"e :i1Cc'			!* 1: ...!
+ "# :i1To''				!* 1: ...!
+
+ 1,m(m.m& Read Line)1: u2		!* 2: recipient name.!
+ q2"n fq2"g				!* If user gave us a field... *!
+    "l q2m(m.m& Babyl Delete Recipient)'	!* ...delete or...!
+    "# q2,q1m(m.m& Babyl Add Recipient)'''	!* ...add it.!
+ j @f
+k					!* Kill CRLF at top.!
+ 1
+
+!^R Babyl Add Cc-Recipient:! !^R Add new name to Cc field.!
+ 4:m(m.m^R Babyl Add To-Recipient)
+
+!^R Babyl Delete Recipient:! !^R Delete To- or Cc-recipient.!
+ -1:m(m.m^R Babyl Add To-Recipient)
+
+!& Babyl Add Recipient:! !S NUMARGs: name,fieldName.!
+!* Reuses existing fields, uses continuations.!
+
+ [1[2				!* 1,2: Field, recipient names.!
+ j :s
+1:"l 				!* Field already here.!
+    <l 1af 	:;>		!* Past contin lines.!
+    0:l					!* To end of field.!
+    0f  +fq2-(70fo..qBabyl Recipient Fill Column)"g -@f, 	k i,
+	 '				!* Continuation needed.!
+    "# i, ''				!* No continuation needed.!
+ "# bjl i1: 
+   0:l'				!* Put in field.!
+
+ i2				!* Add the field.!
+ 
+
+!& Babyl Delete Recipient:! !S NUMARG is recipient name.!
+!* Deletes name from either To- or Cc-fields.!
+
+ u1					!* 1: Name.!
+ j < :s
+To:
+Cc: ;					!* Next To-/Cc-field.!
+     < < :fb1;			!* Find name in line.!
+	 1af,î@ :"l			!* Ends ok...!
+	   fkc -@f 	l
+	   0af:,
+	   :"l				!* ...starts ok, so is it.!
+	       .,(:fb,"e :l').k'' >	!* ...Kill it.!
+       l 1af 	"l 0:l 1;'	!* No continuation line.!
+       >				!* Repeat for contin lines.!
+     >					!* Repeat for each field.!
+ w					!* Cant figure damn redisplay...!
+
+!^R Babyl Add Subject: Field:! !^R Calls & Read Line for subject field.!
+ f~Buffer Name*Reply*"n		!* Must be composing a message. *!
+    :i*Must be in *Reply* buffer fsErr'
+ 1,m(m.m& Read Line)Subject: [.1	!* .1: subject field. *!
+ q.1"n fq.1"g				!* If user gave us a field. *!
+    .-z(bjl .,(iSubject: .1
+	      ).f w)+zj		!* Then go put it in. *!
+    ''
+ 1
+
+!# Babyl ^C:! !# Babyl ^Z:! !S Return to DDT temporarily.!
+ 100000.fsExit
+ 
+
+!# Babyl ^D:! !S Delete message and move backward.!
+ -1,(f) :m(m.m# Babyl D)
+
+!# Babyl ^F:! !S Forward current message.  Temporary assignment...!
+ 3,:m(m.m# Babyl R)			!* Tell R to forward.!
+
+!# Babyl ^H:! !S Move to previous screenfull.!
+ f @m(m.m^R Previous Screen)w
+ 
+
+!# Babyl ^J:! !S Jump to next unseen message.
+This should later operate more Hermetically:  e.g. have the user
+    specify some kind of sequence (unseen messages being the default, but
+    could be deleted ones etc.), and then select next of those.!
+
+ .[0[1					!* 0: Original point in case dont!
+					!* find anyone.!
+ m.m# Babyl N[N			!* N: Next message mover.!
+ qMessage Numberu1
+ @fn| qMessage Seen"n q1:m(m.m# Babyl J)'|	!* Ensure that we!
+					!* end on unseen or original!
+ :< 1mN qMessage Seen@;		!* Go until find unseen.!
+    >"n  0,fsZfsBoundariesw q0j	!* Didnt find one, back home.!
+	 m(m.m& Babyl Select Message)
+	 :i*No next unseen message fsErr'	!* ...!
+ 
+
+!# Babyl ^L:! !S Clear screen.!
+ f+ 
+
+!# Babyl ^M:! !S No-op, flushes argument.!
+ @ft
+ 
+
+!# Babyl ^N:! !S Move to NUMARGth next message, whether deleted or not.!
+ -[1					!* 1: Count messages moved past.!
+ < 0fsVZw				!* Set wide bounds below.!
+   :s
+;					!* To next message if any.!
+   m(m.m& Babyl Select Message)	!* ...!
+   %Message Numberw			!* ...!
+   %1; >				!* 1: Count message, stop if done.!
+
+ q1"n m(m.m& Babyl Select Message)	!* Reset bounds, message status.!
+      :i*Now at end, no next messagefsErr'	!* ...!
+
+ 
+
+!# Babyl ^O:! !S Append current message to a TNX mail file.!
+ :i*Not implemented yetfsErr		!* Sorry!
+
+!# Babyl ^P:! !S Move to NUMARGth previous message, whether deleted or not.!
+ -[1					!* 1: Count messages moved past.!
+ qMessage Number-1<			!* don't go back too far!
+   0fsVBw				!* Set wide bounds above.!
+   -:s;				!* Back to end of previous message.!
+   1:<m(m.m& Babyl Select Message)	!* Select that one!
+      >@:;				!* Abort if error!
+   qMessage Number-1uMessage Number	!* ...!
+   %1; >				!* 1: Count message, stop if done.!
+ q1"n 1:< m(m.m& Babyl Select Message)	!* Select that one!
+	  >"n 1m(m.m# Babyl J)'	!* If can.!
+      :i*Now at top, no previous messagefsErr'
+ 
+
+!# Babyl ^R:! !S Call ^R to edit this message.!
+ 0f[^RMore 
+ f[VB f[VZ				!* save bounds because & Init sets!
+					!* them wide!
+ 1m(m.m& Initialize Babyl Buffer)	!* Reset number variables.!
+ 
+
+!# Babyl ^S:! !S Survey-prefix.  Also ignores ^S^Q for VT52 lossage etc.
+^S^A or ^SA is MM Survey All Messages
+^S^D or ^SD is MM Survey Deleted Messages
+^S^K or ^SK is MM Survey Key Set (reads a keyword)
+^S^M or ^SM is MM Survey Messages Containing String (reads a string)
+^S^R or ^SR is MM Survey Reminders
+	^SS is MM Survey Seen Messages
+^S^U or ^SU is MM Survey Unseen Messages
+^S? shows this description and then reads another character.
+To correct for stupid terminals, any number of ^S's followed by a ^Q are
+    ignored.  This is for VT52s, H19s, maybe others.!
+!* Maybe should ignore ^S(^S)*^Q for more general, e.g. H19, lossage, though
+ * that may not happen.
+ *
+ * This might be better if a .P-ish kind of prefix?!
+
+ [1
+ :i*CfsEchoDisplay			!* Clear prompt area.!
+ :i..0Kind of survey (A,D,K,M,R,S,U, or ?): 	!* ..0: Prompt.!
+ <  m.i fi:fcu1				!* 1: Dispatch character.!
+    q1-:@; >			!* Exit when not a ^S, thus we!
+					!* ignore ^S^S...^S^Q.!
+ (q1-"'e)(q1-A"'e)"n		!* ^S^A or ^SA.!
+    f:m(m.mSurvey All Messages)'	!* ...!
+ (q1-"'e)(q1-D"'e)"n		!* ^S^D or ^SD.!
+    f:m(m.mSurvey Deleted Messages)'	!* ...!
+ (q1-"'e)(q1-K"'e)"n		!* ^S^K or ^SK.!
+    1,m(m.m& Read Line)Survey Key Set: f"ew'u1	!* 1: Keyword.!
+    fm(m.m& KEYSET Function)Survey Key Set1 '	!* ...!
+ (q1-î"'e)(q1-M"'e)"n		!* ^S^M or ^SM.!
+    f@:m(m.mSurvey Messages Containing String)'	!* ...!
+ (q1-"'e)(q1-R"'e)"n		!* ^S^R or ^SR.!
+    fm(m.m& KEYSET Function)Survey Reminders '	!* ...!
+ q1-S"e				!* ^SS (not ^S^S...)!
+    f:m(m.mSurvey Seen Messages)'	!* ...!
+ (q1-"'e)(q1-U"'e)"n		!* ^S^U or ^SU.!
+    f:m(m.mSurvey Unseen Messages)'	!* ...!
+ q1-?"e m(m.mDescribe)# Babyl ^S	!* ? gives help and then!
+	  f:m(m.m# Babyl ^S)'	!* reads another character.!
+ (q1-177."'e)(q1-"'e)"e fg' 	!* Illegal choice.  Complain noisily!
+					!* unless it was a rubout or ^Q.!
+
+!# Babyl ^T:! !S Call ^R Display Load Average, for TNX users.!
+ :@m(m.m^R Display Load Average)
+
+!# Babyl ^X:! !S Temporarily exit MM Babyl.  Doesn't file out.
+Repeating the MM Babyl will resume with state unchanged.!
+ :i*CfsEchoDisplay			!* clear echo area!
+ 2f;Babyl-Catch
+
+!# Babyl Altmode:!			!* Alternate name for prettiness!
+!# Babyl ^[:! !S (Altmode) Execute a TECO command string.!
+ f@m(m.m^R Execute Minibuffer)w
+ 
+
+!# Babyl Space:!			!* Alternate name for prettiness!
+!# Babyl ^`:! !S (Space) Print more of this message.!
+        FSRGETTY"E FT
+					!* ON PRINTING TTY, PRINT!
+	 FF"N .,(L).T		!* AS MANY LINES AS SPECIFIED (MAYBE!
+					!* THEN --MORE--)!
+	    m(m.m& Babyl --MORE--)'
+	  "# .,ZT			!* OR ALL THE REST OF THE LINES!
+	    ZJ -2 F=			!* (SUPPLYING A CRLF AT END IF NOT!
+					!* ALREADY ONE)!
+"N  FT
+''
+	  '
+					!* ON A DISPLAY,!
+        .-Z"E J '			!* IF AT END, CYCLE TO BEGINNING.!
+	f @m(m.m^R Next Screen)w	!* ELSE MOVE TO NEXT SCREENFULL.!
+					!* DONT USE :M SINCE ^R NEXT SCREEN!
+					!* RETURNS VALUES.!
+
+!# Babyl ':! !S Autoload SVMENU and run MM Survey Menu.!
+
+ f:m( 1,m.mSurvey Menuf"ew		!* Not around now.!
+	  m(m.mLoad Library)SVMENUw	!* So load it.!
+	  m.mSurvey Menu' )		!* And go there.!
+
+!# Babyl .:! !S Return the message number of current message.
+To get old functionality of reselecting current message, do .J!
+ qMessage Number:\[1			!* 1: no. as a string!
+ :i551 0			!* append to Q5, return something to!
+					!* say we have set Q5!
+
+
+!# Babyl ;:! !S Accumulate a line, then execute it with no display.!
+ [..J :I..JBabyl-Shhh
+ m(m.m& Read Line);u3 
+
+!# Babyl =:! !S Type value of numeric argument.!
+ = 
+
+!# Babyl 0:!
+!# Babyl 1:!
+!# Babyl 2:!
+!# Babyl 3:!
+!# Babyl 4:!
+!# Babyl 5:!
+!# Babyl 6:!
+!# Babyl 7:!
+!# Babyl 8:!
+!# Babyl 9:!
+!# Babyl +:!
+!# Babyl -:!
+!# Babyl ,:!
+!# Babyl *:!
+!# Babyl /:!
+!# Babyl ):!
+!# Babyl (:! !S Part of a numeric argument.!
+
+ :i550 0
+
+!# Babyl A:! !S Move to next message and summarize it. = NB.
+If the option Babyl A Mode Display is non-0, we will update
+    the mode line.  (Default is to update it.)
+Users on slow display terminals may want to disable updating, and use an
+    occasional Z= instead, to see how many messages there are.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl A Mode Display, * Non-0 lets A update mode line: 1
+
+					!* End of declare.!
+
+ <1m(m.m# Babyl N)
+    qBabyl A Mode Display"n		!* Update if enabled.!
+      1fsModeChw fr'			!* Display mode line since B will!
+					!* inhibit it.!
+    @m(m.m# Babyl B)			!* Should be & Babyl Survey?????!
+    >
+ 
+
+!# Babyl B:! !S Brief user about the current next NUMARG messages.
+No NUMARG means just brief about current message.!
+ ff-2"l fm(m.m& Babyl Survey)'	!* Survey next NUMARG messages.!
+ "# ff-3"e m(m.m& Push Message)	!* return to .!
+	       m(m.m# Babyl J)	!* Jump to NUMARG1 message.!
+	       (-+1)m(m.m& Babyl Survey)	!* Survey range.!
+	       ''
+ 
+
+!& Babyl Survey:! !S Compute survey of next NUMARG messages.!
+!*
+Pre-comma NUMARG is used by a higher-level survey and is bit-coded:
+    1,  means dont kill survey buffer before starting -- e.g. this
+	is part of a larger survey.
+    2,  means dont print the survey as you go -- just insert it into the
+	survey buffer.
+Note:  To get a label, you can just do 0B.
+Message number is followed by (mutually exclusive) status of message:
+    :  for normal messages that have been seen before,
+    D  for messages that have been marked as deleted,
+    -  for messages that have not yet been seen.
+Three variables control whether messages matching these kinds of status are
+    to be shown:
+    Brief Deleted Messages (default 1, on),
+    Brief Seen Messages    (default 1),
+    Brief Unseen Messages  (default 1).
+Note also the commands: Survey Deleted Messages, Survey Seen Messages, etc.
+Leaves its summary in EMACS buffer *Brief*.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Brief Deleted Messages,
+	* Non-0 means survey includes deleted messages: 1
+    Brief Seen Messages,
+	* Non-0 means survey includes seen messages: 1
+    Brief Unseen Messages,
+	* Non-0 means survey includes unseen messages: 1
+    *Brief* Buffer,: 0
+
+
+ [1[7[8[9				!* save regs!
+ .u7 @fn|0,fsZfsBoundw q7:j"e zj' m(m.m& Babyl Select Message)| [7[..o
+					!* Auto-restoring point.!
+ qBrief Deleted Messages[D		!* D: Flag to show deleteds.!
+ qBrief Seen Messages[S		!* S: Flag to show seens.!
+ qBrief Unseen Messages[U		!* U: Flag to show unseens.!
+
+ -1f[Truncate				!* do not continue, just excl overflow!
+ q..ou9					!* 9: mail buffer.!
+ q*Brief* Bufferu8			!* 8: 0 or summary buffer.!
+ q8fp"n					!* If not a buffer, must create.!
+    [Previous Buffer			!* Save default for ^XB.!
+    m(m.mSelect Buffer)*Brief*	!* Create/select summary buffer.!
+    q..ou*Brief* Buffer		!* Save buffer for quick access.!
+    q..ou8				!* 8: Summary buffer.!
+    m(m.mSelect Buffer)'		!* Back to Babyl buffer. *!
+ q8u..o					!* Select survey buffer.!
+ &1"e hk'				!* Empty it if no 1, bit.!
+
+ q9u..o					!* select mail buffer!
+ fsZ-z"e :i*CNo Messages
+fsEchoDisplay
+ 0fsEchoActivew q8u..o 0fsModifiedw '
+
+ qMessage Numberu7			!* 7: message no.!
+ m.m& Maybe Flush Output[A		!* A: put subroutine in q-register!
+					!* for efficiency!
+ m.m& Babyl Survey One Message[X	!* X: survey one message!
+
+ ff&1"e 1'"# q8u..o i No. Lines        From->To        Subject or Text
+ &2"e -t'				!* Label if NUMARG given.  Type it!
+					!* if no 2, bit.!
+   '<					!* Iterate NUMARG or 1 times.!
+    &2"e ma1;'			!* maybe flush output!
+
+    q9u..o j				!* Now see which kind of message!
+					!* this is: deleted, seen, unseen.!
+    :u1				!* 1: message type!
+    1a-D"e				!* This message is deleted.!
+      qD"e oDEL'			!* Oops, not showing deleted ones.!
+      Du1'				!* Show deleteds in brief.!
+    "#					!* Not deleted, check if seen.!
+       5a&2"n				!* This message has been seen.!
+	 qS"e oDEL''			!* Oops, not showing seens.!
+       "#				!* This message is unseen.!
+	  qU"e oDEL'			!* Oops, not showing unseen ones.!
+	  -u1''			!* Indicate unseen message.!
+    s
+*** EOOH ***
+   2r .fsVBw				!* set bounds past orginal header!
+
+    q8u..o 3,q7\  q1i			!* put in message no.!
+    
+    q9,q8mX				!* survey message!
+    
+    &2"e -t'				!* and display our handiwork if no!
+					!* 2, bit.!
+    !DEL!				!* Come here to skip delete message.!
+    q9u..o zj				!* Prepare to move to next message.!
+    0,(fsZ)fsBoundw			!* Widen bounds.!
+    4 f=
+:@;					!* Stop if no next message.!
+    %7w					!* Else bump our temporary message no.!
+    l .,(sr). fsBoundw		!* Bounds around next message.!
+    >
+
+ &2"e					!* if no 2, bit say we are done!
+    fsListen"n ftFlushed.
+     '					!* Dont say done -- confusing.!
+    "# -1"g ftDone.
+     '''				!* Say done if could have done more!
+					!* than one message.!
+ q8u..o 0fsModifiedw			!* Unmodify summary buffer.!
+ 
+
+!& Babyl Survey One Message:! !S ...!
+ [0[1[2[3[4[5				!* save regs!
+ u..o 0u1 <.-z;%1wl>			!* 1: no. of lines in the message!
+ u..o 5,q1\				!* put no. of lines into survey!
+
+ 0u0 0u3 0u4 0u5			!* 0,3,4,5: initially no 1st lines,!
+					!* From:s, To:s, or Subject:s!
+
+ u..o jl				!* beginning of 1st line of message!
+ 4 f=MSG:"e l				!* Skip over MSG: line if system msg!
+      <	8 f~DISTRIB:@:;		!* DISTRIB: ?!
+	8c @f	 l 1:x4 l >		!* treat DISTRIB: like To: !
+      <	8 f~EXPIRES:@:; l >		!* skip over EXPIRES: lines!
+      '					!* End of MSG:-handling!
+ 1:fb@:f"ew m(m.m& Cant Grok Header)	!* Maybe allow inspection!
+	       oCGM' +1"e		!* ITS header!
+	:s "e m(m.m& Cant Grok Header)	!* Maybe allow inspection!
+	       oCGM' r 0x3		!* 3: ITS From.!
+	:fb Re: "l 1:x5'		!* 5: subject!
+	l 4 f~TO: "e 4c 1:x4 l'	!* 4: To: line!
+	< 4 f~TO: @:; l>		!* skip over To lines!
+	< 4 f~CC: @:; l>		!* skip over cc lines!
+	0l 1:x0				!* 0: first line!
+	'				!* end of ITS header conditional!
+ "#					!* Network header!
+	:s
+
+"l 2r .( @f
+	 l :x0)j			!* 0: First text line.!
+    '"# zj' fsz-.f[vz			!* set bounds around header!
+	j < :s
+From; @f	 l 1a-:"n !<!>'	!* find a From: line!
+	    c @f	 l 1:x3 1;	!* 3: the From field.!
+	    >
+	j < :s
+To; @f	 l 1a-:"n !<!>'	!* find a To: line!
+	    c @f	 l 1:x4 1;	!* 4: the To field.!
+	    >
+	j < :s
+Subject
+Re;	    @f	 l 1a-:"n !<!>'	!* find a Subject: line!
+	    c @f	 l 1:x5 1;	!* 5: the subject field.!
+	    >
+	f]vz				!* restore bounds to whole message!
+	'				!* end of header conditional!
+    u..o i   .u1 q3"n g3' !<!i-> q4"n g4'	!* < put in from->to!
+    q1j <[5 >[6			!* setup for loop!
+    < .u2 :s5; q2,.k :s6: .(:s,-6:),.k > ]6]5
+					!* if <>s then use just stuff inside!
+    q1j < :s(BUG ; BUG- s) -d >	!* change BUGs!
+    q1j < :s(; r flk -@f	 k >	!* delete comments!
+    q1j < :s at ; @ >		!* canonicalize!
+    q1j < :s, ; -d >			!* ...!
+    q1j < :s@MIT-Multics; @MUL >	!* shorten MIT-Multics!
+    q1j < :s@MIT-; -4d >		!* abbreviate MIT host names!
+    q1j < :s@BBN-TENEX; -6d >		!* abbreviate BBN host names!
+    fsOSTeco"e q1j < :s@AI@MC@ML@DMS@DM; fkd >'
+					!* remove local host names!
+    fsXUname:f6u2 zj i 		!* delete self!
+    q1j < r :s2; r -fq2d >	!* ...!
+    zj -d 32-(fsHPos)f"l d'"# ,32i'	!* move to column 34!
+
+
+					!* Hack keyset by listing wholesale!
+					!* before?/after? the subject line.!
+    u..o 				!* Select message buffer.!
+    1:<					!* Until KEYSET merged in.!
+      m(m.m& Babyl Get Message Keys)u3	!* 3: Any keylist.!
+      fq3"g u..o i  {3}'		!* Insert keys in the brief, if any.!
+      >w				!* !
+    u..o				!* Select brief buffer.!
+
+    q5"n i   g5'			!* insert subject!
+    "# q0"n i   g0 i ...''		!* else see if got a 1st text line!
+
+
+
+    !CGM!				!* come here if cannot grok message!
+    u..o i
+   					!* end summary of this message!
+    
+
+!# Babyl C:! !S Continue editing a reply message.
+Runs Babyl C Hook when about to enter the  mode.!
+ 1,:m(m.m# Babyl R)
+
+!# Babyl D:! !S S Delete this message, select next.
+NUMARG means delete message NUMARG.
+Pre-comma NUMARG is amount to N after this, e.g. -1 for the ^D command.
+If no pre-comma NUMARG:
+    If option Babyl N After D is non0 (default), do an N, else stay.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl N After D, * Non-0 tells D to do automatic N: 1
+
+					!* End of declare.!
+
+ ff&1"n m(m.m# Babyl J)'		!* Go to message NUMARG.!
+ qMessage Deleted"n @ft
+Already deleted.  0fsEchoActivew'	!* stupid loser!
+ 1uMessage Deleted			!* Do what we were told.!
+ m(m.m& Set Message Status)		!* ...!
+ ff&1"n 1u..h'			!* Dont mess up possible brief.!
+ 1:<					!* Dont let N cause an error if we!
+					!* delete the last message.!
+    ff&2"e				!* No pre-comma NUMARG.!
+      qBabyl N After D"e '		!* Dont N.!
+      1'"# 'm(m.m# Babyl N) >w	!* Go show next undeleted message.!
+ 
+
+!# Babyl E:! !S Expunge deleted messages.!
+ m(m.m& Babyl Expunge)			!* expunge deleted messages!
+ :m(m.m& Initialize Babyl Buffer)	!* calculate total no. of messages,!
+					!* current message no., etc.!
+
+!# Babyl F:! !S Find and select message containing specific string.
+Will ALWAYS start with next message after current one.
+    However, if no match is found, returns to current message.
+NUMARG is iteration count.
+Pre-comma NUMARG is string to search for.
+If no pre-comma NUMARG, uses & Read Line to ask for it.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl F Default,: ||
+
+
+ [0[1[2
+ ff&2"n u0'			!* 0: string passed as pre-comma.!
+ "# qBabyl F Defaultu1		!* 1: Default from last F.!
+    ff"n :\u2 :i22 '"# :i2'	!* 2: Stringified NUMARG.!
+    1,m(m.m& Read Line)2Find (Default "1"): u0 !''!
+					!* 0: string read from user.!
+    fq0"l '				!* Give up if rubbed out!
+    fq0"n q0uBabyl F Default'"# q1u0'	!* Null string => use default; else!
+    '					!* it is new default.!
+
+ 0f[vb 0f[vz .u1 @fn| q1j |		!* save current state of things in!
+					!* case search fails!
+ :s				!* Start at end of this message.!
+ s0				!* search for the users string!
+ ]..N ]*w ]*w				!* throw away saved state!
+ m(m.m& Babyl Select Message)		!* set bounds around found message!
+ m(m.m& Calculate Message Number)
+ 
+
+!# Babyl G:! !S Get any new mail received since Babyl was started.!
+ [1[2[3 f[DFile			!* save registers!
+ qBuffer Filenamesu3			!* Q3: buffer filenames!
+ m.m& Initialize Babyl Buffer[..n	!* run initializer on any exit!
+ 0,fsZfsBoundw			!* widen bounds!
+ qBabyl Append Option"n zj'		!* Append.!
+ "# j s'				!* Prepend.!
+ e?_BABYL _TEMP"e fsDFileu1
+		   :i*1 has mail from a previous Babyl crashfsErr'
+ qBabyl Mail Optionu2			!* 2: mail filename!
+ q2"e ' q2f[DFile fsDFileu2		!* get mail filename, return if none!
+ q3"e .,.fsBoundw 1:< er @y >w	!* if perusing, just read in mail,!
+      m(m.m& Babylize Buffer) j '	!* dont append or delete!
+ 1:< en_BABYL _TEMP >"n		!* rename for safety, return if file!
+					!* not found!
+    @ft(No new mail) 0fsEchoActw '
+ .,.fsBoundw				!* set bounds to .,.!
+ :i*AReading Mail file 2fsEchoDisplay
+ er fsIFileu2				!* 2: Name of read-in mail file!
+ @y @ft
+					!* print CRLF when done!
+
+ qBabyl XMail Optionf"n u1		!* 1: XMail filename.!
+   qBabyl XMail Append Option"n	!* We are to append new mail.!
+     :i*AAppending to XMail filefsEchoDisplay
+     q1m(m.m& Babyl Append)"e		!* Try fancy append.!
+					!* Didnt work.!
+	bj er1 fy			!* Insert XMail at beginning.!
+	-@f k 0,0a-14."e -d'	!* Strip off padding.!
+	eihpef				!* Write out new XMail file.!
+	b,.k'				!* Kill old XMail part.!
+     fsOFileu1				!* 1: New XMail filename complete.!
+     @ft 1
+    0fsEchoActivew'			!* Tell user what took time.!
+
+   "#
+      :i*APrepending to XMail filefsEchoDisplay
+      zj er1 @a			!* Prepend new mail to XMail file.!
+      eihpef				!* Write new XMail file.!
+      .,zk				!* Kill old XMail stuff.!
+      fsOFileu1			!* 1: New XMail filename complete.!
+      @ft 1
+     0fsEchoActive''w			!* Done XMail hacking.!
+
+ m(m.m& Babylize Buffer) j		!* Babylize it!
+ qBabyl Append Option"e m(m.m# Babyl S)'
+					!* write out combined files!
+ "# :i*AAppending to Babyl filefsEchoDisplay
+    q3m(m.m& Babyl Append)"n
+	@ft 3
+	0fsEchoActivew'
+    "#	m(m.m# Babyl S)''
+ ed2					!* delete mail file!
+ 
+
+!& Babyl Append:! !S Append B,Z to NUMARG file. Returns non0 iff success.!
+ [1 e[e\@fn|e^e]| f[VB f[VZ
+ er1 fsIFLengthu1 q1/5*5-5fsIFAccessw
+ j .,.fsBoundw @fn|b,.k| @y zj
+ 1:<@:ei>"n 0' fsOFLength-q1"n :i*File changed size??fsErr'
+ q1/5*5-5fsOFAccessw 0fsVZw hp :ef 1
+
+!# Babyl H:! !S Reparse original header.  If argument display original header.!
+
+ [1[2					!* save registers!
+ m(m.m& Babyl Select Message)		!* set bounds around message . is in!
+ qMessage Header Reformed"n
+   m(m.m& Bounds Of Original Header)u2u1	!* 1,2: Bound original header.!
+   ff"e				!* No NUMARG, want reformation.!
+      q1,q2fx1'				!* 1: Original header, removed.!
+   "# q1,q2x1'				!* 1: Original header, remaining!
+					!* since user wants to see the!
+					!* original header, not have it!
+					!* reformed.!
+   fq1"e :i*No original headerfsErr'
+   m(m.m& Bounds Of Header)k		!* Kill reformed header, & jump there!
+   g1'					!* Put original header in its place.!
+
+ ff"e				!* No NUMARG:  wants reformation.!
+    0uMessage Header Reformed		!* Let it be reformed next time.!
+    m(m.m& Set Message Status)		!* Make a note of that.!
+    m(m.m& Reform Header)'
+ 
+
+!# Babyl I:! !S File out Babyl file, read in another.
+After saving (if necessary) the current Babyl file, asks for a Babyl file.
+If given a pre-comma NUMARG, is assumed to be filename, so won't ask for one.
+Default filename is DSK: homedir; username BABYL.
+Babyl files are ALWAYS version 1 on TNX.
+If file is not a Babyl file, we just read -- no deleting, no writing.
+    (A Babyl file, by definition, has as its first line "BABYL OPTIONS:".)
+If file is a Babyl file, its options determine what to do:
+    Append option says to append mail to the BABYL file;  otherwise it is
+	prepended.
+    Mail option gives the name of the associated mail file if any.
+    XMail option gives the name of the associated XMail file if any.
+    XMail Append option says whether to append to XMail (else prepend).!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Filenames,: 0
+
+
+ [1 1f[FnamSyntax			!* Lone fn is FN1, keeping FN2.!
+
+ !* Get filname of new Babyl file: *!
+
+ etDSK:FOO BABYL			!* Default dev is DSK!
+					!* Default fn2 is BABYL!
+ fsHSname fsDSnamew			!* Default dir is home dir!
+ fsXUname fsDFn1w			!* Default fn1 is username!
+ fsOSTeco"n 1fsDVersionw'		!* Default TNX version is 1.!
+ ff&2"e				!* no pre-comma NUMARG!
+    0[Buffer Filenames		!* 0 so default filename printed!
+    1m(m.m& Read Filename)Babyl fileu1	!* 1: Babyl filename!
+    ]Buffer Filenames			!* Restore.!
+    q1"e ''				!* 0, abort.!
+ "# u1'				!* 1: New MAIL file from pre-comma.!
+
+ !* Now that we have the filename, cleanup old Babyl file if any: *!
+
+ 1,m(m.m# Babyl Q)			!* cleanup, save previous Babyl!
+					!* file if necessary.!
+ :i*CfsEchoDisplay			!* clear echo area!
+
+ !* Now we bring in the new Babyl file: *!
+
+ et1					!* set Babyl filename!
+ fsOSTeco"n 1fsDVersionw'		!* TNX version no. is always 1!
+ fsDFileuBabyl Filenames		!* save name of Babyl file!
+ fsDFilem(m.m& Read Babyl File)"e	!* Read in Babyl file?!
+    0uBuffer Filenames		!* No, so dont let write back.!
+    0u:.b(qBuffer Index+2)'
+ "#					!* Yes it is a Babyl file.!
+    fsDFilef(uBuffer Filenames	!* Allow write back.!
+           )u:.b(qBuffer Index+2)	!* ...!
+    0uInhibit Write'			!* ...!
+
+ m(m.m& Reset Babyl Options)		!* Set for this Babyl file.!
+ qBabyl Version Option-4"g :i*Babyl file version > 4fsErr'
+ qBabyl Version Option-3"l :i*Babyl file version < 3fsErr'
+ qBabyl Version Option-3"e
+    m(m.mRun Library)BABYLV& Convert To Version 4 Babyl File
+    m(m.m& Reset Babyl Options)'
+
+ qBabyl Owner Optionf"n u1 f~(fsXUname:f6)1"n
+    0uBuffer Filenames		!* No, so dont let write back.!
+    0u:.b(qBuffer Index+2)''
+
+ m(m.m# Babyl G)			!* get new mail, if any!
+
+ 0fo..qBabyl O Filename"e		!* If Babyls variables dont exist,!
+    et XMAIL				!* make them.!
+    fsDFile m.vBabyl O Filename'	!* ...default for O command!
+
+ 0u..h					!* Allow redisplay.!
+ 
+
+!# Babyl J:! !S Jump to message with given number.
+nJ goes to message n whether deleted or not.  ZJ goes to last message.
+J goes to first non-deleted message.
+-J goes to last non-deleted message.!
+
+ .[1 0fsVB[2 0fsVZ[3 [4		!* save . and bounds!
+
+ ff&1"e				!* No argument means first message!
+    1m(m.m# Babyl J)			!* ...!
+    qMessage Deleted"e '		!* if its not deleted.!
+    1:m(m.m# Babyl N)'			!* Else call N to try next one.!
+
+ "l					!* -J means last undeleted.!
+    qNumber Of Babyl Messagesm(m.m# Babyl J)	!* ...!
+    qMessage Deleted"e '		!* Last message not deleted.!
+    1:m(m.m# Babyl P)'			!* Was deleted, search for non.!
+
+ !* Here is where we try to optimize the movement.  The safest way to move,
+  * that doesnt rely on Message Number and Number Of Babyl Messages
+  * being correct, is to go to the top and then search for N messages.
+  * However, I think we now maintain these variables pretty solidly, and so
+  * can trust them, unless we get an error, in  which case they should be
+  * recalculated.  So, we choose the best of these searches:  from point
+  * forward, backward, from top forward, from bottome backward.
+  * !
+
+ -qMessage Numberf"gu4		!* 4: Moving forward n.!
+    !* ft(Moving forward)!
+    qNumber Of Babyl Messages--q4f"l+q4u4	!* 4: Faster searching!
+      !* ft(Searching Z back)!
+					!* backwards from end of buffer.!
+					!* Will leave point at end of!
+					!* desired message.!
+      !* Note: the f"l:s...' etc are because stupid 0:s wont return a value!
+      zj -q4f"l:s
+     "e oNoSuch''w'"#w		!* 4: Faster searching forwards from!
+      !* ft(Searching . forward)!
+					!* point.  Leave point at top of!
+					!* desired message.!
+      q4f"g:s
+     "e oNoSuch''w''
+
+ "#w !* ft(Moving backward)!
+     -(qMessage Number-)f"lw	!* Moving back n.!
+	!* ft(Searching J forward)!
+	j f"ew 1':s
+	"e oNoSuch''			!* To top, then past NUMARG messages.!
+     "#-u4				!* 4: Move back -q4 from point.!
+	!* ft(Searching . backward)!
+					!* Will leave point at end of!
+					!* desired message.!
+	q4f"l:s
+	"e !NoSuch!			!* Nada.!
+	   q1j q2fsVBw q3fsVZw	!* Nope, restore . and bounds!
+	   :i*No Such Message fsErr''w''w	!* Message number unchanged.!
+
+ f"ew 1'uMessage Number		!* Found it, set its number.!
+
+ m(m.m& Babyl Select Message)		!* Select message . is in!
+ 
+
+!# Babyl K:! !S Delete current message and append to text to be Y(ank)ed.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl K Text,: ||
+
+
+ [1[2
+ ff&1"n qMessage Numberu2		!* remember where we came from!
+    m(m.m# Babyl J)'			!* Go to message NUMARG.!
+ "# m(m.m& Babyl Select Message)'	!* else select one . is in!
+ qMessage Deleted"e			!* if not deleted!
+    1uMessage Deleted			!* then delete it!
+    m(m.m& Set Message Status)'	!* ...!
+ m(m.m& Bounds of Header)u1j		!* find start of displayed header!
+ .,z@xBabyl K Text			!* append message to Babyl K Text!
+ ff&1"n q2m(m.m# Babyl J)'		!* go back to original message!
+ 
+
+!# Babyl L:! !S Load KEYSET library, then do Label Message.
+Describe MM Label Message in KEYSET for more information.
+Leaves KEYSET loaded.  Though it may go away if BABYL goes away.!
+
+ fm(m.m& KEYSET Function)Label Message 
+
+!# Babyl M:! !S Edit and then send a message.
+Runs Babyl M Hook when about to enter  mode.!
+
+ 2,:m(m.m# Babyl R)
+
+!# Babyl N:! !S Go forward to NUMARGth next undeleted message.!
+
+ "e '				!* That was easy -- 0 NUMARG.!
+ "l -m(m.m# Babyl P)'		!* Go backwards if negative.!
+ -[.1					!* .1: - Repetition count.!
+ qMessage Numberu2			!* 2: Come back if fail.!
+ fn qMessage Deleted"n
+	q2:m(m.m# Babyl J)'		!* Ensure that we end on original or!
+					!* undeleted message.!
+
+ m.m# Babyl ^N[N			!* N: Next message mover.!
+
+ < 1mN					!* To next message, deleted or not.!
+   qMessage Deleted"e qMessage Numberu2	!* 2: Come back if no more!
+					!* undeleeted messages.!
+			%.1;'		!* Undeleted message, see if done.!
+   >
+ 
+
+!# Babyl O:! !S Write message to Babyl file.
+On TNX, Babyl files are always version 1.
+We assume this is a file with BABYL OPTIONS, i.e. a Babyl file.
+New files get BABYL OPTIONS section inserted at top.
+We run Babyl O Done Hook when successfully done.!
+
+!* For other subroutines that want to call O:
+Pre-comma NUMARG means don't ask for filename -- just output to the default
+for O which is in Babyl O Filename.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl O Done Hook, If non-0, run when O is done: 0
+    Babyl filed Keyword,: 1
+
+
+ [1[2 qBabyl O Filenamef[DFile
+ ff&2"e				!* Ask if no pre-comma NUMARG.!
+    5,fAdd message tou1		!* 1: Get filename.!
+    et1 fsOSTeco"n 1fsDVersionw'	!* On TNX, always force version 1.!
+    fsDFileuBabyl O Filename'	!* Remember altered filenames!
+ e[ e\ fn e^ e]			!* Push i/o.!
+
+ fsQPPtr(				!* remember place to unwind to for!
+					!* running hook!
+    q..ou1  f[BBind			!* 1: Original buffer, message.!
+
+    1:< er @y				!* Read in XMAIL file if one!
+	>"n iBABYL OPTIONS:
+Version:4
+Append
+'					!* If none, make one.!
+
+    m(m.m& Check Babyl Option)Appendu2	!* 2: Append option for XMAIL!
+    q2"g zj'				!* file Append.!
+    "# q2"l bj'				!* Prepend, no options line.!
+    "# j s''				!* Prepend, past options line.!
+    i
+   g1 i				!* Get the message.!
+    eihpef				!* Write out new contents of file.!
+    )fsQPUnwind
+ qBabyl O Done Hookf"nu1 m1'w		!* Run hook if any when done, and!
+					!* when popped back to Babyl buffer.!
+ 
+
+!& Babyl O Done Hook:! !S Label "filed".
+Designed to go on Babyl O Done Hook.
+Autoloads KEYSET, then labels message "filed".!
+
+ 1,m(m.m& KEYSET Function)& Label Babyl Messagefiled 	!* 1, means!
+				!* dont say anything if already labelled.!
+
+!# Babyl P:! !S Move to previous undeleted message.!
+
+ "e '				!* That was easy -- 0 NUMARG.!
+ "l -:m(m.m# Babyl N)'		!* If negative NUMARG, do N.!
+ -[.1					!* .1: - Repetition count.!
+ qMessage Numberu2			!* 2: Come back if fail.!
+ @fn| qMessage Deleted"n  q2:m(m.m# Babyl J)' |	!* Ensure end on!
+					!* undeleted or original message.!
+ m.m# Babyl ^P[P			!* P: Previous message mover.!
+
+ < 1mP					!* To prev message, deleted or not.!
+   qMessage Deleted"e qMessage Numberu2	!* 2: Come back if no more!
+					!* undeleted messages.!
+			%.1;'		!* Undeleted message, see if done.!
+   >
+
+ 
+
+!# Babyl Q:! !S File out Babyl file and exit Babyl.
+Deleted messages are expunged from the file before exiting.
+1 NUMARG means do not expunge, just exit.
+1, NUMARG means just cleanup and file away, but dont exit.!
+
+ qBuffer Filenames"n			!* if not (RO)!
+    ff&1"e 1,m(m.m& Babyl Expunge)'	!* If no NUMARG, expunge.!
+    m(m.m# Babyl S)'			!* save babyl file if changed!
+
+ 0,fsZfsBoundw hk f?			!* Kill all of buffer Babyl so that!
+					!* next MM Babyl knows it must start!
+					!* from scratch!
+ 0fsModifiedw				!* MM Save All Files shouldnt save!
+					!* this empty buffer!
+ 0uBabyl Filenames
+ 0uBuffer Filenames
+ 0u:.b(qBuffer Index+2)
+
+ ff&2"n '				!* Have 1, NUMARG so dont exit Babyl.!
+ 1f;Babyl-Catch
+
+!# Babyl R:! !S Two window reply, starting with 1/2screen.
+Numeric argument of 1 means just reply to the FROM field.
+$Dont Reply To$ is search string, selecting TO or CC people to remove.
+CC To if it exists, is an automatically-inserted CC field.
+If Require Subjects is non-0, will check for a Subject: field, will ask at
+    end if necessary.
+Babyl R Hook is run whenever the R command is ready to enter  mode.
+(The M and C commands also have  mode entry hooks.)
+When R completes successfully, runs Babyl R Done Hook if it exists.!
+
+!*
+ * For mailing (versus replying), i.e. given pre-comma NUMARG, we dont use two
+ * window mode if there is no (post-comma) NUMARG.
+ * C calls us with pre-comma argument of 1, M calls us with 2, and ^F with 3.
+!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Header/Text Separator, * For R and M commands:
+				 |--Text follows this line--|
+    CC To, * Automatic CC field in mail if non-0: 0
+    Babyl R Hook, If non-0, is run when R enters ^R mode: 0
+    Babyl M Hook, If non-0, is run when M enters ^R mode: 0
+    Babyl C Hook, If non-0, is run when C enters ^R mode: 0
+    Babyl R Done Hook, If non-0, is run when reply is sent: 0
+    Babyl answered Keyword,: 0
+    Babyl reply Keyword,: 0
+    Pre-*Reply* Buffer,: 0
+					!* End of declare.!
+
+ [0[1[2[3[4[6
+ q..ouPre-*Reply* Buffer		!* Save original buffer for yanker.!
+
+ :i0 q0u1 q0u2 q0u3 q0u4		!* 0,1,2,3,4: Null.!
+ "e 217.m(m.m& Babyl Parse Header)'	!* pick up header fields!
+
+ fsQPPtru6				!* 6: Unwind to here to reselect.!
+
+ ff&2"e				!* Use two window mode if no!
+					!* pre-comma numarg!
+    (fsHeight)-(fsEchoLines)-1/2-1m.vWindow 1 Sizew	!* Set 1/2 screen!
+    1:< 4m(m.m^R Two Windows)f >w	!* Ensure in two window mode.!
+    @fn|1:<@m(m.m^R One Window)f>w|	!* When done, back to one window,!
+    '					!* unless C-M-Y already did.!
+
+ m.m& Set Mode Linef[ModeMac		!* dont use Babyls mode macro!
+ qEditor Name[..j :i..j..j 	!* Force recompute of mode line.!
+ m(m.m& Push to Buffer)*Reply*	!* Mail is sent in its own buffer.!
+
+ -1"e qBabyl C Hookf"nu1 m1'w	!* 1, NUMARG: continue aborted mail.!
+	oContinue'			!* Run hook, then to  mode setup.!
+
+ m(m.mText Mode)			!* Text is a good starting mode.!
+ qBuffer Filenames"n			!* no buffer filenames now!
+    0uBuffer Filenames 1fsModeChw'
+ et*Reply* >				!* Set a nice default.!
+
+ -1"g					!* This is M or ^F, not R or C.!
+	hk iTo: 
+					!* Empty TO field.!
+	qCC Tof"nu1 icc:  g1 i
+	  'w				!* Insert automatic-CC if one.!
+	i
+					!* Insert blank line for possible!
+					!* subject (so user doesnt have!
+					!* extra redisplay).!
+	gBabyl Header/Text Separator i
+
+	-3"e 4@m(m.m^R Babyl Yank)w'	!* If forwarding, yank in unindented!
+					!* copy of message to forward.!
+	b+4j				!* Leave point after To:.!
+	qBabyl M Hookf"nu1 m1'w	!* Run M hook if any.!
+	oContinue'			!* Into  setup.!
+
+ !* This is R, not M or C.!
+ hk ff&1"n '-1"n			!* Full reply -- not 1R.!
+   i13				!* Get TOs and CCs from parse.!
+   j < :sT; cc: @f	 k i  >	!* Change TOs to CCs.!
+   j < :sC; cc: @f	 k i  >'	!* Keep CCs as CCs.!
+ j fq4"g q4u0' fq0"g iTo: g0		!* Primary TO goes at top -- what!
+					!* was the FROM of the message.!
+    -2 f=
+"n   i
+     '  b+3j @f	 k i '
+ fq0"g j 3c :x0
+ :s0"l r fk+2d''
+
+ 0fo..qDont Reply Tof"nu.1'		!* .1: Dont-reply matcher.!
+ "#w fsXUName:f6u.1			!* .1: ...Default so dont reply to!
+					!* self, or info lists.!
+    :i.1.1INFO-*AI*ML*MC*DM*CMU'
+
+ j 3 f~To:"e l'			!* Start pruning recipients after!
+					!* the TO recipient.!
+ <:s.1; fkaf:,
+	 "l !<!>'			!* Starts ok for dont-reply.!
+    -5 f~INFO-"n  ,1af,
+ @   "l !<!>''				!* Ends ok too.!
+    fkd .,(:s,
+   +1"n fkc' ).k >			!* So kill it.!
+
+ zj qCC Tof"nu1 icc:  g1 i
+   '					!* Insert automatic-CC if one.!
+
+ zj fq2"g iSubject: 2' i
+					!* Put in subject line, or a blank!
+					!* line if no subject.!
+ gBabyl Header/Text Separator i
+					!* Put in separator.!
+ qBabyl R Hookf"nu1 m1'w		!* Run R hook if any.!
+
+
+!Continue!				!* Prepare for  mode.!
+
+ m.m^R Babyl Yanku2			!* 2: Yanker.!
+    !* Bind some keys if they have standard ^R definitions: !
+ 600.+@fs^RInit-Q...Y"E Q2[...Y'	!* or C-M-Y.!
+ 201.@fs^RInit-Q...Y"E Q2[...Y'	!* ????!
+ fs^RInit-q.]"e		!* C-] is initial thing!
+    m.mAbort Babyl Mail Edit[.]'	!* So bind it.!
+ m.m& Babyl R Help Macrof[HelpMacro	!* help macro that tells how to!
+					!* send/abort!
+
+ qParagraph Delimiteru2
+ fq2"g :i22-'"# :i2-'		!* Make a line starting with - a!
+ q2[Paragraph Delimiter		!* separate paragraph.!
+ 0fo..qBabyl Reply Hookf"nu2 m2'w
+
+!Re-edit!
+
+ 0u..h
+ fsRGetty"e ft
+     b,.t ft..a .,zt'		!* give printing lusers some hope!
+ 
+ 1f<!Ok!				!* Catch for normal exits.!
+    1f<!Abort Babyl Mail!		!* Catch for Babyl aborts.!
+        f;Ok				!* Normal quit -- send the mail.!
+       >w 				!* Abort.  Dont send the mail or run!
+					!* the hook.!
+    >w					!* Normal.!
+
+ 0fo..qRequire Subjects"n		!* Some people want to be reminded!
+					!* if the message has no subject.!
+   j :s
+Subject:
+S:"e 1,m(m.m& Read Line)Subject: u2
+      q2"N iSubject: 2
+'''
+
+ z"e 0fsModifiedw '			!* Nothing to mail, just quit.!
+
+ 1:< fsOSTeco"e m(m.m& ITS Mail Buffer)'
+     "# m(m.m& TNX Mail Buffer)' >f"n @:fg oRe-edit'w
+
+ 0fsModifiedw				!* Leave *Reply* unmodified if mail!
+					!* sent ok.!
+ q6fsQPUnwind				!* Unwind till reselect Babyl buffer.!
+ ff&2"e qBabyl R Done Hooku2 q2"n m2'' 	!* Run hook if!
+					!* successful completion and this!
+					!* was R not M.  Do when back in!
+					!* Babyl buffer.!
+ 
+
+!& Babyl R Help Macro:! !S fsHelpMacro for # Babyl R.!
+ :ftYou are editing some mail to send.  To send the mail, exit this
+^R mode
+ fsOSTeco"e 33.fs^RInit-q...C"e ft by C-M-C''	!* Tell how to!
+				    !* exit a ^R mode, mentioning key if!
+ "# 33.fs^RInit-q...Z"e ft by C-M-Z''	!* has normal binding.!
+ ft.  To abort the mail,		!* Tell how to abort, mentioning key!
+ q.]-(m.mAbort Babyl Mail Edit)"e ft type C-].'	!* if normal binding,!
+ "# ft run MM Abort Babyl Mail Edit'	!* though can always use MM.!
+ @ft
+ 
+
+!& Babyl R Done Hook:! !S Label "answered", remove "reply".
+This is a function that is designed to go on Babyl R Done Hook.
+This autoloads KEYSET, labels the message "answered", and then removes any
+    "reply" label.!
+
+ 1,m(m.m& KEYSET Function)& Label Babyl Messageanswered	!* 1, means!
+				!* dont say anything if already labelled.!
+ 1,-1m(m.m& Label Babyl Message)reply	!* 1, means dont say anything if not!
+					!* already labelled.!
+ 
+
+!Abort Babyl Mail Edit:! !C Abort out of Babyl R, M, or C command.!
+ f;Abort Babyl Mail			!* Throw out of R.!
+
+!# Babyl S:! !S Write out the Babyl file.!
+ qBuffer Filenamesf"ew '[1
+ fsModified"e
+    :i*CfsEchoDisplay
+    @ft(No changes need to be written)
+   0fsEchoActivew '
+ 1,m(m.mWrite File)1
+ 
+
+!# Babyl T:! !S Type some or all of this message.!
+ ff"n m(m.m# Babyl J)'		!* IF NONZERO ARG, SELECT THAT!
+					!* MESSAGE FIRST.!
+ fsz-z"e ftEnd of buffer
+   '
+ [0[1 [.2[.3[.4
+ FT
+#  qMessage Number:=
+ 140.m(m.m& Babyl Parse Header)    !* PARSE MACRO, BE CAREFUL, SMASHES .2,.3!
+ q.4f[vb 4L .-B-200"G B+200J .U1 :L FSHPOS-120"G Q1J '"# L ''
+				    !*  PRINT MIN(4 LINES,200 CHARS+TILL END OF LINE)!
+ .-Q.3"L Q.3J '			    !*  BUT PRINT AT LEAST ALL RELEVANT HEADER LINES!
+ Z-.-150"L ZJ '			    !* IF LESS THAN 150 CHARS LEFT, PRINT ALL!
+ B,.T -2 F=
+"N   FT
+'				    !* THEN TYPE CR UNLESS STUFF TYPED ENDED WITH ONE!
+ :m(m.m& Babyl --MORE--)
+
+!# Babyl U:! !S NUMARG is message to undelete, or else last one.!
+
+ [0[1
+ ff&1"n 1u..h			!* dont mess up possible brief!
+	m(m.m# Babyl J)		!* Go to message NUMARG.!
+	qMessage Deleted"e :i*Message not deleted.fserr''
+ "#					!* Have no NUMARG.!
+    .u0					!* 0: Original point in case fail.!
+    qMessage Numberu1			!* 1: Orig message number in case.!
+    m.m# Babyl ^P[P			!* P: Previous message mover.!
+    :< qMessage Deleted@:;		!* This is the one to undeleted.!
+       1mP				!* Else move back a message.!
+       >"n q1m(m.m# Babyl J)		!* Found no one, back home.!
+	   q0j				!* ...!
+	   :i*No previous deleted message. fsErr''	!* ...!
+
+ 0uMessage Deleted			!* Do what we were told.!
+ :m(m.m& Set Message Status)		!* ...and return.!
+
+!# Babyl W:! !S Access whole file.!
+ 0,fsZfsBoundw			!* widen bounds!
+ 
+
+!# Babyl X:! !S Execute an MM command using the completing reader.!
+ fm(m.m^R Execute Completed MM Command)w 	!* dont return anything!
+
+!# Babyl Y:! !S Yank and reset text saved by K.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl K Text,: ||
+
+
+ ff&1"n m(m.m# Babyl J)'		!* goto message NUMARG!
+ .( zj i
+   gBabyl K Text )j			!* append Babyl K Text to end of!
+					!* this message!
+ :iBabyl K Text			!* and put null in Babyl K Text!
+ 
+
+!# Babyl Z:! !S Return no. of messages in current file.!
+ qNumber of Babyl Messages:\[1	!* 1: no. of messages as a string!
+ :i551 0			!* append to Q5, return something to!
+					!* say we have set Q5!
+
+!# Babyl ?:! !S Generate a list of Babyl key and MM commands, or 1 key.!
+!* Should it also do a list commands on the Babyl (or all???) file?
+ * Asks for a character (* for all) and documents that.!
+!* Maybe we can call something used by Wall Chart to insert the list, and
+ * then we can mung it?  It is too bad that & List One File doesnt allow the
+ * option of inserting rather than typing.!
+
+ [1 @ft
+Type a Babyl command character to describe, or "*" for all of them: 
+ fiu1
+ q1-33"l q1+64u1 m(m.mDescribe)# Babyl ^1 '
+ q1-*"n m(m.mDescribe)# Babyl 1 '
+					!* That didnt really work -- e.g.!
+					!* for rubout?!
+ !* There should be a routine to convert a typed-in ascii value to a Babyl
+  * MM name, e.g. # Babyl ^D.!
+ m(m.m& Get Library Pointer)BABYL m(m.m& List One File)C 
+ m(m.mApropos)# Babyl 
+ 
+
+!# Babyl |:! !S Load KEYSET if necessary, then Next Reminder.!
+ fm(m.m& KEYSET Function)Next Reminder 
+
+!# Babyl ^?:! !S Rubout - just flush argument.!
+ 
+
+!& Babyl Select Message:! !S Set bounds around envelope that point is in.!
+!*
+If after last message in buffer, selects the last one.
+Sets point at the beginning of the message.
+Sets the following per-message status variables:
+    Message Deleted, Message Seen, Message Header Reformed,
+    Message Header Ungrokable.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Message deleted,: 0
+    Message Header Reformed,: 0
+    Message Seen,: 0
+    Message Header Ungrokable,: 0
+
+
+ [1
+ 0,fsZ fsBoundariesw		!* Open wide for message search.!
+!* Put virtual buffer boundaries around envelope of message!
+ :s"e zj -s'			!* If at end of buffer, use last!
+ "# r'					!* Now point is before end .!
+ fsZ-.fsVZw				!* find end of message, set virtual!
+					!* end!
+ -:s
+"e ft
+There has been an attempt to select the BABYL OPTIONS section, by
+
+    -1fsBackStringm(m.m& Macro Get Full Name)u1	!* 1: Caller name.!
+    q1"e ftan unnamed function'"# ft1'	!* Print callers name.!
+    ft.  Please report this bug by mailing to BUG-BABYL@MIT-MC
+and explain the circumstances leading up to this bug.
+    0,(fsZ)fsBoundariesw		!* Wide bounds so message number not!
+					!* matter.!
+    fsErrThrow'			!* Quietly (without error message!
+					!* that might disturb what we just!
+					!* printed) throw back to Babyl.!
+
+
+ fkc .fsVBw				!* find beginning of message, set!
+					!* virtual beginning!
+
+ 8[..e 8f[IBase			!* Status bits are in octal.!
+					!* Except the delete bit which is in!
+					!* the key of D.!
+					!* Note that & Babyl Expunge and the!
+					!* one who initilaizes know!
+					!* the format of this D, for speed.!
+ c					!* Move past the D/space bit.!
+ 0a-D"'euMessage Deleted		!* See if its a D or not.!
+ \u1					!* 1: Get status bits.!
+ q1&1uMessage Header Reformed
+ q1&2uMessage Seen
+ q1&4uMessage Header Ungrokable
+ 
+
+!& Babyl Expunge:! !S Expunge deleted messages.!
+!* This routine knowns more than most about status line.!
+ [0[1[x					!* save registers!
+ 0,fszfsboundw			!* set bounds to whole buffer!
+ .u0 j					!* 0: original point!
+
+ <   :s
+D;					!* Find next deleted message.!
+     .-4,(s).f(k) u1		!* expunge message, 1: no. of!
+					!* characters!
+     q0,.f ux,q0-q1f u0w		!* 0: stays in orginal message!
+     r >				!* leave point before the  so next!
+					!* search may match.!
+ q0:jw 				!* go back to original message!
+
+!& Read And Set Default:! !S Read line, with default for NUMARG.!
+!* *** Maybe better to just have & Read With Default, and & Set Default.
+       Then can set default after doing DWIMmy stuff like keyword validation.
+NUMARG is a number which specifies which default to use.
+STRARG1 is the default-variable prefix, e.g. "Babyl L".  It should not end
+    in a space.
+STRARG2 is the read line prompt string.  Prompt should not contain ": ",
+    since that will be appended after the default.
+If user types a null string, the default is used.
+If not, the default is reset.
+We return 0 if user aborts the read line.!
+
+ [0[1[2[3
+ :i*( :i2 )u1		    !* 1,2: Prefix, prompt.!
+ :\u0				    !* 0: Make number a string.!
+ :i* fo..q1 0 Defaultu3	    !* 3: Get right default.!
+ 1, m(m.m& Read Line)2 (3): u2	    !* 2: User input.!
+ fq2"e q3u2'				    !* 2: Use default.!
+ "# fq2"g q2 m.vBabyl L 0 Defaultw''	    !* Reset default.!
+ q2				    !* Return answer.!
+
+!& Calculate Message Number:! !S Count messages from top of buffer.!
+ .[0[1[2				!* 0: Original point.!
+ 0f[vb 0f[vz				!* Bounds wide.!
+ :s"l r' .u2				!* 2: Be sure to start well within the!
+					!* message so no problems of being!
+					!* midway through the ^L.!
+ 0s
+					!* Out of loop so faster.!
+ 0u1					!* 1: Message number counter.!
+ j < .,q2:fb; %1w >			!* Count until at home.!
+ q1uMessage Number			!* Do what we were told.!
+ q0j					!* Restore point.!
+
+!& Set Message Status:! !S According to the message status variables.!
+!*
+Status bits of the currently selected message are set to reflect the current
+    state of the variables:
+    Message Deleted, Message Seen, Message Header Reformed.!
+
+ !* Other routines that know about the status bits format:
+  * & Select Message, & Babylize Buffer, & Babyl Expunge, & Babyl Survey, #
+  * Babyl B.
+  *!
+
+ m(m.m& Declare Load-Time Defaults)
+    Message deleted,: 0
+    Message Header Reformed,: 0
+    Message Seen,: 0
+    Message Header Ungrokable,: 0
+
+
+ [1 .:\u1 fn1j			!* Auto-restoring point.!
+ 0u1					!* 1: Accumulate status bits.!
+ 8[..e 8f[IBase			!* Status bits are in octal.!
+ qMessage Header Reformedf"nw1'q1u1	!* 1: Get bit 1.!
+ qMessage Seenf"nw2'q1u1		!* 1: Get bit 2.!
+ qMessage Header Ungrokablef"nw4'q1u1	!* 1: Get bit 4.!
+ 10000+q1:\u1				!* 1: Convert to string, with high bit!
+ qMessage Deleted"n 0:f1D'		!* Turn on (off?) the D bit, ha ha...!
+ 0f[VB					!* Wide bounds above!
+ -:s
+"e 1m(m.m# Babyl J)w			!* Select something reasonable!
+    :i*Trying to delete BABYL OPTIONS sectionfsErr'
+ l f1				!* Go replace the old status bits!
+					!* with the new ones.!
+ 
+
+!& Push Message:! !S So return to original message, window when caller exits.!
+!* Tries to be careful about points not existing.  Always leaves original
+   message selected.  Also tries to be careful so no qregs are smashed, and
+   not to leave too much stuff pushed.!
+
+ q0,q1(					!* Dont push these on qreg pdl or!
+					!* else will leave smashed for caller!
+    .:\u0 fsWindow:\u1			!* 0,1: strings for numbers.!
+    @fn| 0fsVBw 0fsVZw		!* Wide bounds for jump back.!
+	 0:j"e zj'			!* Restore original point or as!
+					!* close as we can.  Should we trust!
+					!* Message Number if need to zj?!
+	 m(m.m& Babyl Select Message)	!* Select original message.!
+	 0-b"l b'"# 0-z"g z'"# 0''j	!* Restore point.!
+	 1-b"l b'"# 1-z"g z'"# 1''fsWindoww	!* Restore window.!
+	 |
+    [Message Number
+    )u1u0				!* Restore 0 and 1 from paren pdl!
+ :					!* Exit without popping.!
+
+!& Bounds Of Header:! !S Return .,. around (reformed) header.!
+!*
+This is the header that is visible -- the reformed one if reformation has
+    occurred, the original if it has not.
+All the special Babyl message information is above the header.
+We leave point at end of header.!
+
+ [1
+ j :l s
+*** EOOH ***
+ .u1
+ 4 f~MSG:"e l
+   < 8 f~DISTRIB:@:; l >
+   < 8 f~EXPIRES:@:; l >'
+ :fb:@f"ew :i*Cant Grok MessagefsErr
+ '+1"e :s
+
+ q1,.'
+ l
+ <4 f~TO: @:; l>
+ <4 f~CC: @:; l>
+ q1,.
+
+!& Bounds Of Original Header:! !S Return .,. around original header +-.!
+!*
+This is the (possibly nonexistant) header that is not visible.
+If reformation has not occurred, this will be null.
+If reformation has occurred, this is the original header if it has been
+    kept.
+Bounds are like those of & Bounds Of Header.
+Point is left at end of original header.!
+
+ jl .( 2r s
+*** EOOH ***
+ -l ),.				!* Return bounds.!
+
+!& Babyl Parse Header:! !S Extract contents of some fields of message header.!
+!*
+Takes MASK as arg saying which fields to scan.  The Q-register
+for a field will remain intact if field is not scanned.
+
+Q0 (mask bit 1) collects sender's name.
+Q1 (mask bit 2) collects recipients.
+Q2 (mask bit 4) collects subject of message.
+Q3 (mask bit 10) collects carbon copy names.
+Q.1 (mask bit 20)  collects time of message.
+Q.2 (mask bit 40) has count of lines.
+Q.3 (mask bit 100) address of last useful line of header. Q.4 1st line.
+Q4 (mask bit 200) collects REPLY-TO name.
+
+From RMAIL library, hacked for <uname>, very kludgey.!
+
+ f[SString [6 .[7  FN Q7J 0[8		!* Q8 non-zero if ITS header!
+ 1f[BothCase
+ 0fo..qBabyl PH ..Df"ew		!* Need to create a known ..D!
+    :i*                                                                  î                                                                     A                             A    A    A              A         (    )    A    A         A             AA   AA   AA   AA   AA   AA   AA   AA   AA   AA    A    ;    A    A    A    A    A   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA    A    A    A    A    A    A   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA   AA    A         A    A        f(m.vBabyl PH ..Dw
+    )'[..d				!* Bind to known ..D.!
+ [U @:IU|&100."N.-Q.3"G.'"#Q.3'U.3'|
+ &1."N:I0'&2."N:I1'&4."N:I2'&10."N:I3'
+ &20."N :I.1 ' &40."N 0U.2 ' &100."N 0U.3 ' &200."N :I4 '
+ j :l s
+*** EOOH ***
+ 2r .[9				!* 9: Line after status line.!
+ q9j 1:<fwl>"n'
+ Q9j					!* Start past status line.!
+ :FWL
+ 4 F=MSG:"E L
+   FW+1F=DISTRIB:"E 2L''
+ 7 F=FAILED:"E 8C'
+ .U6FWL
+ 0,1A-:"E
+ &120."N
+ Q9j:S
+DATE:"L @f	 r
+ &20."N:X.1'MU''
+ &104."N
+ Q9j:S
+SUBJECT:
+RE:"L&4"N @F	 R :X2'LMU''
+      &200."N
+	Q9J :S
+REPLY-TO:"L
+	 F[MODIFIED
+	 X4 L G4 -L		    !* duplicate for munging !
+	 :FB<"L 0K :FB>W-D '	    !* sender between <>, rfc733 style !
+	 "# :FB("L .-1,(:FB)"L).K !* comments parse as precisely 1 space!
+	    -@F	 K @F	 K I '"#)W'''
+	 0L @F	 K	    !* squeeze out leading space !
+	 :FB At "L -4D I@R '	    !* AT -> @ !
+	 :FB@"L		    !* take out space around @ !
+	     @F	 K R
+	    -@F	 K '
+	 :L -@F	 K	    !* squeeze out trailing space !
+	 0L :X4 K F]MODIFIED ''
+ Q9j:S
+FROM:"L
+    1< .U6:L			    !* COND iter.!
+       0,0A-)"E		    !* Check line...!
+	   0L5C:FB(W.U6	    !* ending in paren...!
+	   :FB@"L:LR'		    !* only if has @ in it.!
+	   "#Q6JR-:S WC.(0L5C.U6)J''	    !* Else ignore in parens.!
+       "# 0l :fb<"L .u6	    !* Check for RFC 733 header.!
+		     :fb>"L	    !* ...only if rbracket followed!
+			0,1a"B r'   !* by break.!
+			"# qj6r-:s wc.(0l5c.u6)j'''
+	     "# :l'''
+'
+"#
+ :FB@"L:FWLS R'
+ .(&20."N:FB/"N.-3,.+14X.1''
+ &4"N:FB Re: "N:FB WR:X2''
+ )J'
+
+ &1"N .-Q6"L .U6' Q6,.X0
+ F[MODIFIED
+ FSZ-.F[VZ
+ Q6J @f k
+ :S @ "L-DR-D'ZJF]VZ
+ Q6,.FX*(G0)U0
+ F]MODIFIED
+ LMU'
+ &2"N
+ [2 Q9j<:S
+TO:; .( < l 0,1af	 :; >)f(,.x*[2)j
+ :I11T2 > ]2'
+ &10."N
+ Q9j<:S
+CC:;:I33C@:X3:I33
+>'
+ &100."NQ.3-2-BU.3Q.3"L0U.3' q9u.4'
+ &40."N Q9j0U.2<%.2WL.-Z;>'
+ 
+
+!& Babyl Execute Options:! !S Babyl command loop.!
+!*
+Q-Register usage in & Babyl Execute Options:
+q3 (local) holds string to be executed, accumulated by ; command.
+    fq3 is < 1 if there is none.
+q5 (local) holds the argument to most commands.
+q0 - q9, q.1, q.2, q.3 are all temporaries.
+    They are saved and restored.
+!
+
+!* EXITS: Q returns 1, and ^X (temporary exit MM Babyl) returns 2.!
+
+ [0[1[2[3[5[.1[.2[.3 [..J		!* save qregs!
+
+ m.m& Babyl Set Mode Linef[ModeMac	!* update mode line using this!
+					!* function!
+ 0u3					!* 3: command string left!
+ f<!Babyl-Catch!			!* Q, ^X and Altmode options throw out!
+					!* of this!
+  @:<					!* create error catch!
+    :i5				!* 5: argument string!
+
+    fsListen+fq3"g oINPUT'		!* if input available then skip!
+					!* display!
+    qMessage Header Reformed"e	!* Have not reformed header,!
+       qBabyl No Reformation Option"e	!* And if user likes reformation,!
+	  m(m.m& Reform Header)''	!* then improve the header!
+
+    .u1 j:l :s
+*** EOOH ***
+"e   q1j'				!* Not enough of message is showing!
+					!* to include the EOOH line.!
+     "#					!* EOOH line is around, so!
+					!* maybe will need to put original!
+					!* header out of sight.!
+
+      q1-."g q1j'			!* Dont change window if point is!
+					!* after this, i.e. isnt where point!
+					!* is when we select a message so!
+					!* user must want it as is, with no!
+					!* change to the window either.!
+      "# .-bfsWindoww''		!* put old header before window!
+
+!* Display message and mode line *!
+    fsRgetty"n fsEchoActive"l			!* clear echo area if dirty!
+      :i*CfsEchoDisplay 0fsEchoActivew''	!* just like ^R would!
+    1fsModeChw				!* recompute mode line!
+    @v					!* display message!
+    qMessage Seen"e			!* if message unseen!
+	1uMessage Seen		!* mark it seen!
+	m(m.m& Set Message Status)'	!* ...!
+
+  !INPUT!
+
+    0f[HelpMacro
+    fq3"g g3 fk+1 fx3 0au0 -d'		!* If have stuff read in by ";", get!
+					!* a character of it!
+    "# fsRgetty"e fsTyoHPos"e ft:''	!* On printing tty, maybe prompt.!
+       @:fi-233."e QfsReRead'	!* Control-Altmode acts like Q.!
+       fiu0 q0fsEchoOut		!* else read one from terminal.!
+       0fsEchoActw'			!* Dont erase echo area if only!
+					!* echoed commands are in it!
+    f]HelpMacro  q0-4110."e ?u0'	!* Respond properly to the Help!
+					!* character!
+    q0:i1				!* Convert character to 1-character!
+					!* string!
+    q0-33"l q0+100.u1 :i1^1'	!* Represent control chars as!
+					!* uparrow-mumble!
+    q0-127"e :i1^?'			!* Rubout is # Babyl ^?!
+    1,m.m# Babyl 1u1			!* Get characters definition, or 0!
+    q1"e :i*NSO	No Such Option.  Type ? for help. fsErr'
+    5@m1 f"n oINPUT'		!* macro returns val means dont flush!
+					!* argument!
+    >w					!* End of the error catch, which is!
+					!* also a loop, so only exit if error!
+  >					!* loop back to Babyl-Catch, thus!
+					!* re-entering the error catch!
+
+!& Babyl --MORE--:! !S Maybe print --MORE-- and # of lines left in message.!
+
+ .-z"n [1[2
+   .( 0u2 <%2wl.-z;> )j
+   !* Type # lines, plus stars if avg linel > tty linel!
+   ft( q2:= z-./(fsWidth*q2)<ft*>
+   ft lines)--MORE--
+   '
+ 
+
+!& ITS Mail Buffer:! !S Mail message as specified by buffer contents.!
+!*
+Buffer should contain header information followed by a line containing
+Babyl Header/Text Separator, followed by the text.
+Header info is as described in .MAIL.;MAILRQ INFO
+except that To: allows several recipients separated by commas,
+and Cc: is allowed.  Also, use From: to say who you are.
+S: or Re: may be used for Subject: if desired.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Header/Text Separator, * For R and M commands:
+				 |--Text follows this line--|
+
+					!* End of declare.!
+
+ [1[2[3[4[5 g(q..o(f[BBind))		!* Make copy of buffer to do munging!
+					!* in, so C after!
+ qBabyl Header/Text Separatoru2	!* 2: E.g. --Text Follows...!
+ j 1f[BothCase :s
+2
+"e :i*No text, just header fsErr'
+
+ 0u4					!* 4: counts number of recipients.!
+ -l fsZ-.fsVZw			!* Narrow bounds to just the header!
+					!* information!
+
+ j < .-z;				!* look at each line of header!
+     1af	 :"l l !<!>'		!* ok if line begins with whitespace!
+     :fb:"l r -@f	 k		!* remove whitespace before colon!
+	0@fc l !<!>'			!* convert item name to upper case!
+     1a-15."e l !<!>'			!* If no colon on line, but not!
+					!* empty, its garbage!
+     :i*Garbage in message header fsErr	!* ...!
+     >
+ j i
+j					!* Boundary condition at top.!
+ <  l .-z;				!* Next line if any.!
+    :fbCC:TO:BCC:+4"e !<!>'	!* Repeat if not CC or TO line.!
+    -D :I2 0F F~TO"N 0X2		!* 2: null string for To,!
+      :I2 (R-OPTION 2)'		!* or (R-OPTION CC) for CC!
+    0K <:fb at ; @>			!* Turn at into @!
+    0L <:fb @ ; @>			!* And remove spaces around @!
+    0L <:FB@ ; -D> 0L			!* Flush any spaces after @s!
+    < @f	 k			!* Flush whitespace before name!
+      s,
+					!* Find end of name.!
+      fkd fku3				!* 3: -1 for comma, -2 for CRLF!
+      0,1af 	+1"g -1u3'	!* unless next line is continuation!
+      0F  "E -2-Q3; !<!>'		!* If null name, ignore, or exit if!
+					!* ended by CR!
+      .-ZU5 0L ITO: 1A-("E Q5+ZJ'	!* Put TO: before name.  If doesnt!
+					!* start with (.!
+      "# I( 1AF"[!'!"L		!* Put quotes around things with!
+					!* whitespace inside.!
+	 .,Q5+Z:FB "L			!* ...!
+	    0L4CI" Q5+ZJ .,(0l.(q5+zj)):FB@W I" !''!''	!* ...!
+	    Q5+ZJ I)'			!* Then put a pair of parens around it!
+      %4				!* 4: Indicate that we have seen at!
+					!* least one recipient!
+      I
+     FQ2"N -S) G2 L'			!* If it is a CC, stick (R-OPTION CC)!
+					!* before final )!
+      :0L 0A-)"N I ) -2S) F ' L	!* Move any @Site inside the!
+					!* trailing closeparen!
+      -2-Q3; >				!* Stop when done this header field!
+					!* (i.e. we last ended with CRLF not!
+					!* comma).!
+    :0L >				!* Backup for next header field search!
+    q4"e :i*No Recipients fsErr'	!* Message is illegal if not mailed!
+					!* to anybody!
+ j :s
+FROM:"e i
+CLAIMED-FROM: fsXUnamef6 i
+' "# 
+CLAIMED-FROM:'				!* Change FROM to CLAIMED-FROM.!
+
+ j :s
+H:"l 
+HEADER-FORCE: @fc'			!* Convert line following H: to U.C.!
+ "# j iHEADER-FORCE:RFC733
+'					!* Say which header to use.!
+
+ j :s
+S:
+Re:"l 
+SUBJECT:'				!* Allow S: and Re: for Subject:.!
+
+ j :s
+R:"l 
+REGISTERED: @fc'			!* R becomes REGISTERED and line!
+					!* after it is uppercased.!
+ j 2 f=
+"e 2d'					!* Delete blank line at top.!
+
+ j iFROM-JOB: fsXJnamef6 i
+SENT-BY: fsUnamef6 i
+					!* Say who sent this, job and user.!
+
+ zj iTEXT;-1
+					!* Separate text from header.!
+ 0,(fsZ)fsBoundariesw k		!* Kill --Text follows... line!
+ f[DFile etDSK:.MAIL.;MAIL >		!* Set filename default to the place!
+					!* to write the mail to so mailer!
+					!* will find it.!
+ fsMachine-(f6DM)"e etAI:'		!* If on DM, let AIs mailer do it...!
+ e\ fn e^				!* Push output transaction.!
+ eihpef				!* Write the mail out.!
+ @ft(mail queued) 0fsEchoActivew	!* Tell user we are done.!
+ 
+
+!& TNX Mail Buffer:! !S Write buffer out to unsent-mail file.!
+!*
+Allows multiple To:s, Cc:s.  They are merged and auto-filled by & Process
+    Recipient Field.
+The original buffer stays the same -- we do all message-massaging in a
+    temporary buffer.  This way the original buffer is available for
+    resending if desired.
+!
+
+ g(q..o( f[BBind ))			!* Temporary buffer, with copy of!
+					!* the message to send.!
+
+ m(m.m& Complete TNX Header)		!* Add date, from, ensure good header.!
+					!* It ensures that date is top line,!
+					!* and header ends with blank line.!
+ f[DFilew [1[2[3[4 q..ou3		!* 3: Message copy buffer.!
+ 0fo..qBabyl ..D[..D			!* ..D: ..D or 0.!
+ q..D"e 128*5,40.:i..D			!* Everythying breaks, dont it.!
+      40.u2 176.-40.<%2*5:f..DAA>
+      "*5:f..D | !'!
+      \*5:f..D /
+      (*5:f..D (
+      )*5:f..D )
+      <*5:f..D  
+      >*5:f..D  
+      ,*5:f..D  
+      @*5:f..D  
+      q..Dm.vBabyl ..Dw'
+ fsMachine:f6u2 f[BBind q..ou4 q3[..o	!* 4: Temporary buffer for mailbox!
+					!* list.  Push (so f[BBind pops and!
+					!* kills ok) to message buffer.!
+ q2,q4m(m.m& Process Recipient Field)To	!* Parse, pull together, and!
+					!* auto-fill the TO fields.!
+ q2,q4m(m.m& Process Recipient Field)cc	!* Ditto for CCs.!
+					!* 4: Now filled in with mailboxes.!
+
+ 0,fsZfsBoundw
+ etDSK: fsHSnamefsDSnamew
+ q4u..o j
+ < .-z; :x2 q3u..o
+   et[--UNSENT-MAIL--].2 eihpef	!* Write mail file for this!
+   @ft(Mail to 2 queued)		!* recipient!
+   q4u..o l				!* unsent-mail file.!
+   >					!* Repeat for other recipients in!
+					!* this line.!
+ 0fsEchoActivew			!* Keep echo printout there.!
+
+ -(@fz<EMACS>QUEUE-MAIL.SAV)fz'	!* use inferior to set bit!
+					!* in MAILER.FLAGS to queue it.!
+ 
+
+!& Process Recipient Field:! !S Merge, reform and parse.!
+!*
+NUMARG is recipient buffer, pre-comma NUMARG is default host name.
+STRARG is field name.
+Recipient buffer has upper-cased host names since TWENEX mailer requires it.!
+
+ [0[1[2[3[4[5[6[7[8[9 [..o		!* save regs!
+ 0s
+					!* initialize search string to CRLF!
+					!* field name!
+ u8 q..ou9				!* 8: recipient buffer, 9: header!
+					!* buffer!
+ j <:s"e 0' @f	 l 0,1a-:@; >	!* find field!
+ c .u0					!* 0: point just after colon!
+ < l 0,1af	 :; 0:k >		!* merge continuations!
+ 0:l .u1				!* 1: end of first field!
+ < :s; @f	 l 0,1a-:"n ! <!>'	!* find next field!
+   c 0k					!* kill field name!
+   < :l k 0,1af	 :; >		!* merge continuations!
+   0fx2 q1j i, g2 .u1			!* append field body to first!
+   >
+ q0j .f[VB fsZ-q1f[VZ		!* set bounds to field body!
+ <					!* iterate over recipients!
+   @f	 ,k .-z; .u1 i 		!* move to beginning of next!
+					!* recipient!
+   -1u6 0u2				!* 6: <> state, 2: @ flag!
+   < @f	  f"g di 'w .-z;	!* skip over whitespace!
+     1au5 q5"b c :o5 r'		!* dispatch if break character!
+     q6:"g				!* if not past <>!
+	@flu4u3 q4j			!* 3,4: bounds of sexp!
+	q3,q4f~at"e oAT'		!* if at then @!
+	q3-b,q4-b(q8u..o)g9		!* add sexp to recipient buffer!
+	i  q9u..o ! <!>'
+     ! <!:i*Text after > in recipientfsErr
+     !<! q8u..o 0k q9u..o 0u2 %6"e ! <!>' :i*Extra < in recipientfsErr
+     !>! q6"e .-1u6 ! <!>' :i*Extra > in recipientfsErr
+     !,! r -@f k c 0;
+     !@! -d 0a-32"n i ' iat 1a-32"n i '
+	 !AT! .u2
+	 q8u..o 0f  "e
+	    q9u..o -2:@fll .u3
+	    -@fll .-q1-1"n :i*Null recipientfsErr'
+	    .-b,q3-b(q2j q8u..o)g9'
+	 -@f k i@ q9u..o ! <!>
+					!* set @ flag, insert @ into!
+					!* recipient buffer!
+     !(! fll				!* skip over comment!
+     >
+   q8u..o -@f k			!* select recipient buffer!
+   q2"e 0f  "e
+	  q9u..o .u2 -:@fll .u3
+	  -@fll .-q1-1"n :i*Null recipientfsErr'
+	  .-b,q3-b(q2j q8u..o)g9'
+	i@ g()			!* add host name if none!
+	q9u..o .-z(q6"g q6j'"# -@f, l' i at  g())+zj	!* ...!
+	q8u..o'
+   -s@ @fc :l				!* Uppercase host name.!
+   i
+					!* finish off recipient!
+   q9u..o				!* select header buffer!
+   fsSHPos-70"g q1-b-4"g .(q1j i
+   )+5j''				!* auto fill!
+   >
+ -@f, k				!* Remove any trailing ,!
+ 
+
+!& Complete TNX Header:! !S Make sure From and Date fields are there, etc.!
+!*
+Remove blank lines in header.
+Change S: and Re: to Subject:, and
+replace the Babyl Header/Text Separator line with a blank line.
+Leaves bounds around just header.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Header/Text Separator, * For R and M commands:
+				 |--Text follows this line--|
+
+					!* End of declare.!
+
+ [1[3
+ qBabyl Header/Text Separatoru1	!* 1: E.g. --Text Follows...!
+ j :s
+1
+"e :i*No text, just header fsErr'	!* Didnt find separator.!
+ 0:l 0k					!* Replace separator with blank line.!
+ z-.fsVZ				!* set bounds to just header!
+
+ j 5 f~Date:"n			!* If date isnt at top,!
+    :s
+Date:"e				!* And isnt elsewhere,!
+      iDate: 				!* then make one.!
+      332221000000.,fsDatefsFDConvertw	!* Let TNX do the work.!
+      .-z(-s  i )+zj			!* Put a space between date and time.!
+      0fo..qDay of Week Flag"n		!* User wants day of week in there.!
+	.-z( b+6j .(s,r),.fx3 2d	!* 3: Day.!
+	     )+zj i (3)'		!* Use (day).!
+      i
+     '"# 0l fx1 bj g1'			!* If had a date field before, put!
+					!* it at the top.  Helps below as!
+					!* well as being standard.!
+    '					!* End of date field.!
+
+ j < :s
+
+; -k 2r >				!* delete blank lines!
+
+ j :s
+From:"e				!* If no from field yet, make one.!
+      l iFrom: 
+     2r .u1				!* 1: Start FROM field!
+      g(fsXUname:f6)			!* Put in user name!
+      fsMachine:f6u3			!* 3: host name!
+      fq3"g i at  g3'			!* Put in " at <host>'!
+      0fo..qUser Namef"n u3		!* If User Name then maybe hack!
+					!* Sender!
+	q1,.f~3"n q1j g3 :fx3 0l iSender: 3
+	  :l''
+      0fo..qPersonal Namef"n u3 0l 6c g3 i < :l i> l'
+					!* Maybe put in RFC733 style from!
+					!* with personal name.!
+      '					!* Done from field.!
+
+ j :s
+S:
+Re:"l					!* Can do search with CRLF since!
+					!* date appears on top line.!
+    0k iSubject:'			!* Change S: and Re: to Subject:.!
+
+
+					!* Now clean up To/Cc fields: *!
+ j < :s
+To:
+Cc: ;					!* A start of a To/Cc field.!
+     @f 	,k i 			!* Ensure one space after colon.!
+     <:fb,; @f 	k i >		!* Only one space after commas.!
+     0l <:fb, , ; ,  2r>		!* Eliminate empty entries.!
+     0l 4c 0,1a-15."e			!* If next line is not a continuation,!
+	0,3af	 "l			!* then this must be an empty field.!
+	  0lk 0:l''			!* So kill it.!
+     >					!* Done formatting To/Cc fields.!
+
+ 
+
+!& Reform Header:! !S Format header on message.!
+!*
+The header we are reformatting is the one after the EOOH line (probably
+    the only one in the message, since generally the space above the EOOH
+    line is empty before reformation).
+Original header is left at the beginning of the message, before the
+    EOOH line.  All this is put out of sight, before the window.
+The reformatted header is then inserted after the EOOH line.!
+
+ 0uMessage Header Ungrokable
+ 1uMessage Header Reformed		!* Do this first in case any bad!
+					!* trouble, can avoid multi-CantGroks.!
+ m(m.m& Set Message Status)		!* ...!
+ zj -2 f=
+"e 2r'"# i
+ 2r' -@f
+	 - f"n ,0 d'w		!* Delete CRLFs at end of message!
+ z-b-2"e '				!* If buffer empty were done!
+
+ !* Weve got a message to reform!
+ 1@:<					!* catch errors to avoid trouble!
+    m(m.m& Parse Header)		!* set field variables!
+					!* leave . at end of parsed header!
+    >"n 1uMessage Header Ungrokable	!* indicate lossage in status!
+	:m(m.m& Set Message Status)'	!* ...!
+					!* If anything goes wrong, just punt!
+ z-.u1					!* 1: distance from end to header!
+ j l .( 2r s
+*** EOOH ***
+),.k					!* empty original header area and!
+					!* delete EOOH line!
+ qBabyl No Original Option"n		!* if original not wanted then!
+    .,z-q1k'				!* delete it!
+ "# z-q1j'				!* otherwise just move over it!
+ i*** EOOH ***
+					!* put in EOOH line!
+ .( m(m.m& Form Header) )j		!* Put in new header, leave . at top!
+
+ 
+
+!& Parse Header:! !S Parse header into field-name variables.!
+!* leaves . at end of header!
+
+ m(m.m& Declare Load-Time Defaults)
+     Parsed Message Number,: 0
+     Date:,: 0
+     From:,: 0
+     Sender:,: 0
+     Subject:,: 0
+     To:,: 0
+     Cc:,: 0
+     Message-id:,: 0
+     Keywords:,: 0
+     In-Reply-to:,: 0
+     Reply-to:,: 0
+     Redistributed-To:,: 0
+     Redistributed-By:,: 0
+     Redistributed-Date:,: 0
+     MSG:,: 0
+     Mail-from:,: 0
+     Rcvd-Date:,: 0
+     Unknown:,: 0
+
+					!* end of declare!
+
+ [1[2[3[4				!* save registers!
+ :i1					!* 1: Null string for initializing!
+					!* variables!
+ q1uDate:
+ q1uFrom:
+ q1uSender:
+ q1uSubject:
+ q1uTo:
+ q1uCc:
+ q1uMessage-id:
+ q1uKeywords:
+ q1uIn-Reply-to:
+ q1uReply-to:
+ q1uRedistributed-To:
+ q1uRedistributed-By:
+ q1uRedistributed-Date:
+ q1uMSG:
+ q1uMail-from:
+ q1uRcvd-Date:
+ q1uUnknown:
+
+ j :l s
+*** EOOH ***
+					!* Jump to top of header.!
+
+ 4 f=MSG:"e 4c @f	 r @xMSG: l	!* Pick up MSG: line if system msg!
+    <	8 f~DISTRIB:@:;		!* DISTRIB:?!
+	8c @f	 r @xTo: l >		!* Treat the DISTRIB: line of the!
+					!* message as a To: line!
+    <	8 f~EXPIRES:@:; l >		!* skip over EXPIRES: lines!
+    '					!* End of MSG:-handling!
+
+ .u1					!* 1: start of header!
+
+					!* determine header variety!
+ :fb@:f"ew :i*Cant Grok MessagefsErr'+1"e	!* ITS!
+	s  r 0x4 :iFrom:4
+					!* Get From!
+	c 9 f=(Sent by "e 9c .,(fb) ).-2x4 :iSender:4
+'					!* Get Sender!
+	.u2				!* Q2: Start of date!
+	:fb Re: "l xSubject: 5r'"# :l'	!* Get Subject if any!
+	q2,.x4 :iDate:4
+	l				!* Get Date!
+	< 4 f~TO: @:; 3c @xTo: l >	!* Get To!
+	< 4 f~CC: @:; 3c @xcc: l >	!* Get cc!
+	'				!* end of ITS header parsing!
+ "#	q1j :s
+
+"e zj'"# @f
+k 2r'					!* find end of net style header!
+	fsZ-.f[VZ			!* Set bounds to just header!
+	q1j < .-z; .,(fb: r -@f	 r).x1 c	!* Get keyword!
+	    f~1Sent-by"e :i1Sender'	!* convert to standard names!
+	    x2 < l .-z;			!* pick up text associated with!
+		1af	 :;		!* keyword, add subsequent lines!
+		@x2 >			!* if they start with whitespace!
+	    0fo..q1:"n .(g2),.@fx1:' !* Check if keyword recognized!
+	    "# .(g1i:g2),.@fxUnknown:'   !* keyword not recognized, add to!
+					!* list of unknowns!
+	    >				!* End of get keyword iteration!
+	f]VZ 2:cw			!* Bounds back to whole message!
+	'				!* End of NET header conditional!
+ 
+
+!& Form Header:! !S Create NET message header, inserted at point.!
+!*
+Strips leding Re:s from subject, for stupid Hermes messages.
+Babyl Remove Subject Keys non-0 means we should trim subject lines that
+    start of with excl (implying a reminder) or {...} (a keyword).
+Exactly one blank line separates header from text.!
+
+ [1[2[3 .f[VB fsZ-.f[VZ		!* set buffer bounds to .,.!
+
+ m(m.m& Declare Load-Time Defaults)
+     Date:,: 0
+     From:,: 0
+     Sender:,: 0
+     Subject:,: 0
+     To:,: 0
+     Cc:,: 0
+     Message-id:,: 0
+     Keywords:,: 0
+     In-Reply-to:,: 0
+     Reply-to:,: 0
+     Redistributed-To:,: 0
+     Redistributed-By:,: 0
+     Redistributed-Date:,: 0
+     Unknown:,: 0
+
+					!* End of declare.!
+
+
+ 1:< fsMachine:f6u1			!* get machine name!
+     @:i1|<:s at MIT-1; fkd> zj|	!* create macro to kill it!
+     >"n :i1 zj'			!* unless no machine name!
+ fqMSG:"n iMSG: gMSG:'
+ fqDate:"n iDate: .u2 gDate: fsOSTeco"n
+					!* Now some magic to reparse the!
+					!* date into pretty format.!
+	q2j fsFDConvertu3		!* Parse the date.!
+	:f  "e q2,.k			!* If then at end of line, kill the!
+					!* old one and get the new one.!
+	  332221000000.,q3fsFDConvert	!* ...!
+	  -s  i '			!* put an extra space between date!
+					!* and time!
+	zj''				!* Go to end of date, header.!
+ fqFrom:"n iFrom: .(gFrom:)j <:s@;  at > zj'
+ fqSender:"n qSender:u2 f~From:2"n iSender: g2''
+ fqReply-to:"n iReply-to: gReply-to:'
+ fqRedistributed-By:"n iRedistributed-By: gRedistributed-By:'
+ fqRedistributed-To:"n iRedistributed-To: gRedistributed-To:'
+ fqTo:"n iTo: .(gTo:)j m1'
+ fqcc:"n icc: .(gcc:)j m1'
+ fqSubject:"n
+    iRe: .(gSubject:)j		!* Get raw subject.!
+    0fo..qBabyl Remove Subject Keys"n	!* Auto-labelling found some!
+					!* keywords in subject.!
+      <					!* Iterate over all keywords.!
+	@f	 k			!* Trim leading whitespace.!
+	0,1a-!"n 0,1a-{"n 1;''	!* Neither reminder nor { keyword.!
+	0,1a-!"e d'			!* A reminder excl -- trim it.!
+	0,1a-{"e .,(:fb};).k'	!* A keyword -- trim it.!
+	>'
+
+      < @f	 k			!* Trim whitespace.!
+	3 f~Re:@:; 3d >		!* Stip off Re:s.!
+      l'				!* Done subject field.!
+
+ fqUnknown:"n gUnknown:'
+ j <	.-z; 1af	 "l fb:'
+	@f	 k
+	5-(fsHPos)f"l w 0'+1,40.i
+	l >
+
+    i
+					!* put in blank line after header.!
+    
+
+!& Read Babyl File:! !S and Babylize it if need be.  Leave wide buffer.
+Returns nonzero iff file was a Babyl file.!
+!* Sets Babyl File Consistent 0 then non-0 around the read-in and conversion.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl File Consistent, Non-0 locally iff ok: 0
+
+
+ fsZ-(z-b)"n :i*Bounds not widefsErr'	!* do error check!
+ [1 f[DFilew hk
+
+ m.lBabyl File Consistentw		!* Make sure it is local.!
+ 0uBabyl File Consistent		!* Declare buffer to be!
+					!* inconsistent, until we get the!
+					!* file all read in, since what is!
+					!* read in may not in fact be a!
+					!* Babyl file.!
+ :i*AReading Babyl filefsEchoDisplay
+ er fsIFileu1				!* 1: mail filename!
+ @ft 1				!* print filename!
+ @y					!* Yank in the Babyl file.!
+ @ft
+					!* print CRLF to say were done!
+ 0fsModifiedw
+
+ j 1f~BABYL OPTIONS:
+"e 1uBabyl File Consistent 1'	!* Assume its ok if has BABYL OPTIONS!
+ iBABYL OPTIONS:
+Version:4
+					!* Else put one on, and check it out.!
+ 10 f~*APPEND*
+"e 10d jl iAppend
+   '					!* If old-style *APPEND*, change to!
+					!* the new-style Append option.!
+ j s .fsVBw				!* Point just after , bound below!
+ m(m.m& Babylize Buffer)		!* Go check for good format of file.!
+
+ 1uBabyl File Consistent		!* This is now a consistent Babyl file.!
+
+ 0,fsZfsBoundariesw			!* widen bounds.!
+ 0					!* return zero to say this wasnt a!
+					!* Babyl file!
+
+!& Babylize Buffer:! !S Ensure a good Babyl/MAIL file format.
+If Babyl Autolabel Messages option is non0, we run & Autolabel Subject
+    Keywords from KEYSET.!
+!*
+We only change what is in the virtual buffer boundaries, except that we
+    (1) always assume there is a  just above the top of virtual buffer, to
+    help start the first message.  We open the bounds briefly to make sure
+    there isn't any whitespace after the  and before the Control-L we put
+    on for the message starter.
+    (2) check for messages following the virtual buffer, and make sure they
+    concatenate nicely with the virtual buffer's messages.  If anything
+    follows, it is assumed to be a sequence of messages, starting with
+    a Control-L. (Not Control-L, since either the  before the VB or the
+     which will end the last message in VB will concatenate with the
+    Control-L.)
+Babyl File Consistent is bound to 0 while Babylizing.
+Point is left at the beginning of the virtual buffer.
+This routine knows about the format of the status line in fair detail.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Babyl Autolabel Messages,
+	* Non-0 causes autolabelling from subject fields: 0
+    Babyl File Consistent, Non-0 locally iff ok: 0
+
+
+ [1
+ !* These checks here may go away once we are sure of things: *!
+
+ bj 0f[VB				!* Check for  above VB.!
+       0a-"n :i*Must have Control-_ just above VB fsErr'
+       f]VB				!* Back to original VB.!
+ zj 0f[VZ				!* Check for FF or nothing below VZ.!
+       14.,1a-14."n :i*Must have Control-L just below VZ fsErr'
+       f]VZ				!* Back to original VZ.!
+ !* End of validity checking.!
+
+
+ !* Starting now, for a while, Babyl file will be in an inconsistent state.!
+ m.lBabyl File Consistentw		!* Make sure it is local.!
+ 0[Babyl File Consistent		!* Bind to 0 to declare inconsistent.!
+
+
+ fsOSTeco"n m(m.m& ITSify TNX Mail)'	!* Use s to separate mail.!
+
+ bj @f
+	 k				!* Kill whitespace before 1st message.!
+
+
+ !* Now make EVERY  be followed by the message-starting
+  * FF<CRLF><Status><CRLF>*** EOOH ***<CRLF>  sequence.
+  * This includes the  sitting above VB, and the final  before VZ.
+  * That last one will be corrected later:
+  *!
+
+ 0s					!* set search default!
+ <  i
+10000
+*** EOOH ***
+					!* Put in message start, status!
+					!* line, and end-of-original-header!
+					!* marker, which will take on more!
+					!* meaning when header is reformed.!
+    @f
+	 k				!* Kill whitespace up to header.!
+
+   :s; >				!* Repeat for all s in vbuf.!
+
+
+ !* Now correct that last, extra message starter: *!
+
+ zj -@f
+ 	k				!* Kill whitespace at end.!
+ -22 f=
+10000
+*** EOOH ***"n :i*Mail file does not end with Control-_ fsErrw'
+ -22d					!* Kill extra status at end.!
+
+ qBabyl Autolabel Messages"n		!* Subject fields may have keywords!
+    bj m(m.m& KEYSET Function)& Autolabel Subject Keywords'
+
+ bj 					!* Leave point at top of VB.!
+
+!& Initialize Babyl Buffer:! !S Buffer has BABYL and MAIL already.!
+!*
+No NUMARG:
+    Point should be set within first message to be seen.  Selects it.
+NUMARG: doesn't select, just resets number variables.
+Sets Message Number and Number of Babyl Messages.!
+
+ m(m.m& Declare Load-Time Defaults)
+    Message Number,	Number of currently selected Babyl message: 0
+    Number of Babyl Messages,
+			Total number of Babyl messages: 0
+
+
+ 0,fsZfsBoundw			!* open wide!
+ .(zj m(m.m& Calculate Message Number)	!* the no. of the last message ...!
+    qMessage NumberuNumber of Babyl Messages)j	!* is the total no.!
+ m(m.m& Calculate Message Number)	!* set current message no.!
+ ff"g '				!* Done if NUMARG.!
+ :m(m.m& Babyl Select Message)		!* Select the message the cursor is in!
+
+!& Reset Babyl Options:! !S From BABYL OPTIONS: line at top of buffer.!
+!*
+Buffer should contain a BABYL file, which has at the top the options, one
+    per line, ending with the first Control-_.
+Each option name continues to : or end of line.
+Each known option variable is 0 if it does not appear in the file.
+If it does appear, its value is 1 if no : is on the line, or else what
+    follows the :.
+Known options (variables set):
+    Babyl Append Option, Babyl XMail Option, Babyl XMail Append Option,
+    Babyl MAIL Option, Babyl Version Option, Babyl No Original Option,
+    Babyl Owner Option, Babyl No Reformation Option.!
+
+ [1[2 0f[VB 0f[VZ jl			!* Goto where options start.!
+ 0m.vBabyl Append Optionw		!* 0 known Babyl options.!
+ 0m.vBabyl XMail Optionw		!* ...!
+ 0m.vBabyl XMail Append Optionw	!* ...!
+ 0m.vBabyl MAIL Optionw		!* ...!
+ 0m.vBabyl Version Optionw		!* ...!
+ 0m.vBabyl No Original Optionw		!* ...!
+ 0m.vBabyl Owner Optionw		!* ...!
+ 0m.vBabyl No Reformation Option	!* ...!
+
+ < 1a-@;				!* Stop when down to .!
+   :fb:"l				!* Name: Value.!
+      r 0x1				!* 1: Option name.!
+      c 1a"d \u2'"# :x2''		!* 2: Option value.!
+   "# :x1				!* 1: Option name, no : type.!
+      1u2'				!* 2: Option value defaults to 1.!
+   l					!* To next option.!
+   1:< q2uBabyl 1 Option		!* Set this option.!
+       >"n @ft
+(1 is not a Babyl option) 0fsEchoActivew' 	!* !
+   >
+
+ 
+
+!& Check Babyl Option:! !S Check file in buffer for option STRARG.!
+!*
+This subroutine does not reset the option variables, but just looks at the
+    top, options section and returns value for option:
+Returns 1 if option is specified.
+Returns 0 if option header is there but option isn't.
+Returns -1 if option line is not there.  (Can default as wish.)!
+
+ :i*[0				!* 0: STRARG, the option to check.!
+ 0f[VB 0f[VZ				!* Open wide.!
+ .[1 fnq1j				!* 1: Auto-restoring point.!
+ j 1f~BABYL OPTIONS:
+"n -1'				!* No option header, return -1.!
+ :s
+0
++1"e 1'"# 0'			!* Have options, check for this one.!
+					!* And return 0 or 1.!
+
+!& ITSify TNX Mail:! !S Convert MAIL.TXTish stuff in buffer to ITS format.!
+!*
+Remove any MAIL FROM lines.
+Convert message-length based separation to ^_ separation.
+Leaves point at top of buffer.!
+
+ [1[2					!* save registers!
+ j < .-z; .u2				!* 2: start of message!
+     :fb,; \u1 0,1a-;@:;		!* 1: Message length.!
+     l z-.-q1u1				!* 1: Z-. for message end.!
+     <9 f~Mail from@:; l>		!* delete any Mail From lines.!
+     q2,.k				!* kill the starting lines.!
+     <.,z-q1:fb;^_>		!* Be like ITS mailer and change!
+					!* Control-_s to UpArrow form.!
+     z-q1j				!* Move to end of message.!
+     i				!* Insert ^_ separator.!
+     @f
+ 	k				!* Kill whitespace til next message.!
+     >
+ .-z"e ,0a-"e j ''		!* if reached end and last character!
+					!* is ^_ then all is ok!
+ :i*Bad message filefsErr
+
+!& Babyl Set Mode Line:! !S Show message no.s, flags, Babyl filename.
+Any keys are listed after flags.!
+
+ [1[2[3[4[5[6 .u1 fnq1j [1		!* Auto-restoring point.!
+ qBabyl Filenamesu1			!* 1: Babyl filename!
+ qBuffer Filenames"e :i11 (RO)'	!* (RO) if no writeback!
+ qNumber Of Babyl Messages:\u2	!* 2: Total number.!
+ b"e fsZ-z"e
+	:i..jBabyl (Messages 1-2) 1  ''
+ 
+ qMessage Number:\u3			!* 3: Message no. as string.!
+
+ 0f[VB					!* Wide bounds above.!
+ -s
+					!* Back to start of message.!
+ l :x5					!* 5: Status line, for lookup.!
+ 0fo..qMdLn 5 nLdMu4			!* Saved mode line.!
+ q4"e					!* Not cached, so compute it!
+    :i4
+    qMessage Header Ungrokable"n :i44, bad header'
+    qMessage Deleted"n :i44, deleted'	!* Say if deleted!
+    qMessage Seen"e :i44, unseen'	!* If first time seen.!
+    m(m.m& Babyl Get Message Keys)u6	!* 6: Message keys.!
+    q6"n :i44, {6}'		!* 4: Add any keys.!
+    q4m.vMdLn 5 nLdMw		!* save result in cache!
+    '
+ 2-3"e :i44, last'		!* say this is last message if it is!
+ :i..jBabyl (Message 3/24) 1 
+ 
+
+!& Babyl Get Message Keys:! !S Return 0 or list of keys for message.!
+
+ [1[2[3 .u1 fnq1j [1		    !* Auto-restoring point.!
+ 0f[VB				    !* Wide bounds above.!
+ -s
+				    !* Back to start of message.!
+ l				    !* To status line.!
+ :fb{"e 0'			    !* No keys for this message.!
+ r :x3				    !* 3: Keys in status line for lookup!
+ 0fo..q3 Keysf"n'w	    !* Saved, so return quickly.!
+
+ :i1				    !* 1: Init keylist to null.!
+ < :fb{;			    !* To start of next key.!
+   .,(s} r).x2			    !* 2: This next key.!
+   fq1"e q2u1'			    !* 1: This is the first key found.!
+   "# :i11, 2' >	    !* 1: Add to list of keys found.!
+
+ q1m.v3 Keysw		    !* Save for next time.!
+ q1				    !* Return the keylist string.!
+
+!* Following should be kept as (only) long comments so will be compressed out:
+ * Local Modes:
+ * Fill Column:76
+ * Comment Column:40
+ * End:
+ * *!
+  

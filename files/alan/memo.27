@@ -1,0 +1,249 @@
+;;;-*-midas-*-
+
+title Part of Alan's login file.
+
+a=1
+b=2
+c=3
+d=4
+e=5
+t=6
+tt=7
+x=10
+y=11
+z=12
+
+ptr=16
+p=17
+
+ttyo==1
+ttyi==2
+dsko==3
+dski==4
+erri==5
+
+pdlsiz==100
+
+call=pushj p,
+return=popj p,
+
+define princ &string&
+	move x,[440700,,[ascii string]]
+	movei y,<.length string>
+	.call princ1
+	 .lose %lssys
+termin
+
+define terpri
+	.iot ttyo,[^M]
+	.iot ttyo,[^J]
+termin
+
+define tyo loc
+	.iot ttyo,loc
+termin
+
+define syscal name,args
+	.call [setz ? sixbit /name/ ? args (400000)]
+termin
+
+.vector pdl(pdlsiz)
+.scalar hsname,xuname,xjname
+
+go:	move p,[-pdlsiz,,pdl-1]
+	syscal open,[[.uao,,ttyo] ? [sixbit /tty/]]
+	 .lose %lssys
+	move a,[-5,,[	.rhsname,,hsname
+			.runame,,b
+			.rxuname,,xuname
+			.rjname,,c
+			.rxjname,,xjname]]
+	.suset a
+	camn b,[sixbit /Alan/]
+	 came b,xuname
+	  jrst die
+	came c,xjname
+	 jrst two
+	syscal open,[[.uii,,dski] ? [sixbit /dsk/] ? xuname ? xjname ? hsname]
+	 jrst die
+	movei a,fpage
+	hrli a,-npages
+	syscal corblk,[movei %cbndw ? movei %jself ? a ? movei dski]
+	 .lose %lssys
+	syscal dskupd,[movei dski]
+	 .lose %lssys
+	.close dski,
+	movei a,flchdie
+	movei b,flch1
+	movei c,[princ /
+(FILECH died)
+/
+		return]
+	move d,c
+	movei e,cpopj
+	call existp
+	movei a,flchmail
+	movei b,flch2
+	movei c,[princ /
+(FILECH has mail)
+/
+		return]
+	move d,c
+	movei e,cpopj
+	call existp
+	movei a,cubenew
+	movei b,cube1
+	movei c,[princ /
+(There is Cube-Hackers mail)
+/
+		return]
+	move d,c
+	movei e,cpopj
+	call existp
+	movei a,lins
+	movei b,lins1
+	movei c,[princ /
+(bye)
+/
+		return]
+	move d,c
+	movei e,[princ /
+LINS > is gone!
+/
+		return]
+	call existp
+	movei a,poll
+	movei b,poll1
+	movei c,[princ /
+(Cube Poll)
+/
+		return]
+	move d,c
+	movei e,[princ /
+The Cube Poll has been deleted!
+/
+		return]
+	call existp
+	movei a,cbppl
+	movei b,cbppl1
+	movei c,[princ /
+(Cube People changed)
+/
+		return]
+	move d,c
+	movei e,[princ /
+The Cube People list has been deleted!
+/
+		return]
+	call existp
+	jrst die
+
+;;; A/[dev ? dir ? fn1 ? fn2]
+;;; B/[date]
+;;; C/new
+;;; D/update
+;;; E/gone
+existp:	call openf
+	 jrst [setzm (b) ? jrst (e)]
+	syscal rfdate,[movei dski ? movem t]
+	 .lose %lssys
+	.close dski,
+	camn t,(b)
+	 return
+	skipn (b)
+	 move d,c
+	movem t,(b)
+	jrst (d)
+
+two:	princ /Two or more /
+	move a,xjname
+	call 6type
+	princ / jobs?/
+	jrst die
+
+die:	skipe debug
+	 .value
+	.break 16,160000
+
+.scalar errcode
+openf:	syscall open,[%clerr,,errcode ? [.uai,,dski]
+			(a) ? (a)+2 ? (a)+3 ? (a)+1]
+	 return
+popj1:	aos (p)
+cpopj:	return
+
+errtyp: syscal open,[[.uai,,erri] ? [sixbit /err/] ? movei 4 ? errcode]
+	 .lose %lssys
+errlp:	.iot erri,x
+	caige x,40
+	 jrst [	.close erri,
+		return]
+	cail x,"A
+	 caile x,"Z
+	  skipa
+	   addi x,"a-"A
+	tyo x
+	jrst errlp
+
+6type:	ldb x,[360600,,a]
+	addi x,40
+	tyo x
+	lsh a,6
+	jumpn a,6type
+	return
+
+debug:	0
+
+flchdie:
+	sixbit /dsk/
+	sixbit /Alan/
+	sixbit /filech/
+	sixbit /die/
+
+flchmail:
+	sixbit /dsk/
+	sixbit /Alan/
+	sixbit /filech/
+	sixbit /mail/
+
+cubenew:
+	sixbit /dsk/
+	sixbit /Alan/
+	sixbit /cube/
+	sixbit /new/
+
+lins:	sixbit /dsk/
+	sixbit /common/
+	sixbit /lins/
+	sixbit />/
+
+poll:	sixbit /dsk/
+	sixbit /Alan/
+	sixbit /harris/
+	sixbit /reply/
+
+cbppl:	sixbit /dsk/
+	sixbit /Alan/
+	sixbit /cube/
+	sixbit /people/
+
+princ1:	setz
+	sixbit /siot/
+	movei ttyo
+	move x
+	setz y
+
+variables
+constants
+
+fpage==<.+1777>/2000
+faddr==fpage*2000
+
+irp name,,[flch1,flch2,cube1,lins1,poll1,cbppl1,laddr]
+name=faddr+.irpcnt
+termin
+
+lpage==<laddr+1777>/2000
+npages==lpage-fpage
+
+end go

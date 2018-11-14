@@ -1,0 +1,129 @@
+;-*- Mode:MIDAS -*-
+
+title	COMSAT AP/NYT 
+;	Newswires Redistribution Hack  -- CStacy, April 1982.
+
+; SAIL sends us the AP and NYT Digests, but MRC hates seeing the
+; COMSAT error messages which sometimes result.  Unfortunately, the SAIL
+; mailer wont let them hack their "Sender" field.  This program
+; provides an additional level of redistribution, which makes the errors
+; go to "APNYT@MIT-AI"  (which needs an Inquire entry.)
+
+
+IF1 [
+printx /
+Assemble version for which newswire?
+Type "N" for NYT, "A" for AP: /
+.ttymac foo
+	irpnc 0,1,1,bar,,foo
+		ifse bar,N,[$$NYT==1]
+		ifse bar,n,[$$NYT==1]
+		ifse bar,A,[$$NYT==0]
+		ifse bar,a,[$$NYT==0]
+	termin
+termin
+]
+
+
+x=0		 		;Super temporary.
+a=1				;General 
+b=2				; purpose 
+c=3				; utility 
+d=4				; registers.
+t=10				;temporary.
+tt=11		   		;temporary, T+1.
+char=12		   		;character being manipulated.
+count=13	   		;count into string.
+bp=14		   		;byte pointer.
+p=17		   		;stack pointer.
+
+pdllen==100			;Stack length.
+
+jcllen==2000.			;Max length of message text (10K bytes).
+
+dsko==1				;Disk ouptut channel.
+
+define syscal op,args
+	.call [setz ? sixbit/op/ ? args ((setz))]
+termin
+
+call=pushj p,
+ret=popj p,
+save==push p,
+rest==pop p,
+
+;; Type out an ascii string.
+define type ch,&string
+	movei t,<.length string>
+	move tt,[440700,,[ascii string]]
+	syscal siot,[%climm,,ch ? tt ? t]
+	 .lose %lsfil
+termin
+
+
+go:	move p,[-pdllen,,pdl]				;Init the stack.
+
+	.break 12,[..rjcl,,jclbuf]			;Slurp down message text.
+
+	syscal open,[%clbit,,<.uao> ? %climm,,dsko
+		    [sixbit /dsk/]
+	            [sixbit /_apnyt_/] ? [sixbit /output/] ? [sixbit /.mail./]]
+	  .lose %lsfil
+
+;; Let COMSAT generate a header, and report only Failures to APNYT@MIT-AI.
+
+	type dsko,/AUTHOR:APNYT
+FROM-JOB:APNYT
+REGISTERED:F
+/
+
+IFE $$NYT,[
+	type dsko,/RCPT:(AP-DIGEST-PEOPLE)
+RCPT:(AP-DIGEST-ENTITIES)
+/
+]
+
+IFN $$NYT,[
+	type dsko,/RCPT:(NYT-SUMMARY-PEOPLE)
+RCPT:(NYT-SUMMARY-ENTITIES)
+/
+]
+
+;; Put on a nice RFC733 header, and make it notpossible for losers
+;; to screw everyone by REPLY-TO-ALLing one of these messages.
+
+	type dsko,/HEADER-FORCE:RFC733
+FAKE-TO: News addicts
+SUBJECT: Redistributed news from SAIL
+TEXT;-1
+
+/
+
+;; Copy the message text to the file.
+	move bp,[440700,,jclbuf]
+copy:	ildb  char,bp
+	jumpe char,alldun
+	.iot dsko,char
+	jrst copy
+alldun:	type dsko,/
+/
+
+	move a,debug
+	jumpn a,fini	; Dont give to COMSAT if debugging.
+
+;; Make a COMSAT request.
+	syscal renmwo,[%clbit,,<.uao> ? %climm,,dsko	
+		    [sixbit /mail/] ? [sixbit />/]]
+	 .logout 1,
+
+fini:	.close dsko,
+	.logout 1,
+
+
+;; Data
+
+debug:	0				;-1 ==> debugging.
+jclbuf:	block jcllen			;Some room for message text.
+pdl:	block pdllen			;The Stack.
+
+end go

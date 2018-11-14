@@ -1,0 +1,989 @@
+;-*- Mode: MIDAS; Fonts: MEDFNT -*-
+
+Z=0		;Super temp.
+A=1
+B=2
+C=3
+D=4
+E=5
+W=6		;Packet index.
+OC=12		;OUT register.
+U1==13		;4 UUO Registers.
+U2==14
+U3==15
+U4==16
+T=U1		;Temps.
+TT=U2
+P=17		;Stack pointer.
+
+;;; I/O channel numbers.
+
+TTYO==1
+UDPC==15
+HST3==16
+
+
+SUBTTL	Libraries and assorted macros
+
+;;; Various macros; Output routines; UUO dispatcher
+$$OUT==1
+$$OHST==1
+UBONES==1
+.INSRT DSK:KSC;MACROS
+.INSRT DSK:KSC;OUT
+.INSRT DSK:KSC;NUUOS
+
+;;; Define more instructions.
+HALT=<.BREAK 16,100000>
+JCRY0=:<JFCL 4,>	;Jump on Carry from bit 0 (and clear flag)
+
+EQUALS PUSHER,PUSHAE
+EQUALS POPPER,POPAE
+
+;;; LOSE prints a message and goes to error handler.
+
+DEFINE	LOSE (LIST)
+	JRST [	OUT!LIST
+		OUT(TTYO,CRLF)
+		JSR AUTPSY ]
+TERMIN
+
+;;; Macro for defining Interrnet host addresses.
+
+DEFINE IHOST A,B,C,D
+RADIX 10.
+<<<<<A_8>+B>_8>+C>_8>+D
+RADIX 8.
+TERMIN
+
+;;; HOSTS3 database routines.
+
+$$ALLNET==1
+$$ARPA==1
+$$HST3==1
+$$HSTMAP==1
+$$HOSTNM==1
+$$SYMLOO==1
+.INSRT SYSNET;NETWRK
+
+
+SUBTTL	IP/UDP Defs.
+
+IP%VER==740000,,	; 0 IP Version # (= 4)
+IP%IHL==036000,,	; 0 IP Header Length in 32-bit wds - at least 5
+IP%TOS==001774,,	; 0 Type Of Service
+IP%TOL==000003,,777760	; 0 Total Length in octets (including header)
+IP%ID== 777774,,	; 1 Identification
+IP%FLG==     3,,400000	; 1 Flags
+  IP%FDF==   1,,0	;	Don't-Fragment flag
+  IP%FMF==	400000	;	More-Fragments flag
+IP%FRG==     0,,377760	; 1 Fragment Offset
+IP%TTL==776000,,	; 2 Time To Live
+IP%PTC==  1774,,	; 2 Protocol
+IP%CKS==     3,,777760	; 2 Header Checksum
+IP%SRC==777777,,777760	; 3 Source Address
+IP%DST==777777,,777760	; 4 Destination Address
+			; 5 Start of options
+IP$VER==<.BP IP%VER,0>
+IP$IHL==<.BP IP%IHL,0>
+IP$TOS==<.BP IP%TOS,0>
+IP$TOL==<.BP IP%TOL,0>
+IP$ID== <.BP IP%ID, 1>
+IP$FLG==<.BP IP%FLG,1>
+IP$FRG==<.BP IP%FRG,1>
+IP$TTL==<.BP IP%TTL,2>
+IP$PTC==<.BP IP%PTC,2>
+	%PTCIC==:1		; Protocol ICMP
+	%PTCTC==:6.		; Protocol TCP
+	%PTCUD==:17.		; Protocol UDP
+IP$CKS==<.BP IP%CKS,2>
+IP$SRC==<.BP IP%SRC,3>
+IP$DST==<.BP IP%DST,4>
+
+$UDPH==5		;Buffer offset to UDP header.
+$UDPD==$UDPH+2		;Buffer offset to UDP data.
+
+	; UDP fields
+UD$SRC==<242000,,0>		; 0 wd 1 Source port
+UD$DST==<042000,,0>		; 0 wd 2 Dest port
+UD$LEN==<242000,,1>		; 1 wd 1 # octets in data
+UD$CKS==<042000,,1>		; 1 wd 2 UDP checksum
+UD$DAT==<441000,,2>		; 2 Data - actually an ILDB pointer!
+
+;;; IPQ dev OPEN control/mode bits
+
+%IQSYS==100	; Set up System Queue (0 or 1)
+%IQSOU==200	; System Queue 1 if set, otherwise 0
+%IQUDP==400	; Set up random queue for UDP (port # in FN1)
+
+; .CALL IPKIOT - Internet Protocol Packet Transfer.
+;	Arg 1 is channel (must be open on IPQ:, specifies queue #)
+;	Arg 2 is address of buffer
+;	Arg 3 is count of words
+;	Val 1 is count of words read into user space (if any)
+;	Control bits specify function.  If none, "read" is assumed.
+; Get datagram from:
+	%IPIUS==100	; 1 = Get datagram from user space, not from a queue
+	%IPNOC==200	; Global input no-check flag, suppresses normal check.
+			;   For User Space, "check" means verify, set cksum.
+			;   For Input Queue, "check" means verify IP header.
+			;   For SysIn Queue, "check" means verify IP hdr.
+			;   For SysOut Queue, means nothing.
+	%IPNOH==400	; Don't Hang waiting for datagram (Queues only)
+	%IPIQK==1000	; Keep on queue, don't remove (only for %IPOUS)
+; Put datagram to:
+	%IPOUS==0	; User space
+	%IPOUT==1	; Output to network (bypasses SysOut queue)
+	%IPOFL==2	; Flush it
+	%IPORV==3	; Re-vector to input queues past this one
+
+
+;;; PKTDPB macro for plunking down into a field (index packet off W).
+
+DEFINE	PKTDPB PTR,-VAL
+	MOVE T,VAL
+	MOVE TT,[PTR (W)]
+	DPB T,TT
+TERMIN
+
+
+;;; DPWIDE macro deposits 16 bit quantity down 8-bit Bp.
+
+DEFINE	DPWIDE PTR,-VAL
+	MOVE T,VAL
+	SETZ TT,
+	LSHC T,-8.
+	LSH TT,-<36.-8.>
+	IDPB T,PTR
+	IDPB TT,PTR
+TERMIN
+
+
+;;; LBWIDE macro deposits 16 bit quantity down 8-bit Bp.
+
+DEFINE	LBWIDE AC,-PTR
+	SETZ AC,
+	ILDB T,PTR
+	LSH T,8.
+	ILDB TT,PTR	
+	ADD T,TT
+	MOVE AC,T
+TERMIN
+
+
+
+SUBTTL	IP/UDP Routines
+
+
+;;; These routines require ACs: W, A-E, smashable T,TT, and P.
+;;; Args passed in ACs, code is pure, etc. etc. etc.
+
+.SCALAR MYUIND			;Our ITS job number.
+.SCALAR PKTID			;Packet number we've sent.
+.SCALAR LOCPRT			;Local port number where we listen.
+.SCALAR UDLENG			;Length of data user put in datagram.
+
+;;; UDPOPN - Open a UDP queue.
+;;;  A/ channel number
+;;;  B/ foreign port number
+
+UDPOPN:	PUSH P,C
+	SKIPN MYUIND		;Find my job index.
+	 .SUSET [.RUIND,,MYUIND]
+	MOVE C,MYUIND		;Gensym a local port number.
+	ANDI C,377		;Use 8 bits of my job index.
+	SKIPN C			;(Hack overflow when job # = 256)
+	 SETO C,0
+	LSH C,10		;Shift it over
+	TDO C,B			;Add in the port number.
+	MOVEM C,LOCPRT		;Remember local port, and open IPQ on it.
+	SYSCAL OPEN,[%CLBIT,,%IQUDP ? A ? [SIXBIT /IPQ/] ? C ]
+	 CAIA
+	  AOS -1(P)
+	POP P,C
+	RET
+
+
+;;; Someday it will be useful to have a routine which
+;;; sends a packet and waits for a response, re-sending
+;;; the packet if no response comes in reasonable time.
+
+;;; UDPSND and UDPRCV - Trivial UDP I/O functions.
+;;;   W/ packet addr
+;;;   A/ UDP channel number
+;;;   B/ bytes in the packet
+;;;
+;;; UDPRCV returns words received in E.
+
+UDPSND:	PUSHER P,[B,C]
+	IDIVI B,4.
+	SKIPE B+1
+	 AOS B
+	SYSCAL IPKIOT,[%CLBIT,,%IPIUS+%IPOUT ? A ? W ? B ]
+	 CAIA
+	  AOS -2(P)
+	POPPER P,[C,B]
+	RET
+
+
+UDPRCV:	SYSCAL IPKIOT,[A ? W ? B ? %CLOUT,,E]
+	 CAIA
+	  AOS (P)
+	RET
+
+
+;;; IDGEN - Generate a "unique" ID number.
+;;;   T/ address of counter
+;;; Returns value in A.
+
+DEFINE	IDGEN AC,CNTR
+	SKIPN MYUIND		;Find my job index.
+	 .SUSET [.RUIND,,MYUIND]
+	AOS CNTR			;Make up an ID for this query.
+	MOVE T,CNTR
+	.PDTIME TT,
+	DPB T,[.BP 000777,AC]
+	DPB TT,[.BP 777000,AC]
+TERMIN
+
+
+
+;;; MAKPKT - Make a packet (put IP and UDP headers on it).
+;;;   W/ packet addr
+;;;   A/ foreign host
+;;;   B/ foreign port
+;;;   C/ length of data stuffed into it
+;;; Returns with C updated to total packet length.
+
+MAKPKT:	PUSHER P,[A,D,W]
+	MOVEM C,UDLENG
+IPHDR:	PKTDPB IP$VER,[4]	;Version 4 IP header (RFC791).
+	PKTDPB IP$IHL,[5]	;Usual length of IP packet header.
+	PKTDPB IP$TOS,[0]	;Default type of unreliable service.
+	PKTDPB IP$PTC,[%PTCUD]	;Protocol is UDP.
+	IDGEN D,PKTID		;Gensym a packet ID number.
+	PKTDPB IP$ID,D		;Stuff it in.
+IFN 0,	PKTDPB IP$FLG,[3]	;No fragmentation allowed.
+	PKTDPB IP$TTL,[30.]	;Half-minute lifetime.
+	PUSHER P,[A,B]
+	SYSCAL NETHST,[%CLIMM,,-1 ? %CLOUT,,T ? %CLOUT,,A] 
+	 .LOSE %LSFIL
+	LSHC A,-6		;Standardize our ARPAnet host number.
+	LSH B,-<2+8.>		;Put 10 bits spacing between host/imp #s.
+	LSHC A,<2+8.+6>
+	TLO A,(12_24.)		;Add ARPA network number.
+	MOVE T,A
+	POPPER P,[B,A]
+	LSH T,<36.-32.>		;Get our own host address.
+	MOVEM T,IP$SRC(W)	;Stuff it in.
+	MOVE T,A		;Get destination host address.
+	LSH T,<36.-32.>		;Stuff it in.
+	MOVEM T,IP$DST(W)
+	ADDI C,20.		;Update count to include 5 word IP header.
+	ADDI C,8.		;Update our count to include 2 word UDP header.
+	PKTDPB IP$TOL,C		;Stuff it in.
+	CALL IPCKSM		;Compute the header checksum.
+	PKTDPB IP$CKS,A		;Stuff it in.
+UDPHDR:	ADDI W,$UDPH		;Make ptr to UDP header.
+	PKTDPB UD$SRC,LOCPRT	;Stuff in the source port.
+	PKTDPB UD$DST,B		;Stuff in the destination port.
+	MOVE D,UDLENG
+	ADDI D,8.
+	PKTDPB UD$LEN,D		;Stuff in the user datagram length.
+	SUBI W,$UDPH		;Pointer to entire packet.
+	CALL UDCKSM		;Compute UDP checksum from there.
+	ADDI W,$UDPH		;Now point back into UDP datagram.
+	PKTDPB UD$CKS,A		;Stuff it in.
+	POPPER P,[W,D,A]
+	RET
+
+
+
+;;; IPCKSM - Compute IP packet checksum (stolen from ITS INET module).
+;;;   W/ addr of IP packet
+;;;   Returns checksum in A.
+;;; Does not handle headers with options
+
+IPCKSM:	PUSH P,B
+	SETZ A,			;Compute header checksum in A.
+	MOVE B,IP$CKS(W)	;Get 3rd word
+	ANDCM B,[IP%CKS]	;Mask out the checksum field
+	JFCL 17,.+1		;Clear flags
+	ADD B,IP$VER(W)		;Add 1st wd
+	JCRY0 [AOJA A,.+1]
+	ADD B,IP$ID(W)		;Add 2nd
+	JCRY0 [AOJA A,.+1]
+	ADD B,IP$SRC(W)		;Add 4th
+	JCRY0 [AOJA A,.+1]
+	ADD B,IP$DST(W)		;Add 5th
+	JCRY0 [AOJA A,.+1]
+IPCKS2:	LSHC A,16.		;Get high 2 bytes (plus carries) in A
+	LSH B,-<16.+4>		;Get low 2 bytes in B
+IPCKS3:	ADDI A,(B)		;Get total sum
+	CAILE A,177777		;Fits?
+	 JRST [	LDB B,[202400,,A]	;No, must get overflow bits
+		ANDI A,177777		;then clear them
+		JRST IPCKS3]		;and add in at low end.
+	ANDCAI A,177777		;Return ones complement
+	POP P,B
+	RET
+
+
+;;; UDCKSM - UDP checksum (stolen from SYSNET;IPLIST)
+;;;   W/ addr of IP packet
+;;;   Returns checksum in A.
+
+CARMSK==<-1,,600000>
+
+UDCKSM:	PUSHER P,[B,C,D,E]
+	MOVEI D,(W)
+	LDB A,[IP$SRC (D)]	;Source addr
+	LDB B,[IP$DST (D)]	;Dest addr
+	ADD A,B
+	LDB B,[IP$PTC (D)]	;Protocol
+	ADDI A,(B)
+	LDB B,[IP$TOL (D)]	;Get total length in octets
+	LDB C,[IP$IHL (D)]	;Find IP header length in 32-bit wds
+	ADDI D,(C)		;Change pointer to UDP seg
+	LSH C,2			;mult by 4 to get # octets
+	SUBI B,(C)		;Find # octets of IP data (TCP segment)
+	CAIL B,			;If negative, skip this one.
+	 ADDI A,(B)
+	;; Done with pseudo header (not folded yet, though).
+	;; B has # octets in the UDP segment.
+	;; D now points to the UDP segment.
+	LDB C,[UD$SRC (D)]
+	ADDI A,(C)
+	LDB C,[UD$DST (D)]
+	ADDI A,(C)
+	LDB C,[UD$LEN (D)]
+	ADDI A,(C)
+	MOVEI C,-<2*4>(B)	;Get # bytes of remaining data in C
+	LSHC A,-16.
+	LSH B,-<16.+4>
+	ADDI A,(B)		;Now have it folded up.
+	JUMPLE C,UDPCK7
+	MOVEI E,2(D)
+	HRLI E,442000		;Set up 16-bit byte ptr
+	LSHC C,-1
+	JUMPLE C,UDPCK6
+UDPCK5:	ILDB B,E
+	ADDI A,(B)
+	SOJG C,UDPCK5
+UDPCK6:	JUMPL D,[		;Jump if odd byte left.
+		ILDB B,E	;get it
+		ANDCMI B,377	;mask off low (unused) byte.
+		ADDI A,(B)
+		JRST .+1]
+UDPCK7:	TDNE A,[CARMSK]		;If any carries, add them in.
+	 JRST [	LDB B,[.BP CARMSK,A]
+		TDZ A,[CARMSK]
+		ADD A,B
+		JRST UDPCK7]
+	ANDCAI A,177777		;Complement sum and mask off.
+UDCKS9:	POPPER P,[E,D,C,B]
+	RET
+
+
+
+SUBTTL	Domain Name Protocol Definitions
+
+DNPORT==53.		;UDP port number for Domain Name server.
+
+;;; Fields in the Header section
+
+DP%ID==	777774,,	; 0 16 bit ID number
+DP%QR==	     2,,	; 0 Query/Response bit
+DP%OP==	     1,,300000	; 0 Opcode
+DP%AA==	     0,,100000	; 0 Authoritative Answer
+DP%TC==	     0,,040000	; 0 TrunCation
+DP%RC==	     0,,010000	; 0 Recursion Desired
+DP%RA==	     0,,004000	; 0 Recursion Available
+DP%RCD==     0,,000160 	; 0 Response Code
+DP%QDC==777774,,	; 1 Question Count
+DP%ANC==     3,,777760	; 1 Answer Count
+DP%NSC==777774,,	; 2 Authority Record Count
+DP%ARC==     3,,777760 	; 2 Additional Record Count
+
+DP$ID==	<.BP DP%ID,0>
+DP$QR==	<.BP DP%QR,0>
+DP$OP==	<.BP DP%OP,0>	;Domain system opcodes:
+ DO$QRY==0		; Standard QUERY
+ DO$YRQ==1		; Inverse  IQUERY
+ DO$QCM==2		; Multiple completion CQUERYM
+ DO$QCU==3		; Single completion CQUERYU
+DP$AA==	<.BP DP%AA,0>
+DP$TC==	<.BP DP%TC,0>
+DP$RC==	<.BP DP%RC,0>
+DP$RA==	<.BP DP%RA,0>
+DP$RCD==<.BP DP%RCD,0>	;Domain system response codes:
+ DR$OK==0		; No error condition
+ DR$FMT==1		; Format error
+ DR$LOS==2		; Server lossage
+ DR$ERR==3		; Name error
+ DR$NI==4		; Not implemented 
+ DR$RFS==5		; Refused
+
+DP$QDC==<.BP DP%QDC,,1>
+DP$ANC==<.BP DP%ANC,,1>
+DP$NSC==<.BP DP%NSC,,2>
+DP$ARC==<.BP DP%ARC,,2>
+
+;;; Fields in the Question section:
+
+DQ$NAM==<441000,,3>	; ILDB ptr to variable length QNAME.
+;DQ$TYP==<442000,,>	; QTYPE comes next
+;DQ$CLA==<442000,,>	; QCLASS comes next
+
+;;; Fields in Resource Records:
+;;;  variable NAME
+;;;  2 byte TYPE
+;;;  2 byte CLASS
+;;;  16 bit TTL
+;;;  16 bit RDLENGTH
+;;;  variable RDATA
+
+
+;;; TYPEs
+
+DT$A==1.	;Host address 
+DT$NS==2.	;Authoritative name server
+DT$MD==3.	;Mail destination
+DT$MF==4.	;Mail forwarder
+DT$CNA==5.	;Canonical name for an alias
+DT$SOA==6.	;Start of zone of authority
+DT$MB==7.	;Mailbox domain name
+DT$MG==8.	;Mail group member
+DT$MR==9.	;Mail rename domain name
+DT$NUL==10.	;NULL RR
+DT$WKS==11.	;Well known service description
+DT$PTR==12.	;Domain name pointer
+DT$HIN==13.	;Host information
+DT$MIN==14.	;Mailbox or list information
+
+;;; QTYPEs(in addition to above TYPEs)
+
+DT$XFR==252.	;Request for xfer of entire zone
+DT$MLB==253.	;Request for mailbox-related RRs (MB,MG,MR)
+DT$MLA==254.	;Request for mail agent RRs (MD,MF)
+DT$ANY==255.	;Request for all records
+
+;;; CLASSes
+
+DC$IN==1.	;DARPA Internet
+DC$CS==2.	;NSF CSnet
+
+;;; QCLASSes (in addition to above CLASSes)
+
+DC$ANY==255.	;Any class
+
+
+
+SUBTTL	Misc.
+
+POPJ1:	AOS (P)			;Skip
+CPOPJ:	RET			;Return
+
+AUTPSY:	0			;Fatal errors (via JSR).
+DEATH:	SKIPE DEBUG		;Program termination.
+	 .VALUE [0]
+	.LOGOUT 1,
+
+
+SUBTTL	Main program
+
+GO:	MOVE P,[-PDLLEN,,PDL-1]
+	SYSCAL OPEN,[%CLBIT,,.UAO+%TJDIS ? %CLIMM,,TTYO ? [SIXBIT /TTY/]]
+	 .LOSE %LSFIL
+	OUT(TTYO,OPEN(UC$IOT))
+	.CORE HSTPAG		;Allocate packet buffers.
+	 LOSE (TTYO,("Can't get core for packet buffers."))
+	MOVEI A,HSTPAG
+	MOVEI B,HST3
+	CALL NETWRK"HSTMAP
+	 LOSE (TTYO,("Could not map HOSTS3 table."))
+	MOVE A,[-4.,,[	.RXJNAME ? MOVEM JNAME
+			.ROPTION ? MOVEM B ]]
+	SYSCAL USRVAR,[	%CLIMM,,%JSELF ? A ]
+	 .LOSE %LSSYS
+	TLNN B,%OPCMD		;Gobble JCL if any.
+	 JRST JCLLOS
+	.BREAK 12,[..RJCL,,JCLBUF]
+	CALL JCLPAR
+
+
+DOMAIN:	SETZM OPKT
+	MOVE A,[OPKT,,OPKT+1]
+	BLT A,OPKT+1777
+	SETZM IPKT
+	MOVE A,[OPKT,,IPKT+1]
+	BLT A,IPKT+1777
+	MOVEI B,DNPORT
+	MOVEM B,SRVPRT
+	MOVEI A,UDPC
+	CALL UDPOPN		;Set up UDP queue.
+	 .LOSE %LSFIL
+DOMA10:	SETZ C,			;C will count total wds in packet.
+	MOVEI W,OPKT+$UDPD	;Ptr to UDP data.
+	CALL DOMQRY		;Make up our query.
+	MOVE A,SRVHST		;A has host.
+	MOVE B,SRVPRT
+	MOVEI W,OPKT
+	CALL MAKPKT		;Packetize...
+	MOVEM C,PKTLEN		;Send off the query.
+DOMA20:	MOVEI A,UDPC
+	MOVEI W,OPKT
+	MOVE B,C
+	CALL UDPSND
+	 .LOSE %LSFIL
+	.RDTIME A,
+	MOVEM A,TSTART
+	OUT(TTYO,("AQuery sent "),D(PKTLEN),(" byte packet to "),HST(SRVHST),EOL)
+DOMA30:	MOVEI A,UDPC
+	MOVEI W,IPKT
+	MOVEI B,2000
+	CALL UDPRCV
+	 .LOSE %LSFIL 
+	.RDTIME A,
+	SUB A,TSTART
+	IDIVI A,30.
+	IMULI B,100.
+	IDIVI B,30.
+	OUT(TTYO,("AReceived "),D(E),(" word response in "),D(A),("."),D(B),(" seconds."),EOL)
+
+
+DOMA40:	
+;	OUT(TTYO,CRLF,("Query:    "))
+;	MOVEI W,OPKT
+;	CALL SHOWIT
+	OUT(TTYO,CRLF)
+	MOVEI W,IPKT
+	LDB A,[IP$ID (W)]
+	ADDI W,$UDPH
+	LDB B,[UD$DST (W)]
+	LDB E,[UD$LEN (W)]
+	OUT(TTYO,("IP Packet "),D(A),(" to UDP port "),D(B),(" - "),D(E),(" bytes in the datagram."),EOL)
+	ADDI W,$UDPD-$UDPH
+	LDB A,[DP$ID (W)]
+	LDB B,[DP$QR (W)]
+	LDB C,[DP$OP (W)]
+	LDB D,[DP$RCD (W)]
+	SKIPN B
+	 JRST [ OUT(TTYO,("Huh? This is a Query packet numbered "))
+		JRST DOMA41 ]
+	OUT(TTYO,("Reponse to query #"))
+DOMA41:	MOVEI E,[ASCIZ "Undefined"]
+	CAIN C,0
+	 MOVEI E,[ASCIZ "Query"]
+	CAIN C,1.
+	 MOVEI E,[ASCIZ "Inverse Query"]
+	CAIN C,2.
+	 MOVEI E,[ASCIZ "Multiple Completyion"]
+	CAIN C,3.
+	 MOVEI E,[ASCIZ "Single Completion"]
+	OUT(TTYO,D(A),(". OPCODE: "),TZ(@E),(" "),LPAR,D(C),RPAR,(", "))
+	MOVEI E,[ASCIZ "Undefined"]	
+	CAIN D,0
+	 MOVEI E,[ASCIZ "No error"]
+	CAIN D,1.
+	 MOVEI E,[ASCIZ "Format error"]
+	CAIN D,2.
+	 MOVEI E,[ASCIZ "Server failure"]
+	CAIN D,3.
+	 MOVEI E,[ASCIZ "Name error"]
+	CAIN D,4
+	 MOVEI E,[ASCIZ "Not implemented"]
+	CAIN D,5.
+	 MOVEI E,[ASCIZ "Refused"]
+	OUT(TTYO,("RCODE: "),TZ(@E),(" "),LPAR,D(D),RPAR,("."),EOL)
+	LDB A,[DP$AA (W)]
+	LDB B,[DP$TC (W)]
+	LDB C,[DP$RC (W)]
+	LDB D,[DP$RA (W)]
+	OUT(TTYO,("AA="),D(A),(" TC="),D(B),(" RD="),D(C),(" RA="),D(D),EOL)
+	LDB A,[DP$QDC (W)]
+	LDB B,[DP$ANC (W)]
+	LDB C,[DP$NSC (W)]
+	LDB D,[DP$ARC (W)]
+	OUT(TTYO,D(A),(" Questions, "),D(B),(" Answers, "),D(C),(" Authoritative records, "),D(D),(" Additional records."),EOL)
+	SKIPE C
+	 CAIA
+	  JUMPE B,DOMA99
+DOMA50: MOVEI W,IPKT
+	MOVE B,[440700,,NAME]
+	CALL DOMSWR
+DOMA99:	JRST DEATH
+
+
+
+;;; SHOWIT takes in W the address of the packet.
+
+SHOWIT:	PUSHAE P,[A,B,C,D,W]
+	LDB A,[IP$ID (W)]
+	ADDI W,$UDPH
+	LDB B,[UD$DST (W)]
+	LDB E,[UD$LEN (W)]
+	OUT(TTYO,("IP Packet "),D(A),(" to UDP port "),D(B),(" - "),D(E),(" bytes in the datagram."),EOL)
+	ADDI W,$UDPD-$UDPH
+	LDB A,[DP$ID (W)]
+	LDB B,[DP$QR (W)]
+	LDB C,[DP$OP (W)]
+	LDB D,[DP$RCD (W)]
+	OUT(TTYO,("ID="),D(A),(" QR="),D(B),(" OP="),D(C),(" RCODE="),D(D))
+	LDB A,[DP$AA (W)]
+	LDB B,[DP$TC (W)]
+	LDB C,[DP$RC (W)]
+	LDB D,[DP$RA (W)]
+	OUT(TTYO,("   AA="),D(A),(" TC="),D(B),(" RD="),D(C),(" RA="),D(D),EOL)
+	LDB A,[DP$QDC (W)]
+	LDB B,[DP$ANC (W)]
+	LDB C,[DP$NSC (W)]
+	LDB D,[DP$ARC (W)]
+	OUT(TTYO,("QDCOUNT="),D(A),(" ANCOUNT="),D(B),(" NSCOUNT="),D(C),(" ARCOUNT="),D(D),EOL)
+
+SHOW20:	MOVE B,[DQ$NAM (W)]	;Bp to QNAME.
+	MOVE C,E
+	SUBI C,8.
+SHOW21:	ILDB A,B
+	CAIGE A,177
+	 CAIG A,33
+	  JRST [OUT(TTYO,("A"),LABR,D(A),RABR,EOL)
+		JRST SHOW22 ]
+	.IOT TTYO,A
+SHOW22:	SOJGE C,SHOW21
+	OUT(TTYO,CRLF,CRLF)
+
+IFN 0,[
+	MOVE B,W		   ;Make 16 bit Bp to data.
+	ADDI B,3
+	HRLI B,442000
+	MOVE C,E
+	SUBI C,8.
+	LSH C,-1
+SHOW30:	ILDB A,B
+	MOVE D,A
+	LSH D,<32.-36.>
+	OUT(TTYO,D(A),TAB,O(A),TAB,HST(D),EOL)
+	SOJGE C,SHOW30
+	OUT(TTYO,CRLF,CRLF)
+];0
+SHOW90:	POPAE P,[W,C,D,B,A]
+	RET
+
+
+SUBTTL	Domain Query
+
+;;; DOMQRY - Build UDP query about a host name.
+;;;  QNAME/ host name 
+;;;  W/ ptr to packet UDP data 
+;;; Updates the datagram byte count in C.
+
+DOMQRY:	PUSHER P,[A,B,D,W]
+
+	;; Build the Header Section.
+	IDGEN A,QID
+	PKTDPB DP$ID,A
+	PKTDPB DP$OP,[DO$QRY]	;Standard QUERY operation.
+	PKTDPB DP$QR,[0]	;This is a request.
+	PKTDPB DP$RC,QRCRSE	;Recursion.
+	PKTDPB DP$QDC,[1]	;We have one question.
+DOMQ19:	ADDI C,3*4		;Count the Header Section.
+
+	;; Now build the Question Section.
+DOMQ20:	MOVE B,[DQ$NAM (W)]	;Bp to QNAME.
+	MOVE A,[440700,,QNAME]
+DOMQ22:	CALL CMPRES		;Find a domain name token.
+	JUMPE D,DOMQ27		; Maybe no more.
+	IDPB D,B		;Store the count.
+	AOS C			;Count length in QNAME.
+DOMQ24:	ILDB T,A		;Get char from name.
+	IDPB T,B		;Stuff it.
+	AOS C			;Count char in QNAME.
+	SOJG D,DOMQ24
+	ILDB T,A		;Gobble period seperator.
+	JRST DOMQ22		;Get next token.
+DOMQ27:	IDPB D,B		;Terminate with the zero token
+DOMQ29:	AOS C			;Count terminator.
+DOMQ30:	DPWIDE B,[DT$A]		;We want an Address.
+	DPWIDE B,[DC$IN]	;On the Internet.
+DOMQ39:	ADDI C,4		;Count the QTYPE and QCLASS fields.
+
+
+DOMQ90:	POPPER P,[W,D,B,A]
+	RET
+
+
+;;; CMPRES - Compress a domain name.
+;;;   A/ Bp to ASCIZ string
+;;; 
+;;; What this routine really does is find periods in the
+;;; domain name you give it as an argument.  We currently
+;;; do not bother to send out compressed names.
+;;;
+;;; Returns in D the number of characters from
+;;; the string until and including the period.
+;;; A is NOT updated.
+
+CMPRES:	PUSH P,A
+	SETZ D,
+CMPRE1:	ILDB T,A
+	JUMPE T,CMPRE9
+	CAIN T,".
+	 JRST CMPRE9
+	AOJA D,CMPRE1
+CMPRE9:	POP P,A
+	RET
+
+
+
+
+SUBTTL	Answers
+
+ANSBLK==32.
+ANSKND:	BLOCK ANSBLK
+ANSRTN:	BLOCK ANSBLK
+
+.%ANSR==-1
+DEFINE	ANSWER TYPE,CLASS,RTN
+	.%ANSR==.%ANSR+1
+	IFL ANSBLK-.%ANSR, .FATAL Too many kinds of Answers
+	TMPLOC ANSKND+.%ANSR,{[TYPE,,CLASS]}
+	TMPLOC ANSRTN+.%ANSR,{RTN}
+TERMIN
+
+
+;;; Answer handlers:
+
+ANSWER DC$IN,DT$A,RINADR
+
+TYPNAM:	0
+	[ASCIZ "Host Address"]
+	[ASCIZ "Name server"]
+	[ASCIZ "Mail destination"]
+	[ASCIZ "Mail forwarder"]
+	[ASCIZ "Canonical name"]
+	[ASCIZ "SOA"]
+	[ASCIZ "Mailbox domain name"]
+	[ASCIZ "Mail group member"]
+	[ASCIZ "Mail rename domain name"]
+	[ASCIZ "NULL RR"]
+	[ASCIZ "Well known service"]
+	[ASCIZ "Domain name ptr"]
+	[ASCIZ "Host info"]
+	[ASCIZ "Mailbox or list info"]
+REPEAT DT$ANY-DT$MIN, [ASCIZ "Unknown"]
+	[ASCIZ "Request for all records"]
+
+CLSNAM:	0
+	[ASCIZ "DARPA Internet"]
+	[ASCIZ "NSF CSnet"]
+REPEAT DC$ANY-DC$CS, [ASCIZ "Unknown"]
+	[ASCIZ "Any"]
+
+
+;;; DOMSWR - Handle a domain UDP answer packet
+;;;  W/ ptr to IP packet 
+;;;  B/ Bp to receive NAME down.
+;;;
+;;; Prints out the QNAME in the answer section and then dispatches
+;;; to parse the class/type-dependant data section.   Does not skip.
+
+;;; All handlers expect:
+;;;  W/ ptr to packet UDP data
+;;;  B/ Bp to RDATA length word in the Answer section 
+;;; Handlers smash no ACs and do not skip.
+
+DOMSWR:	PUSHER P,[A,B,C,D,E,W]
+	ADDI W,$UDPD		;Point into UDP data.
+;	LDB A,[DP$QDC (W)]
+;	OUT(TTYO,("There are "),D(A),(" answers."),EOL)
+	MOVE A,[DQ$NAM (W)]	;Bp into the Question section.
+DOMS10:	ILDB C,A		;Skip over QNAME there.
+	JUMPE C,DOMS12		; QNAME ends with null byte.
+DOMS11:	ILDB Z,A
+	SOJN C,DOMS11
+	JRST DOMS10
+DOMS12:	ILDB Z,A ? ILDB Z,A	;Skip over QTYPE
+	ILDB Z,A ? ILDB Z,A	;Skip over QCLASS.
+
+
+DOMS20:	MOVE D,B		;Stash NAME destination.
+	CALL ANSNAM
+	 JRST [	OUT(TTYO,("Null domain name."),EOL)
+		JRST DOMS25 ]
+	OUT(TTYO,S(C,D),CRLF)	;Print out the NAME.
+DOMS25:	LBWIDE B,A		;Get TYPE.
+	LBWIDE C,A		;Get CLASS.
+	MOVE D,TYPNAM(B)
+	MOVE E,CLSNAM(C)
+	OUT(TTYO,("Type "),TZ(@D),(" "),LPAR,D(B),RPAR,(", Class "),TZ(@E),(" "),LPAR,D(C),RPAR)
+	LBWIDE D,A		;Ignore high order of TTL for now.
+	LBWIDE D,A		;Get TTL in seconds.
+	OUT(TTYO,TAB,("RR lifetime "),D(D),(" seconds."),EOL)
+DOMS30:	MOVSI E,-ANSBLK
+DOMS31:	MOVE D,ANSKND(E)
+	JUMPE D,DOMS35
+	HLRZ T,(D)
+	HRRZ TT,(D)
+	CAME B,T		;Type match?
+	 CAIA
+	  CAME C,TT		; Class match also?
+	   JRST	DOMS35
+	OUT(TTYO,("Data:"),EOL)
+	MOVE B,A		;Yes, get Bp to RDATA
+	CALL @ANSRTN(E)		;Go handle the answer.
+	 NOP			; Ignore any skips.
+	JRST DOMS90
+DOMS35:	AOBJN E,DOMS31
+	OUT(TTYO,LPAR,("Unknown kind of answer."),RPAR,EOL)
+DOMS90:	POPPER P,[W,E,D,C,B,A]
+	RET
+
+
+;;; ANSNAM - Find QNAME in Answer section.
+;;;  A/ Bp to start of NAME.
+;;;  B/ Bp to ASCII destination string.
+;;; Updates A and B.  Returns length of ASCII NAME in C.
+;;; Does not tie off ASCII string. Skips if non-null NAME.
+
+ANSNAM:	SETZ T,
+	ILDB C,A		;Get name length.
+	JUMPE C,ANSNA9
+ANSNA1:	ILDB Z,A		;Get char.
+	IDPB Z,B		;Stuff it.
+	AOS T
+	SOJN C,ANSNA1		;Get entire name.
+ANSNA2:	ILDB C,A		;Get next length.
+	JUMPE C,ANSNA3		; NAME ends with null byte.
+	MOVEI Z,".		;After each domain name comes a dot.
+	IDPB Z,B		;Stuff it.
+	AOS T			;Counting length of entire ASCII name.
+	JRST ANSNA1		;Go back for next name.
+ANSNA3:	AOS (P)
+ANSNA9:	MOVE C,T
+	RET
+
+
+;;; RINADR - Answer Handler for Internet Address.
+
+RINADR:	PUSHER P,[A,B,C]
+	LBWIDE A,B		;Get RDATA length.
+	CAIE A,4
+	 OUTCAL(TTYO,("Internet address not four bytes long?"),EOL)
+RINA10:	ILDB C,B
+	OUT(TTYO,D(C))
+	SOJE A,RINA90
+	OUT(TTYO,("."))
+	JRST RINA10
+RINA90:	OUT(TTYO,EOL)
+	POPPER P,[C,B,A]
+	RET
+
+
+SUBTTL	Randomness
+
+
+;;; ASZLEN - Length of ASCIZ string.
+;;; A/ ptr to string
+;;; Returns in A the length.
+
+ASZLEN:	HRLZI T,440700
+	HRR T,A
+	SETZ A,
+ASZLE1:	ILDB TT,T
+	JUMPE TT,ASZLE9
+	AOS A
+	JRST ASZLE1
+ASZLE9:	RET
+
+
+;;; JCLPAR parses the JCL into SRVHST and QNAME.
+
+%SCA==1
+%TWO==4
+
+JCLPAR:	PUSHER P,[A,B,C]
+	SETZ A,			;Clear flags.
+	TRO A,%SCA		;Start out scanning.
+	MOVE C,[440700,,JUNK]	;No output yet.
+JCLP10:	MOVE B,[440700,,JCLBUF]	;Input from JCL buffer.
+JCLP11:	ILDB T,B		;Get a character.
+	CAIE T,0		;Check for end of JCL.
+	 CAIN T,33
+	  JRST JCLP30
+	CAIE T,^_
+	 CAIN T,^C
+	  JRST JCLP30
+	CAIE T,^J
+	 CAIN T,^M
+	  JRST JCLP30
+	CAIE T,40		;Space?
+	 JRST JCLP20		; No.
+	TRNE A,%SCA		;If scanning
+	 JRST [ TRO A,%TWO	; Note there is a second token.
+		JRST JCLP11 ]
+	SETZ T,			;If gobbling,
+	IDPB T,C		; Tie off the first token
+	MOVE C,[440700,,QNAME]	; and begin second one.
+	JRST JCLP11
+JCLP20:	TRNN A,%SCA		;When gobbling, normal chars
+	 IDPB T,C		; are stuffed into output string.
+	JRST JCLP11
+JCLP30:	TRNN A,%SCA		;End of JCL.
+	 JRST JCLP60		;If gobbling, we're done.
+	TRZ A,%SCA		;Else end scanning.
+	MOVE C,[440700,,SRVNAM]	;Normally we have two tokens.
+	TRNN A,%TWO		;If no space was found
+	 MOVE C,[440700,,QNAME]	; we have only the second token.
+	JRST JCLP10		;Go fill in appropriate strings.
+
+JCLP60:	TRNN A,%TWO		;If only one token
+	 JRST JCLP90		; QNAME was filled.
+	MOVE A,[440700,,SRVNAM]	;Two tokens, so first is server host.
+	CALL NETWRK"HSTLOO	;Look it up.
+	 LOSE (TTYO,("Unknown host: "),TZ(SRVNAM))
+	MOVEM A,SRVHST
+JCLP90:	SKIPN QNAME		;Final check on JCL.
+JCLLOS:	 LOSE (TTYO,("Usage is :DQ "),LABR,("Server"),RABR,SP,LABR,("QNAME"),RABR)
+	POPPER P,[C,B,A]
+	RET
+
+
+
+SUBTTL	Storage
+
+JUNK:	0			;The kitchen sink.
+DEBUG:	-1			;Debugging switch.
+	PDLLEN==256.
+PDL:	BLOCK PDLLEN		;The stack.
+PATCH:	BLOCK 200		;Patch area.
+
+JNAME:	0			;Our job name.
+
+JCLBUF:	BLOCK 10.		;JCL input buffers.
+SRVNAM:	BLOCK 10.
+
+QNAME:	BLOCK 20.
+NAME:	BLOCK 20.
+
+QRCRSE:	0			;1 if query recursion desired.
+TSTART:	0			;Response timer.
+PKTLEN:	0			;Packet length in bytes.
+QID:	68.			;Query ID.
+SRVHST:	IHOST 10,0,0,51		;SRI-NIC  is default server.
+SRVPRT:	0
+
+CONSTANTS
+VARIABLES
+
+LASTPG==1+<<.+1777>/PG$SIZ>	
+
+OPKTPG==LASTPG+1		;Packet buffer pages.
+OPKT=OPKTPG*PG$SIZ
+IPKTPG==OPKTPG+4
+IPKT=IPKTPG*PG$SIZ
+
+HSTPAG=IPKTPG+5			;HOSTS3 page.
+
+END GO
+

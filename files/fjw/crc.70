@@ -1,0 +1,365 @@
+;-*-Midas-*-
+
+	TITLE :CRC - Cyclic Redundancy Check
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;	Algorithm:
+;;;
+;;;	CRC=0
+;;;	DO UNTIL EOF
+;;;	BEGIN
+;;;	C=<next char>
+;;;	TEMP=LSH(CRC,1)
+;;;	CRC=OR(AND(NOT(377), TEMP)
+;;;	       AND(377, C+TEMP))
+;;;	IF SIZE(CRC)>16bits THEN CRC=XOR(120227,CRC)
+;;;	END
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+A=1	;General Porpoise
+B=2
+C=3
+D=4
+E=5
+F=6
+T1=7
+T2=10
+T3=11
+T4=12
+P=17
+
+Call=PUSHJ P,
+Return=POPJ P,
+
+TTYo==1
+DSKi==2
+PDLEN==15
+JCLEN==10
+
+;;
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;
+
+DEFINE SYSCAL OP,ARGS
+	.CALL [SETZ ? SIXBIT /OP/ ? ARGS ((SETZ))]
+TERMIN
+
+DEFINE TYPE &STRING
+	MOVEI T1,<.LENGTH STRING>
+	MOVE T2,[440700,,[ASCII STRING]]
+	SYSCAL SIOT,[%CLIMM,,TTYo ? T2 ? T1]
+	  .LOSE %LSSYS
+TERMIN
+
+Define DBP ac
+	Add ac,[70000,,]
+	Skipge ac
+	  Sub ac,[430000,,1]
+Termin
+
+;;
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;
+
+BEGIN:	MOVE P,PDLIST
+	SYSCAL OPEN,[%CLBIT,,.UAO ? %Climm,,TTYo ? [Sixbit /TTY/]]
+	  .LOSE %LSSYS
+	.BREAK 12,[..rJCL,,JCLBUF]
+	MOVE E,[440700,,JCLBUF]
+	SKIPE JCLBUF
+	  JRST PARSE
+	TYPE "Give the file in JCL"
+	JRST DIE
+
+PARSE:	SETZB T2,T4
+	MOVE T3,[440600,,T2]
+PARTAG:	ILDB T1,E
+	CAIE T1,^C
+	  CAIN T1,^M
+	    JRST MATCH
+	SKIPE QUOTE
+	  JRST NDELIM
+	CAIE T1,^Q
+	  JRST NQUOTE
+	SETOM QUOTE
+	JRST PARTAG
+NQUOTE:	CAIE T1,":
+	  CAIN T1,";
+	    JRST MATCH
+	CAIE T1,40
+	  CAIN T1,",
+	  JRST MATCH
+NDELIM:	CAIL T4,6
+	  JRST PARTAG
+	CAIL T1,140
+	  SUBI T1,40
+	SUBI T1,40
+	IDPB T1,T3
+	SETZM QUOTE
+	AOJA T4,PARTAG
+
+MATCH:	Jumpe T2,DEFALT
+	CAIE T1,":
+	  Jrst NilDev
+	Movem T2,Device
+	Jrst Parse
+NilDev:	Caie T1,";
+	  Jrst NilSna
+	Movem T2,Sname
+	Jrst Parse
+NilSna:	MOVEI T3,FN2
+	SKIPN FN1
+	  MOVEI T3,FN1
+	MOVEM T2,@T3
+	CAIN T1,40
+	  JRST PARSE
+
+DEFALT:	SKIPN SNAME
+	  .SUSET [.rHSNAME,,SNAME]
+	SKIPN FN1
+	  .Suset [.rXuname,,FN1]
+
+OPEN:	SYSCAL OPEN,[%CLBIT,,.uii
+		     %CLIMM,,DSKi
+		     DEVICE ? FN1 ? FN2 ? SNAME]
+	  JRST NOFILE
+	Type "  File: "
+	Call FilTyp
+	Syscal FILLEN,[%Climm,,DSKi ? %Clout,,Fillen]
+	  .Lose %LsSys
+	Move T1,Fillen
+	Idivi T1,2000
+	Skipe T2
+	  Aoj T1,		;c(T1) pages long (rounded)
+	Movss T1
+	Movns T1
+	Movei T2,Death	;absolutely the last loc in this job
+	Idivi T2,2000
+	Skipe T3
+	  Aoj T2,		;c(T2) is where we map into
+	Hrr T1,T2	;-Len,,Loc
+	Imuli T2,2000
+	Add T2,[(E)]
+	Movem T2,MapPtr
+	Syscal CORBLK,[%Climm,,%Cbprv		;Get fresh pages
+		       %Climm,,%Jself
+		       T1
+		       %Climm,,%Jsnew]
+	  Jrst NoMap
+	Hrli T3,444400
+	Hrr T3,MapPtr
+	Move T2,Fillen
+	Syscal SIOT,[%Climm,,DSKi ? T3 ? T2]	;Inhale file
+	  .Lose %LsSys
+	Setz E,
+	Type "î  Type: "
+	Move T1,@MapPtr
+;	Camn T1,[Sixbit /DSK8/]
+	  Jrst COMMAP
+	Hrli E,350700
+	Hrr E,MapPtr
+	Add E,Fillen
+	Move T1,Fillen
+	Imuli T1,5
+Crock:	DBP E
+	Ldb T2,E
+	skipe t2		;Nulls are padding as well (e.g. FTP)  -gz
+	Cain T2,^C
+	  Soja T1,Crock
+	Movem T1,Fillen
+	Move D,T1
+	Hrli E,440700
+	Hrr E,MapPtr
+	Type "ASCII text"
+LOOP:	Ildb B,E
+	MOVE C,A
+	LSH C,1
+	ADD B,C
+	ANDI B,377
+	ANDCMI C,377
+	IOR C,B
+	MOVEM C,A
+	CAIG A,177777
+	  JRST .+3
+	ANDI A,177777
+	XORI A,120227
+	Sojn D,Loop
+	Jrst Spill
+
+COMMAP:	Setom COM
+	Type "COM binary"
+	Move T1,Fillen
+;	Soj T1,		;account for header
+	Move D,T1
+	Imuli T1,4	;# chars
+	Movem T1,Fillen
+	Movei E,1
+
+	setz T4,		;Compute fill to sector bdry, in words -gz
+	move T1,D
+	andi T1,37
+	jumpe T1,CLOOPi
+	movei T4,32.
+	sub T4,T1
+
+CLOOPi:	Move T1,@MapPtr
+cloopj:	Movei T2,4
+	Move T3,[441000,,T1]
+CLOOP:	Ildb B,T3
+	Move C,A
+	Lsh C,1
+	Add B,C
+	Andi B,377
+	Andcmi C,377
+	IOr C,B
+	Movem C,A
+	Caig A,177777
+	  Jrst Next
+	Andi A,177777
+	Xori A,120227
+Next:	Sojn T2,CLoop
+	Aoj E,
+	Sojg D,Cloopi
+	setz T1,		;Zero-fill to sector bdry -gz
+	sojge T4,cloopj
+
+Spill:	TYPE "îLength: "
+	MOVE T1,Fillen
+	CALL DECTYP
+	TYPE " characters"
+	MOVE E,Fillen
+	IDIVI E,128.
+	Jumpe E,Padp
+	Type " = "
+	MOVE T1,E
+	CALL DECTYP
+	TYPE " sectors"
+	Jumpe F,TYPCRC
+	TYPE " plus "
+	Move T1,F
+	Call DecTyp
+Padp:	Skipe COM
+	  Jrst TypCRC
+	Type " (and "
+	MOVEI T1,128.
+	SUBB T1,F
+	CALL DECTYP
+	Type " pads)"
+
+PADTAG:	MOVE C,A
+	MOVEI B,^Z
+	LSH C,1
+	ADD B,C
+	ANDI B,377
+	ANDCMI C,377
+	IOR C,B
+	MOVEM C,A
+	CAIG A,177777
+	  JRST .+3
+	ANDI A,177777
+	XORI A,120227
+	SOJN F,PADTAG
+
+TYPCRC:	TYPE "î   CRC: "
+	MOVE T1,A
+	CALL HEXTYP
+	Type " hex"
+	JRST DIE
+
+NOFILE:	TYPE "No such file:  "
+	Call FilTyp
+	Jrst Die
+
+NoMap:	Type "îCan't get fresh pages?"
+	Jrst Die
+
+DIE:	.LOGOUT 1,
+
+;;
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;
+
+6TYPE:	SETZ T2,
+	ROTC T1,6
+	ADDI T2,40
+	.IOT TTYo,T2
+	JUMPN T1,6TYPE
+	RETURN
+
+HEXTYP:	MOVE T2,[200400,,T1]
+	MOVEI T3,4		;4 chars/word
+HEXTAG:	ILDB T4,T2
+	CAILE T4,9.
+	  ADDI T4,7
+	ADDI T4,60
+	.IOT TTYo,T4
+	SOJN T3,HEXTAG
+	RETURN
+
+DECTYP:	SETZ T3,
+DECTAG:	IDIVI T1,10.
+	PUSH P,T2
+	AOJ T3,
+	JUMPN T1,DECTAG
+TAGNO2:	POP P,T1
+	ADDI T1,60
+	.IOT TTYo,T1
+	SOJN T3,TAGNO2
+	RETURN
+
+FILTYP:	MOVE T1,DEVICE
+	CALL 6TYPE
+	.IOT TTYo,[":]
+	MOVE T1,SNAME
+	CALL 6TYPE
+	.IOT TTYo,[";]
+	MOVE T1,FN1
+	CALL 6TYPE
+	.IOT TTYo,[" ]
+	MOVE T1,FN2
+	CALL 6TYPE
+	RETURN
+
+;;
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;
+
+PDLIST:	-PDLEN,,PDLIST
+	BLOCK PDLEN
+
+JCLBUF:	BLOCK JCLEN
+	-1
+
+DEVICE:	SIXBIT /DSK/
+SNAME:	0
+FN1:	0
+FN2:	Sixbit />/
+
+QUOTE:	0
+COM:	0
+Fillen:	0
+MapPtr:	0
+
+;;
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;
+
+VARIAB
+CONSTA
+
+DEATH:	0		;The final stop... *bwa ha ha*
+
+
+	END BEGIN

@@ -1,0 +1,1192 @@
+;;;                            -*- Midas -*-
+
+        TITLE KLUGE -- PDP-10 setup for Gumby
+
+;;; featuring judicious theft from everybody in sight
+
+if1,[; select system to assemble for
+
+it==ifdef .iot,[1] .else 0	;non-zero => its version
+tn==ifdef gtjfn,[1] .else 0	;non-zero => twenex version
+vt==ifdef vtsop%,[1] .else it   ;non-zero => ^P codes are OK
+chaos==ifdef chanm%,[1] .else 0	;non-zero => tnx w/chaos
+ife it#tn .fatal Where the hell am I?
+
+;;; one-line conditional macros from maclisp
+;;; $: true; %: false
+define it$
+ifn it,termin
+
+define it%
+ife it,termin
+
+define tn$
+ifn tn,termin
+
+define tn%
+ife tn,termin
+
+define vt$
+ifn vt,termin
+
+define vt%
+ife vt, termin
+
+ascbyt==440700
+sixbyt==440600
+
+;;; temporary kluge for losing UT monitor:
+;;; If chaos but no vts, we must have UT monitor (bullshit).
+ifndef ut, ut==chaos&(#vt)
+
+ifndef watson, watson==vt&tn
+;;; if has vts, assume also new inquir system (TNX only)
+;;; (not true for speech, but I no longer use speech)
+
+] ;pass 1
+
+	subttl	general symbol defs
+
+nil=:0                          ;mostly useless anyway
+a=:5
+b=:6
+c=:7
+d=:10
+e=:11				;only used by LSRTNS
+t=:12
+tt=:13
+s=:14
+p=17
+
+call=<pushj p,>
+ret=<popj p,>
+
+pdllen==:70
+.vector pdlbuf(pdllen)
+
+
+	subttl	ITS-specific constants, etc
+
+ifn it,[
+
+;;; IO channels
+tyoch==1
+tyich==2
+dskich==3 ; file channel
+lsrch==4  ; channel to map LSR database with
+
+.insrt system;fsdefs            ; filesystem stuff
+
+.chspc=:40                      ;space character
+
+define	syscall	name,args
+	.call	[setz ? sixbit /name/ ? args((setz))]
+	termin
+
+define	type	&string
+	movei	t,<.length string>
+	move	tt,[ascbyt,,[ascii string]]
+	syscal	siot,[%climm,,tyoch ? tt ? t]
+	 .lose	%lssys
+termin
+
+define	crtype	&string
+	.iot	tyoch,[^P]
+	.iot	tyoch,["A]
+	movei	t,<.length string>
+	move	tt,[ascbyt,,[ascii string]]
+	syscal	siot,[%climm,,tyoch ? tt ? t]
+	 .lose	%lssys
+termin
+
+define	ctype	char            ;type character (CTYPE "F)
+	.iot	tyoch,[char]
+	termin
+
+define	tyi                     ;suck character into 1
+	.iot	tyich,1
+	termin
+
+define atype	addr		;type string stored at addr
+	movei	2,[ascbyt,,addr];bashes 2,t,tt
+	call	strout
+termin
+
+]; its
+
+	subttl	TNX-specific constants, etc
+
+ifn tn,[
+.decsave                        ;just assemble and run
+
+.insrt mid:macsym		;fld, et al.
+.insrt mid:macros		;type, et al
+.insrt mid:prarg		;then you die
+
+;; args to flout
+flop== fl%one+fl%pnt+fl%rnd+<fld 3,fl%fst>+<fld 2,fl%snd>
+
+define	tyi
+	pbin%
+	termin
+
+pslh==540000	;ps lh
+
+;;; allow .lose %lssys et al.
+%lsfil=:0
+%lssys=:0
+]; tnx
+
+	subttl	Start and dispatch
+
+begin:
+tn$	reset%
+	move	p,[-pdllen,,pdlbuf-1]
+	call	ttyini          ;set up tty info
+	call	cls             ;clear screen
+	type	"Hi "
+	call	nicnam		;hack nickname or whatever
+	type	", welcome to "
+	call	fsmach          ;hack machine name
+	type	" at "
+	call	curtim          ;type current time
+	call 	uptime          ;uptime
+	call	prload          ;load/fair share
+	call	dskchk          ;disk getting full?
+	call	printu		;print users
+it$	call	xxchk		;maybe look for xx mail
+	call	maichk          ;do I have mail?
+	.logout 1,
+
+	subttl	TTYINI -- init tty and clear screen
+
+ttyini:
+ifn it,[syscal	open,[%clbit,,.uao+%tjdis       ;want ^P
+		      %climm,,tyoch ? [sixbit/tty/]]
+	 .lose %lsfil
+	syscal	open,[%clbit,,.uai ? %climm,,tyich ? [sixbit/tty/]]
+	 .lose %lsfil
+	] ;its
+ifn tn,[movei	1,.fhslf
+	rpcap                   ;get job info
+	hllo	1,[tl%abs+tl%sab+tl%aad+tl%sta] ;accept links and advice
+	txne	2,sc%whl+sc%opr+sc%mnt
+	 tdz	1,[tl%aad]      ;but not advice if wheel bit!
+	tlink% ? .lose
+vt$	p%on			;^p code enabled
+ife vt,[		;no need for tty type if we have vts!
+.scalar ttype,oldmod
+	movei	1,.priou	;get some tty info
+	gttyp%
+	movem	2,ttype		;save for later
+	] ; non-VTS
+	] ; tnx
+	ret
+
+	subttl CLS -- clear screen
+
+;;; MM-style CLS routines
+
+cls:
+it$	type	"C"           ;clear screen
+ifn tn,[
+ifn vt,[movei	1,.priou	;get some tty info
+	rtchr%
+	txnn	2,tc%clr	;do we know how to CLS?
+	 jrst	terpri		;nope; just do CR
+	movei	2,.vtclr	;yes, do so
+	vtsop%
+]; ifn vt
+ife vt,[move	2,ttype		;get tty type
+	caige	2,nclrsc	;more than the number supported?
+	 skipn	clrscn(2)	;yes, able to blank on this type?
+	  jrst	terpri		;nope;do a newline
+	rfmod%			;get current terminal mode
+	movem	2,oldmod	;save for later
+	trz	2,tt%dam	;change to binary mode
+	sfmod%
+	move	2,ttype		;get type index back again
+	move	1,clrscn(2)	;get blanking sequence or address
+	txoe	1,.lhalf	;was it an address (lh=0)?
+	 hrroi	1,clrscn(2)	;no, sequence 4 chars or less, set up address
+	psout%			;output the sequence
+	movei	1,.priou	;wait for it to get out
+	dobe%
+	setz	2,		;tell monitor we are at top of page
+	sfpos%
+	movei	1,500.		;give terminal a chance to do it
+	disms%
+	movei	1,.priou	;restore former terminal mode
+	move	2,oldmod
+	sfmod%
+;;; non-VTS TNX continues on next page (tty types)
+];ife vt
+] ;ifn tnx
+	ret			;now return
+
+	subttl	non-vts ttytype tables
+ifn tn,{
+ife vt,{
+clrascii== <.byte 7 ? .chesc ? "H ? .chesc ? "J> ; ascii screen clear
+clransi== [.byte 7 ? .chesc ? "[ ? "H ? .chesc ? "[ ? "J] ; ansi standard
+
+;;; An entry in this table is either a string of characters (if 4 or
+;;; fewer) or the address of such a string.
+
+clrscn:	0			; 0 tty33
+	0			; 1 tty35
+	0			; 2 tty37
+	0			; 3 ti
+	0			; 4 reserved for customer definition
+	0			; 5 reserved for customer definition
+	0			; 6 reserved for customer definition
+	0			; 7 reserved for customer definition
+	0			; 8 default
+	0			; 9 pty, nvt (aka "ideal")
+	<.byte 7 ? .chcrb ? .chcun ? .chcun ? .chcun> ; 10 vt05
+	clrascii		; 11 vt50
+	0			; 12 la30
+	<.byte 7 ? .chcrb ? .chcun> ; 13 gt40
+	0			; 14 la36
+	clrascii		; 15 vt52
+	clransi			; 16 vt100
+	0			; 17 la38
+	0			; 18 la120
+	0			; 19 reserved for customer definition
+	0			; 20 reserved for customer definition
+	0			; 21 reserved for customer definition
+	0			; 22 reserved for customer definition
+	0			; 23 reserved for customer definition
+	0			; 24 reserved for customer definition
+	0			; 25 reserved for customer definition
+	0			; 26 reserved for customer definition
+	0			; 27 reserved for customer definition
+	0			; 28 reserved for customer definition
+	0			; 29 reserved for customer definition
+	0			; 30 reserved for customer definition
+	0			; 31 reserved for customer definition
+	0			; 32 reserved for customer definition
+	0			; 33 reserved for customer definition
+	0			; 34 reserved for customer definition
+	clransi			; 35 vt125
+	clransi			; 36 vk100 (gigi)
+nclrsc==.-clrscn		; maximum # of terminal types
+
+ifn ut,{.ttamb==41 ? .tth19==31 ? .ttdam==23}
+
+ifdef .ttamb,{loc clrscn+.ttamb ? clransi} .else .err AAA code not assembled
+ifdef .tth19,{loc clrscn+.tth19 ? clrascii} .else .err h19 code not assembled
+ifdef .ttdam,{loc clrscn+.ttdam ? <.byte 7 ? .chcrb ? .chccf>}
+  .else .err dm2500 code not assembled
+
+loc clrscn+nclrsc		;put words where they belong!
+
+} ; ife vt
+} ;ifn tnx
+
+	subttl	NICNAM -- store nickname in fsnick and print it
+
+.scalar fsnick(10)		;up to 40. ascii characters
+
+lsrpgs==100                     ;number of pages for lsrtab
+
+ifn it,[
+
+;;; Inquir database hackery
+;;; don't assemble useless gubbage
+$$ULNM==0	;don't care about last name
+$$ULNP==0	;even if abbreviated
+$$UNAM==0	;no never!
+.insrt syseng;lsrtns >
+
+nicnam:	move	a,lsrch
+	move	b,[-lsrpgs,,lsrbeg]
+	call	lsrtns"lsrmap
+	 jrst	ohwell          ;lost, so use xuname
+	.suset	[.rxuname,,b]	;uname into b
+	call	lsrtns"lsrunm   ;find our entry in database
+	 jrst	ohwell          ;nope, not known to inquir (!)
+	.close	lsrch,          ;close lsr file
+	movei	a,lsrtns"i$nick
+	call	lsrtns"lsritm   ;find nickname
+	 jrst	ohwell		;what a loser
+	move	b,[ascbyt,,fsnick]
+copnic:	ildb	c,a		;get char of nickname
+	jumpe	c,copdon	;if done, print
+	caie	c,^C            ;^C has an equal right to stop us
+	 cain	c,",            ;some people have two nicknames, separated by ,
+	  jrst	prinic
+	idpb	c,b
+	jrst	copnic
+copdon:	skipn	fsnick		;can't find it!
+	 jrst	prinic
+
+ohwell:	.close	lsrch,		;if all else fails, use xuname.
+	.suset	[.rxuname,,d]	;uname into d
+	move	a,[sixbyt,,d]
+	move	b,[ascbyt,,fsnick]
+repeat	6,[			;make it ascii
+	ildb	c,a
+	jumpe	c,undown	;if 0, end of uname
+	addi	c,40
+	idpb	c,b
+	]
+	];its
+
+ifn tn,[
+ifn watson,[
+$$map==1
+$$read==1
+$$nover==1                      ;user number MUST be valid!
+.insrt mid:hakinq
+
+	;; try to find luser in inquir database
+nicnam:	movei	a,lsrpgs
+	call	hakinq"mapin
+	 jrst	ohwell          ;lost; use uname
+	gjinf%
+	movem	1,a
+	move	b,[hakinq"%nname,,fsnick]
+	call	hakinq"readf    ;get string!
+	 jrst	ohwell
+	skipe	fsnick		;only print it if it exists
+	  jrst	prinic
+	];watson
+ife watson, nicnam:             ;synonymous in this case
+ohwell:	gjinf%
+	movem	1,2             ;put luser number in right place
+	hrroi	1,fsnick
+	dirst	? .lose         ;put string right there!
+	;; search for last . in the string
+	;; when done, 3 will have bp to rest of string
+	move	2,[ascbyt,,fsnick]
+fldot:	movem	2,3		;get best so far
+dtloop:	ildb	1,2
+	cain	1,".		;period?
+	 jrst	fldot		;yup, mebbe last one
+	skipe	1		;null?
+	 jrst	dtloop		;nup; keep lookin
+	;; OK, 3 now has byte ptr pointing to end of uname move
+	;; Capitalised uname into FSNICK (should merge this with UNACAP
+	;; in PRINTU.
+	move	2,3
+	] ;tn
+undown:
+it$	movei	2,fsnick
+	hrli	2,ascbyt	;make pointer to start to FSNICK
+	ildb	1,3		;get first char
+	idpb	1,2		;copy to nicname
+uncopy:	ildb	1,3		;get next character
+	jumpe	1,uncdon	;if null, we're done
+	addi	1,"a-"A		;else downcase it
+	idpb	1,2		;and store
+	jrst	uncopy
+ifn tn#watson,[
+uncdon:	idpb	1,2		;don't forget to end with zero!
+	hrroi	1,fsnick
+	hrroi	2,[asciz/Gumby/]
+	stcmp%			;is this GUMBY
+	jumpn	1,prinic	;nahh,
+	hrroi	1,fsnick
+	hrroi	2,[asciz/Bruce/]
+	setz	3,
+	sout%			;I prefer to be bruce
+	];tnx
+ife tn#watson, uncdon:
+prinic:	atype	fsnick
+	ret
+
+
+	subttl	ITS FSMACH -- put machine name in ssite and print it
+
+;;; note: the name is sixbit under ITS
+
+ifn it,[
+.scalar ssite                   ;one word's more than enuf
+.scalar	dietim                  ;time till we go down
+.scalar	sysdbg                  ;sys being debugged
+.scalar time                    ;uptime
+.scalar susrs                   ;user count
+.scalar	slots
+
+fsmach: syscal sstatu,[%clout,,dietim
+		       %clout,,sysdbg
+		       %clout,,susrs
+		       %clout,,nil      ;mem errors
+		       %clout,,time
+		       %clout,,ssite
+		       %clout,,nil      ;sys version
+		       %clout,,slots]
+	  .lose %lssys
+	move	t,ssite
+	jrst	sixout          ;print it and tail-recurse
+	]; its
+
+
+	subttl	TNX FSMACH -- put machine name in ssite and print it
+
+;;; note the name is asciz under tnx
+
+ifn tn,[
+
+namlen==21.                     ;names can be 64 characters long???
+.vector ssite(namlen)
+
+fsmach:	call	getsite         ;put asciz string into ssite
+	call	sttrim          ;strip su-, mit-, etc and domains
+	atype	ssite           ;print it out
+	ret                     ;and return
+
+;;; start by trying to read kludgy mmailr file (from mm)
+getsit:	movx	1,gj%sht+gj%old
+	hrroi	2,[asciz/system:hostname.txt/]
+	gtjfn%
+	 erjmp	nofile
+	movx	2,<<fld 7,of%bsz>+of%rd>	;7-bit ascii
+	openf%			;filure leaves jfn assigned,
+	 erjmp	nofile		;but who cares, here?
+	hrroi	2,ssite         ;Where to put it
+	movx	3,namlen	;max characters
+	movx	4,.chlfd	;terminate on a linefeed
+	sin%                    ;read it.
+	closf%	? jfcl
+	ret
+
+;;; maybe we have arpanet then? (this comes from TECO)
+nofile: movei	1,2		;.gthns - get host name
+	hrroi	2,ssite         ;put string here
+	seto	3,              ;want local host
+	gthst                   ;get name
+	 jrst	hstlos          ;can't...hmm...
+	movei	2,0		;make sure string is asciz
+	idpb	2,1		;(never can trust dec software)
+	ret
+
+;;; if all else fails, just call machine twenex
+hstlos: hrroi	2,[asciz/twenex/] ;default
+copnam:	hrroi	1,ssite        ;set special name
+	setz	3,
+	sout%			;copy default to ssite
+	ret
+
+sttrim:	move	1,[ascbyt,,ssite]
+nmtrim:	ildb	2,1		;get char from string read in
+	caie	2,.chlfd	;lf terminates
+	 cain	2,.chcrt	;cr terminates
+	  setz	2,
+	caie	2,.chtab	;tab terminates
+	 cain	2,.chspc	;space terminates
+	  setz	2,
+	cain	2,".		;period terminates (no domains, thanks)
+	 setz	2,
+	dpb	2,1		;store back into string
+	jumpn	2,nmtrim	;and if not null, keep going
+	move	1,[ascbyt,,[asciz/mit-/]]
+	call	strsit          ;maybe strip site
+	move	1,[ascbyt,,[asciz/su-/]]
+	call	strsit
+	move	1,[ascbyt,,[asciz/centre-/]]
+	hrroi	3,[asciz/CM/]   ;centre-20 is too long
+	call	hstsub          ;use alternate name
+	move	1,[ascbyt,,[asciz/mcc-/]]
+	hrroi	3,[asciz/MCC/]
+	call	hstsub          ;use alternate name
+	ret
+
+strsit:	call	cmpnam          ;compare
+	txnn	1,sc%sub
+	 ret                    ;nope; no match
+	movei	1,ssite
+	hrli	1,ascbyt
+	setz	3,              ;end with 0!
+	sout%                   ;strip prefix
+	pop	p,              ;return to caller's
+	ret                     ;caller
+
+cmpnam:	movei	2,ssite         ;compare bp in 1
+	hrli	2,ascbyt        ;with host name
+	stcmp%
+	ret
+
+;; sub name in 3 if name in 1 matches
+hstsub:	call	cmpnam          ;does 1 match hostname?
+	txnn	1,sc%sub
+	 ret                    ;nope
+	movem	3,2             ;set up for copy
+	pop	p,              ;return to caller's caller
+	jrst	copnam
+	] ;tnx
+
+	subttl	CURTIM -- Print current time on tty as HH:MM:SS-TZ
+
+curtim:
+ifn it,[.rtime	t,              ;get HHMMSS in sixbit
+	setz	tt,
+	rotc	t,6
+	addi	tt,.chspc
+	caie	tt,"0
+	 .iot	tyoch,tt        ;don't print leading 0
+	call	sixone          ;but print next char
+	ctype	":
+	call sixone ? call sixone       ;print minutes
+	ctype	":
+	call	sixout          ;seconds too
+	.ryear	t,
+	tlnn	t,100000        ;4.7 ==> Daylight savings in effect
+	 jrst	[type "-EST"
+		 ret]
+	type	"-EDT"		;only in Cambridge!
+	] ;its
+ifn tn,[movei	1,.priou
+	seto	2,		;print current time
+	movx	3, ot%nda+ot%tmz+ot%scl
+	odtim%                  ;w/time zone but no date
+	] ;tnx
+	ret
+
+	subttl	UPTIME -- print system uptime and related info.
+
+.scalar parenp                  ;pretty-print flag for debugging switch
+uptime:	crtype	"System up "
+
+it$	move	1,time          ;get time
+it$	idivi	1,30.           ;turn 30ths into seconds
+tn$	time%			;read time
+tn$	idiv	1,2		;turn milliseconds to seconds
+	call	hmprin          ;print Xh Ym (or Z seconds)
+
+;;; maybe print debugging, downtime notice.
+	setz	parenp
+it$	move	1,sysdbg        ;sys going down?
+it$	jumpe	1,sysdwn        ;guess not
+it$	type	"  (ITS"        ;you betcher
+
+ifn tn,[move	1,[0,,.dbugsw]  ;we being debugged?
+	getab ? .lose           ;should just jrst to print down
+	caie	1,2             ;we're debugging!
+	 jrst	sysdwn          ;nope
+	type	"  (20X"
+	] ;tnx
+	type	" being debugged"
+	setom	parenp          ;indicate we printed this
+
+sysdwn:
+it$	move	1,dietim        ;get ITS downtime
+it$	jumpl	1,nodown        ;no time soon, so forget it.
+ifn tn,[move	1,[0,,.dwnti]   ;when do we go down?
+	getab%	? ret           ;punt if we lose
+	jumpe	1,nodown        ;zero means never
+	movsi	2,1
+	subm	1,2             ;2= one day before downtime
+	gtad%                   ;get now into 1
+	sub	1,2             ;downtime less than a day away?
+	jumpge	1,nodown        ;nope, never mind.
+	] ;tnx
+	skipn	parenp          ;debugging info printed?
+	 jrst	[type "  (D"    ;nope
+		 jrst .+2]
+	call	[type "; d"     ;yup; be pretty
+		 ret]
+	type	"own in "
+
+it$	idivi	1,30.
+tn$	idivi	1,3
+	call	hmprin
+	setom	parenp          ;better than jrst .+2
+nodown:	skipn	parenp          ;did we print debugging info?
+	  ret                   ;nope
+	ctype	")              ;yup, be pretty
+	ret
+
+.scalar minflg                  ;if just printing minutes, be verbose
+;;; print 1 as Xh Ym or Z seconds if less than 1 minute
+hmprin:	setzm	minflg
+	caige	1,60.		;less than one minute?
+	 jrst	[call	pr1n10  ;just print it
+		 type	" seconds!"
+		 ret]
+	idivi	1,3600.		;get hours into 1; rest in 2
+	jumpe	1,[move	1,2
+		   setom minflg
+		   jrst	minout]	;if no hours, print nothing
+	push	p,2		;else preserve min+sec,
+	call	pr1n10		;and output hours
+	type	"h "
+	pop	p,1		;restore unprinted amount
+minout:	idivi	1,60.		;get minutes into 1
+	call	pr1n10		;print minutes
+	skipe	minflg
+	 jrst	[type	" minutes!"
+		 ret]
+	ctype	"m
+	ret
+
+	subttl	PRLOAD print load/fair share, etc
+
+prload:
+ifn it,[crtype	"Fair Share: "
+	move	d,[squoze 0,sloadu]
+	.eval	d,
+	 .lose	%lssys
+	hrlz	d,d             ;get value, put in nil
+	.getloc	d,
+	movei	a,10000.
+	idivm	a,nil
+	move	2,nil           ;move integer to 2
+	call	prin10
+	ctype	"%
+	move	a,slots
+	caile	a,10.           ;more than ten free?
+	 ret                    ;yup
+	type	" (and only "
+	move	2,slots
+	call	prin10
+	type	" free job slots!)"
+	ret
+	] ;it
+
+ifn tn,[
+skbsz==10
+.vector skdblk(skbsz)		;block for SKED% info
+
+	movei	1,.skrcv	;read status of scheduler
+	movei	2,skdblk
+	movei	3,2             ;get size of argblk
+	movem	3,skdblk+.sacnt	;and put it in proper place
+	sked% ? .lose
+	move	4,skdblk+.sactl	;get returned value into AC
+	txnn	4,sk%stp        ;if this bit is set
+	 jrst	clastp          ;print out loads for our class
+	crtype	"Loads:"	;CR and message for overall
+	movx	3,flop
+	movsi	1,14 ? call loadtp	;1 minute average
+	movsi	1,15 ? call loadtp	;5 minute average
+	movsi	1,16            ;15 minute average
+
+;; Print overall load factor.  3 has fout% format, 2 load index
+loadtp:	hrri	1,.systa	;data is in the systat table
+	getab			;read it
+	 setz	1,		;failed, make zero
+	move	2,1		;put into right ac
+	jrst	flonum          ;print out as floating
+
+;;; Thanks, Randy!
+clastp:	crtype	"Loads for class "
+setom	skdblk+.sajob   ;job no -1 means us?
+	movei	1,.skrjp	;read class parameters for job
+	movei	2,skdblk	;class, share, and use...
+	movei	3,skbsz
+	movem	3,skdblk+.sacnt
+	sked% ? .lose           ;despite documentation,
+	move	2,skdblk+2      ;apparently returns CLASS of job here
+	movem	2,skdblk+.sacls	;class number
+	call	prin10          ;spit it out!
+	ctype	":              ;and colon for good looks
+	movei	1,.skrcs	;want class parameters	
+	movei	2,skdblk	;address of arg block
+	movei	3,7		;length of arg block
+	movem	3,skdblk+.sacnt	;in count
+	sked% ? .lose
+	movx	3,flop          ;set up for flout
+	move	2,skdblk+.sa1ml
+	call	flonum          ;print 1-min-share
+	move	2,skdblk+.sa5ml
+	call	flonum          ;print 5-min-share
+	move	2,skdblk+.sa15l
+	jrst	flonum          ;print 15-min-share and return
+	]; tnx
+
+	subttl	ITS PRINTU -- print users
+
+ifn it,[
+
+buflen=600.
+bufsiz=5*buflen
+.vector	buffer(buflen+1)        ;the buffer.
+.scalar	lines                   ;number of lines in buffer.
+.scalar	nusers                  ;unames printed this line
+.scalar	tcmxh                   ;horizontal screen size.
+
+printu:	call	terpri
+	move	2,susrs
+	cain	2,1
+	 jrst	[type "You're all alone!"
+		 ret]
+	call	prin10
+	type	" lusers:"
+	call	terpri
+	syscal cnsget,[%climm,,tyoch ? %clout,,nil ? %clout,,tcmxh]
+	 .lose	%lsfil
+	syscal	open,[%clbit,,.uai ? %climm,,dskich
+		      [sixbit/tty/] ? [sixbit/.file./]
+		      [sixbit/(dir)/]]
+	 .lose	%lsfil
+	move	t,[ascbyt,,buffer]
+	movei	tt,bufsiz
+	syscal	siot,[%climm,,dskich ? t ? tt]  ;slurp in tty list.
+	 .lose	%lsfil
+	.close	dskich,
+	move	s,[ascbyt,,buffer]      ;count number of lines in buffer.
+	setz	a,
+lincnt:	ildb	b,s
+	cain	b,^l
+	 jrst	list
+	cain	b,^j
+	 aos	a
+	jrst	lincnt
+list:	subi	a,2             ;first, last lines have a ^j too.
+	movem	a,lines         ;save away count.
+	move	s,[ascbyt,,buffer]      ;get bp to buffer.
+	ildb	b,s             ;gobble leading
+	ildb	b,s
+	setzm	nusers
+prusrs:	setz	nil,            ;next user; skip line.
+	call	prtlin
+	ildb	b,s
+	caie	b,"T            ;if this is not a tty number
+	 jrst	prusrs          ;skip this user, maybe done.
+	aos	nusers          ;count user we're printing.
+	move	t,nusers        ;get number of users this line.
+	imuli	t,9.            ;see how wide we are so far.
+	camge	t,tcmxh         ;if there is enuf room for uname.
+	 jrst	prusr1          ;go print it.
+	call	terpri
+	setzm	nusers          ;restart count.
+prusr1:	ildb	b,s
+	ildb	b,s             ;gobble number and space.
+	ildb	b,s
+prusr2:	ildb	b,s
+	cain	b,^l            ;if end of buffer
+	 ret                    ;all done.
+	cain	b,.chspc        ;if end of uname
+	 jrst	[ctype	^I
+		 jrst	prusrs]
+	.iot	tyoch,b
+	jrst	prusr2          ;else finish printing uname.
+
+;;; print out or skip a line from 2
+
+prtlin:	ildb	b,s
+	cain	b,^l
+	 skipa
+	cain	b,^c
+	 jrst	[pop	p, ? ret]       ;return to caller's caller
+	skipe	nil
+	 .iot	tyoch,b
+	caie	b,^j
+	 jrst	prtlin
+	ret
+
+] ;its
+
+
+	subttl	TNX PRINTU -- print users
+
+ifn tn,[                        ;this all comes from UU, as one might imagine.
+
+;;user block structure
+u.tty==:0			;tty #
+u.nxt==:1			;link to next user with same name
+u.len==:2			;length of user name
+u.nam==:3			;start of name itself
+
+utblen==:200			;max # of jobs
+
+jibase==:.jitno
+jisize==:.jibat-jibase+1
+
+.vector jiblk(jisize)
+.scalar oper			;operator user #
+.vector utab(utblen+1)
+
+printu:	movei	1,utblen
+	movem	1,utab
+	hrrzs	utab
+	movei	s,50000
+	setz	1,		; get operator user #
+	hrroi	2,oper
+	movei	3,.jiuno
+	getji%
+	 .lose
+	hrroi	1,.jobtt
+	getab%
+	 .lose
+	movn	c,1		;c=job number
+lscanj:	sojle	c,[jrst	output] ;hit all jobs?
+	move	1,c             ;nope, so hit next
+	move	2,[-jisize,,jiblk]
+	movei	3,jibase
+	getji%
+	 jrst	lscanj		;job # not in use
+	move	2,jiblk+.jitno-jibase
+	camn	2,[-1]
+	 jrst	lscanj		;detached job
+	move	2,jiblk+.jibat-jibase
+	camn	2,[-1]
+	 jrst	lscanj		;batch job
+	skipn	a,jiblk+.jiuno-jibase
+	 jrst	lscanj		;job not logged in
+	camn	a,oper
+	 jrst	lscanj		;operator job
+	hrroi	1,u.nam(s)
+	move	2,jiblk+.jiuno-jibase   ;get user no
+	dirst%                  ;move into u.name(2)
+	 .lose
+;;s/next record, advanced.
+	movei	1,u.nam(s)	;compute length
+	hrli	1,ascbyt        ;make into byte ptr
+	setz	3,
+	ildb	2,1
+	jumpn	2,[aoja 3,.-1]  ;count
+	movem	3,u.len(s)	;save it.
+	movei	1,u.nam(s)	;capitalize uname
+	hrli	1,ascbyt
+	movei	3,".
+unacap:	ildb	2,1
+	cail	2,"A		;upper case letter?
+	 caile	2,"Z
+	  skipa
+	   addi 2,"a-"A		;yes, so lowercase
+	cail	3,"a		;was last char a letter?
+	 caile	3,"z
+	  skipa
+	   dpb	2,1		;yes, so replace with lowercased version
+	skipe	3,2
+	  jrst	unacap
+	setzm	u.nxt(s)
+	hrr	2,s
+	hrli	2,u.nam(s)
+	movei	s,1(1)
+	movei	1,utab
+	push	p,2
+	tbadd%
+	  ercal [movei	1,.fhslf
+		 geter%
+		 movei	1,(2)
+		 caie	1,taddx2	;duplicate entry?
+		   .lose
+		 adjsp	p,-1	;yes, no error
+		 hlro	2,(p)	;chain it in
+		 movei	1,utab
+		 tbluk%
+		 tlnn	2,(tl%exm)
+		   .lose
+		 move	3,(p)
+		 hlrz	2,(1)
+		 hrrzm	3,u.nxt-u.nam(2)
+		 hllm	3,(1)
+		 jrst	.+1]
+	adjsp	p,-1
+	jrst	lscanj
+
+output:	setcm	t,utab		;make an aobjn pointer to table
+	hrri	t,utab
+	setzb	a,b		;a=# users, b= max width
+outpt0:	aobjp	t,displ
+	move	s,(t)		;s=user
+	move	2,u.len(s)	;2=length of name
+	movei	3,1		;3=# of instances of this user
+	skipe	s,u.nxt(s)
+	 aoja	3,.-1
+	hrlm	3,(t)		;save it
+	add	a,3		;add to overall count
+	caie	3,1
+	 addi	2,2		;*n
+	cail	3,10.
+	 addi	2,1		;*nn
+	cail	3,100.
+	 addi	2,1		;*nnn (huh?)
+	move	s,(t)
+	movem	2,u.len(s)	;save updated length
+	camle	2,b
+	 move	b,2
+	jrst	outpt0
+
+displ:	call	terpri
+	cain	a,1
+	 jrst	[type "You're all alone!"
+		 ret]
+	move	2,a
+	call	prin10
+	type	" lusers:"
+	setcm	t,utab		;t=aobjn pointer to table
+	hrri	t,utab
+	movei	1,.priou	;get tty width
+	movei	2,.morlw
+	mtopr%
+	movei	1,1(3)
+	idivi	1,1(b)		;1 space between cols
+	skipn	a,1		;a=#cols, b=#chars/col
+	 movei	a,1
+nxtrow:	aobjp	t,[ret]
+	call	terpri
+	setz	c,		;c=current col
+nxtusr:	move	s,(t)
+	hrroi	1,u.nam(s)
+	psout%
+	hlrz	2,s
+	caig	2,1             ;more of this user?
+	 jrst	nxtus1
+	ctype	"*
+	call	prin10          ;say how many
+nxtus1:	aoj	c,
+	caml	c,a
+	 jrst	nxtrow          ;that's it for this line
+	aobjp	t,[ret]         ;done?
+	movei	2,1(b)
+	sub	2,u.len(s)
+	ctype	.chspc
+	sojg	2,.-1
+	jrst	nxtusr
+	setcm	t,utab		;t=aobjn pointer to table
+	hrri	t,utab
+dispc:	aobjp	t,[ret]
+	move	s,(t)
+dispc1:	call	terpri
+	hrroi	1,u.nam(s)
+	psout%
+	skipe	s,u.nxt(s)
+	 jrst	dispc1
+	jrst	dispc
+	]; tnx
+
+	subttl DSKCHK -- is dir almost full?
+
+;;only print notice if dir is more than this full.
+thresh==80.0
+
+dskchk:
+ifn it,[                        ;DSKUSE %
+define float ax,ay              ;float macro from DSKUSE
+	tlc ax,232000+1000*ay
+	fadr ax,ax
+termin
+
+.vector fdir(2000)
+
+	.suset	[.rhsname,,a]	;get HSNAME
+	syscal	open,[%clbit,,.bii ? %climm,,dskich
+		     [sixbit /DSK/]
+		     [sixbit /.FILE./] ? [sixbit /(DIR)/]
+		     a]		;we care about hsname
+	 .lose %lsfil
+	move	a,[-2000,,fdir]
+	.iot	dskich,a	;zap in bin listing
+	.close	dskich,
+ufull0:	move	d,udescp+fdir
+	movei	c,uddesc+fdir	; ; d/ desc count
+	hrli	c,sixbyt	; "byte ptr"
+	setz	b,		; "count"
+nexta:	setz	a,
+nextb:	sojl	d,fend
+	ildb	c
+	jumpe	nbyte		; "zero byte?"
+	setom	a		; "non-zero byte"
+	jrst	nextb		; "loop"
+nbyte:	jumpn	a,nexta		; "zero, was last zero?"
+	setzm	a
+	aoja	b,nextb		; "aos null count"
+fend:	move	c,udescp+fdir
+	sub	c,b
+	idivi	c,6		; "number of words"
+	addi	c,2000
+	sub	c,udnamp+fdir
+	float	c
+	movei	b,2000-uddesc
+	float	b
+	fdvr	b,[100.0]
+	fdvr	c,b
+	]; its
+ifn tn,[gjinf%			;get user #
+	hrli	1,pslh		;now it's dir #
+	gtdal%
+	fltr	1,1		;float working allocation
+	fltr	c,2		;float pages in use
+	fdvr	c,1
+	fmpr	c,[100.0]
+	] ;tn
+	camge	c,[thresh]
+	 ret
+	crtype	"Your directory is "
+	move	2,C
+tn$	movx	3,flop          ;set up for flout
+	call	flonum
+	type	"% full, "
+	call	prinic
+	type	"!!"
+	ret
+
+	subttl	mail routines
+
+;; check for xx mail when on MC
+ifn it,[
+xxchk:	move	a,[sixbit/MC/]
+	came	a,ssite		;only on mc
+	 ret
+	move	a,[sixbit/GUMBY/] ; only if GUMBY
+	.suset	[.rxuname,,b]	;uname into b
+	came	a,b
+	 ret
+	syscal	open,[%clbit,,.uai ? %climm,,dskich
+		      %clerr,,c
+		      [sixbit/XX/]
+		      [sixbit/MAIL/] ? [sixbit/TXT/]
+		      [sixbit/GUMBY/]]
+	 skipa
+	;; if file opens, something's wrong
+	syscal	lose,[[%lsfil+%eexfl] ? [xxchk]]
+	cain	c,%emchn	;if protected, file exists
+	 jrst	[crtype "XX Mail's in."
+		 ret]
+	cain	c,%enadv	;device not available?
+	 jrst	[crtype "XX is down."
+		 ret]
+	cain	c,%ensfl	;no such file
+	 ret
+	;; urk! some unknown error!
+	syscal	lose,[[%lsfil] ? [xxchk]]
+	] ; it
+maichk:	
+ifn tn,[
+.vector maifil(50.)             ;mail filename
+
+	gjinf%                  ;get user#
+	movem	1,2             ;make it useful
+	hrli	2,pslh          ;make it a dir#
+	hrroi	1,maifil        ;put dir there
+	dirst ? .lose           ;get it
+	hrroi	2,[asciz /mail.txt/]
+	setz	3,              ;but we want mail file!
+	sout                    ;so contruct string
+	movx	1,gj%sht+gj%old ;try to find it.
+	hrroi	2,maifil
+	gtjfn%
+	] ;tnx
+ifn it,[.suset	[.rxuname,,t]
+	.suset	[.rhsname,,tt]
+	syscal	open,[%clbit,,.uai
+		      %climm,,dskich
+		      [sixbit/dsk/]
+		      t		;uname
+		      [sixbit/mail/]
+		      tt]	;hsname
+	] ;its
+	 ret                    ;we lost; no mail
+it$	.close	dskich
+it$	 .lose	%lsfil
+	crtype	"--Mail--"
+	tyi                     ;ask luser
+	caie	1,.chspc        ;typed space?
+	 ret                    ;nope, forget it
+ifn it,[.value	[asciz \:kill
+:job e
+:load dsk:sys2;ts ne
+..safe/-1
+:jcl m(m.mRead Mail)
+:start
+\]] ;it
+
+ifn tn,[hrroi	1,[asciz /emacs
+/]
+	rscan%
+	 .lose
+	movei	1,.rsini        ;make the exec see this (and, unfortunately
+	rscan%                  ;cause an exec prompt too).
+	 .lose
+	haltf%
+	] ;tn
+
+
+	subttl	ITS IO routines
+
+ifn it,[
+
+terpri:	ctype	"
+	ctype	"A
+	ret
+
+sixout:	setz	tt,             ;print T as sixbit
+	rotc	t,6
+	addi	tt,.chspc
+	.iot	tyoch,tt
+	jumpn	t,sixout
+	ret
+
+sixone:	setz	tt,             ;print a sixbit char in T
+	rotc	t,6
+	addi	tt,.chspc
+	.iot	tyoch,tt
+	ret
+
+;;; ITS has nothing like NOOU%; use "famous" recursive method
+pr1n10:	move	2,1		;print reg 1 in decimal
+prin10: jumpge	2,prin11
+	ctype	"-              ;if number is negative, print sign.
+	camn	2,[400000,,]	;smallest negative number is a pain:
+	 jrst	[type	"34359738368"
+		 ret]		;its absolute value cannot fit in one word!
+	movm	2,2		;else get abs val of negative number and print.
+prin11:	idivi	2,10.
+	hrlm	3,(p)		;save remainder in lh of stack word
+				;whose rh contains our return address.
+	skipe	2               ;if quotient is nonzero,
+	 call	prin11		;print higher-order digits of number.
+	hlrz	2,(p)		;get back this remainder (this digit).
+	addi	2,"0            ;ascii
+	.iot	tyoch,2         ;print it!
+	ret                     ;recurse
+
+;;; print floating-pt number in 2; XX.YY
+flonum:	fmpri	2,(100.0)       ;shift
+	fixr	1,2             ;fix
+	idivi	1,100.          ;shift back
+	push	p,2             ;save fraction
+	call	pr1n10          ;print int part
+	ctype	".
+	pop	p,2
+	jrst	prin10
+
+;;; takes byte ptr in 2; prints it out.  Bashes t,tt
+;;; I suppose this should take the same arguments as tnx SOUT
+strout:	setz	t,		;string length
+	push	p,2		;save byte ptr
+incstr:	ildb	tt,2		;get char
+	jumpe	tt,strctd	;if not 0, still in string
+	aos	t,		;so increment length
+	jrst	incstr
+
+strctd:	pop	p,2		;restore byte ptr
+	syscal	siot,[%climm,,tyoch ? 2 ? t]
+	 .lose	%lssys
+	ret
+
+	] ;it
+
+
+	subttl	TNX IO routines
+
+ifn tn,[
+
+pr1n10:	move	2,1		;print reg 1 in decimal
+prin10:	movei	1,.priou	;Print reg 2 in decimal
+	movei	3,10.
+	nout% ? .lose
+	ret
+
+flonum:	movei	1,.priou
+	flout% ? jfcl           ;do it! (should not fail)
+	ret			;done
+	] ;tnx
+
+	subttl end; setup for LSR map
+
+;;; dump variables so we can figger out where lsr maps in
+
+consta
+variab
+
+-1				;So core gets created!
+
+lsrbeg==<.+1777>/2000		;beginning of LSR pages.
+
+	end begin

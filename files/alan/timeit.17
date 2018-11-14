@@ -1,0 +1,257 @@
+; -*- Midas -*-
+
+title TIMEIT - Meter things
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+t=:6
+tt=:7
+x=:10
+y=:11
+z=:12
+
+p=:17
+
+ch==:0,,-1
+chttyi==:1
+chttyo==:2
+
+call=:pushj p,
+return=:popj p,
+save==:push p,
+rest==:pop p,
+flose=:.lose %lsfil
+slose=:.lose %lssys
+pause=:.break 16,100000
+quit=:.logout 1,
+tyi=:.iot chttyi,
+tyo=:.iot chttyo,
+
+define syscall name,args
+	.call [setz ? sixbit /name/ ? args(400000)]
+termin
+
+popj1:	aos (p)
+cpopj:	return
+
+format"$$pcode==:1
+format"$$errs==:0
+.insrt dsk:syseng;format >
+
+outstr:	syscall siot,[movei chttyo ? a ? b]
+	 slose
+	return
+
+define format &string&,args
+	call [
+	call $format
+.zzz.==-1
+irp arg,,[args]
+	save arg
+.zzz.==.irpcnt
+termin
+	hrroi a,[ascii string]
+	movei b,.length string
+	movni c,.zzz.+1
+	jrst format"format]
+termin
+
+$forma:	save a
+	save b
+	save c
+	save [.+2]
+	jrst @-4(p)
+	rest c
+	rest b
+	rest a
+	rest (p)
+	return
+
+lpdl==:100.
+.vector pdl(lpdl)
+
+usrvar:	sixbit /option/
+	tlo %opint\%opopc
+	sixbit /mask/
+	move [%pipdl]
+lusrvar==:.-usrvar
+
+go:	move p,[-lpdl,,pdl-1]
+	.open chttyi,[.uai,,'tty ? setz ? setz]
+	 slose
+	.open chttyo,[.uao\%tjdis,,'tty ? setz ? setz]
+	 slose
+	move tt,[-lusrvar,,usrvar]
+	syscall usrvar,[movei %jself ? tt]
+	 slose
+	move tt,[squoze 0,ks10p]
+	.eval tt,
+	 .lose
+	movem tt,ks10p
+	move tt,[1000000.]	; Easy to remember
+	movem tt,count
+	jrst init
+
+.scalar ks10p
+.scalar count
+.scalar tstart
+.scalar tstop
+.scalar tloop
+
+start=:.suset [.rrunt,,tstart]
+stop=:.suset [.rrunt,,tstop]
+
+done=:jrst .
+$done:	move t,tstop
+	sub t,tstart
+	format "Time = ~D.",t
+	pause
+	quit
+
+define lbegin
+	move x,count
+	start
+.loop.==.
+termin
+
+define lend
+	sojg x,.loop.
+	stop
+	jrst ldone
+termin
+
+init:	setzi t,
+	movei y,5
+initlp:	move x,count
+	start
+	sojg x,.
+	stop
+	add t,tstop
+	sub t,tstart
+	sojg y,initlp
+	idivi t,5
+	movem t,tloop
+	jrst initex
+
+ldone:	move t,tstop
+	sub t,tstart
+	sub t,tloop
+initex:	movei tt,3902.		; On KS .RUNT is in 3.902439 microsecond
+	skipn ks10p		; units (= 16 cycles / 4.1e6 MHz).
+	 movei tt,4000.		; Elsewhere rumored to be 4.0 microseconds.
+	muli t,(tt)
+	div t,count
+	idivi t,1000.
+	format "~&~D.~3<~;0~D~> microseconds",[t,tt]
+	pause
+	quit
+
+test:	jfcl			; Patch any setup here.
+	lbegin
+	jfcl			; Patch one instruction here.
+	lend
+
+bp:	044000,,foo
+foo:	.byte 4 ? 1 ? 2 ? 3 ? 4 ? 5 ? 6 ? 7 ? 8 ? 9 ? .byte
+
+tldb:	ldb a,bp
+	lbegin
+	ldb a,bp
+	lend
+
+tlsh:	move a,foo
+	lbegin
+	move a,foo
+	lsh a,-4
+	lend
+
+; Both indexed:
+;  MC: 18.48
+;  KS: 84.4
+; Neither indexed:
+;  MC: 17.83
+;  KS: 79.4
+define encode dst,src
+repeat 7,[
+	move tt,7-.rpcnt+src
+	lshc t,4
+	movem tt,8-.rpcnt+dst
+	]
+	move tt,src
+	lshc t,4
+	lsh t,4
+	dmovem t,dst
+termin
+
+; Both indexed:
+;  MC: 19.48
+;  KS: 87.0
+; Neither indexed:
+;  MC: 18.83
+;  KS: 81.9
+define decode dst,src
+	dmove t,src
+	lsh t,-4
+	lshc t,-4
+	movem tt,dst
+repeat 7,[
+	move tt,2+.rpcnt+src
+	lshc t,-4
+	movem tt,1+.rpcnt+dst
+	]
+termin
+
+8blk:	SIXBIT /ABCDEF/
+	SIXBIT /GHIJKL/
+	SIXBIT /MNOPQR/
+	SIXBIT /STUVWX/
+	SIXBIT /YZ1234/
+	SIXBIT /567890/
+	123456,,234567
+	ASCII "Midas"
+
+9blk:	block 9
+
+tencod:	encode 9blk,8blk
+	lbegin
+	encode 9blk,8blk
+	lend
+
+tdecod:	decode 8blk,9blk
+	lbegin
+	decode 8blk,9blk
+	lend
+
+enc=:call [
+	encode 0(b),0(a)
+	return
+	]
+
+dec=:call [
+	decode 0(a),0(b)
+	return
+	]
+
+tsint:
+loc 42
+	-ltsint,,tsint
+loc tsint
+	0,,p
+ltsint==:.-tsint
+
+dismis:	setz ? sixbit /dismis/ ? setz p
+
+cnstnts:
+constants
+variables
+
+patch::
+pat:	block 100.
+
+ffaddr:	-1			; Make memory exist
+ffpage==:<ffaddr+1777>_-12
+
+end go

@@ -1,0 +1,235 @@
+; -*- Midas -*-
+
+title AA - Another part of Alan's login file
+
+a=:1
+b=:2
+
+t=:6
+tt=:7
+
+ttyo=:13
+ttyi=:14
+dski=:15
+
+p=:17
+
+call=:pushj p,
+return=:popj p,
+save=:push p,
+rest=:pop p,
+tyo=:.iot ttyo,
+
+define syscall name,args
+	.call [setz ? sixbit /name/ ? args(400000)]
+termin
+
+define blast &string&
+	move a,[440700,,[ascii string]]
+	movei b,.length string
+	syscall siot,[movsi %tjsio ? movei ttyo ? a ? b]
+	 .lose %lssys
+termin
+
+define princ &string&
+	move a,[440700,,[ascii string]]
+	movei b,.length string
+	.call csiot
+	 .lose %lssys
+termin
+
+define ctrlp ch
+	.iot ttyo,[^P]
+	.iot ttyo,["ch]
+termin
+
+csiot:	setz
+	sixbit /SIOT/
+	movei ttyo
+	move a
+	setz b
+
+.vector pdl(lpdl==:100)
+
+go:	move p,[-lpdl,,pdl-1]
+	.open ttyo,[.uao\%tjdis,,'tty ? setz ? setz]
+	 .lose
+	.suset [.roption,,a]
+	tlne a,%opcmd
+	 jrst init
+	call aaa
+	ctrlp C
+	.logout 1,
+
+ttyvar:	sixbit /TCTYP/
+	movem tctyp'
+	sixbit /TTYTYP/
+	movem ttytyp'
+	sixbit /TTYOPT/
+	movem ttyopt'
+lttyvar==:.-ttyvar
+
+init:	.open ttyi,[.uai,,'tty ? setz ? setz]
+	 .lose
+	.suset [.runame,,a]
+	came a,[sixbit /ALAN/]
+	 camn a,[sixbit /ALAN5/]
+	  jrst init1
+	camn a,[sixbit /BAWDEN/]
+	 jrst init1
+	princ "A--Datapoint?--"
+	.iot ttyi,a
+	cain a,40
+	 .value [asciz ".:REATTA ALAN/K
+"]
+init1:	move tt,[-lttyvar,,ttyvar]
+	syscall ttyvar,[movei ttyo ? tt]
+	 .lose %lssys
+	move t,ttyopt
+	tlo t,%tomor		; Do More
+	tlz t,%tosa1\%torol	; Don't Scroll
+	tlne t,%tosai		; Copy %TOSAI into %TOSA1
+	 tlo t,%tosa1
+	movem t,ttyopt
+	syscall ttyvar,[movei ttyo ? [sixbit /TTYOPT/] ? ttyopt]
+	 .lose %lssys
+	move a,ttytyp
+	trne a,%tydil
+	 jrst homep
+	trne a,%tysty
+	 jrst sty
+	trne a,%tyrlm
+dostty:	 call settyp
+aaack:	move a,tctyp
+	cain a,%tnaaa
+	 call aaa
+exit:	call uptime
+	ctrlp A
+	.logout 1,
+
+homep:	princ "A--Home?--"
+	.iot ttyi,a
+	caie a,40
+	 jrst dostty
+	.value [asciz ":TTYLOC AlanHome
+:TCTYP LUNAR
+P"]
+	jrst wexit
+
+sty:	syscall stlget,[movei ttyo ? movem b ? movem a]
+	 .lose %lssys			; But you -said- it was a sty!
+	camn a,[sixbit /AIBRID/]
+	 jrst oficep
+	came b,[sixbit /TELSER/]	; perhaps dialed in to ROLM
+	 jrst ne43ck			;  then connected to 2B MINITS
+	came a,[sixbit /2B-HUB/]	;  and then TELNET?
+	 camn a,[sixbit /NE432B/]
+	  jrst homep
+	camn a,[1+<sixbit /TERMIM/>]	; Or dialed into TERM INUS...
+	 jrst homep
+ne43ck:	move b,a
+	tlo a,777700
+	tro b,007777
+	came a,[sixbit /__-HUB/]	; On some MINITS box?
+	 camn b,[sixbit /NE43__/]
+	  jrst aaap		; perhaps on a AAA
+	jrst dostty
+
+oficep:	princ "A--Office?--"
+	.iot ttyi,a
+	caie a,40
+	 jrst aaap
+	.value [asciz ":TTLOC ALAN
+P"]
+	jrst aaaset
+
+aaap:	princ "A--AAA?--"
+	.iot ttyi,a
+	caie a,40
+	 jrst exit
+aaaset:	skipn tctyp
+	 .value [asciz ":TCTYP AAA
+P"]
+	call aaa
+wexit:	call uptime
+	.value [asciz ":ALAN;WHOLIN
+P"]
+	ctrlp A
+	.logout 1,
+
+aaa:	blast [0m[>33;28;25;27l[>52;26;31;32hP`H~\~QA|~\~QB|~\~QC|~\~QD|~\~QE|~\~QF|~\~QG`"~\~QA~[`(~^|~\B`,~\~\`.~_`<~\H`1B|J|N|H|     |L|Y|K|U\
+	;; Used to end with "[48;;;48p"
+	return
+
+settyp:	return			; Don't bother with this, its usually wrong.
+;	skipe tctyp		; Only if terminal type "unknown"
+;	 return
+;	ctrlp A
+;	.value [asciz ":STTY
+;P"]
+;	syscall ttyvar,[movei ttyo ? [sixbit /TCTYP/] ? movem tctyp]
+;	 .lose %lssys
+;	return
+
+uptdir:	sixbit /ALAN/
+uptfn1:	sixbit / UP/
+uptfn2:	sixbit / TIME/
+
+uptime:	.rdtime t,		; T: uptime in 30'ths
+	idivi t,15.		; T: uptime in half secs
+	idivi t,2*60.*60.*24.	; T,TT: days, half secs
+	syscall open,[movsi .uai ? movei dski ? [sixbit /DSK/]
+			move uptfn1 ? move uptfn2 ? move uptdir]
+	 jrst uptim1
+	syscall rfdate,[movei dski ? movem a]
+	 .lose %lssys
+	movei b,(tt)
+	hrli b,(t)
+	camg b,a
+	 jrst uptim1
+	syscall sfdate,[movei dski ? move b]
+	 .lose %lssys
+	syscall sdmpbt,[movei dski ? movei 0]
+	 .lose %lssys
+	syscall sreapb,[movei dski ? movei 1]
+	 .lose %lssys
+	princ "C(!) Up"
+	jrst uptim2
+
+uptim1:	princ "CUp"
+uptim2:	movei a,[ princ " day"
+		  return ]
+	call tprint
+	idivi t,2*60.*60.
+	movei a,[ princ " hour"
+		  return ]
+	call tprint
+	idivi t,2*60.
+	movei a,[ princ " min"
+		  return ]
+	call tprint
+	idivi t,2
+	movei a,[ princ " sec"
+		  return ]
+tprint:	save tt
+	jumpe t,tprin1
+	save t
+	tyo [40]
+	call dprint
+	call (a)
+	rest t
+	caie t,1
+	 tyo ["s]
+tprin1:	rest t
+	return
+
+dprint:	idivi t,10.
+	jumpe t,dprin1
+	hrlm tt,(p)
+	call dprint
+	hlre tt,(p)
+dprin1:	movei tt,"0(tt)
+	tyo tt
+	return
+
+	end go

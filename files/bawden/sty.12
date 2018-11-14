@@ -1,0 +1,158 @@
+;;;-*-Midas-*-
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+t=:6
+tt=:7
+
+i=:10	;Used only by STYINT
+j=:11
+
+p=:17
+
+ttyi==:1
+ttyo==:2
+sioch==:3
+styi==:4
+styo==:5
+
+call=:pushj p,
+return=:popj p,
+jcall==:jrst
+save=:push p,
+rest=:pop p,
+stop=:.break 16,100000
+
+define syscall name,args
+	.call [setz ? sixbit /name/ ? args(400000)]
+termin
+
+define princ &string&
+	move t,[440700,,[ascii string]]
+	movei tt,.length string
+	.call $princ
+	 .lose %lssys
+termin
+
+$princ:	setz
+	sixbit /siot/
+	movei ttyo
+	move t
+	setz tt
+
+open:	setz
+	sixbit /open/
+	moves t
+	move a
+	move 0(b)
+	move 1(b)
+	move 2(b)
+	setz 3(b)
+
+lpdl==:100.
+.vector pdl(lpdl)
+
+.vector twenty(20)
+
+.scalar eschar			;eschape caracter
+
+go:	move p,[-lpdl,,pdl-1]
+	.suset [.roption,,a]
+	tlo a,%opint+%opopc
+	move b,[-6,,[
+		.soption,,a
+		.s40addr,,[twenty,,forty]
+		.sdf1,,[0]
+		.sdf2,,[0]
+		.smask,,[%pipdl]
+		.smsk2,,[1_styi]
+		]]
+	.suset b
+	move a,[.uao+%tjdis,,ttyo]
+	movei b,[sixbit /tty/ ? setz ? setz]
+	.call open
+	 .lose %lsfil(t)
+	move a,[.uao+%tjsio,,sioch]
+	.call open
+	 .lose %lsfil(t)
+	move a,[.uai+%tiful,,ttyi]
+	.call open
+	 .lose %lsfil(t)
+	syscall ttyget,[movei ttyo ? movem t ? movem t ? movem t]
+	 .lose %lssys
+	tlo t,%tssii
+	syscall ttyset,[movei ttyo ? [020202020202] ? [020202020202] ? t]
+	 .lose %lssys
+	syscall ttyvar,[movei ttyo ? [sixbit /ttyopt/] ? movem t]
+	 .lose %lssys
+	movei tt,^^
+	tlne t,%tofci
+	 movei tt,%txtop+"B
+	movem tt,eschar
+	move a,[.uao,,styo]
+	movei b,[sixbit /sty/ ? setz ? setz]
+	.call open
+	 jrst [	cain t,%efldv
+		 jrst nostys
+		syscall lose,[movei %lsfil(t) ? movei .-1]
+		 .lose %lssys]
+	move a,[.uai+10,,styi]	;Don't hang on input.
+	.call open
+	 .lose %lsfil(t)
+newpos:	syscall rcpos,[movei ttyo ? movem a]
+	 .lose %lssys
+	hrrz b,a
+	hlrz a,a
+	syscall scpos,[movei styi ? a ? b]
+	 .lose %lssys
+loop:	.iot ttyi,a
+	camn a,eschar
+	 jrst cmd
+	.iot styo,a
+	jrst loop
+
+cmd:	princ "Z"		;Put cursor in a known place.
+	.break 16,100000
+	jrst newpos
+
+nostys:	princ "ANo free stys."
+	stop
+
+tsint:	p
+	0 ? 1_styi ? 0 ? 1_styi ? styint
+ltsint==:.-tsint
+
+dismis:	setz
+	sixbit /dismis/
+	setz p
+
+lbuffer==:100.
+.vector buffer(lbuffer)
+
+styint:	move i,[440800,,buffer]
+	movei j,4*lbuffer
+	syscall siot,[movei styi ? i ? j]
+	 .lose %lssys
+	move i,[440800,,buffer]
+	subi j,4*lbuffer
+	movn j,j
+	syscall siot,[movei sioch ? i ? j]
+	 .lose %lssys
+	.call dismis
+	 .lose %lssys
+
+cnstnts:
+constants
+
+variables
+
+forty:	0
+	0
+	-ltsint,,tsint
+	0
+	0
+
+end go

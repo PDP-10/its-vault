@@ -1,0 +1,193 @@
+÷nÝ [*-Midas-*-
+	TITLE $$V Job Lister
+
+;I/O ch
+TTYO==1
+
+;AC'S
+A=1 ? B=2 ? C=3 ? I=4 ? U=5 ? T=6 ? TT=7 ? R=10
+P=17
+
+;random syms
+.RJCL==5
+%CBRED==200000 ? %CBNDR==10000
+
+DEFINE	TYPE GRUFT
+IRPC C,,[GRUFT]
+	.IOT TTYO,["C]
+TERMIN
+TERMIN
+
+GO:	.OPEN TTYO,[1,,'TTY]
+	.VALUE   
+	MOVEI P,JCL+1   
+	.BREAK 12,[.RJCL,,JCL]
+	SKIPN JCL   
+	 JRST [	.SUSET [.RUNAME,,T]
+		JRST LP0X]
+	MOVE C,[440700,,JCL]
+	MOVE I,[440600,,T]
+	MOVEI B,T   
+	SETZ T,   
+LP0:	ILDB A,C   
+	CAIN A,15   
+	 JRST LP0X   
+	CAIN A,40
+	 JRST LP0
+	CAIG A,40
+	 .VALUE [ASCII \:Use SIXBIT charsKILL \]
+	CAILE A,137   
+	 SUBI A,40
+	SUBI A,40   
+	IDPB A,I   
+	SOJG B,LP0   
+LP0X:	MOVEM T,UN   
+
+
+;;; Evaluate a bunch of SYS symbols
+IRP X,,[UNAME,JNAME,USYSNM,SUPPRO,MAXJ,USRSTG,L,TTYTBL]
+	MOVE A,[SQUOZE 0,X]
+	.EVAL A,
+	 .VALUE
+	MOVEM A,X
+TERMIN
+;;; Include (U) in index field for indirections.
+	MOVSI A,U   
+IRP X,,[UNAME,JNAME,SUPPRO,USYSNM,TTYTBL]
+	IORM A,X
+TERMIN
+
+
+;;; Map in system pages at our addresses same as system's addresses
+	MOVE A,MAXJ		;Max # jobs in the system
+	IMUL A,L		;Length of user variable block
+	ADD A,USRSTG		;First user variable word address
+	ADDI A,1777
+	LSH A,-12		;Convert to page number of last page
+	MOVE B,USRSTG		;Compute page no. of first page
+	LSH B,-12   
+	SUB A,B			;Number of pages to map
+	MOVNS A   
+	HRLZS A   
+	HRR A,B			;-#pages,,first page
+	.CALL CBLK
+	 .VALUE [ASCIZ \:CBLK LostîA[\]	;]
+
+;;; Initialize for finding our jobs
+	SETO A,			;-1 as SUPPRO means top level job
+	MOVEI R,INF		;What to do when we find job
+	SETZM LEV		;Inferior level
+	PUSHJ P,FIND		;Go find some
+	.IOT TTYO,[^M]
+	.BREAK 16,124000	;Commit suicide
+	JRST GO   
+
+;;; SEARCH ALL JOBS FOR THOSE WHOSE SUPERIORS MATCH (A),
+;;; PRINT THEIR INFO, AND FOLLOWING INFERIORS (RECURSIVE).
+
+FIND:	PUSH P,U		;RECURSION SETUP
+	PUSH P,I
+	SETZ U,			;START AT FIRST JOB
+	MOVN I,MAXJ		;COUNT OF JOBS TO SEARCH
+FLP:	MOVE T,@UNAME
+	CAME T,UN		;Is its uname the one we're looking for?
+	 JRST FLPEND
+	MOVE T,@SUPPRO		;Cruft,,<superior's internal index>
+	HRRZS T			;Just keep the index.
+	CAIE T,-1		;Unless it's top level,
+	 IDIV T,L		;Convert to external index.
+	CAIE T,(A)		;Unless its superior is what we want,
+	 JRST FLPEND		; ..
+	AOS LEV			;   ..
+	PUSHJ P,(R)		;     recurse to print it.
+	SOS LEV   
+FLPEND:	ADD U,L			;Inc to next job
+	AOJL I,FLP		;Inc count of jobs, and try next job.
+	POP P,I			;Unrecurse
+	POP P,U   
+	POPJ P,   
+
+
+;;;Type this job and look for its inferiors, and type them.
+
+INF:	MOVE T,LEV		;Indent for inferior level
+INF1:	SOJLE T,INF2   
+	TYPE [  ]
+	JRST INF1   
+INF2:	MOVE B,@JNAME		;Type JNAME
+	PUSHJ P,6TYPB   
+	TYPE [  ]
+	MOVE T,U		;Compute and type user index
+	IDIV T,L
+	PUSHJ P,OCTYP		;Type user index
+	TYPE [  ]
+	MOVE B,@USYSNM		;Type SNAME
+	PUSHJ P,6TYPB   
+	TYPE [;]
+	MOVE T,@TTYTBL		;Type TTY number if job has TTY
+	ANDI T,77
+	 JUMPE T,INF3
+	  TYPE [  T]
+	  PUSHJ P,OCTYP2		;Type 2 octal digits
+INF3:	TYPE [
+]
+;;;Setup and recurse to find jobs whose superiors are this job.
+	PUSH P,A   
+	MOVE T,U		;Convert system index to user index.
+	IDIV T,L   
+	MOVE A,T   
+	PUSHJ P,FIND   
+	POP P,A   
+CPOPJ:	POPJ P,   
+ 
+
+;;; Type contents of B as sixbit.
+6TYPB:	MOVE C,[440600,,B]
+	MOVEI TT,6
+6TY1:	ILDB T,C   
+	JUMPE T,CPOPJ   
+	ADDI T,40   
+	.IOT TTYO,T   
+	SOJG TT,6TY1   
+	POPJ P,   
+ 
+;;; Type contents of T as 2 octal digits
+OCTYP2:	LDB TT,[030300,,T]
+	ADDI TT,"0   
+	.IOT TTYO,TT
+	LDB TT,[000300,,T]
+	ADDI TT,"0   
+	.IOT TTYO,TT
+	POPJ P,   
+ 
+;;; Type contents of T as octal number
+OCTYP:	IDIVI T,10
+	HRLM TT,(P)   
+	SKIPE T   
+	 PUSHJ P,OCTYP   
+	HLRZ TT,(P)   
+	ADDI TT,"0
+	.IOT TTYO,TT   
+	POPJ P,   
+
+CBLK:	SETZ ? 'CORBLK
+	1000,,<%CBRED+%CBNDR>	;READ ACCESS, FAIL IF CAN'T
+	1000,,-1		;PAGE INTO SELF
+	A			;PAGE #
+	SETZI 400000		;SYSTEM JOB, SAME PAGE AS SELF
+
+
+UN:	0   
+UNAME:	0   
+JNAME:	0   
+SUPPRO:	0   
+MAXJ:	0   
+USRSTG:	0   
+L:	0   
+TTYTBL:	0
+LEV:	0   
+USYSNM:	0   
+JCL:	BLOCK 20
+PDL:	BLOCK 100
+
+	END GO

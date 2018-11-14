@@ -1,0 +1,462 @@
+;	Friday  Aug 12,1983  15:24  NM+4D.2H.16M.6S.  -*- Midas -*-
+
+subttl bklist -- record links to backup tape
+
+.insrt syseng;fsdefs
+
+nil=0
+a=1
+b=2
+c=3
+d=4
+e=5
+t=6
+tt=7
+fname=10	;Pointer to current file in name area of directory
+dscptr=11	;At a given file, ildb ptr to descriptor area.
+dskcnt=12
+p=17
+
+dski==1
+dsko==2
+ttyo==3
+
+define strt -what
+    move t,[440700,,[ascii what]]
+    movei tt,.length what
+    .call strtcall
+      .lose %lsfil
+termin
+
+strtcall:
+	setz
+	sixbit \SIOT\
+	movei ttyo
+	move t
+	setz tt
+
+define strt6 what
+    move a,what
+    pushj p,strt6x
+termin
+
+strt6x:	jumpe a,cpopj
+	ldb b,[360600,,a]
+	addi b,32.
+	.iot ttyo,b
+	lsh a,6
+	jrst strt6x
+
+didit:	0
+
+go:	move p,pdlini
+	setz nil,
+	pushj p,opntty
+	pushj p,getjcl		    ;Set directory to hack.
+	pushj p,getdir		    ; Read the directory
+	pushj p,maklst		    ; make the listing
+	skipn didit
+	  jrst nofile
+	pushj p,savold		    ; append old one if it exists
+	.call [setz ? sixbit \RENMWO\ ? movei dsko
+		    move [sixbit \BACKUP\] ? setz [sixbit \LIST\]]
+	  .lose %lsfil
+	.call [setz ? sixbit \SREAPB\ ? movei dsko ? setzi 1]
+	  .lose %lsfil
+	.close dsko,
+	pushj p,delete
+done:	.logout 1,
+	.lose
+
+nofile:	strt |A(No links to backup tape found.)A|
+	jrst done
+
+pdl:	block 100
+pdlini:	-77,,pdl
+patch:	block 100
+debug:	-1
+
+
+
+opntty:	.call [setz ? sixbit \OPEN\ ? movsi %tjdis+.uao ? movei ttyo
+		    setz [sixbit \TTY\]]
+	  .lose %lsfil
+	popj p,
+
+jclbuf:	block 10
+	1			    ; Terminator
+
+.scalar dirname
+
+getjcl:	.suset [.rsname,,dirname]
+	.suset [.roption,,a]
+	tlnn a,%opcmd
+	  popj p,
+	.break 12,[..rjcl,,jclbuf]
+	setz a,
+	move b,[440600,,a]
+	move c,[440700,,jclbuf]
+	movei t,6
+gj0:	ildb tt,c
+	caie tt,40
+	 cain tt,^I
+	  jrst gj0
+	caia
+gj1:	ildb tt,c
+	cail tt,"a
+	 caile tt,"z
+	  caia
+	   subi tt,"a-"A
+	caie tt,^M
+	 cain tt,^C
+	  jrst gj2
+	caie tt,0
+	 cain tt,^_
+	  jrst gj2
+	subi tt,32.
+	idpb tt,b
+	sojg t,gj1
+gj2:	skipe a
+	 movem a,dirname
+	popj p,
+
+
+dirbuf:	block 1024.
+dscini:	dirbuf+uddesc
+getdir:	.call [setz ? sixbit \OPEN\ ? movsi .bii ? movei dski
+		    move [sixbit \DSK\]
+		    move [sixbit \.FILE.\]
+		    move [sixbit \(DIR)\]
+		    move dirname
+		    setzb e]
+	  jrst getdr1
+	move a,[-1024.,,dirbuf]
+	.iot dski,a
+	.close dski,
+dirini:	movei fname,dirbuf
+	add fname,dirbuf+udnamp
+	popj p,
+
+getdr1:	.call [setz ? sixbit \OPEN\ ? movsi .uai ? movei dski
+		    move [sixbit \ERR\] ? movei 4 ? setz e]
+	  .lose %lsfil
+	strt |AError:  DSK:|
+	strt6 dirnam
+	strt |;.FILE. (DIR) -- |
+getdr2:	.iot dski,c
+	caige c,40
+	  jrst getdr3
+	.iot ttyo,c
+	jrst getdr2
+
+getdr3:	strt |A|
+	skipe debug
+	  .value
+	.break 16,40000
+	.lose
+
+
+;;;; Disk output
+
+outini:	.call [setz ? sixbit \OPEN\ ? movsi .uao ? movei dsko
+		    move [sixbit \DSK\]
+		    move [sixbit \_BKLST\]
+		    move [sixbit \OUTPUT\]
+		    setz dirnam]
+	  .lose %lsfil
+	movei a,[asciz |Backup listing for |]
+	pushj p,dskstr
+	move a,dirnam
+	pushj p,dsksix
+	movei a,[asciz |, made by |]
+	pushj p,dskstr
+	.suset [.runame,,a]
+	pushj p,dsksix
+	movei a,[asciz | on |]
+	pushj p,dskstr
+	.call [setz ? sixbit \RQDATE\ ? setzm a]
+	  .lose %lssys
+	pushj p,pdatim
+	pushj p,terpri
+	setom didit
+	popj p,
+
+dskbuf:	block 128.
+dskbp:	440700,,dskbuf
+dskibp:	440700,,dskbuf
+dskmax==128*5
+buflen==dskmax
+chpos:	0
+
+force:	push p,a
+	move a,dskibp
+	movem a,dskbp
+	.call [setz ? sixbit \SIOT\ ? movei dsko ? move a ? setz dskcnt]
+	  .lose %lsfil
+	pop p,a
+	popj p,
+
+dsktyo:	cain dskcnt,dskmax
+	  pushj p,force
+	idpb a,dskbp
+	aos dskcnt
+	cain a,^M
+	  jrst [setzm chpos ? popj p,]
+	cain a,^J
+	  jrst cpopj
+	cain a,^I
+	  jrst [movei a,8 ? addm a,chpos ? dpb nil,[030300,,chpos] ? popj p,]
+	cain a,^H
+	  jrst [skipe chpos ? sos chpos ? popj p,]
+	aos chpos
+cpopj:	popj p,cpopj
+
+dskstr:	hrli b,440700
+	hrri b,(a)
+dstrlp:	ildb a,b
+	jumpe a,cpopj
+	pushj p,dsktyo
+	jrst dstrlp
+
+dsksix:	move b,a
+dsixlp: jumpe b,cpopj
+	ldb a,[360600,,b]
+	addi a,32.
+	pushj p,dsktyo
+	lsh b,6
+	jrst dsixlp
+
+dsktab:	move b,chpos
+	sub b,a
+	movei a,40
+dtablp:	jumpge b,cpopj
+	pushj p,dsktyo
+	aoja b,dtablp
+
+pdec2:	idivi a,10.
+	addi a,"0
+	pushj p,dsktyo
+	movei a,"0(b)
+	jrst dsktyo
+
+dskdec:	skipge a
+	 jrst [push p,a ? movei a,"- ? pushj p,dsktyo ? pop p,a ? movns a ? jrst .+1]
+	cail a,10.
+	 jrst [idivi a,10.
+	       push p,b
+	       movei a,(b)
+	       pushj p,dskdec
+	       pop p,a
+	       jrst .+1]
+	addi a,"0
+	jrst dsktyo
+
+freshline:
+	skipg chpos
+	  popj p,
+terpri:	movei a,^M
+	pushj p,dsktyo
+	movei a,^J
+	jrst dsktyo
+
+pdate:	push p,a
+	ldb a,[unmon (p)]
+	pushj p,dskdec
+	movei a,"/
+	pushj p,dsktyo
+	ldb a,[unday (p)]
+	pushj p,pdec2
+	movei a,"/
+	pushj p,dsktyo
+	pop p,a
+	ldb a,[unyrb a]
+	jrst pdec2
+
+ptime:	ldb a,[untim a]
+	push p,a		    ; Save time (in half-seconds)
+	lsh a,-1		    ; convert to seconds
+	idivi a,60.		    ; Minutes in A, seconds in B
+	push p,b		    ; save seconds
+	idivi a,60.		    ; hours in A,minutes in B
+	push p,b		    ; save minutes
+	pushj p,pdec2
+	movei a,":
+	pushj p,dsktyo
+	pop p,a			    ; pop minutes
+	pushj p,pdec2
+	movei a,":
+	pushj p,dsktyo
+	pop p,a			    ; pop seconds
+	pushj p,pdec2
+	pop p,a			    ; pop original time
+	tlnn a,1
+	  popj p,
+	movei a,[asciz \.5\]
+	jrst dskstr
+
+
+pdatim:	push p,a
+	pushj p,pdate
+	movei a,40
+	pushj p,dsktyo
+	pop p,a
+	jrst ptime
+
+
+.scalar lnkfn1
+.scalar lnkfn2
+.scalar lnkdir
+
+maklst:
+mklst1:	skipn unfn1(fname)
+	 popj p,
+	pushj p,1file
+	addi fname,5
+	jrst mklst1
+
+1file:	ldb a,[unlnkb unrndm(fname)]
+	jumpe a,cpopj		    ; Not a link.
+	pushj p,lnkprs
+	move a,lnkdir
+	came a,[sixbit |BACKUP|]
+	  popj p,
+	move a,lnkfn1
+	came a,[sixbit |TAPE|]
+	  popj p,
+	skipn didit
+	  pushj p,outini
+	movei a,[asciz \ L \]
+	pushj p,dskstr
+	move a,unfn1(fname)
+	pushj p,dsksix
+	movei a,40
+	pushj p,dsktyo
+	movei a,10.
+	pushj p,dsktab
+	move a,unfn2(fname)
+	pushj p,dsksix
+	movei a,17.
+	pushj p,dsktab
+	movei a,[asciz |=>  BACKUP;|]
+	pushj p,dskstr
+	move a,lnkfn1
+	pushj p,dsksix
+	movei a,40
+	pushj p,dsktyo
+	move a,lnkfn2
+	pushj p,dsksix
+	movei a,42.
+	pushj p,dsktab
+	move a,undate(fname)
+	pushj p,pdatim
+	movei a,62.
+	pushj p,dsktab
+	movei a,"(
+	pushj p,dsktyo
+	ldb a,[unrefd unref(fname)] ;get refdate
+	hrlzs a			    ; put in right position
+	pushj p,pdate
+	movei a,")
+	pushj p,dsktyo
+	jrst terpri
+
+
+6bptab:	440600,,0
+	360600,,0
+	300600,,0
+	220600,,0
+	140600,,0
+	060600,,0
+
+lnkprs:	ldb a,[undscp unrndm(fname)]
+	idivi a,6
+	move dscptr,dscini
+	hll dscptr,6bptab(b)
+	add dscptr,a
+	move a,[440600,,lnkdir]
+	pushj p,lpars1
+	move a,[440600,,lnkfn1]
+	pushj p,lpars1
+	move a,[440600,,lnkfn2]
+	pushj p,lpars2
+	popj p,
+
+lpars1:	setzm (a)
+	movei b,6
+lprs1a:	ildb c,dscptr
+	cain c,':
+	 jrst [ildb c,dscptr ? jrst lprs1b]
+	caie c,';
+	  jrst lprs1b
+	popj p,
+	
+lprs1b:	idpb c,a
+	sojg b,lprs1a
+	popj p,
+
+lpars2:	setzm (a)
+	movei b,6
+lprs2a:	ildb c,dscptr
+	cain c,':
+	 jrst [ildb c,dscptr ? jrst lprs2b]
+	caie c,';
+	  jrst lprs2b
+	popj p,
+	
+lprs2b:	idpb c,a
+	sojg b,lprs2a
+	popj p,
+
+
+savold:	pushj p,force
+	.call [setz ? sixbit \OPEN\ ? movsi .uai ? movei dski
+		    move [sixbit \DSK\]
+		    move [sixbit \BACKUP\]
+		    move [sixbit \LIST\]
+		    setz dirnam]
+	  popj p,
+	pushj p,terpri		    ; Add in another blank line and force it
+	pushj p,force		    ; out so we can fool with the buffer.
+sav1:	movei a,buflen
+	move b,[440700,,dskbuf]
+	.call [setz ? sixbit \SIOT\ ? movei dski ? move b ? setz a]
+	  .lose %lsfil
+	cain a,buflen
+	 popj p,
+	subi a,buflen
+	movns a
+	move b,[440700,,dskbuf]
+	.call [setz ? sixbit \SIOT\ ? movei dsko ? move b ? setz a]
+	  .lose %lsfil
+	jrst sav1
+
+
+delete:	pushj p,dirini
+del1:	skipn unfn1(fname)
+	 popj p,
+	pushj p,del2
+	addi fname,5
+	jrst del1
+
+del2:	ldb a,[unlnkb unrndm(fname)]
+	jumpe a,cpopj		    ; Not a link.
+	pushj p,lnkprs
+	move a,lnkdir
+	came a,[sixbit \BACKUP\]
+	 popj p,
+	strt |ADeleting backup-tape link for DSK:|
+	strt6 dirnam
+	.iot ttyo,[";]
+	strt6 unfn1(fname)
+	.iot ttyo,[" ]
+	strt6 unfn2(fname)
+	skipe debug
+	  .value		    ; do POPJ P,X to punt deletion.
+       .call [setz ? sixbit \DELETE\
+		    move [sixbit \DSK\]
+		    move unfn1(fname)
+		    move unfn2(fname)
+		    setz dirnam]
+	  .lose %lssys
+	popj p,
+end go

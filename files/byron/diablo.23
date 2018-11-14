@@ -1,0 +1,114 @@
+;;;-*-Lisp-*-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;			Diablo Support Program
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;This program utilizes the ETX/ACK protocol for controlling
+;;; a Diablo printer over a line faster than 30 cps.  It has been
+;;; used extensively at 1200 baud with much success, with manual
+;;; switching of the communications line from a Concept-100 to the
+;;; Diablo.
+
+(or (get 'input-echo 'subr) (load '((liblsp) statty fasl)))
+
+(declare (special dcc dcclim diablo-filename ff-pause-default)
+	 (fixnum dcc dcclim))
+
+(or (boundp 'dcclim) (setq dcclim 191))
+(or (boundp 'diablo-filename) (setq diablo-filename nil))
+(or (boundp 'ff-pause-default) (setq ff-pause-default t))
+(or (boundp 'diablo-timeout-interval)
+    (setq diablo-timeout-interval (quotient dcclim 40.0)))
+
+;;;Quoted TYO for forcing control characters through CRTSTY.
+(defmacro qtyo (char file)
+	  `(progn (tyo 141 ,file) ;;;CRTSTY requires this as quote
+		  (tyo ,char ,file)))
+
+;;;DIABLO is called with two optional arguments:
+;;;  FILENAME is the name of the file to print, in either namestring
+;;;    or namelist format
+;;;  FF-PAUSE is a flag which determines whether to pause on formfeed.
+;;;    It is on by default so that individual 8 1/2 by 11 sheets may be
+;;;    used.  A value of NIL allows the use of continuous forms.
+;;;
+;;;  DCC is the "Diablo-Character-Count": the number of characters sent
+;;;    since the last ETX pause.
+;;;  DIABLO? is a predicate representing whether the file is a Diablo
+;;;    output file produced by the text formatter R.
+
+(defun diablo (&optional (filename diablo-filename)
+			 (ff-pause ff-pause-default)
+	       &aux (dcc 0) (diablo? nil))
+       (cond
+	((null filename)
+	 (cond
+	  ((null diablo-filename)
+	   (princ '|Filename:|) (setq diablo-filename (read))))
+	 (setq filename diablo-filename)))
+       (setq filename (namelist filename))
+       (setq filename
+	     (cond
+	      ((probef (mergef filename '((* *) * diab))))
+	      ((probef (mergef filename '((* *) * diabn))))
+	      ((probef (mergef filename '((* *) * diabe))))
+	      ((probef (mergef filename '((* *) * diabne))))
+	      ((probef filename))))
+       (setq diablo? (memq (caddr filename) '(diab diabn diabe diabne)))
+       (cond
+	((null filename) (princ '|Bad file specs -- DIABLO|))
+	(t (setq diablo-filename filename)))
+       (princ '|Set up paper and type a space:|)
+       ;;;Turn off echoing of input.  This is important otherwise the
+       ;;; ACKs sent by the Diablo will printed.  Unfortunately, it's
+       ;;; also machine dependent.
+       (push '(input-echo t) errlist)
+       (input-echo nil)
+       (tyi) 
+       (iota ((file filename 'in)
+	      (out 'tty: '(out tty image)))
+	     ;if not an R-generated file, set tabs at intervals of 8
+	     (cond
+	      ((not diablo?)
+	       (dyo 13. out)
+	       (for i from 1 to 15
+		    do (for i from 1 to 8 do (dyo 32. out))
+		       (dyo 27 out) (dyo 49 out) (dyo 9 out))
+	       (dyo 13. out))
+	      (t (and (= (tyipeek -1 file) 12) (tyi file))))
+             (do ((c (tyi file -1) (tyi file -1)))
+                 ((minusp c))
+		 (cond
+		  ((= c 12)
+		   (dyo 12 out)
+		   (cond
+		    (ff-pause
+		     (qtyo 7 out) (sleep 1.5) (qtyo 7 out) (sleep 1.5)
+		     (qtyo 7 out) (pause '||))))
+		  ((and (= c 27) diablo?)
+		   (qtyo c out)
+		   (qtyo (setq c (tyi file -1)) out)
+		   (cond ((member c '(9 11 12 13 22 30 31))
+			  (qtyo (tyi file -1) out)
+			  (setq dcc (+ 3 dcc)))
+			 (t (setq dcc (+ 2 dcc)))))
+		  (t (dyo c out)))))
+       (input-echo t) (setq errlist nil) (pause '||)
+       'done)
+
+;;; DYO is a TYO which increments and tests the character count.
+;;;  If DCC exceeds DCCLIM, DYO waits for an ACK to be returned
+;;;  by the Diablo, resets DCC to 0, and continues.
+;;;  If the ACK gets lost somehow, the wait will time-out after
+;;;  the number of seconds defined by DIABLO-TIMEOUT-INTERVAL.
+
+(defun dyo (char out)
+       (setq dcc (1+ dcc))
+       (qtyo char out)
+       (cond
+	((> dcc dcclim)
+	 (qtyo 3 out) ;send ETX
+	 (do ((out-time (plus (time) diablo-timeout-interval)))
+	     ((or (and (plusp (listen)) (= (tyi) 6)) ;wait for ACK
+		  (greaterp (time) out-time)))) ;or time out if ACK got lost
+	 (setq dcc 0))))

@@ -1,0 +1,167 @@
+;-*-Midas-*-
+
+	Title UHERE - Like UFIND but fiddles $Q
+
+A=1	;General porpoise
+B=2
+C=3
+D=4
+J=5	;JCL BytePointer
+P=17
+
+Call=Pushj P,
+Return=Popj P,
+
+USRi==1
+JCLen==10
+PDLen==10
+
+ ;;;
+;;;;;
+ ;;;
+
+Define SYSCAL op,args
+	.Call [Setz ? Sixbit /op/ ? args ((Setz))]
+Termin
+
+ ;;;
+;;;;;
+ ;;;
+
+JCLbuf:	Block JCLen
+	-1
+
+PDList:	-PDLen,,.
+	Block PDLen
+
+Flags:	-1
+	-1
+	-1
+	-1
+
+Sites:	Sixbit /DM/
+	Sixbit /ML/
+	Sixbit /AI/
+	Sixbit /MC/
+
+SVals:	Ascii /DM=/
+	Ascii /ML=/
+	Ascii /AI=/
+	Ascii /MC=/
+
+Valret:	Ascii /1'/
+SValue:	0
+	Asciz /:KILL :VK /
+
+Uname:	0
+Site:	0
+
+EOJCL:	0
+1stSit:	0
+
+ ;;;
+;;;;;
+ ;;;
+
+Begin:	Move P,PDList
+	.Break 12,[..rJCL,,JCLbuf]
+	Skipn JCLbuf
+Noone:	  .Value [Asciz /:
+
+Do like
+
+:UHERE uname [sites to check]
+
+and $Q will be zero if uname isn't at any ITS sites specified (if none
+are, all are), else will be the name of the site, suitable for :6TYPEing.
+For example, in a login init, if you wish to check to see if FOO is around
+(and he only uses MC or AI), you might do:
+
+	:UHERE FOO MC,AI
+	:IF N $Q
+	  $(:$^VFOO's at ^W$6TYPE
+	  $)
+	:ELSE
+	  $(:^VHe ain't logged in^W$
+	  $)
+	:TERPRI
+
+Ok?  That seems reasonable enough to me...    KILL /]
+
+Parse:	Syscal SSTATU,[Repeat 5,%Clout,,A
+				%Clout,,Site]
+	  .Lose %LsSys
+	Move J,[440700,,JCLbuf]
+	Call Getwrd
+	Jumpe A,Noone
+	Movem A,Uname
+SGet:	Skipe EOJCL
+	  Jrst Check
+	Call Getwrd
+	Jumpe A,Check
+	Movei B,3
+SLoop:	Camn A,Sites(B)
+	  Jrst SOk
+	Sojge B,SLoop
+	.Value [Asciz /: Bad site given KILL /]
+SOk:	Skipe 1stSit
+	  Jrst SFlag
+	Movei C,3
+	Setzm Flags(C)
+	Sojge C,.-1
+	Setom 1stSit
+SFlag:	Setom Flags(B)
+	Jrst SGet
+
+Check:	Movei A,3
+	Move C,Site
+CLoop:	Skipn Flags(A)
+	  Jrst Next
+	Move B,[Sixbit /USR/]
+	Came C,Sites(A)
+	  Jrst [Lsh B,-6*2
+		Add B,Sites(A)
+		Jrst .+1]
+	Syscal OPEN,[%Clbit,,.bii\10
+		     %Climm,,USRi
+		     B ? Uname ? [Sixbit /HACTRN/]]
+	  Jrst Next
+	.Close USRi,
+	Move B,SVals(A)
+	Movem B,SValue
+	.Value Valret
+	.LOSE
+Next:	Sojge A,Cloop
+	.Value [Asciz /0= :KILL :VK /]
+	.LOSE
+
+ ;;;
+;;;;;
+ ;;;
+
+Getwrd:	Setzb A,EOJCL
+	Move B,[440600,,A]
+	Movei C,6
+GWSkip:	Ildb D,J
+	Caie D,40
+	  Cain D,^I
+	    Jrst GWSkip
+	Skipa
+GWLoop:	Ildb D,J
+	Caie D,^M
+	  Cain D,^C
+	    Jrst ESave
+	Caie D,40
+	  Cain D,",
+	    Jrst Save
+	Jumpe C,GWLoop
+	Cail D,140
+	  Trz D,40
+	Subi D,40
+	Idpb D,B
+	Soja C,GWLoop
+
+ESave:	Setom EOJCL
+Save:	Return
+
+	End Begin

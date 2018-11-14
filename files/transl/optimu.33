@@ -1,0 +1,181 @@
+;;;-*-LISP-*-
+;;; To auto the MODEDECLARIZATION of code in macsyma.
+;;; Written July 1979 by GJC to go along with various numerical
+;;; packages.
+
+;;; Note: Some people use this crufty code, it should be replaced
+;;; of course, preferably by something written at macsyma level.
+;;; 11:13pm  Wednesday, 10 June 1981 -GJC
+
+(EVAL-WHEN (COMPILE) (SETQ DEFMACRO-FOR-COMPILING NIL))
+
+(DECLARE (SPECIAL $PROPS $FUNCTIONS IMPLICIT-REAL IMPLICIT-INTEGER
+		  $IMPLICITMODEDECLARE DEFAULT-MODETYPE
+		  FULLNAME-REAL FULLNAME-INTEGER)
+	 (*LEXPR $FLOATIZE $PRINT))
+
+(SETQ IMPLICIT-REAL '(A B C D E F G H O P Q R S T U V W X Y Z)
+      IMPLICIT-INTEGER '(I J K L M)
+      FULLNAME-REAL NIL
+      FULLNAME-INTEGER NIL
+      $IMPLICITMODEDECLARE NIL)
+
+;;; The first cases to handle are Literals. Easier to scope than variables.
+
+(eval-when (compile) (SETQ DEFMACRO-FOR-COMPILING NIL))
+
+(DEFMACRO LITERALP (EXP)
+	 `(COND ((ATOM ,EXP)
+		 (COND ((AND (SYMBOLP ,EXP)
+			     (NOT (MEMQ ,EXP  '($/%E $/%PI))))
+			,EXP)))
+		('T
+		 (LET (( (HEADER . BODY) ,EXP))
+		      (COMMENT mspecs like vectors may be added perhaps)
+		      (COND ((ATOM HEADER) NIL)
+			    ((MEMBER 'ARRAY (CDR HEADER))
+			     ,EXP))))))
+
+(DEFMACRO |level 1 literals| (EXP) ;; still buggy
+	  `(COND ((LITERALP ,EXP) (LIST ,EXP))
+		 ('T
+		  (DO ((BODY (CDR ,EXP) (CDR BODY))
+		       (LITERALS NIL (LET ((LITP (LITERALP (CAR BODY))))
+					  (COND ((AND LITP
+						      (NOT (MEMBER LITP LITERALS)))
+						 (CONS LITP LITERALS))
+						('T LITERALS)))))
+		      ((NULL BODY) LITERALS)))))
+
+(DEFMACRO <UNION> (A B)
+	  `(DO ((FROM ,A (CDR FROM))
+		(SET ,B (COND ((MEMBER (CAR FROM) SET) SET)
+			      ('T (CONS (CAR FROM) SET)))))
+	       ((NULL FROM) SET)))
+
+;;; (A B C D) (A B H K) --> ((C D) (H K))
+
+(DEFMACRO |common elements removed| (A B)
+	  `(DO ((FROM ,A (CDR FROM))
+		(AD ,A)
+		(BD ,B))
+	       ((NULL FROM) (LIST AD BD))
+	       (LET ((ELEMENT (CAR FROM)))
+		    (COND ((MEMBER ELEMENT BD)
+			   (SETQ AD (DELETE ELEMENT AD)
+				 BD (DELETE ELEMENT BD)))))))
+(DEFUN LITERALS (EXP)
+       (COND ((LITERALP EXP) (LIST EXP))
+	     ('T
+	      (COND ((AND (NOT (ATOM EXP)) (NOT (ATOM (CAR EXP))))
+		     (DO ((BODY (CDR EXP) (CDR BODY))
+			  (LITERALS NIL (<UNION> (LITERALS (CAR BODY))
+						 LITERALS)))
+			 ((NULL BODY) LITERALS)))))))
+
+
+(DEFUN CONSTANTS-SUBST (EXP)
+       (SETQ EXP (SUBLIS '(($%PI . 3.14159265))
+	
+			 EXP)))
+
+;;; There is a convention from Fortran that can be quite convenient,
+;;; namely, that names beginning with "I", "J", "K", "L", or "M", are
+;;; integers, and the rest are floating. This can be a real time saver,
+;;; and not a bad convention. See the special variables.
+
+(DEFUN LOOK-TYPE (FROB &AUX C)
+       (COND ((NOT (ATOM FROB))
+	      '|&An array or something like that.|)
+	     ((MEMBER FROB FULLNAME-REAL) '$FLONUM)
+	     ((MEMBER FROB FULLNAME-INTEGER) '$FIXNUM)
+	     ($IMPLICITMODEDECLARE
+	      (SETQ C (GETCHAR FROB 2))
+	      (COND ((MEMBER C IMPLICIT-REAL) '$FLONUM)
+		    ((MEMBER C IMPLICIT-INTEGER) '$FIXNUM)
+		    ('T DEFAULT-MODETYPE)))
+	     ('T DEFAULT-MODETYPE)))
+
+(DEFUN MODEL-DECLARE  (LIST)
+       (COND ((AND (NOT (ATOM (CAR LIST))) (EQ (CAAR LIST) 'MLIST))
+	      (SETQ LIST (CDR LIST))))
+       (DO ((LIST> LIST (CDR LIST>))
+	    ($FIXNUMS)
+	    ($FLONUMS))
+	   ((NULL LIST>) `(($MODEDECLARE) ((MLIST) ,@$FLONUMS) $FLOAT
+					  ((MLIST) ,@$FIXNUMS) $FIXNUM))
+	   (LET* ((VAR (CAR LIST>))
+		  (TYPE (LOOK-TYPE VAR)))
+		 (COND ((EQ TYPE '$FIXNUM)
+			(SETQ $FIXNUMS (CONS VAR $FIXNUMS)))
+		       ((EQ TYPE '$FLONUM)
+			(SETQ $FLONUMS (CONS VAR $FLONUMS)))
+		       ('T
+			(PRINC '|Cannot handle the modedeclaration of this object |)
+			($PRINT VAR '|&  | TYPE))))))
+
+
+(DEFUN $FLOATIZE (EXP &OPTIONAL FREELIST (CONST-FLAG T) &AUX NEW-MPROG)
+       (SETQ EXP ($FLOAT EXP))
+       (LET ((DEFAULT-MODETYPE '$FLONUM))
+	    (COND ((NOT CONST-FLAG)
+		   (SETQ EXP (CONSTANTS-SUBST EXP))))
+	    (COND ((EQ (CAAR EXP) 'MPROG)
+		   (LET (((MPROG-LOCALS . BODY) (CDR EXP))
+			 (LOCS-DECLARED))
+			
+			(DO ((LOCS> (CDR MPROG-LOCALS) (CDR LOCS>)))
+			    ((NULL LOCS>))
+			    (LET ((ELEMENT (CAR LOCS>)))
+				 (COND ((ATOM ELEMENT)
+					(SETQ LOCS-DECLARED
+					      (CONS ELEMENT LOCS-DECLARED)))
+				       ((EQ (CAAR ELEMENT) 'MSETQ)
+					(SETQ LOCS-DECLARED
+					      (CONS (CADR ELEMENT) LOCS-DECLARED)))
+				       (T (COMMENT OTHER THINGS LIKE ARRAYS)))))
+			(SETQ NEW-MPROG
+			      `((MPROG) ,MPROG-LOCALS
+					 ,(MODEL-DECLARE LOCS-DECLARED)
+					 ,@BODY)))))
+	    (COND ((AND FREELIST NEW-MPROG)
+		   `((MPROGN) ,(MODEL-DECLARE FREELIST)
+			       ,NEW-MPROG))			;
+		  (NEW-MPROG
+		   NEW-MPROG)
+		  (FREELIST
+		   `((MPROGN) ,(MODEL-DECLARE FREELIST) ,EXP))
+		  ('T EXP))))
+
+;;; FOR GENERATING FUNCTIONS FROM EXPRESSIONS.
+
+(DEFUN $GENLAMBDA (MLIST-ARGS EXP)
+       (COND ((NOT (EQ (CAAR MLIST-ARGS) 'MLIST))
+  ;; changed erlist1 to merror at JPG's suggestion --lph 10/18/84
+	      (merror "LAMBDA LIST WAS NOT A LIST!")))
+       `((LAMBDA) ,MLIST-ARGS ,EXP))
+
+(DEFUN $GENFUN (NAME MLIST-ARGS EXP &AUX MLAMBDA-OBJECT HEADER)
+       (cond ((atom mlist-args)                      ;added by LPH 5/22/84 3pm
+	      (setq mlist-args                       ;so RHB will succeed with
+		    (list '(mlist) mlist-args))))    ;floatdefunk(f,x,exp)
+       (SETQ MLAMBDA-OBJECT ($GENLAMBDA MLIST-ARGS EXP))
+       (MPUTPROP NAME MLAMBDA-OBJECT 'MEXPR)
+       (ADD2LNC NAME $PROPS)
+       (SETQ HEADER `((,NAME) ,@(CDR MLIST-ARGS)))
+       (ADD2LNC HEADER $FUNCTIONS)
+       `((MDEFINE SIMP) ,HEADER ,EXP))
+
+;;;;; TO GENERATE A FULLY FLOATING POINT OPTIMIZED AND MODEDECLARED FUNCTION.
+
+
+(DEFUN $FLOATDEFUNK (NAME VAROPTLIST EXP &REST)
+  ;; changed varlist to var-list to avoid conflict
+  ;; with macsyma special var.  --sgr 10/17/84 2:34 am
+  ;; changed var-list to varoptlist (after ASB's note) --lph 10/18/84 3:18 pm
+       (COND ((AND (NOT (ATOM EXP))
+		   (EQ (CAAR EXP) 'MRAT))
+	      (SETQ EXP ($RATDISREP EXP))))
+       (SETQ EXP (CONSTANTS-SUBST EXP))
+       ($GENFUN NAME VAROPTLIST
+		($FLOATIZE ($OPTIMIZE EXP) `((MLIST) ,@(LITERALS EXP)) 't)))

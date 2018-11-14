@@ -1,0 +1,4289 @@
+; -*-MIDAS-*-
+
+; changes to make:
+;	make [More] processing work right (including ^S ?)
+
+.symtab	2500., 4000.	; allocate lots of space for symbols
+title	TELSUP -- a combined TELNET/SUPDUP
+subttl	Definitions, etc.
+
+; This program (re)written by Eliot Moss (EBM), MIT LCS, November, 1980,
+; starting with MRC's TELNET, and merging ideas from SUPDUP, TN52, CHTN,
+; etc., as well as a few new thoughts.  (I think most credits belong to
+; MRC, RMS, MMCM, MOON, and AS for the previous programs.)  I hope this
+; combines the best features of those programs, though somebody should
+; do a rewrite from scratch sometime.  Anyway, this one program will do
+; both TELNET and SUPDUP protocols, on both ARPA and CHAOS nets.
+; TCP added 16 JAN 83.
+
+; Conceptual organization:
+;
+; The main loop hangs for input from the network, and accumulates output
+; for the terminal, which is flushed whenever a new bufferful of network
+; input is requested, and at some other times.  TTY input causes a high
+; priority interrupt ("command level") which checks for commands (i.e.,
+; the break character), and buffers other TTY input for an intermediate
+; priority level ("TTY input level").  This intermediate level handles
+; terminal input other than commands, and sends output to the network.
+; Command input is handled at the higher level to avoid situations where
+; the program "runs away" and you cannot get the terminal back (the
+; program runs in super-image input mode).
+
+; Here is a diagram of the various pieces and how they interconnect, in
+; terms of information flow:
+;
+;  TTY ==> TTY input buffer ==> Line editor (usually off) ==> NET
+;					|
+;  TTY <================================+ echoing, editing
+;    \
+;     \== TTY output buffer <== VT routines <== simulator <== NET
+;
+;  The simulator will recognize incoming escape sequences for some
+; terminals, and express them as abstract functions, by invoking the VT
+; (Virtual Terminal) routines.  Those routines put normal chars, ^P
+; codes, or ITS TTY buffer codes (TD codes) into the terminal output
+; buffer (or, in some cases, directly, after flushing the buffer).  The
+; VT routines support a few extra abstract functions than ITS knows
+; about, for a few terminals, e.g., insert/delete line/char on H19's,
+; which appear as VT52's to ITS.  This involves tracking the cursor,
+; etc.
+
+; First define registers:
+
+f=   0		; flags (if we have any ....)
+a=   1		; a thru e are main ac's, for interface to NETWRK, etc.
+b=   2
+c=   3
+d=   4
+e=   5
+t=   6		; t and tt are often clobbered by NETWRK
+tt=  7
+x=  10		; x thru z are local ac's -- should need to save them
+y=  11
+z=  12
+xx= 13		; xx thru zz are temps, may be clobbered in UUO handler
+yy= 14
+zz= 15
+nsave==	zz+1	; number of AC's to save on interrupt
+tp= 16		; tab pdl for line editor (sigh)
+p=  17		; traditional ...
+
+; I/O channels
+
+ttyich==  1		; TTY input
+ittoch==  2		; TTY image output
+ttyoch==  3		; TTY output
+icpch==   4		; ICP channel
+hostch==  5		; HOSTS2 table
+netich==  6		; NET input (must be icp + 2)
+netoch==  7		; NET output (must be icp + 3)
+wallch== 10		; for wallpaper file
+usrich== 11		; for reading jobs (e.g., STY or inferior)
+usroch== 12		; for writing jobs (e.g., inferior)
+filech== 13		; random file hacking
+selfch== 14		; number of channel for software interrupt to self
+
+neti=	<.iot	netich,>	;define i/o instructions
+neto=	<.iot	netoch,>
+tyi=	<.iot	ttyich,>
+tyo=	<.iot	ttyoch,>
+walo=	<.iot	wallch,>
+
+ityo=	1_27.		; uuos
+uuomax==1
+
+call=	<pushj	p,>	; other instructions
+return=	<popj	p,>
+calret==<jrst>		; let next guy return for us, etc.
+			; half-killed so JRST does not print as CALRET
+
+; Assembly parameters
+
+nprskt== 27		; new TELNET protocol socket #
+oprskt==  1		; old TELNET protocol socket #
+dtlskt== nprskt		; default TELNET ICP socket (new TELNET)
+dspskt== 137		; default SUPDUP ICP socket (new SUPDUP)
+linmor== 6.		; # of lines before **More** not inhibited
+hstnln== 10.		; length of host name strings
+patlen== 50.		; length of patch area
+jclbfl== 10.		; length of JCL buffer
+ntibfl== 200.		; length of net input buffer
+ttibfl== 100.		; length of TTY input buffer
+ttobfl== 600.		; length of TTY output buffer (must be >= 64.)
+pdllen== 500.		; length of push-down stack
+linbfl== 50.		; length of line editor buffer
+tplen==	 15.		; number of tabs that can be pushed (line editor)
+nethop== -1		; -1 if to include net hop hassle code
+
+; Temporary definitions until the TCP constants are available
+
+%wytcp==7
+%ntcls==0
+%ntlsn==1
+%ntrfc==2
+%ntclu==3
+%ntrfs==4
+%ntopn==5
+%ntwrt==6
+%ntclx==7
+%ntcli==10
+%ntinp==11
+
+subttl	Macros
+
+if1,[
+.insrt SYSENG;$CALL MACRO
+
+; For MIDAS messages from hairy macros, etc.
+define	inform	a,b
+	printx	\a b
+\
+	termin
+
+; Macro to output an ASCII string for command level
+define	type	string
+	movei	tt, [asciz \string\]
+	call	outstr
+	termin
+
+; Macro to send a TELNET command
+define	telcmd	cmdlst
+	irps	cmd,,[cmdlst]
+		neto	[cmd]
+		termin
+	.nets	netoch,
+	termin
+
+]; end if1 (macros, etc.)
+
+subttl	Data area
+
+cmdesc:	"				; escape character ([BREAK] for TV's)
+arrow:	"^				; character to output for ^
+altmod:	"$				; character to output for escape
+debug:	block	1			; -1 => debugging
+hopchk:	-1				; net hop check done yet?
+
+corbeg==.
+
+sdpblk:	block	1			; first word of SUPDUP block
+xtctyp:	block	1			; TCTYP variable (one to be sent)
+xttyop:	block	1			; TTYOPT variable (one to be sent)
+tcmxv:	block	1			; vertical screen size
+tcmxh:	block	1			; horizontal screen size
+ttyrol:	block	1			; rolling
+smarts:	block	1			; display smarts
+ispeed:	block	1			; input speed
+ospeed:	block	1			; output speed
+funame:	block	1			; XUNAME
+nsdvrs==.-sdpblk-1			; number of SUPDUP variables
+
+tctyp:	block	1			; real TCTYP
+ttyopt:	block	1			; real TTYOPT
+
+ttyst1:	block	1			; this job's TTYST1 variable
+ttyst2:	block	1			; TTYST2 variable
+ttysts:	block	1			; TTYSTS variable
+ttycom:	block	1			; TTYCOM variable
+ttytyp:	block	1			; TTYTYP variable
+
+frnhst:	block	1			; host address for foreign host
+					; -1 => none
+netnum:	block	1			; its network number
+morep:	block	1			; -1 => **More** on
+twinp:	block	1			; ~ 0 => has i/d
+					; -1 => SAIL graphics too
+killp:	block	1			; -1 => kill when done
+canhom:	block	1			; -1 => display (can home down, back)
+simtyp:	block	1			; 0 => no simulation, else some kind
+
+s.data== 1		; Datamedia
+s.e19==	 2		; Heath terminal (plus some of Winston Edmond's codes)
+s.1061== 3		; Telerays
+
+simsta:	block	1			; simulator state
+smval1:	block	1			; vars to hold saved state info
+smval2:	block	1
+smval3:	block	1
+
+outtyp:	block	1			; 0 => no (extra) ^P interpretation
+
+o.h19==	 1		; ^P ==> Heath H19 escapes
+o.e19==	 2		; ^P ==> Heath H19 escapes + Edmond's extensions
+
+notlnt:	block	1			; -1 => don't use TELNET
+nosup:	block	1			; -1 => don't use SUPDUP
+
+isarpa:	block	1			; -1 => we are using ARPA net
+usetcp:	block	1			; -1 => we are using TCP
+usencp:	block	1			; -1 => we are using NCP
+supdpp:	block	1			; -1 => we are using SUPDUP protocol
+
+nprmpt:	block	1			; -1 => don't print prompt
+supero:	block	1			; -1 => use super-image output mode
+
+; Data area initialized every time
+
+rstbeg==.				; beginning of data area
+10tabp:	block	1			; -1 => using 10 tabs (Multix TELNET)
+sdoutp:	block	1			; -1 => using TELNET SUPDUP output
+openp:	block	1			; -1 => connection open
+nprotp:	block	1			; -1 => using new TELNET protocol
+ttyop:	block	1			; -1 => silence output
+ttyoff:	block	1			; -1 => TTY output off now
+supres:	block	1			; -1 => net intr suppressed output
+intcnt:	block	1			; >0 => # net ints, <0 => # ORS's
+suprcg:	block	1			; -1 => ^G/^S suppressed output
+piatyf:	block	1			; -1 => ATTY expected
+nopad:	block	1			; -1 => padding is off
+echop:	block	1			; -1 => foreign host is echoing
+logoup:	block	1			; -1 => logout option
+supgap:	block	1			; -1 => host is winning with GA's
+fspgap:	block	1			; -1 => we are winning with GA's
+linedp:	block	1			; -1 => line editor enabled
+wallp:	block	1			; -1 => enable wallpaper
+quotep:	block	1			; -1 => next char quoted
+lquotp:	block	1			; -1 => line editor quote
+trbinp:	block	1			; -1 => can transmit binary
+rcbinp:	block	1			; -1 => can receive binary
+gstopp:	block	1			; -1 => ^G/^S stop feature on
+idmode:	block	1			; -1 => DM, etc. ins/del mode is on
+idcout:	block	1			; -1 => ins/del mode on in terminal
+ansimd:	block	1			; -1 => simulated terminal in ANSI mode
+roll:	block	1			; -1 => in scroll mode
+sroll:	block	1			; -1 => was initially in scroll mode
+metakp:	block	1			; -1 => <EDIT> key depressed
+morinh:	block	1			; >= 0 => **More** inhibited
+inipos:	block	1			; initial cursor position
+hpos:	block	1			; horizontal position (line editor)
+chpos:	block	1			; horiz position (output)
+cvpos:	block	1			; vertical position (output)
+chpos1:	block	1			; saved hpos (TD code)
+cvpos1:	block	1			; saved vpos (TD code)
+ohpos:	block	1			; saved cursor pos (during command)
+ovpos:	block	1
+icpskt:	block	1			; foreign socket to ICP on
+
+linbuf:	block	linbfl			; line editor input buffer
+linptr:	block	1			; line editor pointer
+linctr:	block	1			; line editor counter
+
+ntibuf:	block	ntibfl			; network input buffer
+ntiptr:	block	1			; network input pointer
+ntictr:	block	1			; network input counter
+netinp:	block	1			; # bytes available to read from net
+
+ttibuf:	block	ttibfl			; TTY input buffer
+ttiinp:	block	1			; pointer for getting chars
+ttioup:	block	1			; pointer for inserting chars
+ttictr:	block	1			; number of chars in buffer
+
+ttobuf:	block ttobfl			; TTY output buffer
+ttoptr: block	1			; TTY output pointer
+ttoctr:	block	1			; TTY output counter
+
+hstnam:	block	hstnln			; host name string in ASCII
+hstsnm:	block	3			; host sixbit name (=> who line)
+jclbuf:	block	jclbfl+1		; JCL buffer
+iniptr:	block	1
+inibuf:	block	jclbfl+4		; initial input buffer
+spcbuf:	block	5			; special command buffer
+hstbuf:	block	5			; special host name buffer
+corend==.-1				; end of data area
+
+pdl:	block	pdllen			; push down stack
+tabpdl:	block	tplen			; stack of tab places (for line editor)
+tabptr==<-tplen,,tabpdl>-<1,,1>
+pat:	block	patlen			; patch area
+patch==	pat				; beginning of free patch area
+loc	<.\1777>+1			; put pure code on a clean page
+
+subttl	TELNET commands for the new protocol
+
+trnbin==   0				; transmit binary
+echo==	   1				; echo
+rcp==	   2				; prepare to reconnect
+suprga==   3				; suppress go ahead
+nams==	   4				; negotiate approx. message size
+status==   5				; status option
+timmrk==   6				; timing mark
+rcte==	   7				; remote controlled tran/echo
+naol==	   8.				; negotiate line width
+naop==	   9.				; negotiate page size
+naocrd==  10.				; negotiate output cr disposition
+naohts==  11.				; negotiate output hor. tabs
+naohtd==  12.				; negotiate output hor. tab disp.
+naoffd==  13.				; negotiate output form feed disp.
+naovts==  14.				; negotiate output ver. tabs
+naovtd==  15.				; negotiate output ver. tab disp.
+naolfd==  16.				; negotiate output lf disposition
+extasc==  17.				; extended ASCII
+logout==  18.				; log out foreign job
+bm==	  19.				; byte macro
+det==	  20.				; data entry terminal option
+supdup==  21.				; moby SUPDUP option
+sdotpt==  22.				; SUPDUP output
+exopl==  255.				; extended options
+
+se==	 240.				; subnegotiation end
+nop==	 241.				; no operation
+dm==	 242.				; data mark
+brk==	 243.				; break
+ip==	 244.				; interrupt process
+ao==	 245.				; abort output
+ayt==	 246.				; are you there
+ec==	 247.				; erase character
+el==	 248.				; erase line
+ga==	 249.				; go ahead
+sb==	 250.				; subnegotiation
+will==	 251.				; sender will perform operation
+wont==	 252.				; sender wont perform operation
+do==	 253.				; receiver asked to perform operation
+dont==	 254.				; receiver must not perform operation
+iac==	 255.				; interpret as command
+
+subttl	Special Sites
+
+; Table of sites supporting SUPDUP -- only need non-ITS ones
+
+suptab:	440700,,[asciz /XX/]
+	440700,,[asciz /OZ/]
+	440700,,[asciz /EE/]
+	440700,,[asciz /SPEECH/]	; not installed yet
+	440700,,[asciz /SAIL/]		; must be last in list
+sdsits==<suptab-.,,suptab>
+
+subttl	Initialization, etc.
+
+; We init stack and variables.  Then we take care of the OPTION word and
+; reading jcl (parsing is somewhat later).  Next, we open the terminal
+; for output, giving 2 channels -- one image and one "normal".  After
+; reading and analyzing the terminal properties, and setting the output
+; properties, we finally open the terminal for input, in the right mode.
+
+telsup:	move	p, [-pdllen,,pdl]	; load push down pointer
+	setzm	corbeg
+	move	a, [corbeg,,corbeg+1]	; clear all variables
+	blt	a, corend
+	movei	a, %tnsfw		; fix xtctyp back
+	movem	a, xtctyp
+	.suset	[.roption,,a]		; do new style interrupts
+	tlo	a, %opint\%opopc	; and get old PC saved always
+	move	c, [%pirlt\%piaty\%piioc]
+	move	d, [%pirlt\%piaty]
+	skipe	debug
+	 jrst [	tdz	c, [%pirlt\%piaty]	; get these out of the way
+		tdz	d, [%pirlt\%piaty]	; when debugging
+		jrst	.+1 ]
+	move	b, [-5,,[.soption,,a
+			 .smask,,c
+			 .sdf1,,d
+			 .smsk2,,[-1#<1_ttyoch>]
+			 .sdf2,,[-1#<1_ttyoch>]]]
+	.suset	b
+
+	movei	b, ^M_1
+	movem	b, jclbuf+jclbfl	; ensure that JCL ends
+	tlne	a, %opcmd		; any alleged JCL?
+	 .break	12, [..rjcl,,jclbuf]	; read in JCL
+
+	movei	a, hsttab/2000
+	movei	b, hostch
+	call	netwrk"hstmap		; get this right away ...
+	 .value
+	setom	frnhst			; no connection yet
+
+	$call	open,[#ttyoch, [sixbit /TTY/]],[#.uio\%tjdis\%tjctn]
+	 .lose	%lsfil			; open tty output (^P's enabled)
+	$call	open,[#ittoch, [sixbit /TTY/]],[#.uio\%tjsio\%tjmor\%tjctn]
+	 .lose	%lsfil			; super-image output, no **More**'s
+	$call	open,[#ttyich, [sixbit /TTY/]],[#.uii\%tiful\%tiint\%tinwt]
+	 .lose	%lsfil
+
+	$call	ttyget,[#ttyoch][ttyst1, ttyst2, ttysts]
+	 .lose	%lssys			; control char flags, etc.
+	move	a, [-20.,,[sixbit /HEIGHT/ ? movem tcmxv
+			   sixbit /WIDTH/  ? movem tcmxh
+			   sixbit /TCTYP/  ? movem tctyp
+			   sixbit /TTYCOM/ ? movem ttycom
+			   sixbit /TTYOPT/ ? movem ttyopt
+			   sixbit /TTYTYP/ ? movem ttytyp
+			   sixbit /TTYROL/ ? movem ttyrol
+			   sixbit /SMARTS/ ? movem smarts
+			   sixbit /ISPEED/ ? movem ispeed
+			   sixbit /OSPEED/ ? movem ospeed]]
+	$call	ttyvar,[#ttyoch, a]
+	 .lose	%lssys
+
+	move	x, [-nsdvrs,,]		; set up AOBJN count
+	movem	x, sdpblk		; for SUPDUP block
+
+	move	x, [030303030303]	; all chars are activation, interrupt
+	movem	x, ttyst1		; and no echoing
+	move	x, [030303030303]
+	movem	x, ttyst2
+
+	movsi	x, %tsmor
+	tdnn	x, ttysts		; **More**'s suppressed ?
+	 .suset	[.simsk2,,[1_ttyoch]]	; for **More** interrupts
+	setom	morep			; More's on
+
+	movsi	x, %tssii		; don't use super-image input yet
+	andcab	x, ttysts
+	setzm	sroll			; init sroll
+	tlne	x, %tsrol
+	 setom	sroll
+	call	settty			; set TTYSTS, TTYST1, TTYST2
+
+; Set flags according to TTY properties
+
+	setom	canhom			; assume it can home (for cmnd prompt)
+	move	x, ttyopt
+	tlne	x, %tomvu		; can it move up ?
+	 tlnn	x, %toers
+	  setzm	canhom
+	tlne	x, %tofci		; bucky bits?
+	 jrst [	movei	z, %txtop\"B	; yep, use [BREAK] as intercept
+		movem	z, cmdesc
+		jrst	.+1 ]
+	setom	twinp			; assume that it's a winner
+	tlne	x, %tosai		; does it have SAIL graphics?
+	 jrst [	movei	z, ^K		; set up special graphics
+		movem	z, arrow
+		movei	z, 33
+		movem	z, altmod
+		jrst	.+2 ]
+	  movns	twinp			; only semi-winning
+	tlne	x, %tolid		; a winner ?
+	 tlnn	x, %tocid
+	  setzm	twinp			; no fancy simulations, please
+
+subttl	Greeting, Special XJNAME Handling
+
+	type	[User TELNET/SUPDUP.]
+	move	tt, [.fnam2]		; get our version
+	call	outsix
+	type	[A]
+	move	x, [squoze 0,impup]	; IMP up ?
+	.eval	x,
+	 .lose	%lssys
+	hrli	x, x
+	movss	x
+	.getloc	x,
+	jumpe	x, jclprs		; winning if IMPUP=0
+	type	[Our ARPAnet Network Control Program is down.
+]
+
+; Job name and JCL hacking stuff
+
+; What we do is check for various special XJNAME's
+
+jclprs:	setom	killp			; normally kill off ...
+	setzm	supdpp			; normally TELNET
+	setom	usetcp			; normally TCP, if can
+	setzm	usencp
+	.suset	[.rxjname,,x]		; get XJNAME
+	setzm	inibuf
+	move	tt, [350700,,inibuf]
+	movem	tt, iniptr
+	setzm	spcbuf
+	setzm	hstbuf
+
+	; First, check for NSW, RSEXEC, which are special special cases
+
+	; here for :NSW
+	camn	x, [sixbit /NSW/]	; special frob for NSW?
+	 jrst [	move	x, [asciz /,T/]	; Telnet protocol ...
+		movem	x, spcbuf
+		move	x, [ascii /33@SR/]	; NSW socket is at SRI-KA
+		movem	x, hstbuf
+		move	x, [asciz /I-KA/]
+		movem	x, hstbuf+1
+		jrst	notcon ]
+
+	; here for :RSEXEC
+	camn	x, [sixbit /RSEXEC/]		; special frob for RSEXEC?
+	 jrst [	move	x, [asciz /,T/]		; TIPSER socket
+		movem	x, spcbuf
+		move	x, [ascii /367@I/]	; ISI a good place
+		movem	x, hstbuf
+		move	x, [asciz /SI/]
+		movem	x, hstbuf+1
+		jrst	notcon ]
+
+; Now we check for protocol restricting names:
+; TELNET, TN, SUPDUP
+
+	; prepare to check for xTELNET, etc.
+	move	y, x			; copy job name
+	tlz	y, 770000		; zap first char
+
+	; TELSUP, xTELSUP
+	came	x, [sixbit /TELSUP/]
+	 camn	y, [sixbit / TELSU/]
+	  jrst [jsp	x, hlpchk	; check for help ....
+		0 ]			; no special help msg
+
+	; now check for TELNET, xTELNET (TELNET protocol)
+	came	x, [sixbit /TELNET/]
+	 camn	y, [sixbit / TELNE/]
+	  move	x, [sixbit /TN/]	; TELNET = TN
+
+	; TN, xTN (same as TELNET)
+	came	x, [sixbit /TN/]
+	 camn	y, [sixbit / TN/]
+	  jrst [move	x, [asciz /,T/]
+		movem	x, spcbuf
+		jsp	x, hlpchk	; check for help ....
+		0 ]			; no special help msg
+
+	; SUPDUP, xSUPDUP (SUPDUP, either net)
+	came	x, [sixbit /SUPDUP/]
+	 camn	y, [sixbit / SUPDU/]
+	  jrst [move	x, [asciz /,S/]
+		movem	x, spcbuf
+		jsp	x, hlpchk
+		[asciz \
+:SUPDUP <site> - a version of TELNET/SUPDUP that always uses the SUPDUP
+protocol, but will use either net (ARPA or CHAOS), according to what is
+possible, with the CHAOS net preferred.\]]
+
+; Here we check first for names indicating we are on a more powerful
+; terminal than the TTY bits indicate (H19 or E19, currently).
+; These provide interpretation of ^P or %TD codes not known to the
+; system.  Clearly you will lose if not on such a terminal!
+
+	; HEATH, xHEATH (Really on a Heath)
+	came	x, [sixbit /HEATH/]
+	 camn	y, [sixbit / HEATH/]
+	  move	x, [sixbit /H19/]	; HEATH = H19
+
+	; H19, xH19 (Really on a Heath terminal)
+	came	x, [sixbit /H19/]
+	 camn	y, [sixbit / H19/]
+	  jrst [move	x, [asciz /RH/]
+		movem	x, spcbuf
+		jsp	x, hlpchk
+		[asciz \
+:HEATH <site>, :H19 <site> - versions of TELNET/SUPDUP that assume
+your terminal is a Heath H19, no matter what the system says.  The
+program will interpret display codes sent by the foreign host that
+are not supported by VT52's, and will convert them to H19 sequences.
+Either protocol (SUPDUP or TELNET) will be used, on either net (ARPA or
+CHAOS), with SUPDUP and the CHAOS net preferred.\]]
+
+	; E19, xE19 (Really on an Extended (Winston Edmond) Heath terminal)
+	came	x, [sixbit /E19/]
+	 camn	y, [sixbit / E19/]
+	  jrst [move	x, [asciz /RE/]
+		movem	x, spcbuf
+		jsp	x, hlpchk
+		[asciz \
+:E19 <site> - a version of TELNET/SUPDUP that assumes your terminal is
+a Heath H19 with the "E19" extensions designed by Winston Edmond.  The
+program will interpret display codes sent by the foreign host that are
+not supported by VT52's, and will convert them to "E19" sequences.
+Either protocol (SUPDUP or TELNET) will be used, on either net (ARPA or
+CHAOS), with SUPDUP and the CHAOS net preferred.\]]
+
+; Here we check for the desire to SIMULATE the effects of one kind of
+; terminal on a possibly different one, e.g., make the foreign host
+; believe you are on a VT52, when you really have an AI-TV.  This is
+; helpful when the foreign host knows about SOME displays, but not the
+; kind you are on.  Your terminal had better have enough capabilities ...
+; Intended more for TELNET use, but works with SUPDUP.
+
+	; RAW, xRAW (Not really simulation -- means start in image (G) mode)
+	came	x, [sixbit /RAW/]
+	 camn	y, [sixbit / RAW/]
+	  jrst [move	x, [asciz /G/]
+		movem	x, spcbuf
+		jsp	x, hlpchk
+		[asciz \
+:RAW <site> - a version of TELNET/SUPDUP that always starts in RAW
+(i.e., transparent, image mode).  Either protocol (SUPDUP or TELNET)
+will be used, on either net (ARPA or CHAOS), with SUPDUP and the CHAOS
+net preferred.\]]
+
+	; H19SIM, xH19SIM (simulate Heath terminal)
+	came	x, [sixbit /H19SIM/]
+	 camn	y, [sixbit / H19SI/]
+	  jrst [move	x, [asciz /SH/]
+		jrst	simnam ]
+	
+	; E19SIM, xE19SIM (simulate E19)
+	came	x, [sixbit /E19SIM/]
+	 camn	y, [sixbit / E19SI/]
+	  jrst [move	x, [asciz /SE/]
+		jrst	simnam ]
+
+	; TN52, xTN52 (VT52 simulation)
+	came	x, [sixbit /TN52/]
+	 camn	y, [sixbit / TN52/]
+	  skipa	x, [asciz /SV/]
+	   jrst	chkmor
+simnam:	movem	x, spcbuf
+	jsp	x, hlpchk
+	[asciz \
+:H19SIM <site>, :E19SIM <site>, :TN52 <site> - versions of TELNET/SUPDUP
+that will translate H19, E19, and VT52 escape sequences to ITS display
+codes.  This is is useful when the foreign host knows about that kind of
+terminal, but not the kind you really have (e.g., an AI-TV).  Either
+protocol (SUPDUP or TELNET) will be used, on either net (ARPA or CHAOS),
+with SUPDUP and the CHAOS net preferred.\]
+chkmor:
+	; DMSIM, xDMSIM (simulate Datamedia)
+	came	x, [sixbit /DMSIM/]
+	 camn	y, [sixbit / DMSIM/]
+	  jrst [move	x, [asciz /SD/]
+		movem	x, spcbuf
+		jsp	x, hlpchk
+		[asciz \
+:DMSIM <site> - a version of TELNET/SUPDUP that will translate Datamedia
+3000 escape sequences to ITS display codes.  This is is useful when the
+foreign host knows about Datamedias but not the kind of terminal you
+really have (e.g., an AI-TV).  Either protocol (SUPDUP or TELNET) will
+be used, on either net (ARPA or CHAOS), with SUPDUP and the CHAOS net
+preferred.\]]
+
+	; TELSIM, xTELSIM (simulate Teleray)
+	came	x, [sixbit /TELSIM/]
+	 camn	y, [sixbit / TELSI/]
+	  jrst [move	x, [asciz /ST/]
+		movem	x, spcbuf
+		jsp	x, hlpchk
+		[asciz \
+:TELSIM <site> - a version of TELNET/SUPDUP that will translate Teleray
+1061 escape sequences to ITS display codes.  This is is useful when the
+foreign host knows about Teleray's but not the kind of terminal you
+really have (e.g., an AI-TV).  Either protocol (SUPDUP or TELNET) will
+be used, on either net (ARPA or CHAOS), with SUPDUP and the CHAOS net
+preferred.\]]
+ 
+	; None of the above -- had better be a site name ....
+	; but first, check for ?
+	ldb	z, [350700,,jclbuf]	; "?" ?
+	cain	z, "?
+	 jrst [	jsp	x, hlpchk
+		[asciz \
+:<site-name> - a form of TELNET/SUPDUP that connects to the named site.
+Either protocol (SUPDUP or TELNET) will be used, on either net (ARPA or
+CHAOS), with SUPDUP and the CHAOS net preferred.  TCP will be used if
+possible for the network and host in question.\]]
+
+	; stick site name at start of special buffer
+	move	z, [440700,,hstbuf]
+jmvhst:	movei	y, 0
+	rotc	x, 6
+	caie	y, 0
+	 addi	y, 40
+	idpb	y, z
+	jumpn	y, jmvhst
+	jrst	notcon
+
+; Here to check jcl for help, and type right message (sigh)
+
+hlpchk:	ldb	z, [350700,,jclbuf]	; first char is "?" ?
+	caie	z, "?
+	 jrst	notcon
+	setzm	killp
+	setzm	jclbuf
+	skipn	tt, (x)
+	 jrst [	type	[Commands for TELNET/SUPDUP:
+]
+		call	help
+		jrst	notcon ]
+	call	outstr
+	type	[Type ? for information on TELNET/SUPDUP commands.
+]
+;	jrst	notcon
+
+; Top level not connected loop
+
+notcon:	skipn	jclbuf		; first time jcl processing ?
+	 skipe	spcbuf
+	  jrst	cnsjcl
+	skipn	hstbuf
+	 jrst	notcn1
+cnsjcl:	move	x, [440700,,inibuf]
+	skipa	z, [440700,,spcbuf]	; first, copy special commands
+spccpy:	 idpb	tt, x
+	ildb	tt, z
+	jumpn	tt, spccpy
+	move	z, [440700,,hstbuf]	; skip to end of special host name
+hstskp:	move	y, z
+	ildb	tt, z
+	jumpn	tt, hstskp
+	skipa	z, [440700,,jclbuf]	; append host name chars from jcl
+apphst:	 idpb	tt, y
+	ildb	tt, z
+	call	hstchr
+	 jrst	apphst
+	movei	t, 0
+	idpb	t, y		; terminate host name
+	caia
+cmdcpy:	 ildb	tt, z
+	caie	tt, 0
+	 cain	tt, ^M
+	  jrst	hstcpy
+	caie	tt, 40
+	 idpb	tt, x
+	jrst	cmdcpy
+
+hstchr:	cail	tt, "A		; skips if char can NOT be part of host name
+	 caile	tt, "Z
+	  caia
+	   return
+	cail	tt, "a
+	 caile	tt, "z
+	  caia
+	   return
+	cail	tt, "0
+	 caile	tt, "9
+	  caia
+	   return
+	caie	tt, "-
+	 cain	tt, "/
+	  return
+	caie	tt, "@
+	 aos	(p)
+	return
+
+hstcpy:	skipn	hstbuf
+	 jrst	jcldun
+	movei	tt, "O
+	idpb	tt, x
+	skipa	z, [440700,,hstbuf]	; copy host name
+hstcp1:	 idpb	tt, x
+	ildb	tt, z
+	jumpn	tt, hstcp1
+	movei	tt, ^M
+	idpb	tt, x
+jcldun:	movei	tt, 0
+	idpb	tt, x
+	setzm	jclbuf
+	setzm	spcbuf
+	setzm	hstbuf
+
+notcn1:	move	a,[-3,,[.swho1,,[<.byte 8 ? 166 ? 0 ? 366 ? 0>]
+			.swho2,,[sixbit /NOT IN/]
+			.swho3,,[sixbit / COMM/]]]
+	.suset	a
+	call	cmprmt			; get a command
+	 jrst	notcon
+	 jrst	notcon
+	.break	16, 100000		; skips if done
+	jrst	notcon			; continued from DDT
+
+subttl	Net hop suppression
+
+ifn	nethop,[
+hopper:	.suset	[.rxuname,,x]		; check for wizards ...
+	skipe	debug			; don't skip wizards if debugging
+	 jrst	hop1
+	irps winner,,[CPR DLW EAK EBM ED EJS CSTACY CHRIS GSB HMR JIS JNC
+		      JSOL KLH MACRAK MOON MRC OTA RMS RWG RWK]
+		camn	x, [sixbit /winner/]
+		 return
+		termin
+hop1:	hllo	x, x			; check for not logged in
+	aoje	x, [
+		type	[Login Please]
+		.logout 1, ]		; you lose
+
+	skipa	x, [ttyoch]		; start with this TTY
+nxtpty:	 addi	x, 400000		; try next TTY down
+	move	xx, x
+	$call	styget,[xx][x]
+	 .lose	%lssys
+	trnn	x, -1			; PTY ?
+	 return				; no, so not a hop
+	move	a, [-4,,[ sixbit /CNSL/   ? movem xx
+			  sixbit /XJNAME/ ? movem y ]]
+	$call	usrvar,[#%jsnum(x), a]	; get dope on STY job
+	 .lose	%lssys
+	jumpge	xx, nxtpty		; another PTY to go
+
+	came	y, [sixbit /TELSER/]	; TELSER or SUPSER job ?
+	 camn	y, [sixbit /SUPSER/]
+	  caia
+	   return			; nope, so no hop
+
+	$call	open,[#usrich, [sixbit /USR/], #%jsnum(x), #0],[#.uii\10]
+	 .lose	%lssys			; open STY job to read FHOST
+	.access usrich, [122]		; address of FHOST in TELSER
+	.iot	usrich, b
+	.close	usrich,			; now B has foreign host number
+
+	call	netwrk"hstsrc		; get hold of SITE entry in D
+	 .value	[asciz /: Logged in via unknown host! /]
+
+	hrrz	d, (d)			; get pointer to first addr entry
+nxtadr:	ldb	e, [331000,,hsttab(d)]	; get net number
+	came	e, netnum
+	 jrst [	hrrz	d, hsttab+1(d)	; follow cdr
+		jumpn	d, nxtadr
+		return ]		; not on same net, so OK
+	movei	a, (a)			; A points to ASCIZ name of host
+	push	p, a
+	$call	sstatus,[][tt, tt, tt, tt, tt, tt]  ; get sixbit local name
+	 .lose	%lssys
+	push	p, tt
+	type	[
+  You are logged into ]
+	move	tt, (p)
+	call	outsix
+	type	[ from ]
+	hrrz	tt, -1(p)
+	call	outhst
+	type	[, and are asking to go out
+via ]
+	movei	tt, [asciz /the ARPAnet/]
+	skipe	usetcp
+	 movei	tt, [asciz /TCP/]
+	skipn	isarpa
+	 movei	tt, [asciz /the CHAOSnet/]
+	push	p, tt
+	call	outstr
+	type	[ to ]
+	move	b, frnhst
+	call	netwrk"hstsrc
+	 .value
+	movei	tt, (a)
+	push	p, tt
+	call	outhst
+	type	[.  But ]
+	hrrz	tt, -3(p)
+	call	outhst
+	type	[ is also connected
+via ]
+	hrrz	tt, -1(p)
+	call	outstr
+	type	[.  It would be better for you to detach from ]
+	move	tt, -2(p)
+	call	outsix
+	type	[ and
+connect directly from ]
+	hrrz	tt, -3(p)
+	call	outhst
+	type	[ to ]
+	pop	p, tt
+	call	outhst
+	type	[ via ]
+	pop	p, tt
+	call	outstr
+	type	[.
+  If you have any questions, typing :LUSER to DDT will request a systems
+programmer to assist you.
+  Are you sure you want to run this program now? ]
+	sub	p, [2,,2]		; flush extra goodies
+	call	inpchr			; get a character
+	andi	a, %txasc		; flush bucky bits
+	caie	a, "Y
+	 cain	a, "y
+	  jrst [type	[Yes -- OK
+]
+		return ]		; claims to know what (s)he's doing
+	type	[No.
+ Thank you for your co-operation.
+]
+	.logout 1,			; and suicide
+];ifn nethop
+
+subttl	ICP to foreign host
+
+; Final pre-ICP initialization
+
+goicp:
+ifn	nethop,	call	hopper		; check for net hopping
+	setom	linedp			; enable line editor (if echo off)
+	move	tp, [tabptr]
+	setzm	linctr
+	move	tt, [441000,,ttobuf]	; init output buffer pointer
+	movem	tt, ttoptr
+	setzm	ttoctr
+	setzm	netinp			; zero net counters
+	setzm	ntictr
+
+; Set up who line
+
+	move	a, frnhst
+	call	netwrk"hstsix
+	 .value
+	movem	a, hstsnm
+	move	a, [sixbit /-ARPA-/]
+	skipe	usetcp
+	 move	a, [sixbit /-TCP-/]
+	skipn	isarpa
+	 move	a, [sixbit /-CHAOS/]
+	movem	a, hstsnm+1
+	move	a, [-4,,[.swho1,,[<.byte 8 ? 166 ? 0 ? 366 ? 0>]
+			 .swho2,,hstsnm
+			 .swho3,,hstsnm+1
+			 .sadf2,,[-1,,1_ttyich+1_netich+1_netoch]]]
+	.suset	a
+
+; Open net connection -- uses NETWRK package
+
+	skipe	isarpa
+	 jrst	usearp
+	movei	a, netich
+	move	b, frnhst
+	movei	c, [asciz /TELNET/]		; use right contact name
+	skipe	d, supdpp
+	 movei	c, [asciz /SUPDUP/]
+	setcam	d, nprotp			; always new TELNET
+	movei	d, 5				; window size
+	call	netwrk"chacon
+	 jrst	opnluz
+	jrst	inineg
+
+usearp:	move	b, frnhst
+	skipn	c, icpskt			; use default socket ?
+	 jrst [	movei	c, dtlskt
+		skipe	supdpp
+		 movei	c, dspskt
+		jrst	.+1 ]
+	setom	nprotp
+	skipn	usencp
+	 jrst	trytcp
+	caie	c, nprskt
+	 setzm	nprotp
+	move	d, [40+.uai,,40+.uao]
+	movei	a, icpch
+	call	netwrk"arpicp
+	 jrst	opnluz
+	jrst	inineg
+
+trytcp:	movei	a, netich
+	call	netwrk"tcpcon
+	 caia
+	  jrst	inineg
+
+opnluz:	call	netwrk"analyze
+	 .value
+	type	[
+]
+	setom	frnhst
+	move	a,[-2,,[.sdf2,,[-1#<1_ttyoch>]
+			.sdf1,,[%piaty\%pirlt]]]
+	.suset	a
+	move	p, [-pdllen,,pdl]
+	jrst	notcon
+
+; Initial negotiations
+
+inineg:	call	sttyop
+	call	simset		; initialize for simulations
+	skipn	nprotp
+	 jrst	supini
+	; Try to get remote echo, go-ahead suppresson
+	telcmd	[IAC DO ECHO IAC DO SUPRGA IAC WILL SUPRGA]
+	setom	echop
+	setom	supgap
+	setom	fspgap
+	jrst	opened
+
+sttyop:	move	a, ttyopt
+	tro	a, %tpcbs\%tpors	; intell. term, output reset
+	skipn	supdpp
+	 tro	a, %tpmta		; set only for TELNET
+	trz	a, %tptel		; don't do CRLF => CR mapping
+	skipe	outtyp
+	 jrst [	tlo	a, %toers\%tomvb\%tomvu\%tolwr\%tolid\%tocid
+		tro	a, %tprsc
+		tlz	a, %tohdx\%tosai\%tosa1\%toovr\%toraw\%tofci\%toiml
+		trz	a, 777000\%tp11t
+		jrst	.+1 ]
+	movem	a, xttyop
+	return
+
+supini:	skipn	supdpp
+	 jrst	opened			; Old TELNET
+	movei	a, <nsdvrs+1>*6
+	move	b, [440600,,sdpblk]
+	$call	siot,[#netoch, b, a]	; send stuff
+	 .lose	%lssys
+	.nets	netoch,
+
+; Here, read first line of stuff, up to %tdnop, echoing on TTY.
+
+supin1:	call	ntic
+	caie	a, %tdnop
+	 jrst [	tyo	a
+		jrst	supin1 ]
+
+; Now, start NAME running to return our name, loc, etc., to send to
+; foreign host.  We do not wait for the answer, but send it when we
+; get the completion interrupt.
+
+	fn1==<sixbit /TS/>
+	$call	open,[[.uii,,filech], [sixbit /SYS/], [fn1], [sixbit /NAME/]]
+	 .lose	%lsfil
+	.suset	[.rxjname,,a]
+	hrri	a, 'NAM
+	$call	open,[[.uio,,usroch], [sixbit /USR/], #0, a]
+	 .lose	%lssys
+	$call	open,[[.uii,,usrich], [sixbit /USR/], #0, a]
+	 .lose	%lssys
+	$call	load,[#usroch, #filech]
+	 .lose	%lssys
+	.iot	filech, b	; get start PC
+	move	a, [-3,,[.supc,,b
+			 .sxjname,,[sixbit /SUPNAM/]
+			 .sustp,,[0]]]
+	.uset	usroch, a
+	.close	filech,
+	jrst	opened
+
+; We come here when SUPNAM is done (i.e., interrupts us):
+
+namser:	.uset	usroch,[.rsv40,,a]	; a .break 16, 105 ?
+	came	a, [.break 16, 105]
+	 jrst	influz
+	.access	usrich, [0]
+	.iot	usrich, a
+	came	a, [sixbit /TERMID/]	; right thing in AC 0 ?
+	 jrst	influz
+	.iot	usrich, a		; get address of string
+	movei	a, (a)
+	.access	usrich, a
+	neto	[300]			; send prefix
+	neto	[302]
+namsr2:	move	b, [440700,,tt]		; use tt as buffer
+	movei	t, 5
+	.iot	usrich, tt
+namsr1:	ildb	a, b
+	neto	a
+	jumpe	a, [
+		.nets	netoch,
+		jrst	influz ]
+	sojg	t, namsr1
+	jrst	namsr2
+
+influz:	.uclose	usroch,
+	jrst	tsret
+
+; ICP negotiations finished, tell user so and enter main program
+
+opened:	setom	openp
+	skipn	supdpp
+	 jrst [	type	[ Open ]	; do this only for TELNET
+		jrst	.+1 ]
+	movsi	a, %tssii
+	iorm	a, ttysts
+	call	settty
+	move	a, [-2,,[.sadf2,,[1_selfch]
+			 .sadf1,,[%piaty\%pirlt]]]
+	.suset	a
+	call	ntic		; Don't clear screen until stuff to handle
+	push	p, a
+	type	[C]
+	pop	p, a
+	jrst	main0
+
+subttl	Network input main program
+
+main:	call	ntic
+main0:	skipn	supdpp			; do special TELNET things
+	 jrst [	cain	a, IAC
+		 jrst	iacsrv
+		skipn	nprotp		; look for OLD TELNET special chars
+		 trnn	a, 200
+		  jrst	.+1
+		cain	a, 200		; DM ?
+		  jrst	dmkser
+		cain	a, 203		; no echo ?
+		 setom	echop
+		cain	a, 204		; echo ?
+		 setzm	echop
+		jrst	main ]
+
+main1:	trnn	a, 200			; don't wallpaper TD codes, etc.
+	 skipn	wallp
+	  caia
+	   walo	a
+
+	skipe	supero
+	 jrst [	ityo	[%tdqot]
+		ityo	a
+		jrst	main ]
+	move	b, simtyp		; set up type and state
+	move	c, simsta
+	call	@simtab(b)
+	jrst	main
+
+simend:	setzm	simsta			; end of sequence (used below)
+	return
+
+simtab:	@nosim(c)			; no simulation
+	@dmsim(c)			; Datamedia simulator
+	@e19sim(c)			; E19 simulator
+	@e19sim(c)			; Teleray simulator is same almost
+
+subttl	Normal Output -- No simulation case
+
+; No simulation -- just handle TD codes
+		
+nosim:	nosim0				; normal state
+	nosim1				; reading TD code args
+
+nosim0:	cail	a, 200			; %TD code ?
+	 jrst [	cail	a, sftmax
+		 return
+		jrst	@sfttab-200(a) ]
+	calret	ttyout
+
+sfttab:	td$mov			; MOVE ovpos ohpos nvpos nhpos
+	td$mv1			; MOVE nvpos nhpos
+	vt.kes			; EOF
+	vt.kel			; EOL
+	vt.dlf			; DLF
+	td$mtf
+	td$mtn
+	td$crl
+	td$nop			; 210
+	td.bs			; BS
+	td$lf
+	td$rcr
+	td$ors
+	td$qot
+	td.fs			; FS
+	td$mv0			; MOVE nvpos nhpos
+	vt.clr			; 220, CLR
+	vt.bel			; BEL
+	td$ini
+	td$ilp			; INSERT-LINES num
+	td$dlp			; DELETE-LINES num
+	td$icp			; INSERT-CHARS num
+	td$dcp			; DELETE-CHARS num
+	vt.bow			; BOW
+	vt.rst			; 230, RST
+	vt.grf			; GRF
+	td$rsu			; REGION-SCROLL-UP size amt
+	td$rsd			; REGION-SCROLL-DOWN size amt
+sftmax==.-sfttab+200
+
+; Four args:
+td$mov:		; MOVE ovpos ohpos nvpos nhpos
+	movem	a, smval1	; save code
+	movei	a, 4
+	movem	a, smval2	; len
+simbmp:	aos	simsta
+	return
+
+; Two args:
+td$mv1:		; MOVE nvpos nhpos
+td$mv0:		; MOVE nvpos nhpos
+td$rsu:		; REGION-SCROLL-UP size amt
+td$rsd:		; REGION-SCROLL-DOWN size amt
+	movem	a, smval1	; save code
+	movei	a, 2
+	movem	a, smval2	; save len
+	jrst	simbmp
+
+; Ignores:
+td$mtf:
+td$mtn:
+td$nop:
+td$ini:
+	return
+
+td$crl:	skipe	wallp
+	 jrst [	walo	[^M]
+		walo	[^J]
+		jrst	.+1 ]
+	calret	td.crl
+
+td$lf:	skipe	wallp
+	 walo	[^J]
+	calret	td.lf
+
+td$rcr:	skipe	wallp
+	 walo	[^M]
+	jrst	vt.cr
+
+; output reset -- discard buffered TTY output, tell other end where cursor is
+
+td$ors:	.reset	ttyoch,		; flush tty output
+	setzm	ttoctr		; discard buffer
+	move	tt, [441000,,ttobuf]
+	movem	tt, ttoptr
+	sosg	intcnt
+	 setzm	supres		; turn output back on
+	setzm	suprcg		; turn off ^G/^S output suppression, too
+	move	a, ttyop	; update ttyoff
+	movem	a, ttyoff
+	$call	scpos,[#ttyoch][cvpos, chpos]
+	 .lose	%lssys
+	neto	[^\]
+	neto	[^P]
+	move	a, cvpos
+	cail	a, 118.		; don't gronk other end
+	 movei	a, 0
+	neto	a
+	neto	chpos
+	.nets	netoch,
+	return
+
+; One arg:
+td$qot:		; QUOTE char
+td$ilp:		; INSERT-LINES num
+td$dlp:		; DELETE-LINES num
+td$icp:		; INSERT-CHARS num
+td$dcp:		; DELETE-CHARS num
+simchr:	movem	a, smval1
+	setzm	smval2
+	jrst	simbmp
+
+; Second and further bytes of multiple byte soft-tty codes
+
+nosim1:	sosle	b, smval2		; done ?
+	 jrst [	caige	b, 2		; no - save value and continue
+		 movem	a, smval3
+		return ]
+	setzm	simsta
+	move	b, smval1
+	caie	b, %tdmov
+	 cain	b, %tdmv1
+	  movei	b, %tdmv0
+	cain	b, %tdmv0
+	 calret	vt.pos
+	cain	b, %tdrsu
+	 calret	vt.rsu
+	cain	b, %tdrsd
+	 calret	vt.rsd
+	cain	b, %tdqot
+	 calret	vt.qot
+	cain	b, %tdilp
+	 calret	vt.ilp
+	cain	b, %tddlp
+	 calret	vt.dlp
+	cain	b, %tdicp
+	 calret	vt.icp
+	cain	b, %tddcp
+	 calret	vt.dcp
+	.value
+
+subttl	Datamedia 3000 Simulation
+
+dmsim:	dmsim0			; normal state
+	nosim1			; TD code state
+	dmsim2			; ^L, need hpos
+	dmsim3			; ^L, have hpos, need vpos
+	dmsim4			; saved insert/delete lines/chars
+	dmsim5			; quote state
+
+dmsim0:	cail	a, 200
+	 jrst [	cail	a, sftmax
+		 return
+		jrst	@sfttab-200(a) ]	; TD codes
+	cain	a, 177
+	 return			; ignore pads
+	cail	a, 40
+	 calret	ttyout
+	cain	a, ^B
+	 calret	vt.hom
+	cain	a, ^G
+	 calret	vt.bel
+	cain	a, ^I
+	 calret	ttyout
+	cain	a, ^L
+	 jrst [	aos	simsta		; bump by 2
+		jrst	simbmp ]
+	cain	a, ^P
+	 jrst [	setom	idmode
+		return ]
+	cain	a, ^W
+	 calret	vt.kel
+	cain	a, ^X
+	 jrst [	setzm	idmode
+		calret	noroll ]
+	cain	a, "^
+	 jrst [	movei	a, 5
+		movem	a, simsta
+		return ]
+	cain	a, ^]
+	 calret	doroll
+	caie	a, ^^
+	 cain	a, ^_
+	  jrst [call	doroll
+		calret	vt.clr ]
+	skipe	idmode
+	 jrst	dm.idm
+	cain	a, ^H
+	 calret	vt.lft
+	cain	a, ^J
+	 calret	vt.lf
+	cain	a, ^Z
+	 calret	vt.up
+	cain	a, ^\
+	 calret	vt.rt
+	return			; ignore
+
+; insert/delete mode special cases
+
+dm.idm:	caie	a, ^H
+	 cain	a, ^J
+	  jrst	dm.id1
+	caie	a, ^Z
+	 cain	a, ^\
+	  caia
+	   return		; ignore
+dm.id1:	movem	a, smval1	; save char
+	movei	b, 1
+	movem	b, smval2	; init count
+	movei	b, 4
+	movem	b, simsta	; set state
+	return
+
+dmsim2:	caige	a, 40
+	 jrst	simend			; abort
+	xori	a, 140			; convert to real hpos
+	camle	a, tcmxh
+	 movei	a, 0
+	movem	a, smval3
+	jrst	simbmp
+
+dmsim3:	setzm	simsta
+	caige	a, 40
+	 jrst [	move	a, smval3
+		calret	vt.hps ]
+	xori	a, 140
+	caml	a, tcmxv
+	 movei	a, 0
+	exch	a, smval3
+	calret	vt.pos
+
+dmsim4:	setzm	simsta
+	aos	b, chpos
+	camle	b, tcmxh
+	 sos	chpos
+	calret	ttoc
+
+dmsim5:	cain	a, 177			; ignore pads
+	 return
+	camn	a, smval1		; same as before ?
+	 jrst [	aos	smval2
+		return ]
+	setzm	simsta
+	push	p, a
+	move	b, smval1
+	move	a, smval2
+	cain	b, ^H
+	 movei	c, vt.dcp
+	cain	b, ^J
+	 movei	c, vt.ilp
+	cain	b, ^Z
+	 movei	c, vt.dlp
+	cain	b, ^\
+	 movei	c, vt.icp
+	call	(c)
+	pop	p, a
+	jrst	dmsim0
+
+subttl	E19/H19/VT52 simulation
+
+e19sim:	esim0				; normal state
+	nosim1				; TD code state
+	esim2				; escape seen
+	esim3				; $letter state
+	esim4				; $letter <arg> state
+	esim5				; $[ state
+	esim6				; $[ arg reading
+	esim7				; counting inserts/deletes
+	esim8				;    "        "       "
+	esim9				; $[>, $[? state
+
+esim0:	cail	a, 200			; TD code ?
+	 jrst [	cail	a, sftmax
+		 return
+		jrst	@sfttab-200(a) ]
+	cain	a, 33			; escape
+	 jrst [	aos	simsta
+		jrst	simbmp ]
+	caie	a, 0
+	 cain	a, 177
+	  return
+	cail	a, 40
+	 calret	ttyout
+	cain	a, ^A			; E19 destructive backspace
+	 calret	vt.del
+	cain	a, ^G
+	 calret	vt.bel
+	cain	a, ^H
+	 calret	vt.lft
+	caie	a, ^I
+	 cain	a, ^J
+	  calret ttyout
+	cain	a, ^M
+	 calret	vt.cr
+	return				; ignore
+
+; escape seen ...
+
+esim2:	caie	a, 0			; skip pads
+	 cain	a, 177
+	  return
+	cain	a, ^X
+	 jrst	simend
+	skipe	ansimd
+	 jrst [	cain	a, "M		; ANSI sequences
+		 calret	vt.rvi
+		cain	a, "[
+		 jrst [	movei	a, 5
+			movem	a, simsta
+			setzm	smval1	; clear arg count
+			setzm	smval2	; clear arg 1
+			setzm	smval3	; clear arg 2
+			return ]
+		jrst	simend ]
+	caie	a, "X			; first, longer sequences
+	 cain	a, "Y
+	  jrst	simchr
+	caie	a, "c
+	 cain	a, "d
+	  jrst	simchr
+	caie	a, "f
+	 cain	a, "i
+	  jrst	simchr
+	caie	a, "m
+	 cain	a, "r
+	  jrst	simchr
+	caie	a, "s
+	 cain	a, "x
+	  jrst	simchr
+	cain	a, "y
+	 jrst	simchr
+
+	setzm	simsta
+	cain	a, "1
+	 jrst	esim2b
+	cain	a, "<			; cases ordered by ASCII value of char
+	 setom	ansimd
+	caie	a, "=
+	 cain	a, ">
+	  jrst	esim2b
+	cain	a, "@
+	 setom	idmode
+	cain	a, "A
+	 calret	vt.up
+	cain	a, "B
+	 calret	vt.dwn
+	cain	a, "C
+	 calret	vt.rt
+	cain	a, "D
+	 calret	vt.lft
+	cain	a, "E
+	 calret	vt.clr
+	cain	a, "H
+	 calret	vt.hom
+	cain	a, "I
+	 calret	vt.rvi
+	cain	a, "J
+	 calret	vt.kes
+	cain	a, "K
+	 calret	vt.kel
+	caie	a, "L
+	 cain	a, "M
+	  jrst	esim2a
+	cain	a, "N
+	 jrst	esim2a
+	cain	a, "O
+	 setzm	idmode
+	caie	a, "P			; Teleray codes
+	 cain	a, "Q
+	  jrst	esim2a
+	cain	a, "g
+	 calret	vt.scw			; screen white
+	cain	a, "h
+	 calret	vt.scb			; screen black
+	cain	a, "j
+	 jrst [	cain	b, s.e19	; E19, or Teleray ?
+		 calret	vt.svc
+		calret	vt.clr ]
+	cain	a, "k
+	 calret	vt.rsc
+	cain	a, "l
+	 calret	vt.kal
+	cain	a, "p
+	 calret	vt.bow
+	cain	a, "q
+	 calret	vt.rst
+	cain	a, "u
+	 jrst	esim2b
+	cain	a, "z
+	 jrst [	setzm	idmode
+		setzm	ansimd
+		return ]
+	return				; rest do nothing
+
+esim2a:	movem	a, smval1		; save char
+	movei	a, 1
+	movem	a, smval2		; init count
+	movei	a, 7
+	movem	a, simsta		; enter state 7
+	movei	a, 0
+	jrst	esim7
+
+esim2b:	setzm	simsta		; codes to pass right through
+	skipn	b, outtyp
+	 return
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	a
+	return
+
+esim3:	caie	a, 0
+	 cain	a, 177
+	  return
+	cain	a, ^X			; abort
+	 jrst	simend
+	move	b, smval1
+	caie	b, "X			; finished sequences
+	 cain	b, "r
+	  jrst	simend
+	caie	b, "x
+	 cain	b, "y
+	  jrst	simend
+	setzm	simsta
+	subi	a, 37
+	cain	b, "d
+	 calret	vt.dcp
+	cain	b, "i
+	 calret	vt.icp
+	subi	a, 1
+	movem	a, smval3
+	caie	b, "Y
+	 cain	b, "s
+	  movei	a, 1
+	caie	b, "c
+	 cain	b, "m
+	  movei	a, 5
+	cain	b, "f
+	 movei	a, 4
+	movem	a, smval2		; number of args to go
+	movei	a, 4			; set state (previosuly cleared)
+	movem	a, simsta
+	return
+
+esim4:	caie	a, 0
+	 cain	a, 177
+	  return
+	cain	a, ^X
+	 jrst	simend			; abort
+	sosle	smval2			; more args to go ?
+	 jrst [	subi	a, 40		; save arg
+		movem	a, smval3
+		return ]
+	setzm	simsta
+	subi	a, 37
+	move	b, smval1
+	cain	b, "Y
+	 soja	a, vt.pos
+	cain	b, "d
+	 calret	vt.dcp
+	cain	b, "i
+	 calret	vt.icp
+	cain	b, "s
+	 jrst [	exch	a, smval3
+		subi	a, 40		; subtract the other 40 to make 100
+		jumpg	a, vt.rsu
+		movn	a, a
+		calret	vt.rsd ]
+	return
+
+esim5:	caie	a, 0
+	 cain	a, 177
+	  return
+	cain	a, ^X
+	 jrst	simend
+	caie	a, ">
+	 cain	a, "?
+	  jrst [movem	a, smval1
+		movei	a, 9
+		movem	a, simsta
+		setzm	smval2
+		return ]
+	aos	simsta
+;	jrst	esim6
+
+esim6:	caie	a, 0
+	 cain	a, 177
+	  return
+	cain	a, ^X
+	 jrst	simend
+	cain	a, ";			; go to next arg
+	 jrst [	aos	a, smval1
+		cail	a, 2
+		 jrst	simend		; too many args
+		return ]
+	cail	a, "0
+	 caile	a, "9
+	  caia
+	   jrst [move	b, smval1	; accumulate argument
+		move	c, smval2(b)
+		imuli	c, 10.
+		addi	c, -"0(a)
+		movem	c, smval2(b)
+		return ]
+	setzm	simsta
+	move	c, smval2		; fetch out for convenience
+	move	d, smval3
+	caie	a, "A			; single arg sequences
+	 cain	a, "B			; that normalize 0 => 1 only
+	  jrst	esim6a
+	caie	a, "C
+	 cain	a, "D
+	  jrst	esim6a
+	caie	a, "L
+	 cain	a, "M
+	  jrst	esim6a
+	cain	a, "P
+	 jrst	esim6a
+	cain	a, "J
+	 jrst [	jumpe	c, vt.kes
+		cain	c, 2
+		 calret	vt.clr
+		return ]
+	cain	a, "K
+	 jrst [	jumpe	c, vt.kel
+		cain	c, 2
+		 calret	vt.kal
+		return ]
+	cain	a, "h			; other single arg commands
+	 jrst [	cain	c, 4
+		 setom	idmode
+		caie	c, 6
+		 cain	c, 7
+		  jrst	esim6b
+		return ]
+	cain	a, "l
+	 jrst [	cain	c, 4
+		 setzm	idmode
+		caie	c, 6
+		 cain	c, 7
+		  jrst	esim6b
+		return ]
+	cain	a, "m
+	 jrst [	jumpe	a, vt.rst
+		cain	a, 7
+		 calret	vt.bow
+		return ]
+	cain	a, "s
+	 calret	vt.svc
+	cain	a, "u
+	 calret	vt.rsc
+	cain	a, "z
+	 jrst [	setzm	ansimd
+		setzm	idmode
+		return ]
+	caie	a, "H			; two arg commands
+	 cain	a, "f
+	  jrst [cain	c, 0
+		 movei	c, 1
+		cain	d, 0
+		 movei	d, 1
+		subi	c, 1
+		subi	d, 1
+		movem	d, smval3
+		movei	a, (c)
+		calret	vt.pos ]
+	return
+
+esim6a:	cain	c, 0
+	 movei	c, 1
+	exch	a, c
+	cain	c, "A
+	 calret	vt.up
+	cain	c, "B
+	 calret	vt.dwn
+	cain	c, "C
+	 calret	vt.rt
+	cain	c, "D
+	 calret	vt.lft
+	cain	c, "L
+	 calret	vt.ilp
+	cain	c, "M
+	 calret	vt.dlp
+	cain	c, "P
+	 calret	vt.dcp
+	return
+
+esim6b:	setzm	simsta
+	skipn	outtyp
+	 return
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["[]
+	ityo	[%tdqot]
+	ityo	[">]
+	ityo	[%tdqot]
+	addi	c, "0
+	ityo	c
+	ityo	a
+	return
+
+esim7:	cain	a, 33			; escape ?
+	 jrst	simbmp			; yep, go to next state
+	caie	a, 0
+	 cain	a, 177
+	  jrst [skipe	ntictr
+		 return
+		jrst	.+2 ]
+	   push	p, [esim0]		; to process character later
+	setzm	simsta
+esim7x:	push	p, a
+	move	b, smval1
+	move	a, smval2
+	cain	b, "L
+	 movei	c, vt.ilp
+	cain	b, "M
+	 movei	c, vt.dlp
+	cain	b, "N
+	 movei	c, vt.dcp
+	cain	b, "P
+	 jrst [	movei	c, vt.dcp	; E19 vs. Teleray
+		move	d, simtyp
+		caie	d, s.e19
+		 movei	c, vt.icp
+		jrst	.+1 ]
+	cain	b, "Q
+	 movei	c, vt.dcp
+	call	(c)
+	pop	p, a
+	return
+
+esim8:	caie	a, 0
+	 cain	a, 177
+	  return
+	cain	a, ^X
+	 jrst [	sos	simsta		; sequence cancelled - maybe flush
+		jrst	esim7 ]
+	came	a, smval1		; same as buffered ?
+	 jrst [	movei	b, 2		; no, punt
+		movem	b, simsta
+		push	p, [esim2]
+		jrst	esim7x ]
+	aos	smval2
+	sos	simsta
+	skipe	ntictr
+	 return
+	setzm	simsta
+	jrst	esim7x
+
+esim9:	caie	a, 0			; only interesting sequence is
+	 cain	a, 177			; <esc> [ ? 2 l, h  (exit ANSI mode)
+	  return
+	cain	a, ^X
+	 jrst	simend
+	cail	a, "0
+	 caile	a, "9
+	  caia
+	   jrst [subi	a, "0
+		movem	a, smval2
+		return ]
+	setzm	simsta
+	caie	a, "l
+	 cain	a, "h
+	  caia
+	   return
+	movei	a, "?
+	camn	a, smval1
+	 setzm	ansimd
+	return
+
+subttl	ASCII character output
+
+ttyout:	caie	a, 0
+	 cain	a, 177
+	  return			; padding chars
+	skipe	supdpp			; don't hack SUPDUP chars
+	 calret	ttyou1
+	cain	a, "^
+	 jrst [	move	a, arrow
+		calret	ttyou1 ]
+	cain	a, 33
+	 skipa	a, altmod
+	cail	a, 40
+	 calret	ttyou1
+	cain	a, ^G
+	 calret	vt.bel
+	cain	a, ^H
+	 calret	vt.lft
+	cain	a, ^I
+	 jrst [	move	b, chpos
+		addi	b, 8.
+		trz	b, 7
+		movem	b, chpos
+		camg	b, tcmxh
+		 calret	vt.ps1
+		move	b, tcmxh
+		movem	b, chpos
+		calret	vt.ps1 ]
+	cain	a, ^J
+	 jrst [	call	vt.lf
+		skipe	simtyp
+		 return
+		calret	vt.kel ]
+	cain	a, ^M
+	 calret	vt.cr
+	push	p, a
+	move	a, arrow
+	call	ttyou1
+	pop	p, a
+	addi	a, 100
+;	calret	ttyou1
+
+; Subroutine to output a printing char, in A
+; Does line continuation if necessary
+; Also sets/resets real insert char mode as necessary
+
+ttyou1:	move	b, idmode
+	came	b, idcout
+	 call [	jumpe	b, noidch	; turn ins/del char mode off
+		skipe	b, outtyp
+		 cain	b, o.e19
+		  jrst [push	p, a	; for these, insert a character
+			movei	a, 1
+			call	vt.icp
+			pop	p, a
+			return ]
+		calret	doidch ]
+	skipn	idmode
+	 skipn	simtyp			; simulations never overprint
+	  caia
+	   jrst [move	b, ttyopt
+		tlne	b, %toovr	; overprinting terminal ?
+		 ityo	[%tddlf]
+		jrst	.+1 ]
+	skipe	idcout			; pad when in idc mode
+	 skipe	nopad
+	  caia
+	   jrst [ityo	[%tdqot]
+		ityo	[0]
+		jrst	.+1 ]
+	aos	b, chpos
+	caml	b, tcmxh
+	 jrst [	came	b, tcmxh	; if just got here, OK, otherwise
+		 ityo	[%tdqot]	; note that cursor does not move.
+		skipn	supdpp		; with SUPDUP, frn host does it right
+		 skipe	simtyp		; with simulations, don't wrap
+		  jrst [move	b, tcmxh
+			movem	b, chpos
+			jrst	ttoc ]
+		push	p, a		; in TELNET we do it
+		ityo	["!]
+		call	td.crl
+		pop	p, a
+		aos	chpos
+		jrst	.+1 ]
+ttoc:	ityo	a
+	return
+
+; DOIDCH, NOIDCH - set reset true insert/delete char mode of terminal
+
+doidch:	skipn	idcout
+	 skipn	b, outtyp
+	  return
+	skipe	ttyoff
+	 return
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["@]
+	setom	idcout
+	return
+
+noidch:	skipe	idcout
+	 skipn	b, outtyp
+	  return
+	skipe	ttyoff
+	 return
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["O]
+	setzm	idcout
+	return
+
+; DOROLL and NOROLL routines (re/set %tsrol)
+
+doroll:	setom	roll
+	movsi	tt, %tsrol
+	tdne	tt, ttysts
+	 return
+	iorm	tt, ttysts
+	skipn	ttyoff
+	 call	ttofrc
+	calret	settty
+
+noroll:	setzm	roll
+	movsi	tt, %tsrol
+	tdnn	tt, ttysts
+	 return
+	andcam	tt, ttysts
+	skipn	ttyoff
+	 call	ttofrc
+	calret	settty
+
+subttl	VT routines -- turn abstract functions into chars
+
+; Note: as in ttyout, we maintain chpos and cvpos always
+
+; Vertical positioning and scrolling ops
+
+vt.pos:	move	b, smval3	; hpos in a, vpos in smval3
+	cail	b, 0
+	 cail	b, 118.
+	  movei	b, 0
+	movem	b, cvpos
+vt.hps:	cail	a, 0
+	 cail	a, 118.
+	  movei	a, 0
+	movem	a, chpos
+vt.ps1:	ityo	[%tdmv0]
+	ityo	cvpos
+	ityo	chpos
+	return
+
+td.crl:	ityo	[%tdcrl]
+	setzm	chpos
+	jrst	td.lf1
+
+td.lf:	ityo	[%tdlf]
+td.lf1:	sos	morinh
+	aos	b, cvpos
+	camge	b, tcmxv
+	 return
+	skipn	b, ttyrol
+	 move	b, cvpos
+	movni	b, (b)
+	addm	b, cvpos
+	return
+
+vt.lf:	move	b, cvpos
+	addi	b, 1
+	skipn	roll
+	 camge	b, tcmxv
+	  jrst	td.lf
+	sos	morinh
+	setzm	cvpos
+	setzm	chpos
+	jrst	vt.ps1
+
+vt.dwn:	move	b, cvpos
+	addi	b, 1
+	camge	b, tcmxv
+	 jrst	td.lf
+	return
+
+vt.rvi:	skipe	cvpos
+	 calret	vt.up		; easy case
+	move	b, tctyp
+	caie	b, %tnesc	; can send <esc> I to VT52, Teleray-like things
+	 cain	b, %tnray
+	  jrst [skipe	ttyoff
+		 return
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["I]
+		move	a, outtyp
+		caie	a, o.h19
+		 return
+		ityo	[%tdmv0]	; clear H19 garbage
+		ityo	[0]
+		ityo	[0]
+		ityo	[%tdeol]
+		calret	vt.ps1 ]
+	movei	a, 1
+	calret	vt.ilp		; try that instead
+
+vt.up:	sosge	cvpos
+	 jrst [	setzm	cvpos
+		return ]
+	calret	vt.ps1
+
+vt.hom:	setzm	chpos
+	setzm	cvpos
+	calret	vt.ps1
+
+vt.rsu:	caie	a, 0		; a = # dist to scroll
+	 skipn	b, smval3	; b = # lines in region
+	  return
+	skipe	ttyoff
+	 return
+	move	c, ttyopt	; does system know how ?
+	trne	c, %tprsc
+	 jrst [	ityo	[%tdrsu]	; yes, do it
+		ityo	b
+		ityo	a
+		return ]
+	move	d, outtyp
+	cain	d, o.e19		; E19's know how!
+	 jrst [	addi	a, 100
+		addi	b, 37
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["s]
+		ityo	[%tdqot]
+		ityo	a
+		ityo	[%tdqot]
+		ityo	b
+		return ]
+	caile	a, (b)
+	 movei	a, (b)
+	push	p, a
+	push	p, b
+	call	vt.dlp		; delete, and then insert
+	move	a, (p)		; if goes to end of screen, omit insertion
+	add	a, cvpos
+	caml	a, tcmxv
+	 jrst [	sub	p, [2,,2]
+		return ]
+	push	p, cvpos	; save pos
+	push	p, chpos
+	move	a, cvpos
+	add	a, -2(p)	; compute new vpos
+	sub	a, -3(p)
+	caige	a, 0
+	 movei	a, 0
+	movem	a, cvpos
+	setzm	chpos
+	call	vt.ps1
+	move	a, -3(p)
+	call	vt.ilp		; insert
+	pop	p, chpos
+	pop	p, cvpos
+	pop	p, a		; throw garbage away
+	pop	p, a
+	calret	vt.ps1		; go back
+
+vt.rsd:	caie	a, 0		; a = # dist to scroll
+	 skipn	b, smval3	; b = # lines in region
+	  return
+	skipe	ttyoff
+	 return
+	move	c, ttyopt	; does system know how ?
+	trne	c, %tprsc
+	 jrst [	ityo	[%tdrsd]	; yes, do it
+		ityo	b
+		ityo	a
+		return ]
+	move	d, outtyp
+	cain	d, o.e19	; E19's know how!
+	 jrst [	movni	a, -100(a)
+		addi	b, 37
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["s]
+		ityo	[%tdqot]
+		ityo	a
+		ityo	[%tdqot]
+		ityo	b
+		return ]
+	caile	a, (b)
+	 movei	a, (b)
+	push	p, a
+	push	p, b
+	push	p, cvpos
+	push	p, chpos
+	move	a, cvpos
+	add	a, -2(p)
+	caml	a, tcmxv	; if goes to end of screen, omit deletion
+	 jrst [	sub	p, [2,,2]
+		jrst	v.rsd1 ]
+	sub	a, -3(p)
+	caige	a, 0
+	 movei	a, 0
+	movem	a, cvpos
+	setzm	chpos
+	call	vt.ps1		; move down
+	move	a, -3(p)
+	call	vt.dlp		; delete, and then insert
+	pop	p, chpos
+	pop	p, cvpos
+	call	vt.ps1		; move back
+v.rsd1:	pop	p, a
+	pop	p, a
+;	calret	vt.ilp		; insert new lines
+
+vt.ilp:	skipe	ttyoff
+	 return
+	skipn	b, outtyp	; a = # lines to insert
+	 jrst [	ityo	[%tdilp]	; system action
+		ityo	a
+		return ]
+	cain	b, o.e19	; use nifty region scroll
+	 jrst [	movni	a, -100(a)
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["s]
+		ityo	[%tdqot]
+		ityo	a
+		ityo	[%tdqot]
+		ityo	[37+24.]
+		return ]
+	move	b, cvpos
+	addi	b, (a)
+	caml	b, tcmxv
+	 jrst [	skipn	chpos		; if insert goes over end, then
+		 calret	vt.kes		; just do kill to end of screen
+		push	p, chpos
+		setzm	chpos
+		call	vt.ps1
+		call	vt.kes
+		pop	p, chpos
+		calret	vt.ps1 ]
+	movei	b, (a)
+v.ilp1:	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["L]
+	sojg	b, v.ilp1
+	imuli	a, 18.		; pad 18ms. per
+	calret	pad
+
+vt.dlp:	skipe	ttyoff
+	 return
+	skipn	b, outtyp	; a = # lines to delete
+	 jrst [	ityo	[%tddlp]	; system action
+		ityo	a
+		return ]
+	cain	b, o.e19	; use nifty region scroll
+	 jrst [	addi	a, 100
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["s]
+		ityo	[%tdqot]
+		ityo	a
+		ityo	[%tdqot]
+		ityo	[37+24.]
+		return ]
+	move	b, cvpos
+	addi	b, (a)
+	caml	b, tcmxv
+	 jrst [	skipn	chpos		; if delete goes over end, then
+		 calret	vt.kes		; just do kill to end of screen
+		push	p, chpos
+		setzm	chpos
+		call	vt.ps1
+		call	vt.kes
+		pop	p, chpos
+		calret	vt.ps1 ]
+	movei	b, (a)
+v.dlp1:	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["M]
+	sojg	b, v.dlp1
+	imuli	a, 18.		; pad 18ms. per
+;	calret	pad
+
+pad:	skipn	nopad
+	 skipe	ttyoff
+	  return
+	skipn	b, ospeed	; if unknown, use 9600
+	 movei	b, 9600.
+	cain	b, 110.		; 110. ==> 100.  (as in CRTSTY)
+	 movei	b, 100.
+	imuli	b, (a)
+	addi	b, 9999.	; round up
+	idivi	b, 10000.	; now have # chars to do
+	cain	b, 0
+	 return
+	ityo	[0]
+	sojg	b, .-1		; zap nulls out
+	calret	ttofrc		; to make sure other sequences do not get
+				; caught in the middle
+
+; VT ops for horizontal positioning, i/d char
+
+vt.cr:	setzm	chpos
+	ityo	[%tdrcr]
+	return
+vt.lft:	skipg	chpos
+	 return
+;	jrst	td.bs
+
+td.bs:	ityo	[%tdbs]
+	sosge	chpos
+	 setzm	chpos		; supposedly never executed (here for safety)
+	return
+
+vt.bs:	skiple	chpos
+	 jrst	td.bs
+	move	a, tcmxh
+	subi	a, 1
+	movem	a, chpos
+	skipl	cvpos
+	 jrst	vt.ps1
+	setzm	cvpos
+	skipe	roll
+	 jrst	vt.ps1
+	move	a, tcmxv
+	subi	a, 1
+	movem	a, cvpos
+	jrst	vt.ps1
+
+vt.rt:	move	a, chpos
+	caml	a, tcmxh
+	 return
+td.fs:	ityo	[%tdfs]
+	aos	a, chpos
+	camle	a, tcmxh	; supposedly not needed - here for safety
+	 sos	chpos
+	return
+
+vt.fs:	move	a, chpos
+	camge	a, tcmxh
+	 jrst	td.fs
+	call	vt.cr
+	calret	vt.lf
+
+; VT routines: deletion operations, char i/d ops
+
+vt.clr:	setzm	chpos
+	setzm	cvpos
+	ityo	[%tdclr]
+	return
+
+vt.kes:	ityo	[%tdeof]
+	return
+
+vt.kel:	ityo	[%tdeol]
+	return
+
+vt.kal:	skipe	chpos		; kill all of current line
+	 ityo	[%tdrcr]
+	ityo	[%tdeol]
+	skipe	chpos
+	 calret	vt.ps1
+	return
+
+vt.dl1:	call	vt.bs
+;	jrst	vt.dlf
+
+vt.dlf:	ityo	[%tddlf]
+	return
+
+vt.del:	skipg	chpos
+	 jrst	vt.dl1
+	move	b, outtyp
+	caie	b, o.e19
+	 jrst	vt.dl1
+	ityo	[%tdqot]
+	ityo	[^A]
+	sos	chpos
+	return
+
+vt.icp:	caie	a, 0		; a = # positions to insert
+	 skipe	ttyoff		; easier here than later
+	  return
+	skipn	b, outtyp
+	 jrst [	ityo	[%tdicp]	; let system do it
+		ityo	a
+		return ]
+	cain	b, o.e19
+	 jrst [	addi	a, 37	; E19
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["i]
+		ityo	[%tdqot]
+		ityo	a
+		return ]
+	call	doidch		; H19
+v.icp1:	ityo	[40]	; send spaces
+	ityo	[%tdbs]	; back over them
+	sojg	a, v.icp1
+	return
+
+vt.dcp:	caie	a, 0		; a = # positions to delete
+	 skipe	ttyoff
+	  return
+	skipn	b, outtyp
+	 jrst [	ityo	[%tddcp]	; let system do it
+		ityo	a
+		return ]
+	cain	b, o.e19
+	 jrst [	addi	a, 37		; E19
+		ityo	[%tdqot]
+		ityo	[33]
+		ityo	[%tdqot]
+		ityo	["d]
+		ityo	[%tdqot]
+		ityo	a
+		return ]
+v.dcp1:	ityo	[%tdqot]	; H19
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["N]
+	sojg	a, v.dcp1
+	skipe	nopad		; one pad
+	 return
+	ityo	[%tdqot]
+	ityo	[0]
+	return
+
+; Rest of the VT ops: special things like bell, reverse video, etc.
+
+vt.bel:	ityo	[%tdbel]
+	return
+
+vt.grf:	return		; we aren't even sure what this means!
+
+vt.qot:	ityo	[%tdqot]
+	ityo	a
+	return
+
+vt.svc:	move	a, cvpos	; save cursor
+	movem	a, cvpos1
+	move	a, chpos
+	movem	a, chpos1
+	return
+
+vt.rsc:	move	a, cvpos1	; restore cursor
+	movem	a, cvpos
+	move	a, chpos1
+	movem	a, chpos
+	jrst	vt.ps1
+
+vt.bow:	skipn	outtyp		; enter reverse video
+	 jrst [	ityo	[%tdbow]	; try system op
+		return ]
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["p]
+	return
+
+vt.rst:	skipn	outtyp		; exit reverse video
+	 jrst [	ityo	[%tdrst]
+		return ]
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["q]
+	return
+
+vt.scw:	skipe	b, outtyp	; screen white
+	 caie	b, o.e19
+	  return
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["g]
+	return
+
+vt.scb:	skipe	b, outtyp	; screen black
+	 caie	b, o.e19
+	  return
+	ityo	[%tdqot]
+	ityo	[33]
+	ityo	[%tdqot]
+	ityo	["h]
+	return
+
+subttl	Network input => TTY output buffering
+
+; Input a character from the network, either from the net or from a
+; buffer.  If nothing in the buffer or the net, then go to sleep.  This
+; also dumps out the old TTY output buffer if the net input buffer is
+; empty.  Hanging for input is done with a .HANG, because network input
+; interrupts are used to notice incoming data, and errors on the net
+; input channel.  This works nicely for both nets.
+
+ntic:	sosge	ntictr
+	 jrst	ntic1
+	ildb	a, ntiptr
+	return
+
+ntic1:	skipn	netinp			; any net input ?
+	 jrst [	call	ttofrc		; nope, force TTY buffer now
+		.suset	[.siifpir,,[1_netich]]	; force check
+		jrst	.+1 ]
+	skipn	a, netinp		; wait for some
+	 .hang
+	call	ttofrc			; certainly force buffer
+	skipn	isarpa
+	 jrst	ntic2
+	caile	a, 4*ntibfl		; more than room for ?
+	 movei  a, 4*ntibfl
+	movem	a, ntictr
+	movni	b, (a)			; decrement input counter
+	addm	b, netinp
+	move	d, [441000,,ntibuf]
+	movem	d, ntiptr
+	$call	siot,[#netich, d, a],[#10]
+	 .lose	%lssys			; don't hang
+	addm	a, netinp		; add back any left
+	exch	a, ntictr		; fix counter
+	subb	a, ntictr
+	jrst	ntic			; go pick up a char
+
+ntic2:	sos	netinp			; decrement packet count
+	$call	pktiot,[#netich, [ntibuf]]
+	 .lose	%lssys
+	ldb	tt, [041400,,ntibuf]	; get byte count
+	movem	tt, ntictr
+	move	tt, [441000,,ntibuf+4]
+	movem	tt, ntiptr
+	jrst	ntic
+
+; Net input interrupt handler
+
+ntiser:	$call	whyint,[#netich][tt, d, e]
+	 .lose	%lssys
+	skipn	isarpa
+	 jrst	ntis1
+	skipn	usetcp
+	 jrst	ntis2
+	caie	tt, %wytcp
+	 .value
+	jumpn	e, ntisrd		; if more input, get set to read
+	caie	d, %ntclu
+	 cain	d, %ntclx
+	  jrst	netlzi
+	cain	d, %ntcls
+	 jrst	netlzi			; unsolicited close
+	caie	d, %ntopn		; spurious interrupt
+	 cain	d, %ntrfs
+	  jrst	tsret
+	jrst	ntiluz
+
+ntis2:	caie	tt, %wynet
+	 .value
+	tlze	d, 400000		; interrupt ?  (output reset, etc.)
+	 jrst [	.reset	netich,
+		aosg	intcnt		; decrement intr cnt; need suppression?
+		 jrst	.+1
+		.reset	ttyoch,
+		setom	ttyoff		; suppress tty output
+		setom	supres
+		setzm	ttoctr		; reset buffer
+		move	tt, [441000,,ttobuf]
+		movem	tt, ttoptr
+		jrst	.+1 ]
+	jumpn	e, ntisrd		; more to read
+	cain	d, %nscls
+	 jrst	netlzi			; closed -- lose, lose
+	caie	d, %nsopn
+	 cain	d, %nsrfs
+	  jrst	tsret			; spurious interrupt
+ntiluz:	type	[AThis is not supposed to happen -- please :BUG TELSUP.A]
+	jrst	netlzi			; impossible state
+
+; Here to examine result of WHYINT on CHAOS net
+ntis1:	caie	tt, %wycha
+	 .value
+	hlrz	e, e			; get rcv pkt count in e
+	caie	d, %cscls
+	 cain	d, %cslos		; Closed or losing ?
+	  jrst [sojle	e, netlzi	; only input is CLS or LOS
+		jrst	ntisrd ]	; go read it
+	cain	d, %csrfs
+	 jrst	tsret
+	caie	d, %csopn
+	 jrst	netlzi
+	caie	e, 0
+ntisrd:	 movem	e, netinp		; wake up main program
+	jrst	tsret			; not really anything there
+
+netlzi:	movei	a, netich
+	jrst	netluz
+
+ioc:	push	p, a
+	.suset	[.rbchn,,a]
+	caie	a, usroch
+	 cain	a, usrich
+	  .lose			; ioc error on inferior?
+netluz:	call	unsupr		; permit ^Z; note: A preserved!
+	type	[A]
+	call	netwrk"analyze
+	 .value
+	move	a, frnhst	;if we know anything about that host, say so.
+	call	netwrk"hstsix
+	 jfcl
+	fn1==<sixbit /STATUS/>
+	$call	open,[[.uai,,filech], [sixbit /DSK/], [fn1], a, [sixbit/SYS/]]
+	 jrst	death
+	type	[A]
+netlu1:	.iot	filech, a
+	jumpl	a, death
+	tyo	a
+	jrst	netlu1
+
+death:	.logout
+	.break	16, 040000	;abnormal termination.  discard tty input.
+				;will send a cls (try to if chaos net)
+	jrst	death
+
+
+subttl	IAC service
+
+iacsrv:	setom	nprotp		; maybe just realized we have new TELNET
+	call	ttofrc		; force output (in case change mode later)
+	call	ntic
+	cain	a, IAC
+	 jrst	main1		; quoted IAC -- pass through
+	caie	a, WILL		; handle WILL's
+	 jrst	iacwnt		; go on to WONT's
+	call	ntic
+	cain	a, ECHO		; will echo -- great
+	 jrst [	skipe	echop	; ignore if on already
+		 jrst	main
+		setom	echop
+		telcmd	[IAC DO ECHO]	; yes, please
+		jrst	main ]
+	cain	a, SUPRGA		; suppress GA?
+	 jrst [	skipe	supgap		; ignore if already doing
+		 jrst	main
+		setom	supgap
+		telcmd	[IAC DO SUPRGA]
+		jrst	main ]
+	cain	a, TRNBIN
+	 jrst [	skipe	rcbinp		; avoid infinite loop in protocol
+		 jrst	main
+		setom	rcbinp
+		telcmd	[IAC DO TRNBIN]
+		jrst	main ]
+	cain	a, LOGOUT		; logout foreign job?
+	 jrst [	skipn	logoup		; doing it ?
+		 jrst	icsdnt		; nope -- don't please
+		type	[SZL Logout request acceptedR]
+		jrst	main ]
+	cain	a, SDOTPT	; SUPDUP output ?
+	 jrst [	setom	sdoutp		; do it
+		telcmd	[IAC DO SDOTPT IAC SB SDOTPT 1]
+		move	a, [440600,,sdpblk]
+		movei	b, 6*nsdvrs
+		$call	siot,[#netoch, a, b]
+		 .lose	%lssys
+		telcmd	[IAC SE]
+		jrst	main ]
+icsdnt:	neto	[IAC]		; send DONT
+	neto	[DONT]
+	neto	a
+	.nets	netoch
+	jrst	main
+
+; Handling of IAC WONT
+
+iacwnt:	caie	a, WONT
+	 jrst	iacdo
+	call	ntic
+	cain	a, ECHO			; turn off echo?
+	 jrst [	skipn	echop
+		 jrst	main		; avoid infinite loop
+		setzm	echop
+		telcmd	[IAC DONT ECHO]
+		jrst	main ]
+	cain	a, TRNBIN
+	 jrst [	skipn	rcbinp		; avoid protocol loops
+		 jrst	main
+		setzm	rcbinp
+		telcmd	[IAC DONT TRNBIN]
+		jrst	main ]
+	cain	a, LOGOUT		; logout foreign job?
+	 jrst [ skipn	logoup
+		 jrst	main
+		setzm	logoup
+		telcmd	[IAC DONT LOGOUT]
+		type	[SZL Logout request rejectedR]
+		jrst	main ]
+	cain	a, SDOTPT
+	 jrst [	skipn	sdoutp
+		 jrst	main
+		setzm	sdoutp
+		TELCMD	[IAC DONT SDOTPT]
+		jrst	main ]
+	cain	a, SUPRGA
+	 jrst [	skipn	supgap
+		 jrst	main
+		setzm	supgap
+		telcmd	[IAC DONT SUPRGA]
+		jrst	main ]
+	jrst	main
+
+; IAC DO commands
+
+iacdo:	caie	a, DO
+	 jrst	iacdnt
+	call	ntic
+	cain	a, TIMMRK
+	 jrst [	telcmd	[IAC WILL TIMMRK]
+		jrst	main ]
+	cain	a, TRNBIN
+	 jrst [	skipe	trbinp
+		 jrst	main
+		setom	trbinp
+		telcmd	[IAC WILL TRNBIN]
+		jrst	main ]
+	cain	a, SUPRGA
+	 jrst [	skipe	fspgap
+		 jrst	main
+		setom	fspgap
+		telcmd	[IAC WILL SUPRGA]
+		jrst	main ]
+	neto	[IAC]		; refuse
+	neto	[WONT]
+	neto	a
+	.nets	netoch,
+	jrst	main
+
+iacdnt:	caie	a, DONT
+	 jrst	iacdm
+	call	ntic
+	cain	a, TRNBIN
+	 jrst [	skipn	trbinp
+		 jrst	main
+		setzm	trbinp
+		telcmd	[IAC WONT TRNBIN]
+		jrst	main ]
+iacdm:	caie	a, DM			; data mark?
+	 jrst	iacsb
+dmkser:	sosg	intcnt			; time to re-enable tty ?
+	 setzm	supres
+	setzm	suprcg
+	move	a, ttyop
+	movem	a, ttyoff
+	jrst	main
+
+iacsb:	caie	a, SB			; subnegotiation?
+	 jrst	main			; no -- no other IAC's
+	call	ntic
+	cain	a, SDOTPT
+	 skipn	sdoutp
+	  .value
+	call	ntic
+	caie	a, 2
+	 .value
+	call	ntic			; count
+	jumpe	a, sdsdun
+	caile	a, 254.			; legal?
+	 .value
+	push	p, a
+	push	p, a
+	move	x, [441000,,ttobuf]	; remember, buffer was forced
+sdiout:	call	ntic
+	idpb	a, x
+	sosle	(p)
+	 jrst	sdiout
+	pop	p, a
+	pop	p, ttoctr
+sdsdun:	call	ntic			; X position
+	cail	a, 0
+	 cail	a, 118.
+	  movei	a, 0
+	movem	a, chpos
+	call	ntic			; Y position
+	cail	a, 0
+	 cail	a, 118.
+	  movei	a, 0
+	movem	a, cvpos
+	call	ttofrc			; ship it out, and do SCPOS
+	call	ntic			; now, IAC SE
+	caie	a, IAC
+	 .value
+	call	ntic
+	caie	a, SE
+	 .value
+	jrst	main
+
+subttl	UUO Handling
+
+uuoh:	loc	40
+uuoins:	block	1
+	pushj	p, uuoh
+	loc	uuoh
+
+uuomax== 1
+	ldb	xx, [331100,,uuoins]
+	caie	xx, 0
+	 caile	xx, uuomax
+	  .value
+	jrst	@uuotab-1(xx)
+
+uuotab:	ityoh
+
+ityoh:	skipe	ttyoff
+	 return
+	move	xx, @uuoins
+	idpb	xx, ttoptr
+	aos	tt, ttoctr
+	caige	tt, ttobfl*4
+	 return
+ttofrc:	move	tt, [441000,,ttobuf]
+	movem	tt, ttoptr
+	$call	siot,[#ittoch, tt, ttoctr]
+	 .lose	%lssys
+	$call	scpos,[#ittoch, cvpos, chpos]
+	 .lose	%lssys
+	return
+
+subttl	Interrupt service
+
+; Interrupt table
+
+intvec:	loc	42
+	-intvcl,,intvec
+	loc	intvec
+
+	nsave,,p			; save some AC's; P is intr pdl ptr
+
+	%piioc ? 0			; IOC errors
+	-1 ? -1				; defer everything
+	ioc
+
+	%piaty ? 0			; TTY given back
+	%piaty ? -1
+	atyser
+
+	0 ? 1_ttyich			; user type in
+	%piaty ? -1#<1_ttyoch>
+	ttiser
+
+	0 ? 1_selfch			; interrupt to self
+	%piaty ? 1_selfch		; (for buffered TTY input)
+	slfser
+
+	0 ? 1_ttyoch			; **More** interrupts
+	0 ? 1_ttyich+1_ttyoch
+	ttoser
+
+	0 ? 1_netich			; Network input interrupts
+	0 ? 1_netich
+	ntiser
+
+	0 ? 1_netoch			; network output interrupts
+	0 ? 1_netich+1_netoch		; (only for error handling)
+	ntoser
+
+	%pirlt ? 0			; real time clock
+	%piaty+%pirlt ? -1
+	rltser
+
+	0 ? -1,,0			; NAME inferior
+	%piaty ? -1
+	namser
+
+intvcl==.-intvec			; length of interrupt vector
+
+; Here to return from an interrupt
+
+tsret:	$call	dismis,[p],[#14.]
+	 .lose	%lssys
+
+subttl	Handle interrupt on TTY input channel
+
+; Gobble down character, and handle command, or move char to input
+; buffer.
+
+ttiser:	$call	whyint,[#ttyich]	; acknowledge the interrupt
+	 jfcl				; ignore fail return
+	$call	iot,[#ttyich][a]	; read char
+	 .lose	%lssys
+	jumpl	a, tsret		; return when no more
+	trz	a, %txsft		; lose shift bit
+	camn	a, cmdesc		; intercept char ?
+	 jrst [	call	cmprmt		; yes, do a command
+		 jrst	ttiser		; and try for another character
+		 jrst [	move	a, cmdesc	; quoted intercept char
+			jrst	.+1 ]
+		setom	piatyf
+		.value [asciz/:proceed
+:vk
+/]
+		.suset	[.saifpir,,[1_ttyich]]	; no TTY interrupt
+		jrst	tsret ]		; dismiss int
+	cain	a, %txtop\"H		; [HELP]?
+	 jrst [	call	savpos
+		call	help
+		call	unhom1
+		jrst	ttiser ]
+	aos	b, ttictr		; room in buffer ?
+	skipge	openp			; and conn open ?
+	 caile	b, ttibfl
+	  jrst [sos	ttictr		; correct pointer and ding
+		tyo	[^G]
+		jrst	ttiser ]
+	aos	b, ttiinp
+	cail	b, ttibfl		; handle wrap-around
+	 setzb	b, ttiinp
+	movem	a, ttibuf(b)
+	.suset	[.siifpir,,[1_selfch]]	; set interrupt request
+	jrst	ttiser
+
+
+;;;	ATTY handler
+
+; Here when we get the TTY back after having had it taken away.
+
+atyser:	skipe	piatyf		; Reposition cursor, if ATY expected.
+	 jrst [	setzm	piatyf
+		call	rstrol
+		call	unhome		; Restore cursor
+		skipn	canhom		; and keol on displays
+		 jrst	atysr1
+		type	[L]
+		jrst	atysr1 ]
+	skipe	canhom		; Prevent many LF's on a printing terminal
+	 jrst	atysr1
+	setzm	chpos
+	$call	scpos,[#ittoch, cvpos, chpos]
+	 .lose	%lssys
+atysr1:	skipn	supdpp
+	 jrst	tsret
+	neto	[^\]		; Tell other guy that screen was frobbed
+	neto	[^C]
+	.nets	netoch,
+	jrst	tsret
+
+subttl	Normal TTY input handler
+
+; Here on the "self" interrupt, an intermediate priority level, so TTY
+; interrupts are never locked out, even if NET output is blocked, etc.
+
+slfser:	sosge	ttictr			; decrement and check count
+	 jrst [	aos	ttictr		; done, or spurious interrupt
+		jrst	tsret ]
+	setzm	suprcg			; re-enable ^G/^S suppressed output
+	move	b, ttyop
+	ior	b, supres
+	movem	b, ttyoff
+	move	tt, linmor		; reset **More** inhibit counter
+	movem	tt, morinh
+
+	aos	b, ttioup		; bump pointer
+	cail	b, ttibfl		; do wraparound
+	 setzb	b, ttioup
+	move	a, ttibuf(b)
+
+	skipn	supdpp			; SUPDUP has special handling
+	 jrst	slfsrt
+	skipe	metakp
+	 tro	a, %txmta		; turn on meta bit
+	setzm	metakp
+	skipe	wallp
+	 jrst [	call	normlz		; get "normalized" char in b
+		walo	b
+		cain	a, ^M
+		 walo	[^J]
+		jrst	.+1 ]
+	movei	b, 0
+	rotc	a, -7
+	rot	b, 7
+	caie	a, 0
+	 jrst [	neto	[^\]		; send bucky bits
+		addi	a, 100
+		neto	a
+		neto	b
+		jrst	slfsra ]
+	neto	b
+	cain	b, ^\			; must be doubled ?
+	 neto	b
+slfsra:	.nets	netoch,
+	skipn	gstopp			; ^G/^S feature on ?
+	 jrst	slfser
+	trz	b, 40			; check for ^G/^S
+	caie	b, ^G
+	 cain	b, ^S
+	  movei	b, %txctl+"G
+	caie	b, %txctl+"G
+	 cain	b, %txctl+"S
+	  jrst [setom	suprcg
+		setom	ttyoff
+		jrst	slfser ]
+	jrst	slfser
+
+slfsrt:	trze	a, %txmta		; META bit ?
+	 setom	metakp
+
+; Fold bucky bits down to ASCII
+
+slfsr1:	movei	c, 0			; c <- 1 if line editor running
+	skipn	echop
+	 skipn	linedp
+	  caia
+	   movei c, 1
+
+	trz	a, %txsft		; ignore SHIFT bit
+	movei	b, (a)
+	trz	b, %txctl		; Check for TOP keys
+	caie	b, %txtop\"A		; [ESCAPE]
+	 cain	b, %txtop\"B		; [BREAK]
+	  jrst [jumpe	c, slfser	; to ^B if line editor running
+		movei	a, ^B
+		jrst	slfsr2 ]
+	cain	b, %txtop\"C		; [CLEAR]
+	 jrst [	jumpe	c, slfser	; to ^U if line editor
+		movei	a, ^U
+		jrst	slfsr2 ]
+	cain	b, ^Z			; [CALL]
+	 jrst [	move	b, ttyopt	; SAIL terminal ?
+		tlnn	b, %tofci
+		 jrst	slfsr2
+		jumpe	c, slfsr2	; to ^A if line editor
+		movei	a, ^A
+		jrst	slfsr2 ]
+	trz	a, %txtop		; no more important TOP chars
+
+; Canonical ITS mapping for <CONTROL> to standard ASCII.  ctl-[SPACE]
+; mapping to ^@ is taken from the usual ASCII keyboard.
+
+	trzn	a, %txctl
+	 jrst	slfsr2
+	cain	a, 40			; ctl-space
+	 movei	a, ^@
+	caie	a, 177			; ctl-[RUB OUT] = [RUB OUT]
+	 caige	a, "?			; ctl-? is [RUB OUT]
+	  jrst	slfsr2
+	caile	a, "_			; lower => upper case
+	 subi	a, 40
+	xori	a, 100			; controlify
+
+; Now handle the character
+
+slfsr2:	skipl	echop			; foreign echo ?
+	 jrst	hlfdpx			; nope -- do local junk
+
+; Here to send a character
+
+chrsnd:	aosn	metakp			; <META> ?
+	 iori	a, 200
+	neto	a			; send
+	cain	a, IAC			; quote IAC
+	 neto	a
+	skipl	trbinp			; send, unless ^M needs ^J
+	 caie	a, ^M
+	  jrst [.nets	netoch,
+		jrst	slfser ]
+	movei	a, ^J			; ASCII CR => fake an LF, as if typed
+	jrst	slfsr1
+
+subttl	Half duplex local echoing, etc.
+
+hlfdpx:	skipge	wallp
+	 skipge	linedp			; line editor handles wallpaper itself
+	  caia				; line editor or wall paper off
+	   jrst [walo	a
+		cain	a, ^M
+		 walo	[^J]
+		jrst	.+1 ]
+	skipge	linedp			; need to know true horiz pos when 
+	 skipe	linctr			; starting a new line in the editor
+	  jrst	hlfdx1
+	$call	scpos,[#ittoch][inipos, inipos]
+	 .lose	%lssys
+	move	b, inipos		; init hpos, too
+	movem	b, hpos
+	move	tp, [tabptr]		; init tab pdl
+
+; check first for cursor motion chars and rubout (because of its high code)
+
+hlfdx1:	cain	a, ^I
+	 jrst [	move	xx, hpos	; save hpos for later
+		movei	b, 8.		; 8 or 10 tabs ?
+		skipge	10tabp
+		 movei	b, 10.
+		move	c, hpos		; update hpos
+		addi	c, (b)
+		idivi	c, (b)
+		imuli	c, (b)
+		movem	c, hpos
+		type	[H]		; move cursor
+		addi	c, 8.
+		tyo	c
+		jrst	hlfdx3 ]	; don't echo
+	cain	a, ^H
+	 jrst [	sos	hpos
+		jrst	hlfdx4 ]	; echo
+	cain	a, ^M
+	 jrst	hlfdx4			; echo
+	caie	a, 177			; editor char ?
+	 caige	a, 40
+	  caia
+	   jrst	hlfdx5			; echo and bump hpos
+	skipl	linedp			; test for echoing
+	 skipl	lquotp
+	  caia
+	   jrst	hlfdx6			; handles control char echoing
+
+	cain	a, 177			; don't echo: ^?
+	 jrst	hlfdx3
+	caie	a, ^J			; don't echo: ^J, ^W
+	 cain	a, ^W
+	  jrst	hlfdx3
+	caie	a, ^A			; don't echo: ^A, ^C
+	 cain	a, ^C
+	  jrst	hlfdx3
+	caie	a, ^O			; don't echo: ^O, ^S
+	 cain	a, ^S
+	  jrst	hlfdx3
+	caie	a, ^L			; don't echo: ^L, ^R
+	 cain	a, ^R
+	  jrst	hlfdx3
+	caie	a, ^Q			; don't echo: ^Q, ^U
+	 cain	a, ^U
+	  jrst	hlfdx3
+	caie	a, ^B			; don't echo: ^B, ^T
+	 cain	a, ^T
+	  jrst	hlfdx3
+
+hlfdx6:	cain	a, ^J			; LF => don't hack hpos
+	 jrst	hlfdx4
+	cain	a, 33			; escape (alt-mode)
+	 jrst	hlfdx5
+	move	b, arrow
+	tyo	b
+	movei	b, (a)
+	xori	b, 100
+	tyo	b			; letter
+	aos	hpos
+	aos	hpos
+	jrst	hlfdx3
+
+hlfdx5:	aos	hpos
+hlfdx4:	movei	b, (a)
+	cain	a, 33
+	 move	b, altmod
+	cain	a, "^
+	 move	b, arrow
+	tyo	b
+hlfdx3:	skipl	linedp			; handle a "regular" char
+	 jrst	chrsnd
+;	jrst	lined
+
+subttl	Line editor
+
+lined:	skipe	lquotp			; quoted char ?
+	 jrst [	setzm	lquotp
+		jrst	lnechs ]
+	cain	a, 177			; RUBOUT => erase 1 char
+	 jrst [ call	delch
+		jrst	slfser ]
+	caie	a, ^I			; tab, printing chars, OK
+	 cail	a, 40
+	  jrst	lnechs
+
+	caie	a, ^C			; ATTN
+	 cain	a, ^A
+	  jrst [move	tt, [441000,,ttobuf]	; stop output
+		movem	tt, ttoptr
+		setzm	ttoctr
+		.netint	netoch,		; tell other guy
+		telcmd	[IAC IP IAC DM]
+		jrst	slfser ]
+
+	cain	a, ^B			; BREAK
+	 jrst [	.netint	netoch,		; tell other guy
+		telcmd	[IAC BRK IAC DM]
+		jrst	slfser ]
+
+	caie	a, ^O			; Discard output
+	 cain	a, ^S
+	  jrst [.netint	netich,
+		telcmd	[IAC AO IAC DM]
+		move	tt, [441000,,ttobuf]	; stop output
+		movem	tt, ttoptr
+		setzm	ttoctr
+		jrst	slfser ]
+
+	cain	a, ^Q			; Quote next char
+	 jrst [	setom	lquotp
+		jrst	slfser ]
+
+	cain	a, ^T			; "Are you there"
+	 jrst [	telcmd	[IAC AYT]
+		jrst	slfser ]
+
+	cain	a, ^U			; kill line
+	 jrst [	move	tt, [440700,,linbuf]	; reset buffer pointers
+		movem	tt, linptr
+		setzm	linctr
+		setzm	hpos
+		skipe	canhom
+		 jrst [	type	[H]	; fix cursor
+			move	a, inipos
+			movem	a, hpos
+			addi	a, 8.
+			tyo	a
+			type	[L]	; Keol
+			jrst	slfser ]
+		type	[A]
+		jrst	slfser ]
+
+	cain	a, ^W			; kill a word
+	 jrst	delwrd
+	cain	a, ^J			; LF => send buffered output
+	 jrst	sndbfr
+	caie	a, ^L			; ^L, ^R retype line
+	 cain	a, ^R
+	  caia
+	   jrst	lnechs
+retyp1:	skipe	canhom
+	 jrst [	cain	a, ^L		; clear, or retype ?
+		 jrst [	type	[C]	; clear
+			jrst	.+2 ]
+		type	[H]		; retype - move back, and
+		move	c, inipos
+		movei	a, 8.(c)
+		tyo	a
+		type	[L]		; keol
+		jrst	.+2 ]
+	  jrst [type	[A]		; just go to next line
+		setzb	c, inipos	; fix counters
+		jrst	.+1 ]
+	move	a, [440700,,linbuf]
+	move	0, linctr		; use 0 for counter
+	move	tp, [tabptr]		; re-init tab pdl
+retype:	sojl	0, [
+		movem	c, hpos
+		jrst	slfser ]
+	ildb	d, a
+	cain	d, ^?				; retype as ^?
+	 jrst	retyp2
+	cain	d, "^
+	 jrst [	tyo	arrow
+		aoja	c, retype ]		; up-arrow
+	cain	d, 33
+	 jrst [	tyo	altmod
+		aoja	c, retype ]		; alt-mode
+	cail	d, 40
+	 jrst [	tyo	d			; print
+		aoja	c, retype ]		; increment pos
+	cain	d, ^I
+	 jrst [	push	tp, c
+		movei	e, 8.
+		skipe	10tabp
+		 movei	e, 10.
+		addi	c, (e)
+		idivi	c, (e)
+		imuli	c, (e)
+		type	[H]
+		movei	d, 8.(c)
+		tyo	d
+		jrst	retype ]
+	cain	d, ^J
+	 jrst [	tyo	d
+		jrst	slfser ]
+	cain	d, ^H
+	 jrst [	tyo	d
+		soja	c, retype ]		; decrement pos
+retyp2:	tyo	arrow
+	xori	d, 100
+	tyo	d
+	aoj	c,
+	aoja	c, retype
+
+; Char to be inserted into line editor buffer
+
+lnechs:	cain	a, ^I			; push tabs in pdl
+	 jrst [	tlc	tp, -1		; see if there is room ...
+		tlcn	tp, -1
+		 jrst [	type	[AToo many tabs!A]
+			movei	a, ^R
+			jrst	retyp1 ]
+		push	tp, xx
+		jrst	.+1 ]
+	aos	b, linctr		; check for buffer overflow
+	cail	b, 5*linbfl
+	 jrst [	type	[ALine too long!A]
+		movei	a, ^R		; go retype line
+		jrst	retyp1 ]
+	idpb	a, linptr
+	caie	a, ^M			; time to send ?
+	 jrst	slfser
+	movei	a, ^J
+	tyo	a
+	aos	linctr
+	idpb	a, linptr
+sndbfr:	move	tt, [440700,,linbuf]
+	movem	tt, linptr
+	skipge	wallp
+	 jrst [	move	b, linctr		; don't smash linctr yet
+		$call	siot,[#wallch, tt, b]	; send to wallpaper file
+		 .lose	%lssys
+		move	tt, linptr
+		jrst	.+1 ]
+	$call	siot,[#netoch, tt, linctr]	; send to net (reset linctr)
+	 .lose	%lssys
+	.nets	netoch,
+	jrst	slfser
+
+; Here to flush an alphanumeric word.
+
+delwrd:	skipg	linctr			; if empty, punt
+	 jrst	slfser
+	ldb	a, linptr		; check this char
+	call	alpnmp			; alpha ?
+	 jrst [	call	delch
+		jrst	delwrd ]	; delete until alpha
+delwd1:	call	delch
+	skipg	linctr
+	 jrst	slfser			; nope
+	ldb	a, linptr
+	call	alpnmp
+	 jrst	slfser			; delete until non-alpha
+	jrst	delwd1
+
+; Here to skip if alphanumeric character in A.
+
+alpnmp:	cail	a, "a			; lower => upper case
+	 subi	a, 40
+	cail	a, "0
+	 caile	a, "Z
+	  return			; < '0' or > 'Z'
+	caile	a, "9
+	 cail	a, "A
+	  aos	(p)			; 0-9 or A-Z
+	return
+
+; Here to flush a single character from the screen or echo it
+; back if a printing console.
+
+delch:	sosge	linctr
+	 jrst [	setzm	linctr		; empty
+		return ]
+	move	a, linptr		; decrement byte pointer
+	add	a, [70000,,]
+	tlne	a, 400000
+	 sub	a, [430000,,1]
+	movem	a, linptr
+	ldb	a, a			; get char deleted
+	skipn	canhom
+	 jrst [	sos	hpos		; echo back on losing terminal
+		tyo	a
+		cain	a, ^I
+		 pop	tp, tt		; flush one saved pos
+		return ]
+	cain	a, ^I
+	 jrst [	pop	tp, hpos	; what a trick!
+		type	[H]
+		move	b, hpos
+		addi	b, 8.
+		tyo	b
+		return ]
+	cain	a, ^J
+	 jrst [	type	[U]
+		return ]
+	cain	a, ^H
+	 jrst [	aos	hpos
+		type	[F]
+		return ]
+	caie	a, ^?
+	 caige	a, 40		; for all other controls...
+	  jrst [cain	a, 33	; escape is only one letter
+		 jrst	.+1
+		sos	hpos	; erase letter, and then up-arrow
+		type	[X]
+		jrst	.+1 ]
+	sos	hpos
+	type	[X]
+	return
+
+subttl	Command input code
+
+; Input a character from the TTY when at TTY interrupt level
+
+inpchr:	ldb	a, iniptr
+	jumpn	a, [
+		ibp	iniptr
+		return ]
+	move	tt, [600000,,[60.*10.]]		; set 10 second timer
+	.realt	tt,
+	$call	iot,[#ttyich][a][#%tinwt]	; complement no-wait bit
+	 .lose	%lssys
+	movsi	tt, 400000			; turn off timer
+	.realt	tt,
+	return
+
+; Here if user doesn't type anything for 10 seconds while in command
+; mode.  Give up by forcing input of a rubout.  Thus, if user looks away
+; from the screen and forgets that s/he is in command mode, s/he doesn't
+; get screwed.
+
+rltser:	push	p, tt
+	hrrz	tt, -nsave(p)		; were we above ?
+	caie	tt, inpchr
+	 jrst [	move	tt, [600000,,[60.]]	; wait 1 second
+		.realt	tt,
+		jrst	rltsr1 ]
+	movei	tt, 2			; fake a rubout
+	addm	tt, -16.(p)
+	movei	a, 177
+rltsr1:	pop	p, tt
+	jrst	tsret
+
+subttl	Command processing and dispatch
+
+; First, home down and home back routines, and prompt printer
+
+homdwn:	call	savpos
+homdn1:	movei	tt, [asciz \ZL\]	; bottom of screen, clear line
+	skipn	canhom
+	 movei	tt, [asciz \A\]	; just go to next line (sigh)
+	calret	outstr
+
+savpos:	$call	scpos,[#ttyich][ovpos, ohpos]	; save cursor pos for later
+	 .lose	%lssys
+	return
+
+unhome:	skipn	canhom
+	 return
+	type	[ZL]
+unhom1:	skipn	canhom
+	 return
+	type	[H]
+	move	a, ohpos
+	addi	a, 8.
+	tyo	a
+	type	[V]
+	move	a, ovpos
+	addi	a, 8.
+	tyo	a
+	return
+
+pprmpt:	skipl	openp			; fancy prompt if channel open
+	 jrst [	type	[TELSUP> ]
+		return ]
+	movei	tt, [asciz \ARPA \]
+	skipe	usetcp
+	 movei	tt, [asciz \TCP \]
+	skipn	isarpa
+	 movei	tt, [asciz \CHAOS \]
+	call	outstr
+	movei	tt, [asciz \TELNET (\]
+	skipe	supdpp
+	 movei	tt, [asciz \SUPDUP (\]
+	call	outstr
+	$call	sstatu,[][tt, tt, tt, tt, tt, tt]
+	 .lose	%lssys
+	call	outsix			; sixbit name of this system
+	type	[ to ]
+	call	pfhost
+	movei	tt, [asciz \) ==> \]
+	calret	outstr
+
+pfhost:	move	b, frnhst		; print canonical name for host
+	call	netwrk"hstsrc
+	 .value
+	movei	tt, (a)
+	calret	outstr
+
+; Here to read a command and prompt, etc.
+
+cmprmt:	skipl	x, frnhst		; connection open or opening?
+	 call	homdwn			; yep, home down
+cmprm1:	skipn	nprmpt			; prompt desired ?
+	 call	pprmpt
+	.listen	tt,			; wait for output to go
+commnd:	call	inpchr			; and hang for it
+	call	normlz			; "normalize" as a command char
+	camn	b, cmdesc		; escape character again ?
+	 jrst [	aos	(p)		; skip return
+		skipl	frnhst
+		 calret	unhome
+		return ]
+	cain	b, ^_
+	 jrst	cunder		; this does not do SETROL/RSTROL
+	call	setrol		; everything below does RSTROL in right place
+	cain	b, ^Z
+	 jrst	cntrlz
+	caige	b, 40
+	 jrst	cmdnop
+	jrst	@cmdtab-40(b)		; dispatch on command
+
+normlz:	movei	b, (a)
+	andi	b, %txasc
+	cail	b, "a			; lower- to upper-case
+	 caile	b, "z
+	  caia
+	   subi	b, 40
+	trnn	a, %txctl		; [CONTROL]X ==> ^X
+	 return
+	cail	b, "A
+	 caile	b, "_
+	  caia
+	   subi	b, 100
+	return
+
+cmdnop:	tyo	[^G]			; barf at bad command
+	skipl	frnhst			; connection open/ing?
+	 jrst	cmdret			; yes, return
+	jrst	commnd			; no, just ask for something else
+
+cmdfls:	tyo	[^G]			; here when a command flushed
+	setzm	jclbuf			; so won't try again
+	jrst	cmdret			; and return
+
+; Command dispatch table
+
+; First, handy macro
+if1,[
+define	cmnd	code,server
+	loc	cmdtab+code-40
+	server
+	termin
+]
+
+cmdtab:	repeat	100,cmdnop		; default to nothing
+
+	cmnd	"0,padding		; 0 pads for Heath's
+	cmnd	"1,10tabs		; Multix type tabs
+	cmnd	"?,help1		; alternate help cruft
+	cmnd	"A,sndatt		; ATTN
+	cmnd	"B,sndbrk		; break
+	cmnd	"C,close		; close connection
+	cmnd	"D,cntrlz		; to DDT
+	cmnd	"E,echotg		; echo toggle
+	cmnd	"F,linedt		; fancy line editor
+	cmnd	"G,supimg		; super image toggle
+	cmnd	"H,help1		; help cruft
+	cmnd	"I,escset		; intercept character
+	cmnd	"J,jtglce		; just toggle crufty echo
+	cmnd	"K,kiljob		; kill foreign job
+	cmnd	"L,kiljob		; logout
+	cmnd	"M,mortog		; **More** processing toggle
+	cmnd	"N,prmtog		; Prompt toggle
+	cmnd	"O,open			; open connection
+	cmnd	"P,proced		; DDT
+	cmnd	"Q,quit			; quit
+	cmnd	"R,really		; really (what kind of terminal)
+	cmnd	"S,setsim		; simulate (some kind of terminal)
+	cmnd	"T,ttyotg		; TTY output toggle
+	cmnd	"U,wholin		; do a wholine at foreign host
+	cmnd	"W,walltg		; wallpaper toggle
+	cmnd	"X,togsts		; toggle status
+	cmnd	"Y,gstopf		; ^G/^S toggle
+	cmnd	"Z,zapscn		; zap screen
+	cmnd	"^,metize		; <META>izer
+comma==",
+	cmnd	comma,setprt		; protocol selection
+	loc	cmdtab+100		; to end of table again
+
+subttl	Help text
+
+hlptxt:	asciz \
+User TELNET/SUPDUP commands:
+
+A * T	Send ATTN (interrupt process at foreign host).
+B * T	Send Break.
+C * +	Close connection or abort an incomplete O command.
+D	Exit to DDT.
+E * T	Request foreign host to toggle the echo mode; toggling to local
+	 echo will always work.  The echo state is initially remote
+	 echo if the host accepts it.  The foreign host may forbid the
+	 toggle, in which case the J command can be used.
+F	Toggle fancy line editing; normally on, but only works in local
+	 echo mode.  Hence if the foreign host forbids remote echo mode
+	 you automatically get the line editor (such as in Multics).
+	 Line editor commands:
+	 <CONTROL>A	send ATTN.
+	 <CONTROL>B	send Break.
+	 <CONTROL>C	send ATTN.
+	 <CONTROL>L	clear screen and redisplay line.
+	 <CONTROL>O	abort output.
+	 <CONTROL>Q	quotes next character.
+	 <CONTROL>R	redisplay line.
+	 <CONTROL>S	abort output.
+	 <CONTROL>T	ask host for a status message.
+	 <CONTROL>U	delete line.
+	 <CONTROL>W	delete last word.
+	 [LINE FEED]	activate line (send it to the foreign host),
+	 [RETURN]	insert a CRLF and activate line.
+	 [FORM FEED]	clear screen and redisplay line.
+	 [RUB OUT]	delete last character.
+	 <META>[BREAK]	send Break.
+	 [CLEAR]	delete line.
+	 <META>[CALL]	send ATTN.
+G  	Toggle super image output mode (useful for displaying graphics
+	 from a remote host, etc.).  Defaults off.
+H or ?	Display help message (this text).  The [HELP] key does this too.
+I	Set the intercept character (defaults to <CONTROL>^ on non-TV's;
+	 [BREAK] on TV's).
+J * T	Toggle local echo mode without telling the foreign host or
+	 asking it for permission.
+K * +	Request foreign host to kill the foreign job.
+L * +	Logout; same as Kill.
+M	Toggle **More** processing; initially enabled for displays (but
+	 always initially off in SUPDUP).
+N	Toggle prompting (N = No prompt, since prompt is the default)
+O	Open connection to specified host; the syntax is:
+		host-name	or
+		socket-number,host-name	or
+		host-name/network-name		or
+		decimal-host/decimal-imp
+	 "?" lists matches so far, and <escape> completes partial input,
+	 if possible.  A socket number is octal, unless followed by a
+	 "." to make it decimal.
+P	Proceed TELNET and return the console to DDT.
+Q +	Quit (exit and kill the local job).
+R	Tell the program what sort of terminal you are REALLY on, for
+	 cases where ITS is not smart enough, but the foreign host is.
+	 This will prompt you for further information.
+S	Tell the program what sort of terminal the foreign host believes
+	 you have, so that terminal escapes can be translated to ITS
+	 display codes.  This will prompt you for further information.
+T	Toggle TTY output; initially enabled.
+U *	Ask host to give some sort of status message (are you UP?)
+W	Toggle wallpaper file; initially disabled.  The file is written
+	 as DSK:NETOUT > on the default directory.  A few simple display
+	 codes are converted (e.g., ^PA => CRLF) but most are discarded.
+X	Lists status of the toggles and switches.
+Y	Toggle SUPDUP ^G/^S output stopping feature (initially off)
+Z	Zap (clear) display screen.
+0	Toggle padding of Heath output, etc. (normally on, and derived
+	 automatically from the line speed).
+1 T	Toggle Multics-style tab processing (ie, 10. column tab stops).
+	 This only happens in local echo.  Connecting to a Multics host
+	 sets this mode automatically.
+^ *	Set the <META> bit on the next character, intended to be used on
+	 terminals without a <META> key.
+,	Choose protocol (TELNET or SUPDUP)
+
+   * = open connection required, + = confirmation required if open
+   T = TELNET only (not SUPDUP)
+
+ The intercept character as a command sends that character to the host.
+\
+
+subttl	Help and toggle status commands
+
+help1:	call	help
+	jrst	cmdret
+
+help:	type	[Help textC]		; clear screen
+	push	p, morep		; save **More** flag
+	setom	morep
+	setom	morinh			; turn off inhibition
+	movei	tt, hlptxt
+	call	outstr
+	pop	p, morep
+	setzm	jclbuf			; zap JCL buffer
+	return
+
+if1,[
+define	toggle	tognam,togdsc/
+	type	[    togdsc ]
+	movei	tt, [asciz \onA\]
+	skipn	tognam
+	 movei	tt, [asciz \offA\]
+	call	outstr
+	termin
+]; if1
+
+togsts:	type	[CToggle statusA]
+	push	p, morep		; save true **More** state
+	setom	morep			; and permit **More** processing here
+
+	setcmm	ttyop			; reversed sense flags
+	setcmm	nopad
+	setcmm	nprmpt
+	toggle	10tabp,Multics-style tab processing
+	toggle	echop,Remote echo
+	toggle	gstopp,^G/^S output stopping
+	toggle	supero,Super-image (raw) output
+	toggle	echop,Local echo
+	toggle	linedp,Line editor
+	toggle	(p),**More** processing
+	toggle	ttyop,TTY output
+	toggle	wallp,Wallpaper file
+	toggle	nopad,Output padding
+	toggle	nprmpt,Command prompt printing
+	setcmm	ttyop			; flip back
+	setcmm	nopad
+	setcmm	nprmpt
+	move	tt, outtyp
+	move	tt, ottmsg(tt)
+	call	outstr
+	move	tt, simtyp
+	move	tt, simmsg(tt)
+	call	outstr
+	skipl	openp
+	 jrst [	type	[No connection open.
+]
+		jrst	togst2 ]
+	type	[Connection open to ]
+	call	pfhost
+	type	[A]
+	move	tt, supdpp
+	move	tt, prtmsg+1(tt)
+	call	outstr
+	move	tt, isarpa
+	move	tt, netmsg+1(tt)
+	call	outstr
+	skipn	isarpa
+	 jrst	togst2
+	move	tt, usetcp
+	move	tt, tcpmsg+1(tt)
+	call	outstr
+togst2:	pop	p, morep		; restore true flag
+	jrst	cmdret
+
+ottmsg:	[asciz \Output ^P codes only.
+\]
+	[asciz \Output Heath escapes for fancy ^P codes.
+\]
+	[asciz \Output "E19" escapes for fancy ^P codes.
+\]
+simmsg:	[asciz \No escape code simulation.
+\]
+	[asciz \Interpreting Datamedia escape codes.
+\]
+	[asciz \Interpreting E19, H19, VT52 escape codes.
+\]
+	[asciz \Interpreting Teleray 1061 escape codes.
+\]
+prtmsg:	[asciz \using SUPDUP protocol on the \]
+	[asciz \using TELNET protocol on the \]
+netmsg:	[asciz \ARPAnet via \]
+	[asciz \CHAOSnet.
+\]
+tcpmsg:	[asciz \TCP.
+\]
+	[asciz \NCP.
+\]
+
+subttl	Open and Close Commands
+
+; Open command -- uses the nifty NETWRK package
+
+open:	skipl	frnhst
+	 jrst	cmdnop
+	setzm	icpskt			; see SPCHAN ...
+	movem	p, psave'
+	call	netwrk"hostnm		; hairy host name reader
+	 jrst	cmdfls
+	movem	a, frnhst
+	movem	tt, netnum
+
+	setom	isarpa			; set network flag
+	came	tt, [netwrk"nw%arp]
+	 setzm	isarpa
+
+	move	b, a			; get site kind, etc.
+	call	netwrk"hstsrc
+	 .value
+	hlrz	tt, 1(d)		; get offset of site kind field
+	move	x, hsttab(tt)
+	move	y, hsttab+1(tt)
+	setom	10tabp
+	camn	x, [ascii /MULTI/]	; MULTICS ==> 10 tabs
+	 came	y, [asciz /CS/]
+	  setzm	10tabp
+
+	setom	supdpp			; look for SUPDUP servers
+	camn	x, [asciz /ITS/]
+	 jrst	open1
+	move	z, [sdsits]
+open2:	move	a, (z)
+	call	netwrk"hstlook
+	 jrst	opn2lp			; we might not be on Chaos net
+	move	b, frnhst
+	call	netwrk"hstcmp		; skips if same host
+	 caia
+	  jrst [tlc	z, -1		; last one ?  (SAIL)
+		tlce	z, -1
+		 jrst	open1		; OK
+		move	z, ttyopt
+		tdc	z, [%toers\%tomvu\%tomvb\%tolid\%tocid\%tofci]
+		tdce	z, [%toers\%tomvu\%tomvb\%tolid\%tocid\%tofci]
+		 setzm	supdpp		; doesn't have necessary abilities
+		jrst	open1 ]
+opn2lp:	aobjn	z, open2
+	setzm	supdpp
+
+open1:	skipn	supdpp			; can we provide SUPDUP ?
+	 skipn	notlnt			; did user insist on it ?
+	  jrst	open3
+	type	[ASorry, you cannot use SUPDUP to that host.A]
+	setom	frnhst
+	jrst	cmdnop
+open3:	skipe	nosup			; can we do SUPDUP ?
+	 setzm	supdpp
+	jrst	goicp			; do the ICP, and if winning, GO!
+
+; GETCHR routine for NETWRK package to call
+;	Uses X as jcl pointer
+;	Result in T; A to E not clobbered, TT may be clobbered.
+
+getchr:	push	p, a
+	call	inpchr
+	movei	t, (a)
+	pop	p, a
+	caie	t, %txctl+"Z
+	 cain	t, %txctl+"G
+	  movei	t, ^S
+	caie	t, ^Z
+	 cain	t, ^G
+	  movei	t, ^S
+	caie	t, %txctl+"S
+	 cain	t, ^S
+	  jrst [move	p, psave	; give luser a chance to break out
+		jrst	cmdfls ]
+	aos	(p)
+	return
+
+putchr:	skipe	t
+	 tyo	t
+	return
+
+spchan:	jumpe	t, spcret		; ignore nulls (might be in jcl)
+	cain	t, ",			; for socket-number,host-name
+	 skipe	icpskt
+	  jrst [tyo	[^G]
+		jrst	spcskp ]
+	movem	tt, icpskt
+spcskp:	aos	(p)
+spcret:	return
+
+; Close command and reset routine if connection closed on us
+
+close:	skipge	frnhst			; ever open?
+	 jrst	cmdnop
+	type	[Close connection]
+	skipe	openp
+	 jsp	c, confrm
+	setzm	killp
+reset:	skipe	killp
+	 .logout 1,
+	call	unsupr			; permit ^Z
+	type	[A]			; advance to NL
+	.suset	[.sidf2,,[1_netich+1_netoch]]	; ignore state change now
+	.close	icpch,
+	.close	netich,
+	.close	netoch,
+	setzm	rstbeg			; reset flags
+	move	a, [rstbeg,,rstbeg+1]
+	blt	a, corend
+	setom	frnhst
+	move	a, [-3,,[ .sdf2,,[-1#<1_ttyoch>]
+			  .sifpir,,[0]
+			  .sipirqc,,[0]]]
+	.suset	a
+	move	p, [-pdllen,,pdl]
+	jrst	notcon
+
+subttl	Terminal type commands
+
+really: type	[Really on ]
+	jrst	real2
+reallp:	type	[CReally on a particular kind of terminal; options:
+	E - E19 (Heath H19 + Edmond's extensions)
+	H - Heath H19
+	N - none of the above (turns feature off)
+	? - type this
+Option char (E, H, or N): ]
+real2:	call	inpchr
+	caie	a, "e
+	 cain	a, "E
+	  jrst [type	[E19]
+		movei	a, o.e19
+		jrst	real1 ]
+	caie	a, "h
+	 cain	a, "H
+	  jrst [type	[H19]
+		movei	a, o.h19
+		jrst	real1 ]
+	caie	a, "n
+	 cain	a, "N
+	  jrst [type	[nothing special]
+		movei	a, 0
+		jrst	real1 ]
+	jrst	reallp
+
+real1:	movem	a, outtyp
+	call	sttyop			; set up xttyop
+	jrst	cmdpau
+
+setsim:	type	[Simulate ]
+	jrst	ssim2
+ssimlp:	type	[CSimulate one of the following terminals, that is, turn
+escape sequences for that terminal into ITS abstract terminal
+functions, so any ITS terminal with enough capabilities will work:
+	D - Datamedia 3000
+	E, H, V - VT52, Heath H19, H19 + Edmonds extensions (all the same)
+	N - no simulation (the default)
+	T - Teleray 1061
+Option char (D, H, N, or T): ]
+ssim2:	call	inpchr
+	caie	a, "d
+	 cain	a, "D
+	  jrst [type	[Datamedia 3000]
+		movei	a, s.data
+		jrst	ssim1 ]
+	caie	a, "h
+	 cain	a, "H
+	  jrst [type	[H19]
+		movei	a, s.e19
+		jrst	ssim1 ]
+	caie	a, "e
+	 cain	a, "E
+	  jrst [type	[E19]
+		movei	a, s.e19
+		jrst	ssim1 ]
+	caie	a, "v
+	 cain	a, "V
+	  jrst [type	[VT52]
+		movei	a, s.e19
+		jrst	ssim1 ]
+	caie	a, "n
+	 cain	a, "N
+	  jrst [type	[nothing special]
+		movei	a, 0
+		jrst	ssim1 ]
+	caie	a, "t
+	 cain	a, "T
+	  jrst [type	[Teleray 1061]
+		movei	a, s.1061
+		jrst	ssim1 ]
+	jrst	ssimlp
+
+ssim1:	movem	a, simtyp
+	skipl	frnhst
+	 call	simset
+	jrst	cmdpau
+
+simset:	skipn	a, simtyp	; subroutine to set up for simulation
+	 jrst	simst1
+	call	doroll		; start in roll mode
+	setzm	idmode		; reset flags
+	setzm	idcout
+	setzm	ansimd
+	setzm	morep
+	skipn	supdpp
+	 skipn	nprotp
+	  return
+	skipe	trbinp
+	 return
+	setom	trbinp
+	telcmd	[IAC WILL TRNBIN]
+	return
+
+simst1:	call	noroll		; turn scrolling off
+	setom	morep		; more processing on
+	skipn	trbinp
+	 return
+	setzm	trbinp
+	skipn	supdpp
+	 skipl	nprotp
+	  return
+	telcmd	[IAC WONT TRNBIN]
+	return
+
+setprt:	skipl	frnhst
+	 jrst	cmdnop
+	type	[Protocol is ]
+	jrst	sprt2
+sprtlp:	type	[CChoose the communication protocol desired:
+	E - either (SUPDUP or TELNET, SUPDUP preferred)
+	S - SUPDUP
+	T - TELNET
+Option char (E, S, or T): ]
+sprt2:	call	inpchr
+	caie	a, "e
+	 cain	a, "E
+	  jrst [type	[either]
+		setzm	nosup
+		setzm	notlnt
+		jrst	cmdpau ]
+	caie	a, "s
+	 cain	a, "S
+	  jrst [type	[SUPDUP]
+		setzm	nosup
+		setom	notlnt
+		jrst	cmdpau ]
+	caie	a, "t
+	 cain	a, "T
+	  jrst [type	[TELNET]
+		setom	nosup
+		setzm	notlnt
+		jrst	cmdpau ]
+	jrst	sprtlp
+
+subttl	Host level commands
+
+echotg:	skipe	openp
+	 skipe	supdpp
+	  jrst	cmdnop
+	type	[Echo requested at ]
+	skipl	echop
+	 jrst [	type	[remote host]
+		setom	echop
+		skipl	nprotp
+		 jrst [	neto	[204]
+			jrst	cmdpau ]; old protocol ECHO
+		telcmd	[IAC DO ECHO]
+		jrst	cmdpau ]
+	type	[local host]
+	setzm	echop
+	skipl	nprotp
+	 jrst [	neto	[203]
+		jrst	cmdpau ]	; old protocol NO ECHO
+	telcmd	[IAC DONT ECHO]
+	jrst	cmdpau			; and return
+
+metize:	skipl	openp
+	 jrst	cmdnop
+	type	[<META> key]
+	setom	metakp
+	jrst	cmdret
+
+wholin:	skipge nprotp
+	 skipl	openp
+	  jrst	cmdnop
+	skipe	supdpp
+	 jrst	cmdnop
+	type	[Status]
+	telcmd	[IAC AYT]
+	jrst	cmdret			; and return
+
+sndatt:	skipge	openp			; ICP done?
+	 skipe	supdpp			; or in SUPDUP ?
+	  jrst	cmdnop
+	type	[ATTN]
+	.netint netoch,			; send an interrupt
+	skipl	nprotp			; new protocol?
+	 jrst [	telcmd	[201 200]
+		jrst	cmdret ]	; old protocol break
+	telcmd	[IAC IP IAC DM]
+	setzm	ttoctr			; and buffer count
+	move	tt, [441000,,ttobuf]	; reset buffer pointer
+	movem	tt, ttoptr
+	jrst	cmdret			; and return
+
+kiljob:	skipl	openp			; open ?
+	 jrst	cmdnop			; nope, ding!
+	skipe	supdpp
+	 jrst	kilsup
+	skipl	nprotp			; new protocol?
+	 jrst	cmdnop			; nope, lose
+	type	[Kill job at foreign host]
+	jsp	c, confrm		; demand confirmation!
+	call	unsupr
+	telcmd	[IAC DO LOGOUT]
+	setom	logoup			; remember this was asked for
+	jrst	cmdret			; and return
+
+kilsup:	call	unsupr			; leave image mode, so can ^Z
+	neto	[300]
+	neto	[301]
+	caia
+quisup:	 call	unsupr
+	$call	finish,[#netoch]	; send it out and wait
+	 jfcl				; we tried
+	.logout 1,			; normal termination
+
+sndbrk:	skipge	nprotp			; new protocol?
+	 skipl	openp
+	  jrst	cmdnop
+	type	[Break]
+	.netint	netoch,			; send network interrupt (INS)
+	telcmd	[IAC BRK IAC DM]
+	jrst	cmdret			; and return
+
+subttl	Local level commands, confirmations, etc.
+
+proced:	type	[Proceed, return TTY to DDT]
+	aos	(p)			; double skip return
+	aos	(p)
+	jrst	cmdpau
+
+zapscn:	type	[C]
+	jrst	cmdret
+
+cntrlz:	setom	piatyf
+	move	a, [-2,,[.saifpir,,[1_ttyich]	; clear terminal interrupt
+			 .sipirqc,,[%pic.z]]]	; fake a control-Z
+	.suset	a
+	return					; don't unhome now
+
+cunder:	skipl	frnhst
+	 call	unhome			; must do it here, so output from
+	type	[^_]			; foreign host not screwed
+	$call	ttyesc,[#ttyich]
+	 jfcl
+	return
+
+quit:	type	[Quit]
+	skipe	openp
+	 jsp	c, confrm
+	skipe	supdpp
+	 jrst	quisup
+	.logout 1,
+
+confrm:	type	[ [Confirm]]
+	call	inpchr
+	andi	a, %txasc
+	caie	a, 40
+	 cain	a, ^M
+	  movei	a, "Y
+	caie	a, "y
+	 cain	a, "Y
+	  jrst [type	[ Yes]
+		jrst	(c) ]
+	type	[ No]
+	jrst	cmdfls
+
+escset:	type	[Intercept character = ]
+	call	inpchr			; get new interrupt character
+	tyo	a			; echo
+	movem	a, cmdesc
+	jrst	cmdpau
+
+linedt:	type	[Line editor o]
+	setcmb	a, linedp
+	jumpe	a, cmdoff
+	setzm	linctr
+	move	tt, [440700,,linbuf]
+	movem	tt, linptr
+	jrst	cmdon
+
+padding:type	[Padding o]
+	setcmb	a, nopad
+	jumpn	a, cmdoff
+	jrst	cmdon
+
+10tabs:	skipge	supdpp
+	 jrst	cmdnop
+	type	[10 character tabs o]
+	setcmb	a, 10tabp		; complement Multix tabs
+	jumpe	a, cmdoff
+	jrst	cmdon
+
+prmtog:	type	[Prompting o]
+	setcmb	a, nprmpt
+	jumpe	a, cmdon
+	jrst	cmdoff
+
+mortog:	type	[More processing o]
+	setcmb	a, morep		; complement **More** hacking
+	jumpe	a, cmdoff
+	jrst	cmdon
+
+walltg:	type	[Wallpaper file ]
+	setcmb	a, wallp		; toggle wallpaper flag
+	jumpe	a,[
+		type	[closed]
+		.close	wallch,
+		jrst	cmdpau ]
+	fn1==<sixbit /NETOUT/>
+	fn2==<sixbit />/>
+	$call	open,[[.uao,,wallch], [sixbit /DSK/], [fn1], [fn2]]
+	 jrst [	type	[cannot be opened]
+		setzm	wallp
+		jrst	cmdpau ]
+	type	[opened]
+	jrst	cmdpau
+
+gstopf:	type	[^G/^S stopping o]
+	setcmb	a, gstopp
+	jumpe	a, cmdoff
+	jrst	cmdon
+
+supimg:	type	[Super image output o]
+	setcmb	a, supero
+	jumpe	a, cmdoff
+cmdon:	tyo	["n]
+	jrst	cmdpau
+cmdoff:	tyo	["f]
+	tyo	["f]
+cmdpau:	movei	tt, 30.		; wait a little before wiping it out
+	skipl	frnhst		; but only if not connected
+	 .sleep	tt,
+	jrst	cmdret
+
+jtglce:	skipe	openp
+	 skipe	supdpp
+	  jrst	cmdnop
+	type	[Just toggle crufty echo o]
+	setcmb	a, echop
+	jumpe	a, cmdon		; we are ON, foreign host OFF
+	jrst	cmdoff
+
+ttyotg:	.reset	ttyoch,			; flush output
+	type	[TTY output o]
+	setcmb	a, ttyop		; toggle TTY output
+	move	b, a
+	ior	b, supres
+	ior	b, suprcg
+	movem	b, ttyoff
+	jumpe	a, cmdon		; don't suppress it
+	setzm	ttoctr
+	move	tt, [441000,,ttobuf]
+	movem	tt, ttoptr
+	jrst	cmdoff
+
+; Here to restore cursor position after a command
+
+cmdret:	skipge	frnhst
+	 jrst [	type	[A]
+		return ]
+	call	rstrol
+	calret	unhome
+
+setrol:	movsi	tt, %tsrol
+	andcam	tt, ttysts
+	and	tt, sroll
+	iorm	tt, ttysts
+	calret	settty
+
+rstrol:	movsi	tt, %tsrol
+	andcam	tt, ttysts
+	and	tt, roll
+	iorm	tt, ttysts
+	calret	settty
+
+unsupr:	movsi	tt, %tssii		; turn off image when trying to
+	andcam	tt, ttysts		; quit (always on otherwise)
+
+settty:	$call	ttyset,[#ttyoch, ttyst1, ttyst2, ttysts]
+	 .lose	%lssys
+	return				; and return
+
+subttl	Handle interrupts on NET and TTY output channels
+
+; Network output interrupt
+
+ntoser:	$call	whyint,[#netoch][b, c]
+	 .lose	%lssys
+	skipn	isarpa
+	 jrst	ntos1
+	skipn	usetcp
+	 jrst	ntos2
+	caie	b, %wytcp
+	 .value
+	caie	c, %ntopn
+	 cain	c, %ntwrt
+	  jrst	tsret
+	caie	c, %ntcls
+	 cain	c, %ntclu
+	  jrst	ntocls
+	caie	c, %ntclx
+	 cain	c, %ntcli
+	  jrst	ntocls
+	jrst	ntobad
+
+ntos2:	caie	b, %wynet
+	 .value
+	movei	c, (c)
+	caie	c, %nsopn		; OPN and RFNM wait are OK
+	 cain	c, %nsrfn
+	  jrst	tsret
+	caie	c, %nscls
+	 jrst	ntobad
+	jrst	ntocls
+
+ntos1:	caie	b, %wycha
+	 .value
+	cain	c, %csopn		; bad CHAOS state
+	 jrst	tsret
+	cain	c, %cscls
+	 jrst	ntocls
+	jrst	ntobad
+
+ntocls:	setzm	openp			; ignore until NTI closed, too
+	jrst	tsret
+
+ntobad:	setzm	openp
+	movei	a, netoch
+	jrst	netluz
+
+; TTY **More** interrupt
+
+ttoser:	$call	whyint,[#ttyoch]
+	 .lose	%lssys
+	skipge	openp
+	 skipge	morinh			; **More**'s inhibited?
+	  skipn morep			; taking **More**'s?
+	   jrst tsret			; nope, flush the int
+	type	[**More**]
+
+	$call	iot,[#ttyich][a][#%tipek\%tinwt]
+	 .lose	%lssys
+	cain	a, 40			; space?
+	 call	inpchr
+	type	[A]
+	jrst	tsret			; and flush it
+
+subttl	Output subroutines
+
+; OUTSTR -- output ASCIZ string whose addr is in RH TT
+
+outstr:	push	p, a			; get a temp
+	hrli	tt, 440700		; cons byte ptr
+outst1:	push	p, tt			; save it, too
+	push	p, tt			; twice, please
+	movei	tt, 0			; get length in tt
+outst2:	ildb	a, (p)
+	caie	a, 0
+	 aoja	tt, outst2
+	pop	p, a			; flush modified ptr
+	pop	p, a			; get good one
+	$call	siot,[#ttyoch, a, tt]
+	 .lose	%lssys
+	pop	p, a
+	return
+
+; OUTHST -- like OUTSTR, except omits "MIT-" if at start of string
+
+outhst:	push	p, a
+	hrli	tt, 440700
+	move	a, (tt)
+	trz	a, 377			; leave only 4 chars
+	camn	a, [asciz /MIT-/]
+	 hrli	tt, 100700
+	jrst	outst1
+
+; OUTSIX -- output sixbit word in TT
+
+outsix:	push	p, a			; get a temp
+outsx1:	rot	tt, 6
+	skipn	a, tt
+	 jrst [	pop	p, a
+		return ]
+	andi	a, 77
+	addi	a, 40
+	tyo	a
+	trz	tt, 77
+	jrst	outsx1
+
+subttl	NETWRK setup, the end.
+
+; Set options for the NETWRK package, and insert it
+
+prompt:	[asciz /Open connection to /]
+
+$$ARPA==    1		; ARPAnet hosts and routines
+$$CHAOS==   1		; CHAOSnet hosts and routines
+$$TCP==     1		; TCP also spoken
+$$HST3==    1		; Hosts3 format
+$$HOSTNM==  1		; Host name file lookup routines.
+$$SYMGET==  1		; Incremental symbol reader
+$$SYMLOOK== 1		; Name lookup routine
+$$HSTSIX==  1		; Sixbit host name abbreviation
+$$HSTCMP==  1		; Host comparison
+$$ICP==     1		; Initial Connection Protocol
+$$ANALYZE== 1		; Network Error Analysis Routine
+$$PROMPT==  0		; My prompt please
+
+if1,.insrt SYSTEM;CHSDEF >
+.insrt SYSENG;NETWRK >
+
+; Generate constants
+
+	variab				; variables
+...lit:	consta				; constants
+
+hsttab=	<.\1777>+1			; start of HSTTAB mapped pages
+
+	end	telsup

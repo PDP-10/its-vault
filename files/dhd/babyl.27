@@ -1,0 +1,236 @@
+;;; This turns a babyl file into Scribe formst.
+
+(defun toplevel ()
+
+       (<- terminal-io ':clear-screen)
+       (while-font-changed (fonts:hl12bi terminal-io)
+			    (format terminal-io "~100:tBABYL -> Scribe translator~2%"))
+       (while-font-changed (fonts:hl12 terminal-io)
+			   (toplevel1)))
+
+(defun toplevel1 ()
+       (cond ((not (*catch 'si:top-level
+			   (progn
+			     (<- terminal-io ':fresh-line)
+			     (apply 'parse-file 
+				    (parse-file-names (prog1 (rd "#") (terpri)))))))
+	      (toplevel1))))
+
+(comtab-store #/ '|right arrow hack|)
+
+(defun |right arrow hack| ()
+
+       (font-change terminal-io fonts:cptfont)
+       (|insert character| char)
+       (font-change terminal-io '*))
+
+;;; inputoutput
+
+(defun parse-file-names (chars)
+
+  (cond ((null chars) (*throw 'si:top-level t))
+	(t
+	  (do& ((char &pop chars)
+		(char-list (ncons char) (cons char char-list)))
+	       (cond ((= char #/)
+		      (return (list (implode (reverse char-list))
+				    (implode (nthcdr (length char-list) chars))))))))))
+
+;;; this does error checking, handing the result to hack-babyl.
+
+(defun parse-file (&optional input output)
+
+       (cond ((null input)
+	      (format t "~&Right arrow missing from command - try again.~%"))
+	     ((not (file-exists-p input))
+	      (format terminal-io "~&File /"~a/" not found.~%" input))
+	     ((probef output)
+	      (format terminal-io "~&Output file already exists.~%"))
+	     (t (unwind-protect
+		  (hack-babyl (setq input (open input 'in)) 
+			      (setq output (open output 'out)))
+		  (close input)
+		  (close output))))
+       nil)
+
+;;; This calls the various formatting routines, in their order.  See commentary below
+;;; for how this works.
+
+(defun hack-babyl (input output)
+
+       (princ *default-beginning* output)
+       (setq infile (string-downcase (funcall input ':name))
+	     outfile (string-downcase (funcall output ':name)))
+       (while-font-changed (fonts:hl12b terminal-io)
+			   (princ infile)
+			   (typewriter "")
+			   (princ outfile)
+			   (terpri))
+       (format output "@string(filename=`~A')" infile)
+       (setq charcount 0.)
+       (do ()
+	   (nil)
+	   (cond 
+	     ((and
+		(eliminate-junk input output)
+		(parse-header input output)
+		(parse-message input output)) t)
+	     (t (return t)))))
+
+;;; get-line gets a line from the input file, checking for atsigns.
+;;; Atsigns are handled using a rather over-simple algorithim, hacked below.
+;;; (Scribe-Hackers messages will @i[fail!])
+
+(declare (special charcount))
+
+(defun get-line (input)
+
+       (*catch 'null
+	       (do& ((line (readline input))
+		     (len (- (string-length line) 1.))
+		     (i 0. (1+ i))
+		     (*blurch*
+		       (and (null line) (*throw 'null nil)))
+		     (*bletch*
+		       (and (minusp len) (*throw 'null "")))
+		     (string (string-append "" (hack-@ (aref line i) line i))
+			     (string-append string (hack-@ (aref line i) line i))))
+		    (setq charcount (+ charcount 1.))
+		    (cond ((= i len) (return string))
+			  ((kbd-char-available)
+		   (hack-char-interrupt (<- terminal-io ':tyi)))))))
+
+;;; hack-@ does the actual checking for atsigns.
+
+(defun hack-@ (char line i)
+
+       (cond ((= char #/@)
+	      (cond ((string-search-set '(#/[ #/{ #/( #/<) line) "@")
+		    (t "@@")))
+	     (t char)))
+
+(defun hack-char-interrupt (char)
+
+       (cond ((= char #/t)
+	      (format terminal-io 
+		      "~&~D: ~A~%"
+		      charcount
+		      line))
+	     (t (break "What did you want, Master?"))))
+
+;;; Eliminate-junk reads in the file until the end of the internal BABYL information,
+;;; which comes before the header of each message.
+
+(defun eliminate-junk (input output)
+
+       (do ((line (get-line input)
+		  (get-line input)))
+	   (nil)
+	 (cond ((string-equal line "*** EOOH ***")
+		(return t))
+	       ((null line) (return nil)))))
+
+;;; parse header determines the subject of the message, and puts that on the top of the
+;;; page.  Then, it prints out the header normally, in a format environment.
+;;;
+;;; Date: 23-Aug-80 13:34 EDT 
+;;; From: DHD at MIT-AI (David Hodgson Dennis)
+;;; To:   SMS at MIT-XX
+;;; Re:   Sigh, how could I figure out a subject line for @i[this] one?
+;;;
+;;; When are you coming up?  Are you coming up?  Will I @i[ever] see you again?
+;;;
+
+(defun parse-header (input output &aux subject)
+
+       (setq subject "Untitled Masterpiece")
+       (do& ((line (get-line input)
+		   (get-line input))
+	     (header (ncons line) (cons line header)))
+	    (cond ((null line)
+		   (format terminal-io "~&>>WARNING:  End of file within header.")
+		   (return nil))
+		  ((string-equal line "")
+		   (format output "@mail{~A}" subject)
+		   (print-header (reverse header) output)
+		   (return t))
+		  ((string-equal (substr line 0. 3.) "Re:")
+		   (setq subject (string-trim '(#\space) (substring line 4.))))))
+       t)
+
+(defun print-header (header output)
+
+       (format output "~%@begin[format]")
+       (do& ((line &pop header))
+	    (format output "~%~A" line))
+       (format output "@end[format]~%"))
+
+;;; The message is the hardest thing to parse because it is much more unstructured
+;;; then the other parts.
+
+(defun parse-message (input output &optional (indentation 0.) &aux indentation-pdl)
+
+       (setq indentation-pdl '(0.))
+       (do ((line (get-line input)
+		  (get-line input)))
+	   ((or (null line) (string-equal (substr line 0. 1.) ""))
+	    t)
+
+	 (setq current-indentation (string-search-not-set '(#\space) line))
+	 (cond ((null current-indentation) 
+		(hack-line-or-graphic-hack line output))
+	       ((= current-indentation (car indentation-pdl))
+		(output output line))
+	       ((< current-indentation (car indentation-pdl))
+		(setq indentation-pdl (cdr indentation-pdl))
+		(output output line "@end[quotation]"))
+	       ((> current-indentation 10.) 
+		(setq indentation-pdl (cdr indentation-pdl))
+		(output output line "@end[quotation]"))
+	       (t (setq indentation-pdl (cons current-indentation indentation-pdl))
+		  (funcall output ':line-out "@begin[quotation]")
+		  (hack-internal-msg-header input output line)))))
+
+(defun output (output line &optional (initial-string nil))
+
+       (cond (initial-string
+	       (funcall output ':line-out initial-string)))
+       (funcall output ':line-out (string-trim '(#\space) line)))
+
+(defun hack-internal-msg-header (input output line)
+
+       (cond ((string-search ":" line)
+	      (format output "@begin[format]~%")
+	      (do ((line line (get-line input)))
+		  ((not (string-search ":" line))
+		   (output output line "@end[format]"))
+		  (output output line)))
+	     (t (output output line))))
+
+(defun hack-line-or-graphic-hack (line output)
+
+       (cond ((string-equal line "") (terpri output))
+	     ((string-equal (substr line 0. 5.) "-----")
+	      (output output "format[@tabclear[]@ux[  @>]]"))
+	     (t (output output line))))
+
+;;; These are the SCRIBE definitions that must come out in the file's beginning.
+
+(setq *default-beginning* '|@comment{
+.
+	Generated Scribe File -- This can be reaped without (much) pain
+(If it's left on disk for more then an hour or two, it's probably a mistake...)
+
+}
+@make(text)
+@device[dover]
+@style[font helvetica10]
+@style[spacing 1]
+@pagefooting[center="_ @value[page] _"]
+@modify[heading,facecode i]
+
+@textform[mail=`@pageheading[left="@begin[ux]@p{@value{filename}}",
+			     right="@p@parmquote(text)@end[ux]"]
+		@newpage()
+		@heading@parmquote(text)']
+|)

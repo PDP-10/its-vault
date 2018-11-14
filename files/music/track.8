@@ -1,0 +1,304 @@
+;; -*- Mode: Lisp ; Package: User -*-
+;--------------------------------------------------------------------------------
+
+"This code lets you record improvisation from the clavier.
+The file MUSIC;CLVR must be loaded first.
+(CLVR-INIT)					;Sets everything up.
+(RECORD-TRACK)					;Waits for you to play something, then
+						; records and returns a track
+						; of clavier improvisation.
+(PLAY-TRACK track)				;Plays back the track.
+(PLAY track)					;Plays it back while recording
+						; -- returns the new one.		
+
+(MERGE-TRACKS t1 t2 ...)			;Merge some tracks of improvisation.
+
+(FASTER track n)				;Returns a new track N times faster.
+(RESPEED track num &optional denom)		;Returns a new track which plays 
+						; num/denom slower than the old one."
+
+;--------------------------------------------------------------------------------
+
+(defstruct (track)
+  pitches
+  durations)
+
+(defun create-track (pitch-list dur-list length)
+  (make-track
+    pitches (fillarray (make-array nil 'art-q length)
+		       pitch-list)
+    durations (fillarray (make-array nil 'art-q length)
+		       dur-list)))
+
+;By wiring cells at 1/2-page intervals, we can wire the entire ART-Q.
+(defun wire-array (array &optional (wire-p t))
+  (do& ((i &step 0 128. (- (array-length array) 128.)	;Wire all but last half-page
+	   &return (si:wire-page (ap-1 array (1- (array-length array))))))	
+						; And page of last word
+     (si:wire-page (ap-1 array i) wire-p)))	
+
+(defun wire-track (track  &optional (wire-p t))
+  (wire-array (pitches track) wire-p)
+  (wire-array (durations track) wire-p))
+
+(defmacro with-track-wired (track &rest body)
+  `(unwind-protect
+     (progn
+       (wire-track ,track)
+       ,@body)
+     (wire-track ,track nil)))
+
+
+(defun record-track (&optional (max-pitches 1000)	;512. unless otherwise specified
+		     &aux (n-pitches 1)
+		     (pitches (make-array nil 'art-q max-pitches nil '(0)))
+		     (durs (make-array nil 'art-q max-pitches nil '(0)))
+		     (track (make-track
+			      pitches pitches
+			      durations durs))
+		     last-in-time)
+ (with-track-wired track
+      (clvr-open)
+;Wait for first note to get played.
+  (do () ((clvr-listen)
+	  (setq last-in-time (time))
+	  (array-push pitches (clvr-tyi))))
+						
+  (do& ((present-time &each (time)))
+     (if* (clvr-listen)
+	  (array-push pitches (clvr-tyi))
+	  (array-push durs (time-difference present-time last-in-time))
+	  (setq last-in-time present-time)
+	  (incr n-pitches))
+     (if* (equal  (kbd-tyi-no-hang) #/ )		;Quit when a space is typed.
+	  (array-push durs (time-difference present-time last-in-time))
+	  (clvr-close)
+	  (return (make-track
+		    pitches (fillarray (make-array nil 'art-q n-pitches)
+				       (listarray pitches))
+		    durations (fillarray (make-array nil 'art-q n-pitches)
+					 (listarray durs))))))))
+
+
+(defun play-and-wait (pitch dur &aux (next-out-time (%24-bit-plus (time) dur)))
+    (clvr-tyo pitch)
+;If the first time through, the current time is  than next time, send it , AND
+;If the next time through the time interval is 0, play that, and so on
+    (do ()					;Do nothing, unless (until)
+	((or (zerop dur)		;Immediately after last event
+	     (time-lessp next-out-time (time))))))	; or after current time?
+
+(defun play-track (track &aux (pitches (pitches track))
+		                           (durs (durations track)))
+  (with-track-wired track			;Wire track, unwire before leaving.
+  (do& ((i &count0 (array-length durs))
+	(dur &each (aref durs i)))		
+    (if (kbd-char-available) (return nil))
+    (play-and-wait (aref pitches i) (aref durs i)))))
+
+;--------------------------------------------------------------------------------
+;Simultaneous play and record, old version, no arrays or page-wiring
+(defun PLAY (&optional play-track (max-pitches 1000) &aux next-out-time
+	     (n-pitches 1)
+		     (pitches (make-array nil 'art-q max-pitches nil '(0)))   ;fill-pointers
+		     (durs (make-array nil 'art-q max-pitches nil '(0)))
+		     (track (make-track
+			      pitches pitches
+			      durations durs))
+		     last-in-time
+		     play-pitches play-durs play-length (play-index 0) done-playing?)
+  (if (null play-track)
+      (record-track max-pitches)		;If nothing to play back, just record
+						
+				;Otherwise, play and record simultaneously.
+ (with-track-wired track			;Wire both input and output tracks.
+ (with-track-wired play-track
+      (setq play-pitches (pitches play-track)
+	    play-durs (durations play-track)
+	    play-length (array-length play-durs))
+
+      (clvr-open)
+;--------------------------------------------------------------------------------
+;DONT wait for first note to get played in -- but play out the first note.
+     (setq last-in-time (time))
+     (array-push pitches 377)			;Start with a rest on input voice.
+     (clvr-tyo (aref play-pitches play-index))
+;Sync out-time with in-time:
+     (setq next-out-time (%24-bit-plus last-in-time (aref play-durs play-index)))
+     (incr play-index)      
+;--------------------------------------------------------------------------------
+;This section assembles the activity being recorded.
+  (do& ((present-time &each (time)))
+     (if* (clvr-listen)
+	  (array-push pitches (clvr-tyi))
+	  (array-push durs (time-difference present-time last-in-time))	
+						;Duration of previous clavier event.
+	  (setq last-in-time present-time)
+	  (incr n-pitches))
+;--------------------------------------------------------------------------------
+;This section plays out the previously recorded sound.
+     (if (not done-playing?)
+	 (do ((current-time present-time 0)
+	      (play-time next-out-time (aref play-durs play-index)))
+
+;If the first time through, the current time is  than next time, send it , AND
+;If the next time through the time interval is 0, play that, and so on
+
+	     ((time-lessp current-time play-time))
+	   (clvr-tyo (aref play-pitches play-index))
+	   (setq next-out-time (%24-bit-plus next-out-time
+					     (aref play-durs play-index)))
+	   (incr play-index)
+	   (if* (not (array-in-bounds-p play-durs play-index))
+		(setq done-playing? t)
+		(return nil))))
+;--------------------------------------------------------------------------------
+     (if* (equal  (kbd-tyi-no-hang) #/ )		;Quit when a space is typed.
+	  (array-push durs (time-difference present-time last-in-time))
+						;Duration of final clavier event.
+	  (clvr-close)
+	  (return (make-track
+		    pitches (fillarray (make-array nil 'art-q n-pitches)
+				       (listarray pitches))
+		    durations (fillarray (make-array nil 'art-q n-pitches)
+					 (listarray durs))))))))))
+
+;--------------------------------------------------------------------------------
+;--------------------------------------------------------------------------------
+(defun merge-track (initial augend &aux
+		    (opitches (pitches initial))
+		    (odurs (durations initial))
+
+		    (apitches (pitches augend))
+		    (adurs (durations augend))
+
+		    (new-length (+ (array-length odurs) (array-length adurs)))
+		    (new-pitches (make-array nil 'art-q new-length))
+		    (new-durs (make-array nil 'art-q new-length))
+		    
+		    (oindex 0) (aindex 0)
+		    (owait 0)
+		    (await 0))
+
+  (do& ((i &count0 new-length
+	   &return (make-track
+		     pitches new-pitches
+		     durations new-durs)))
+    (if (and (array-in-bounds-p odurs oindex)
+	     ( owait await))			;If there's less time left for
+	(progn					; the pitch on track 1 ...
+	  (aset (aref opitches oindex) new-pitches i)	;Track 1 updates
+	  (setq await (- await owait)		;Update timers for both tracks.
+		owait (aref odurs oindex))
+	  (aset (min owait await) new-durs i)	;Duration depends on which will follow.
+	  (incr oindex))
+
+	(aset (aref apitches aindex) new-pitches i)	;Otherwise, converse for other voice.
+	(setq owait (- owait await)
+	      await (aref adurs aindex))
+	(aset (min owait await) new-durs i)
+	(incr aindex))))
+
+(defun merge-tracks (first second &rest tracks)
+  (if (null tracks)
+      (merge-track first second)
+      (merge-tracks first
+		    (apply #'merge-tracks (push second tracks)))))
+
+;--------------------------------------------------------------------------------
+
+"Change the speed of the track.  Durations are lengthed by NUM/DENOM, both
+of which must be integers.  Returns a new track with the same pitches.
+Note: The remainder of divisions is carried forward, to ensure sync is
+maintained between this track and any others which synced with it at the
+slower speed."
+
+(defun respeed (track num &optional (denom 1)
+		&aux (durs (durations track))
+		(new-durs (make-array nil 'art-q (array-length durs)))
+		(remainder 0))
+  (do& ((i &count0 (array-length durs)
+	   &return (make-track			;Returns a new track --
+		     pitches (pitches track)	; same pitches as old track,
+	             durations new-durs))	; new durations.
+	(dur &each (+ (* num (aref durs i)) remainder))	;Forward previous remainder
+	(new-dur &each (//  dur denom)))
+
+     (setq remainder (\ dur denom))
+     (if* ( remainder (// denom 2))		;Truncation -- remainder is always 
+	  (incr new-dur)			; between -denom/2 and denom/2
+	  (decr remainder denom))
+     (aset new-dur new-durs i)))			;Write new duration.
+
+"Multiply the speed of the track by the (integer) factor.  Returns a new track."
+(defmacro faster (track times)
+  `(respeed ,track 1 ,times))
+
+;--------------------------------------------------------------------------------
+
+"Converts melody strings created by READ-MELODY --
+  which are a list of the form (<pitches dur> <pitches dur> ...) --
+ into a standard TRACK of pitches and durations."	
+
+(defun CONVERT-MELODY (melody &optional (factor 1) (silence 2)	;Default silence
+						; between notes is 1/30. second
+
+			      &aux pitches num (this-silence silence)
+			      this-dur
+			      pitch-list dur-list (npitches 0) )
+  (do& ((melody-event &pop melody
+		      &return (create-track (reverse pitch-list)
+					    (reverse dur-list)
+					    npitches)))
+     (setq pitches (pop melody-event)
+	   num (pop melody-event))
+
+     (setq this-dur (* factor num))		;If note is very short, the silence is 
+     (if ( this-dur silence)			; 1/2 the length, or 0.
+	 (setq this-silence (// this-dur 2)))
+     (setq this-dur (- this-dur this-silence))
+
+;If this is a list of pitches (chord), all pitches after the first go on
+;Leave them on for a time proportional to the current fraction, and FACTOR.
+     (do& ((delay this-dur 0)			;immediately.
+	   (pitch &pop pitches))
+       (incr npitches)
+       (push (pitch-on pitch) pitch-list)
+       (push delay dur-list))
+;These zero-duration pitch-off's will be converted to short silences via SPACE.
+     (do& ((delay this-silence 0)
+	   (pitch &pop pitches))
+       (incr npitches)
+       (push (pitch-off pitch) pitch-list)
+       (push delay dur-list))))
+
+;--------------------------------------------------------------------------------
+;Takes a melody in the same form CONVERT- takes, and swings it by doubling
+; the "odd" durations.
+
+(defun Swing (melody &optional (swing-time 1)	;Every group this long is swung
+						; -- must be even.
+	      (init-phase 0)			;Initial phase of song
+	      &aux melody-out main-num)
+  (setq melody (mapcar '(lambda (x)
+			  (list (car x) (// (cadr x) swing-time)))
+		       melody))			;Normalize to swing-time = 1
+
+  (do& ((event &pop melody			;Renormalize back
+	       &return  (mapcar '(lambda (x)
+				   (list (car x) (// (* (cadr x) swing-time) 2)))
+				(reverse melody-out)))
+	(pitches &each (pop event))
+	(num &each (car event))
+	(num-accum (+ init-phase num) (+ num-accum num)))
+
+     (setq main-num (* 3 num) )			;Basic multiplier is 3/swing-time
+
+     (if (oddp num)				;If half a swing is present,
+	 (setq main-num
+	       (if (oddp num-accum)
+		   (+ main-num 2)			; if odd, long beat
+		   (+ main-num 1))))			; else short beat.
+
+     (push (list pitches main-num) melody-out)))
+;--------------------------------------------------------------------------------

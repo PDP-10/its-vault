@@ -1,0 +1,475 @@
+!* -*- TECO -*- !
+
+!~Filename~:! !Macros for KMP's version of RMail!
+VMAIL
+
+!& Setup VMAIL Library:! !S Setup our winning stuff!
+1,m(m.m &_Get_Library_Pointer)KMPTIME"e
+    m(m.m Load_library) EMACS;TIME_:EJ'
+0M.V VMAIL_Peruse_Mode		    !* Make a scrap variable !
+f[DFILE
+fshsname:f6[1			    !* Get HSNAME !
+fsxuname:f6[2			    !* Get XUNAME !
+etDSK:_1;_2_XMAIL		    !* Default is DSK: HSNAME; XUNAME XMAIL!
+FS DFILE M.V VMAIL_^O_Default_Filename    !* Save it away for later !
+FS DFILE M.V VMAIL_^O_File_Default_0      !* Set 0 to mean XMAIL file !
+0
+
+!& VMAIL:! !VMAIL:! !^R VMail:! !^R VMAIL - A souped up version of RMAIL  !
+!* Precomma arg means running a standalone job (tells ^X to return to DDT !
+!* instead of returning to EMACS).                                        !
+!* Postcomma arg is decomposed by bit as follows...                       !
+!*                                                                        !
+!* Binary  Octal  Decimal   Meaning                                       !
+!*                                                                        !
+!* 00000    00.     00      Run VMAIL normally, no fancy switches         !
+!* 00001    01.     01       "    "     "        "   "     "              !
+!* 00010    02.     02      Run APNews                                    !
+!* 00100    04.     04      If APNews was run, don't run VMail            !
+!* 01000    10.     08      Run APNews only on a printing tty             !
+!*                                                                        !
+
+:i*[2			    !* q2 gets string arg !
+fF[0			    !* q0 gets number of args !
+[1				    !* q1 gets arg2 !
+
+q0&2"n 1 M.V VMAIL_Standalone_Job'
+    "# 0 M.V VMAIL_Standalone_Job'
+
+q0&1"n				    !* If a post comma arg given... !
+   q1&8*fsrgetty"e		    !* With 8 set, AP News only on printing!
+      q1&2"n			    !* If its 2 bit is set !
+         M(M.M Run_Library)KMP;:EJ_APNEWSAP_News
+         q1&4"n ''''
+
+:i*VMAIL_[..J
+:i*VMAIL[Editor_Name
+
+M.VVMAIL_Message_Number
+M.VVMAIL_Number_of_Messages
+
+M.V MM_#_RMAIL_;
+M.V MM_#_RMAIL_\
+M.V MM_#_RMAIL_?
+M.V MM_#_RMAIL_^A
+M.V MM_#_RMAIL_^F
+M.V MM_#_RMAIL_^I
+M.V MM_#_RMAIL_^K
+M.V MM_#_RMAIL_^O
+M.V MM_#_RMAIL_^Q
+M.V MM_#_RMAIL_^X
+M.V MM_&_Set_Mode_Line
+M.M #_VMail_? [ MM_#_RMAIL_?
+M.M #_VMail_; [ MM_#_RMAIL_;
+M.M #_VMail_\ [ MM_#_RMAIL_\
+M.M #_VMAIL_^A[ MM_#_RMAIL_^A
+M.M #_VMAIL_^F[ MM_#_RMAIL_^F
+M.M #_VMAIL_^I[ MM_#_RMAIL_^I
+M.M #_VMAIL_^K[ MM_#_RMAIL_^K
+M.M #_VMAIL_^O[ MM_#_RMAIL_^O
+M.M #_VMAIL_^Q[ MM_#_RMAIL_^Q
+M.M #_VMAIL_^X[ MM_#_RMAIL_^X
+M.M &_VMail_Fancy_Mode_Line[ MM_&_Set_Mode_Line
+:I* f=..j(-1"g0'
+    [..J :I..J[..j_^R] 0: F[^R Enter
+:I*M(M.M &_Set_Mode_Line) 0 F[^R Display
+
+:i* C fs echo display out
+0fs echo active
+
+0fo..Q VMAIL_^X_Break"n
+  @ft Returning_to_previous_VMAIL_invocation
+  0uVMAIL_^X_Break
+  M(M.M Run_Library)RMAIL RMAIL'
+"#
+  0 M.V VMAIL_^X_Break
+  fq2:"g
+    0[VMAIL_Peruse_Mode
+    M(M.M Run_Library)TMACS SRMAIL '
+  "# 
+    q2[VMAIL_Peruse_Mode
+    M(M.M Run_Library)RMAIL RMAIL2 ''
+
+
+!& VMail Fancy Mode Line:! !S Fancy modeline for VMail with message numbers!
+
+M(M.M &_VMAIL_Find_Message_Number) !* Update message number !
+[9[8
+M(M.M &_Get_Current_Time)[6	    !* Get time in q6 !
+qVMAIL_Peruse_Mode[5		    !* Put perusal info in q5 !
+q5"e :i5'			    !* Nullify q5 if not perusing !
+"# :i5_5_'			    !* Show what file we are viewing !
+:I*[7				    !* Put a null string in q7 !
+QModeu8			    !* Get current mode. !
+"N :I8 Q8UMode
+   0FO..Q 8_Mode_Hooku9	    !* Pre-comma arg means new major mode !
+   Q9"N M9'			    !* so run its hook.!
+   +QSwitch_Mode_Process_Options"N
+      M(M.M &_Process_Options)''
+0,5 :g..J[0 F~0VMAIL"n 0'	    !* Return if not an VMAIL mode line !
+0,10:g..Ju0 F~0VMAIL-Shhh"e :i8 Shhh' 
+fsz"e				    !* If No message text!
+  :i..JVMAIL_6_(8_Mode)_[No_Messages]5   !*  then say so!
+  0'				    !*  and return !
+z-b-2"e				    !* Just two chars? !
+  j ((1a-13)(2a-10))"e	    !* CRLF? !
+    :i7_(No_Text)''		    !* Put no-text marker in q7 !
+fsvz"e				    !* At end of file?!
+  fsvb"n
+    (fsz-12)"e			    !* Buffer 12 long? !
+      0f[vb			    !* Move beginning to real beginning !
+      0,10f=*APPEND*
+"e				    !* And equal to *APPEND*<CRLF> !
+        :i..JVMAIL_6_(8_Mode)_[No_Messages]5
+   !* It isn't really there!
+        0'
+      f]vb'
+    [0
+      qVMAIL_Number_of_Messages:\u0
+      :i..JVMAIL_6_(8_Mode)_[0_Messages_-_End_of_File]5
+    ]0
+    0''
+((fsvb)(fsvz))"e		    !* If virtual and actual buffer are same!
+  :i..JVMAIL_6_(8_Mode)_[Viewing_whole_file7]5
+  0'				    !*  then stop here !
+.[1 fn q1j [1 0f[vb 0f[vz	    !* (else) save point and bounds.!
+qVMAIL_Message_Number[2	    !* Put message number in q2 !
+q2:\u2				    !* Change q2 into a string !
+[0
+  qVMAIL_Number_of_messages:\u0
+  :i..JVMAIL_6_(8_Mode)_[Message_2_of_07]5  !* Set up mode line !
+]0
+q1j				    !* Jump to starting point !
+0'
+
+!& Mail Headerp:! !S Check for mail headerness.
+Return 0 if not mail-related, 1 if a mail header, -1 if send header !
+
+[0[1[2				    !* Make qreg space !
+0l .u0 :l .u2 q0j		    !* Make line bounds q0,q2 !
+<1:<fwl> q2-.:"g q0j 0'		    !* Exit if past line end !
+ -1,1a--"n 0;'>		    !* Skip past hyphens !
+(-1,1a-:)*(-1,1a-@)"e q0j 1'  !* Look for @ or : after first word !
+.u0 -fwl r .,q0 x1		    !* Get previous word plus one char in q1!
+f~1[MESSAGE"e q0j -1'	    !* Look for send header !
+q0j 0'
+
+
+!Fill Indented:! !S Remove text overflow from lines by clever reformatting.!
+[0[1[2[3[4[5			    !* Allocate q-reg space !
+
+m.m ^R_Back_to_Indentationu2	    !* Put M-M macro in q2 !
+m.m ^R_Delete_Horizontal_Spaceu3   !* Put M-\ macro in q3 !
+m.m &_Mail_Headerpu4		    !* Put header predicate in q4 !
+
+0l .u0				    !* Start at head of line, put in q0!
+q0f(:\u0 fn0jw )u0 		    !* Come back here when done !
+zj fsshpos"n 13i 10i' q0j	    !* Make file end in a newline !
+
+< .-z;				    !* Loop from point to bottom !
+  <<.-z; m4@; l>		    !* Loop past mail headers !
+   .-z;				    !* Exit if end of buffer !
+   (-1,1a-î)*(-1,1a-):@; l > !* Exit if not a null line !
+
+  !* Record current indentation !
+
+  @m2				    !* Skip past indentation. !
+  fsshposu1			    !* Save offset from head of line in q2!
+  @m3				    !* Get rid of initial indentation !
+
+  !* Collect lines with similar indentation !
+
+  < l m4"n 0;'			    !* Go down. Exit if a header line !
+    @m2				    !* Skip past indentation !
+    (-1,1a-î)*(-1,1a-)@;     !* Stop if null line encountered !
+    .-z;			    !* Stop if eof encountered!
+    fsshpos-q1"e		    !* If same indentation, and not header !
+       -l :l k			    !*    then go back and merge these lines !
+       @m3			    !*     and delete horizontal space.!
+       i_'			    !*         and put in a single space.!
+    "# 0;'			    !*    else exit the loop.!
+  >				    !* Continue inner loop !
+
+  -l @M(M.M ^R_Set/Pop_Mark)	    !* Set a ^R Mark !
+  fs width-2-q1 [Fill_Column    !* Push a new Fill Column!
+  l m(m.m ^R_Fill_Region)	    !* Fill the region (one line) !
+  ]Fill_Column		    !* Pop Fill Column !
+  z-. u5			    !* Save point as offset from end of buffer!
+  q1 @M(M.M ^R_Indent_Rigidly)	    !* Indent region rigidly as it had been!
+  z-q5j				    !* Go back to where we were !
+>				    !* Loop!
+
+q0j				    !* Jump to top again !
+
+< :s::_Re:_;		    !* Search for nn:nn:nn Re: ...stuff... !
+  [1				    !* Push q1 !
+     .u1 :l fsshpos-(fswidth)+2"g !* Go to end of line. See if too long !
+       q1j			    !* Go back where we were a sec ago !
+       -4d .( :l ),. fx1	    !* Delete Re: ... !
+       15.i 12.i iSubject:_ g1	    !* Replace with <CR>Subject: ...stuff...!
+       -l m2 fsshpos( l )<i_>'    !* Make indent match !
+  ]1				    !* Pop q1 !
+>
+
+q0,z 
+
+!# VMAIL ?:!  !S This is a list of options for this RMAIL.
+All commands to RMail are single characters, optionally preceded
+by a numeric argument.
+
+Reading/Briefing
+
+  A		Move to next message and Brief (same as ";NB").
+  B		Prints a brief summary of message(s).
+  T		Type out message (Needed on printing terminals.)
+  W		Widens window to view all messages at once.
+  .		Moves to the first screenful of current message.
+  <Space>	Moves to the next screenful of long message.
+  <Backspace>	Moves to the previous screenful.
+  ^L		Redisplays screen.
+
+Message selection
+
+  F		Find a message with a given text string in it.
+		 (Reads a string from the tty, terminated by <CR>.)
+  J		Jump to the Nth message (default is #1).
+  L		Lists 1st 100 chars of all messages, lets user move
+		 to a different message using ^R mode.
+  N,Linefeed	Moves to next message.
+  P		Moves to previous message.
+
+Message manipulation
+
+  D		Delete message, move to next.
+  ^D		Delete a message, move to previous.
+  U		Undelete (restore) last deleted message.
+
+  ^A		Append current message to previous message.
+  ^K		Kill message (Message cannot be undeleted).
+
+Mail/Send Commands
+
+  M		Send mail to other user(s).
+  R		Send mail replying to sender current message.
+		 C-M-Y yanks current message text into buffer.
+		 Saying 1R instead of R, replies to all recipients.
+  C		Re-enter mail (M or R) without clobbering what 
+		 was there. (For use after accidental exit with ^G).
+  ^Q		Send a message to logged in user.
+  ^F		Forward current message to another user. Reads user
+		 name terminated by a <CR>.
+
+File manipulation
+
+  G		Rewrites file, and gobbles any new mail.
+  O		Adds message to file - reads file name. Message
+		 remains in RMAIL.
+  ^O		Like O except takes a numeric arg and remembers a 
+		 different default for each arg. With no arg, lists
+		 current defaults.
+
+Edit commands
+
+  X		Run an MM command string on message. (Like EMACS M-X).
+  S		Rewrites file but does not exit.
+  ^R		Enters ^R mode.  Altmode returns to option mode.
+  <Altmode>	Executes one TECO command string via the minibuffer.
+
+Message Format commands
+
+  \		Reformat message cleaning up line overflows.
+  <Tab>		Fix up current message turning stray control chars into
+		 what they were meant to be (eg, ^H=Rubout, ^J=Linefeed...)
+
+Exit commands
+
+  I		Rewrites file, and reads a new RMAIL file.
+  Q		Exits, rewriting file.
+  ^X		If in EMACS, running MM RMAIL, exits temporarily.
+		 Next MM VMAIL finds state unchanged.
+  ^C,^Z		Return to DDT temporarily.
+
+Other commands
+
+  K		"Summarize-and-kill mode". (D deletes, P previous,
+		   N or Space next, ? gives help; anything else
+		   exits and is re-read as a normal RMAIL command)
+  ;		Reads rest of line and executes without redisplay.
+  <digit>	Argument to next command (usually allow repetition)
+  Z		Sets arg to largest possible value for that command.
+
+  ?,^_H		Prints this text.  For more help, run INFO.
+!
+
+M.M~DOC~_#_VMAIL_?[1 FT1
+				    !* Display the above documentation !
+
+
+!# VMAIL ^A:! !S Append current message to previous!
+(fsvb)(fsvz)"e		    !* If virtual bounds = actual bounds !
+  :i*VWF	Viewing_Whole_File fs err  0' !* Error out !
+0,fs z fs bound		    !* Widen the boundaries !
+-:s:"l			    !* Find boundary of previous message!
+  :i*NPM	No_Previous_Message fs err 0' !* Error out if none seen!
+d @M(M.M &_RMAIL_Select_Message) !* Delete boundary and select joined msg!
+
+!# VMAIL ^F:! !S Forward current message to another user.!
+[1[2
+:i*Cfs echo display out	    !* Clear echo area !
+1,mm&_Read_LineForward_to:_u1	    !* Get name of person to mail to !
+fq1:"g 0'			    !* If no input, then ignore !
+FF"N
+  1,mm&_Read_LineSubject:_u2	    !* Get subject line if any requested !	
+  fq2:"g :i2Forwarded_Mail''	    !* If no input, then ignore !
+"# :i2Forwarded_Mail'
+f[modified
+1f[noquit
+j iTo:_1
+Subject:_2
+--Text_follows_this_line--
+
+.u2				    !* Mark our location !
+@M(M.M^R_Set/Pop_Mark)		    !* Set a mark!
+ZJ 4@M(M.M^R_Indent_Rigidly)	    !* Indent !
+M(M.M&_Mail_Buffer)		    !* Mail buffer !
+-4@M(M.M^R_Indent_Rigidly)	    !* Undent !
+0,q2K J				    !* Restore the world !
+:i*CSent_to_1
+fs echo display out0fs echo active	    !* Acknowledge the mailing !
+0
+
+!# VMAIL ^I:! !S Reformat text in current message!
+
+j				    !* Go to top of message !
+< :sî;		    !* Look for stray linefeeds !
+  rd				    !* Delete them !
+  fshpos[0
+  i
+ q0<i_> r 			    !* Insert carriage return and whitespace !
+>
+j
+< :s; 2r2d >			    !* Search for ^H and treat as rubouts !
+j 
+< :sî;		    !* Search for stray ^Ms !
+  r i			    !* Insert a ^J !
+>
+j
+< :s; rd
+  !<! i_>*_Beep_<*_ !>! >	    !* Change ^Gs into something more graphic!
+j 
+
+!# VMAIL ^K:! !S Kill current message!
+
+FF"n			    !* Make sure there's no arg - this is !
+				    !* powerful stuff !
+  :i*NSF	Not_so_fast._Kill_one_message_at_a_time fs err 0'
+
+((fs bound)-(0,fs z))[0[1
+(q0q1)"e			    !* If virtual bounds = actual bounds !
+   :i*KWF	Kill_Whole_File fs err 0 '  !* Error out !
+hk				    !* Kill this message !
+0,fs z fs bound		    !* Widen buffer boundaries !
+d				    !* Delete the ^_ !
+qVMAIL_Number_of_Messages-1 uVMAIL_Number_of_Messages
+@M(M.M #_RMAIL_.)		    !* Redisplay message !
+
+
+!# VMAIL ^Q:! !S RMail hack to call RWKs QSend Macro!
+1:<m(m.m &_Get_Library_Pointer) Z;QSEND> "n
+    m(m.m Load_library) Z;QSEND'
+@m(m.m ^R_QSEND)
+0M(M.M Auto_Fill)
+
+
+!# VMAIL ^X:! !S Temporarily exit from VMail if possible
+If running MM VMail then exit without filing out. Later entrance
+  finds state exactly as left.
+If running an RMAIL job then abort exit to avoid killing job !
+
+ 1 M.V VMAIL_^X_Break
+qVMAIL_Standalone_Job"n 100000.fs exit w 0'
+"# 2F;RMAIL-CATCH'
+
+
+!# VMAIL ^O:! !S Output to a specified XMAIL file
+With no numeric arg, lists the current defaults.
+With a numeric arg, will output to the default filename associated
+with that arg. If no such default exists, it will be read from the
+tty and remember for the rest of the invocation of the RMAIL.
+
+Q$VMail ^O File Default N$  holds the default for a given arg (N = arg)
+Q$VMail ^O Default Filename$ holds the default creation filename for each arg
+Q$VMail ^O Defaults$        holds info about the defaults
+!
+
+FF"e			    !* If no arg, just display defaults !
+  :I*FO..QVMAIL_^O_DEFAULTS[0	    !* Get defaults if any!
+
+  !* Mention defaults since no arg given!
+
+    qVMAIL_^O_Default_Filename[9
+    FT Defaults_for_output...
+    [Arg=_0]	90
+    -----
+    
+    
+  0'
+
+[0[1[2
+
+((fs bound)-(0,fs z))u0u1
+(q0q1)"e			    !* If virtual bounds = actual bounds !
+   :i*OWF	Output_Whole_File fs err  0' !* Error out !
+
+:\u0				    !* Change arg into a string !
+0 FO..QVMAIL_^O_FILE_DEFAULT_0u1 !* Get value of filename in Q1 !
+q1"e
+   QVMAIL_^O_Default_Filenameu2   !* Get default file in Q2 !
+   Q2 F[DFILE			    !* Bind Default File !
+   1,M(M.M&_Read_Line)[Default_0]_Append_Message_to_(2):_u2
+   FQ2"L'			    !* Read message - exit if overrubout !
+   ET2			    !* Set defaults !
+   FS DFILE[4
+   :I*FO..QVMAIL_^O_DEFAULTS[5    !* Get defaults if any!
+   :I*5
+[Arg=_0]	4 M.VVMAIL_^O_DEFAULTS  !* Put new default in main table !
+   ]5]4
+   FS DFILE M.VVMAIL_^O_FILE_DEFAULT_0'
+"#
+   :i*C[Appending_message_to_1] fs echo display out 0fs echo active
+   Q1 F[DFILE'
+E[E\
+FNE^E]
+Q..O[1F[BBIND
+1:<ER@A>
+J1F=*APPEND*
+"EZJ'				    !* Treat *APPEND* specially - ignore!
+G1 I
+.-Z"N.-(./5*5),32I'
+EIHPEF
+fs dfile[1
+:i*AWritten:_1_A fs echo display out 0fs echo active
+
+
+!# VMAIL ;:! !S Accumulate a line, then execute it with no display.!
+    [..J
+      :I..J RMAIL-Shhh
+      M(M.M &_Set_Mode_Line)
+      M(M.M &_Read_Line);U3
+    ]..J
+      M(M.M &_Set_Mode_Line)
+
+
+!# VMAIL \:! !S Get rid of ugly overflowing lines!
+J L
+m(m.m Fill_Indented) 
+m(m.m #_RMAIL_.) 
+
+!& VMAIL Find Message Number:! !S Count messages and update message number !
+0F[vb 0f[vz
+.[1 Q1F(:\U1 FN1J)U1 [2
+1u2j<:s;q1-.:;%2>		    !* Jump to top and count ^_s !
+q2 uVMAIL_Message_Number	    !* Save info !
+<:s;%2>			    !* Keep counting !
+q2 uVMAIL_Number_of_Messages	    !* Save info !
+

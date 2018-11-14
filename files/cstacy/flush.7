@@ -1,0 +1,341 @@
+;-*- Mode:MIDAS -*-
+
+TITLE	FLUSH - Ask Guests to Leave
+	;by CStacy  3/17/82 (cleaned up 12/7/83)
+
+x=0		;Super temporary.
+a=1		;General 
+b=2		; purpose 
+c=3		; utility 
+d=4		; registers.
+e=5
+ttynum=6	;user tty number.
+uind=7		;user job index.
+t=10		;temporary.
+tt=11		;temporary, T+1.
+char=12		;character being manipulated.
+count=13	;count into string.
+bp=14		;byte pointer.
+p=17		;stack pointer.
+
+pdllen==32.	;Tiny stack.
+lsrpgs==30.	;Number of pages for LSR1 database.
+
+ttyo==1		;Display channel.
+ttyi==2		;Console channel.
+dski==3		;Inquire disk input channel.
+hassle==4	;CLI Hassle channel.
+
+lsrtns"$$ovly==1	;Don't map entire LSR1 file.
+lsrtns"$$ulnm==0	;No last name searches.
+lsrtns"$$ulnp==0
+lsrtns"$$unam==0	;No name permutation.
+lsrtns"$$hsnm==0	;dont want HSNAME/LSRTUR stuff.
+
+.insrt syseng;lsrtns
+
+
+define syscal op,args
+	.call [setz ? sixbit/op/ ? args ((setz))]
+termin
+
+
+;;; Subroutines skip on success and never bash A through UIND.
+
+call=pushj p,
+ret=popj p,
+
+define pushae ac,list
+irp loc,,[list]
+push ac,loc
+termin
+termin
+
+define popae ac,list
+irp loc,,[list]
+pop ac,loc
+termin
+termin
+
+;;; Type out an ascii string.
+define type ch,&string
+	movei t,<.length string>
+	move tt,[440700,,[ascii string]]
+	syscal siot,[%climm,,ch ? tt ? t]
+	 .lose %lsfil
+termin
+
+
+;;; Crlf
+define terpri ch
+	.iot ch,[^M]
+	.iot ch,[^J]
+termin
+
+;;; Type out a sixbit word.
+define 6type ch,word
+	move t,word
+	movei x,ch
+	call 6out
+termin
+
+;;; Type out next char from sixbit Bp as ascii
+define tyosxa ch
+	ildb char,bp
+	addi char,40
+	.iot ch,char
+termin
+
+
+
+
+
+
+;;; Main program
+
+go:	move p,[-pdllen,,pdl-1]	   ;Init the stack.
+	syscal open,[%clbit,,<.uao+%tjdis> ? %climm,,ttyo ? [sixbit /tty/]]
+	  .lose %lsfil
+	syscal open,[%clbit,,.uai ? %climm,,ttyi ? [sixbit /tty/]]
+	  .lose %lsfil
+	.suset [.runame,,uname]	   ;Get our real uname.
+	syscal open,[%clbit,,.uai ? %climm,,dski   ;Check for a directory.
+		    [sixbit /dsk/]
+		    [sixbit /.file./]
+		    [sixbit /(dir)/]
+		    uname]
+	 jrst [	type ttyo,/AYou are not allowed to run this program./
+		jrst death ]
+	.close dski,
+	movei a,dski		   ;Channel to map in Inquire.
+	move b,[-lsrpgs,,lsrpag]   ;AOBJN to free page range.
+	call lsrtns"lsrmap	   ;Go for it.
+	 .value [asciz /:Error: Can't map Inquire database!KILL
+/]
+	setzm ttynum		   ;Gonna check out each TTY.
+nextty:	aos ttynum		   ;Examine the next console.
+	syscal ttyget,[%climm,,%jsnum(ttynum)
+		%clout,,x ? %clout,,x
+		%clout,,uind]
+	 jrst alldun
+	jumpl uind,nextty	   ;Ignore free consoles.
+	move a,[-6,,[	sixbit /uname/  ? movem luser
+			sixbit /xuname/ ? movem xluser
+			sixbit /jname/  ? movem lossag]]
+	syscal usrvar,[%climm,,%jsnum(uind) ? a ]
+	 .lose %lsfil
+bother:	call whois		   ;Identify target.
+	 jrst nextty		   ; Not a tourist.
+	type ttyo,/	Flush /
+	call yornp		   ;Hassle him?
+	 jrst nextty		   ; No, let him go.
+	  call clisnd		   ;Yes - hassle him!
+	jrst nextty		   ;Look for another.
+alldun:	syscal sstatu,[	repeat 2, %clout,,x
+			%clout,,users	;Get number of users.
+			repeat 4, %clout,,x
+			%clout,,jobs ]	;Get number of job slots.
+	 .lose %lssys
+	terpri ttyo
+	terpri ttyo
+	movei x,ttyo
+	move t,gone
+	call dectyp
+	type ttyo,/ guests asked to leave. /
+	movei x,ttyo
+	move t,users
+	call dectyp
+	type ttyo,/ users and /
+	movei x,ttyo
+	move t,jobs
+	call dectyp
+	type ttyo,/ available job slots remaining./
+	.close ttyo,
+	.close dski,
+
+death:	skipn debug
+	 .logout 1,
+	.value [asciz /:Done../]
+	jrst .-1
+
+
+;;; WHOIS - identify the luser in XLUSER.
+;;; If user is a tourist, print some info and skip.
+;;; Otherwise just return.
+
+groups:	[asciz /ALPVBCZ/]	   ;Inquire Groups of real users.
+
+whois:	pushae p,[a,b,c]
+	movei a,nwinn		   ;Number of winners.
+	move b,xluser		   ;Get luser.
+whois1:	camn b,winner(a)	   ;A known winner?
+	 jrst whois9		   ; Yes!
+	sojge a,whois1
+	movei a,dski		   ;LSR1 channel.
+	move b,xluser		   ;UNAME to look up.
+	call lsrtns"lsrunm	   ;Find in LSR1.
+	 jrst unklsr		   ; Not there.
+	movei a,lsrtns"i$grp	   ;B has core addr of luser's entry.
+	call lsrtns"lsritm	   ;A gets bp to Group.
+	 jrst unklsr
+        ildb c,a			   ;Get Inquire Group letter.
+	hrlzi bp,440700
+	hrr bp,groups		   ;Bp to authorized groups.
+turlet:	ildb x,bp		   ;Get a group letter.
+	jumpe x,prtrst		   ;If not in authorized list, hassle.
+chkgrp:	camn x,c		   ;Are we an authorized user?
+	 jrst whois9		   ; Yes, failure return.
+	jrst turlet		   ;Try another group.
+
+;;; If not in INQUIR database, treat as a tourist.
+
+unklsr:	terpri ttyo
+	6type ttyo,luser
+	type ttyo,/ /
+	6type ttyo,lossag
+	type ttyo,/H[Not in INQUIR database]/
+	jrst whois8
+
+prtrst:	terpri ttyo
+	6type ttyo,luser
+	type ttyo,/ /
+	6type ttyo,lossag
+	type ttyo,/H[/
+	.iot ttyo,c		   ;Group letter in C.
+	movei a,lsrtns"i$rel	   ;B has core addr of luser's entry.
+	call lsrtns"lsritm	   ;A gets bp to Relation.
+	 jrst prtrs1
+	ildb c,a		   ;Relation letter in C.
+	.iot ttyo,c
+	type ttyo,/] /
+prtrs1:	;; Could print more info here if we wanted, I guess.
+
+whois8:	aos -3(p)		   ;Make win.
+whois9:	popae p,[c,b,a]
+	ret
+
+
+
+;;; CLISND - send a message to LUSER asking him to log out.
+
+clisnd:	skipe debug
+	 jrst [	type ttyo,/A(Debugging - Did not really send message.)/
+		ret ]
+	syscal open,[%clbit,,.uao ? %climm,,hassle
+	    [sixbit /cli/] ? luser ? [sixbit /hactrn/] ]
+	 jrst gagged			;Eh? Can't get to him!
+	type hassle,/ÛMessage from /	;Put our own header on.
+	6type hassle,uname		;Say who we are.
+	type hassle,/  /
+	.rtime a,			;Get the time of day in A.
+	jumpl a,cliask			; Unknown? Sigh.
+	move bp,[440600,,a]		;Bp to print the time with.
+	tyosxa hassle
+	tyosxa hassle
+	type hassle,/:/
+	tyosxa hassle
+	tyosxa hassle
+cliask:	type hassle,/]
+
+You are a guest user on this machine, and the system is
+heavily loaded right now.  You should not really be logged
+in right now.  Please finish up and go away immediately.
+Your cooperation in not interfering with the work of
+legitimate users helps keep this an open system. Thank you.
+/
+	.close hassle,			;Close CLI channel.
+	type ttyo,/  OK. Asked to leave./
+	aos gone			;Keep count of flushes.
+	jrst clisnt			;Go check another tty.
+gagged:	type ttyo,/AUnable to ask /
+ 	6type ttyo,luser
+	type ttyo,/ to logout (user probably gagged)./
+clisnt:	ret
+
+
+
+;;; Y-OR-N-P, Skips for Yes.
+
+yornp:	type ttyo,/ (Y or N?) /
+	.iot ttyi,char
+	cain char,40		   ;A [SPACE] means yes.
+	 jrst popj1
+	cain char,177		   ;A [RUBOUT] means no.
+	 ret
+	cail char,140
+	 subi char,40		   ;Y or N mean the obvious.
+	cain char,"Y
+	 jrst popj1
+	cain char,"N
+	 ret
+	.iot ttyo,[]
+	jrst yornp		   ;Maybe obvious not to everybody????
+
+
+
+;;; Popular returns.
+
+popj1:	aos (p)
+cpopj:	popj p,
+
+
+;;; Type sixbit word in T on channel specified by X. 
+
+6out:	move tt,t
+6out1:	setz t,				;Character goes in here.
+	lshc t,6	    		;Concat t1,t2 and shift 6 bits into T.
+	addi t,40	    		;Convert to ascii.
+	syscal iot,[x ? t]  		;Type it.
+	 .lose %lsfil
+	jumpn tt,6out1	    		;If more bits in TT, go back for more.
+	ret
+
+
+
+;;; Type decimal number in T on channel specified by X.
+
+dectyp:	idivi t,10.			;figure first digit
+	push p,tt			;push remainder
+	skipe t				;done?
+	 call dectyp			;no compute next one
+decpn1:	pop p,t				;yes, take out in opposite order
+	addi t,60			;make ascii
+	syscal iot,[x ? t]		;Type it.
+	 .lose %lsfil
+	ret				;and return for the next one.
+
+
+
+
+
+
+
+
+
+;;; Storage.
+
+debug:	0			   ;-1 => Don't really bother anyone.
+pdl:	block pdllen		   ;The Stack.
+
+uname:	0			   ;Uname of flusher.
+luser:	0			   ;Uname of a victim.
+xluser:	0			   ;Intended uname of victim.
+lossag:	0			   ;Jname of a victim.
+users:	0			   ;Number users on system.
+jobs:	0			   ;Number of job slots left.
+gone:	0			   ;Number of flushed guests.
+
+winner: sixbit /DCP/		   ;People who are not tourists.
+	sixbit /ALAN/
+	sixbit /EAK/
+	sixbit /CBF/
+	sixbit /KLH/
+	sixbit /OAF/
+nwinn==.-winner
+
+constantinople
+variables
+
+lsrpag==<.+1777>/2000		   ;Starting page of Inquire database. 
+
+end go

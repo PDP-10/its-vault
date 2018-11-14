@@ -1,0 +1,59 @@
+; -*- Mode:Lisp; Package: adb-deval -*-
+
+(defmacro fallibly-evaluate (&body forms)
+  `(*catch 'evaluation-failure
+     ,@ forms))
+
+(defmacro try-fallible-evaluations (&body clauses)
+  (if (null (cdr clauses))
+      `(fallibly-evaluate ,(car clauses))
+      (cons 'or
+	 (loop for c in clauses
+	    collect `(fallibly-evaluate ,c)))))
+
+(defun try-to-send (object message &rest args)
+  (or (lexpr-funcall object ':send-if-handles message args)
+      (*throw 'evaluation-failure nil)))
+
+(defun try-to-send-self (message &rest args)
+  (or (lexpr-funcall-self ':send-if-handles message args)
+      (*throw 'evaluation-failure nil)))
+
+(defflavor federation-mixin
+  ((rep-alist nil)
+   (circular-rep-types nil))
+  ())
+
+(defmethod (federation-mixin :get-rep-type) (type)
+  (let ((cell (assq type rep-alist)))
+    (cond (cell (cdr cell))
+	  ((memq type circular-rep-types) nil)
+	  (t (let ((creator (get type 'rep-generator))
+		   (rep nil))
+	       (err:conditional-error (null creator)
+		"~S is an undefined rep type." type)
+	       (let-globally ((circular-rep-types
+				(cons type circular-rep-types)))
+		  ;; If the creator directly or indirectly asks
+		  ;; the same object for a rep of the same type,
+		  ;; the recursive :GET-REP-TYPE will fail.  That
+		  ;; failure may or may not cause the creator to
+		  ;; fail.  If it does cause the creator to fail,
+		  ;; it may or may not be right to remember the
+		  ;; failure as permanent.  That is what I do now.
+		  (setq rep (funcall creator self))
+		  (push (cons type rep) rep-alist)
+	          rep))))))
+      
+(defmacro define-rep-diversions ((flavor . messages) arglist &rest rep-types)
+  (if (atom messages) (setq messages (ncons messages)))
+  `(progn 'compile
+      ,@ (loop for m in messages
+	    collect (rep-diverting-defmethod flavor m arglist rep-types))))
+	  
+(defun rep-diverting-defmethod (flavor message arglist rep-types)
+  `(defmethod (,flavor ,message) ,arglist
+     (try-fallible-evaluations
+       ,@ (loop for type in rep-types
+	     collect `(try-to-send (try-to-send-self ':get-rep-type ',type)
+				   ',message ,@ arglist)))))

@@ -1,0 +1,144 @@
+; -*- Mode:Lisp; Package:(XRup global 1000) -*-
+
+; QUEUES FOR MAINTAINING INVARIANTS
+
+(defflavor non-duplicating-lifo-queue
+  (entry-array entry-hasher)
+  ()
+  (:init-keywords :entry-hasher-options :length))
+
+(defmethod (non-duplicating-lifo-queue :stats) ()
+  (describe self)
+  (format standard-output "~&There are ~D. queue entries.~%" (array-leader entry-array 0))
+  (funcall entry-hasher ':stats))
+
+(defmethod (non-duplicating-lifo-queue :entry-list) ()
+  (g-l-p entry-array))
+
+(defmethod (non-duplicating-lifo-queue :init) (plist)
+  (setq entry-hasher
+	(lexpr-funcall #'make-instance 'equal-structure-list-hash-table
+		       (get plist ':entry-hasher-options)))
+  (setq entry-array (make-array (or (get plist ':length) 25.)
+				':type 'art-q-list
+				':leader-list '(0))))
+
+(defmethod (non-duplicating-lifo-queue :enqueue) (f &rest args)
+  (let ((entry (cons f (copylist args))))
+    (if (funcall entry-hasher ':gethash entry)
+	nil
+      (array-push-extend entry-array entry)
+      (funcall entry-hasher ':puthash entry entry)
+      entry)))
+
+(defmethod (non-duplicating-lifo-queue :process-one-entry) ()
+  ; Returns the entry it processed, or NIL.
+  (if (= 0 (array-leader entry-array 0))
+      nil
+    (let ((entry (array-pop entry-array)))
+      (funcall entry-hasher ':remhash entry)
+      (apply (car entry) (cdr entry))
+      entry)))
+
+(defmethod (non-duplicating-lifo-queue :process-all-entries) ()
+  (loop while (funcall-self ':process-one-entry)))
+
+(defmethod (non-duplicating-lifo-queue :clear) ()
+  (fillarray entry-array nil)
+  (setf (array-leader entry-array 0) 0)
+  (setq entry-array (follow-structure-forwarding entry-array))
+  (funcall entry-hasher ':clrhash))
+
+(defflavor plain-lifo-queue
+  ((entry-list nil))
+  ()
+  :gettable-instance-variables)
+
+(defmethod (plain-lifo-queue :enqueue) (f &rest args)
+  (let ((entry (cons f (copylist args))))
+    (push entry entry-list)
+    entry))
+
+(defmethod (plain-lifo-queue :process-one-entry) ()
+  (if (null entry-list)
+      nil
+    (let ((entry (pop entry-list)))
+      (apply (car entry) (cdr entry))
+      entry)))
+
+(defmethod (plain-lifo-queue :clear) ()
+  (setq entry-list nil))
+
+
+
+#|
+
+PER-CONTEXT QUEUES
+
+Flavor CONTEXT-QUEUE-MIXIN is to be mixed into contexts to give them
+queues for maintaining invariants.  In an earlier implementation the
+global context was responsible for initializing the queues of a context
+it created, but modularity is better served by having the queues
+initialized by the newly created context.  Each flavor that needs to
+define a set of queues should provide a :LOCAL-QUEUE-ALIST handler.  The
+values returned by these handlers will effectively be APPEND-combined
+base flavor first to form a full set of queues for the context.  The
+values returned should be CAR/CDR alists associating queue names with
+queues.
+
+The following methods are defined:
+
+    :after :init (plist)
+    :enqueue (qid f &rest args)
+    :empty-queues (&optional up-thru-qid)
+
+The following method is used if present:
+
+    :structure-area ()
+
+The following LISP function is defined:
+
+    combine-disjoint-alists (alists)
+
+|#
+
+(defflavor context-queue-mixin
+  (queue-alist)
+  ()
+  (:method-combination (:list :base-flavor-first :local-queue-alist)))
+
+(defun combine-disjoint-alists (alists)
+  (let ((result nil))
+    (loop for a in alists
+       do (loop for cell in a
+	     do (if (assq (car cell) result)
+		    (err:error "Duplicate entry ~S in queue alist." (car cell))
+		  (push cell result))))
+    (nreverse result)))
+
+(defmethod (context-queue-mixin :after :init) (plist)
+  plist
+  (let ((default-cons-area (or (funcall-self ':send-if-handles ':structure-area)
+			       default-cons-area)))
+    (setq queue-alist
+	  (combine-disjoint-alists (funcall-self ':local-queue-alist)))))
+
+(defmethod (context-queue-mixin :enqueue) (qid f &rest args)
+  (let ((q (cdr (assq qid queue-alist))))
+    (if (null q)
+	(err:error "~S is an invalid queue name." qid))
+    (lexpr-funcall q ':enqueue f args)))
+
+(defmethod (context-queue-mixin :empty-queues) (&optional up-thru-qid)
+  (let ((last-cell (if up-thru-qid
+		       (or (assq up-thru-qid queue-alist)
+			   (err:error "~S is an invalid queue name."
+				      up-thru-qid))
+		       (car (last queue-alist)))))
+    (loop while
+      (loop for qc in queue-alist
+	 do (cond ((funcall (cdr qc) ':process-one-entry)
+		   (return t))
+		  ((eq qc last-cell)
+		   (return nil))
+		  (t 'continue))))))

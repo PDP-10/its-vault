@@ -1,0 +1,306 @@
+;;; -*- LISP -*-
+;;; XBATCH: A library for checking Macsyma a la BATCH
+;;;
+;;; Notes:
+;;;  Need to make the eof-return more global. Have it be able to throw from
+;;;  way deep outward. if it happens mid-way in some loop, loop couldn't
+;;;  have finished anyway.
+
+(COMMENT Declarations/Initializations)
+
+;;;;;;;;;;;;;;;;;;;;;;;;; Local Macro Support ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; (INIT-PACKAGE-VARIABLES (<varname1> . <value1>)
+;;;			    (<varname2> . <value2>) ...)
+;;;
+;;;  Initializes <varname> to <value> at load time if <varname> is
+;;;  unbound at that time. Also declares <varname> SPECIAL for this
+;;;  file.
+
+(DEFUN INIT-PACKAGE-VARIABLES MACRO (FORM)
+       (POP FORM)
+       `(PROGN 'COMPILE
+	       (DECLARE (SPECIAL ,@(MAPCAR 'CAR FORM)))
+	       (MAPC (FUNCTION (LAMBDA (DATA)
+				       (COND ((NOT (BOUNDP (CAR DATA)))
+					      (SET (CAR DATA)
+						   (EVAL (CDR DATA)))))))
+		     ',FORM)))
+
+;;; Make LAMBDA a self-quoting object
+
+(DEFUN LAMBDA MACRO (X) (LIST 'FUNCTION X))
+
+;;; Make " a read-macro character
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (SSTATUS MACRO /"
+		    (FUNCTION
+		     (LAMBDA ()
+			     (DO ((C (TYI) (TYI))
+				  (L () (CONS C L)))
+				 ((= C 34.)
+				  `',(IMPLODE (CONS '/& (NREVERSE L)))))))))
+	   
+;;;;;;;;;;;;;;;;;;;;;;;;; Load Supporting Packages ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; CHAR has the definition of the # READ macro character
+;;; IOTA has the definition of the IOTA stream-binding macro
+
+(EVAL-WHEN (EVAL COMPILE)
+	   (LOAD '((NILCOM) SHARPM FASL))
+	   (LOAD '((LIBLSP) IOTA   FASL)))
+
+
+;;;;;;;;;;;;;;;;;;;; Function/Variable Declarations ;;;;;;;;;;;;;;;;;;;;
+
+(DECLARE (SPECIAL $%		    ; Previous output line
+		  $LABELS	    ; List of I/O labels 
+		  $OUTCHAR	    ; Has symbol $<char> for making output labs
+		  ST)		    ; Contains chars used by PARSE
+	 (*EXPR   $CONS		    ; CONS's up an MLIST
+		  ADD2LNC	    ; Adds object to an MLIST a la RPLAC
+		  CONCAT	    ; Puts two atoms together
+		  DISPLA	    ; Displays a Macsyma object
+		  FILESTRIP	    ; Strips a Macsyma filename to lisp form
+		  GETLABCHAR	    ; Gets the first display char of a symbol
+		  IS		    ; Macsyma TRUEP predicate
+		  MEVAL		    ; Macsyma EVAL function
+		  PARSE1	    ; Macsyma parser toplevel (parses ST)
+		  STRIPDOLLAR)	    ; Removes the $ from an atom
+	 (*LEXPR  $PRINT	    ; Macsyma PRINT's 1 or more things 
+		  $READ))	    ; Macsyma READ's an input line
+
+;;;;;;;;;;;;;;;;;;;; Global Variable Initializations ;;;;;;;;;;;;;;;;;;;;
+
+(INIT-PACKAGE-VARIABLES ($BATCHCORRECT . "... which is correct.")
+			($BATCHERROR   . "Correct Answer:")
+			($BATCHRETURN  . "Macsyma returns:"))
+
+
+(COMMENT Supporting Routines)
+
+;;;;;;;;;;;;;;;;;;;;;;;;; General Purpose Support ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; (MDISPLAY <object> <output-stream>)
+;;;
+;;;  A new-i/o flavor of DISPLA. Displays a Macsyma expression centered
+;;;  with no label.
+
+(DEFUN MDISPLAY (X STREAM) (MDISPLAY1 `((MLABLE) NIL ,X) STREAM))
+
+;;; (MDISPLAY1 <object> <output-stream>)
+;;;
+;;;  A new-i/o flavor of DISPLA. Displays a Macsyma expression left-justified
+;;;  with no label.
+
+(DEFUN MDISPLAY1 (X STREAM)
+       (COND ((NOT (= (CHARPOS STREAM) 0.)) (TERPRI STREAM)))
+       (LET ((^R T) (^W T) (OUTFILES (NCONS STREAM)))
+	    (DISPLA X)))
+
+;;; ($QUERY <text>)
+;;;
+;;;  Like $READ, but only accepts YES, Y, NO, or N as values and returns
+;;;  either TRUE or FALSE accordingly.
+
+(DEFUN $QUERY X
+       (DO ((ANSWER ())
+	    (FLAG NIL T))
+	   (ANSWER (CDR ANSWER))
+	   (COND (FLAG ($PRINT "Please answer YES or NO.")))
+	   (SETQ ANSWER (ASSQ (APPLY '$READ (LISTIFY X))
+			      '(($YES . T) ($Y . T) ($NO . ()) ($N . ()))))))
+
+
+;;; ($BATCHREADLINE <stream>)
+;;;
+;;;  Reads a Macsyma input line from <stream>.
+;;;  IF parse of the input line fails,
+;;;     THEN returns ((MLIST)).
+;;;     ELSE returns ((MLIST) <parsed-input-line>).
+
+(DEFUN $BATCHREADLINE (STREAM)
+       (SETQ ST ())
+       (DO ((COMMENT-TEXT ())
+	    (C (TYI STREAM) (TYI STREAM)))
+	   ((OR (= C #/;) (= C #/$))
+	    (LET ((^R T) (^W T) (OUTFILES NIL))
+		 (CONS (NCONS 'MLIST) (PARSE1))))
+	   (CASEQ C
+		  (#//					     ; Look for /*...*/
+		   (COND ((= (TYIPEEK () STREAM) #/*)	     ;  If * follows /
+			  (TYI STREAM)			     ; Eat the *
+			  (DO ((C (TYI STREAM) (TYI STREAM)) ; Read chars
+			       (L () (CONS C L)))	     ; (saving them)
+			      ((AND (= C #/*)		     ; until a */
+				    (= (TYIPEEK () STREAM) #//))
+			       (TYI STREAM)		     ; Gobble hanging /
+			       (PUSH (NREVERSE (CDR L))	     ; Save charlist
+				     COMMENT-TEXT))))	     ;  in COMMENT-TEXT
+			 (T				     ; Wasn't /*
+			  (PUSH '// ST))))		     ;  so put / in ST
+		  ((#^C #\LF #\CR))		; Ignore <LF> and <CR>
+		  (#/\				; Backslash is quote character
+		   (PUSH '/\ ST)		; Keep \ in ST for PARSE's use
+		   (PUSH (READCH STREAM) ST))   ;  and gobble next char
+		  (T
+		   (PUSH (ASCII C) ST)))))      ; Self-Inserting char
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;; Special Purpose Support ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; (GENLABLIST <n>)
+;;;
+;;;  Returns a list of N temporary output labels.
+
+(DEFUN GENLABLIST (N)
+       (COND ((< N 1) NIL)
+	     (T
+	      (CONS (CONCAT '$ (GETLABCHAR $OUTCHAR) 'TEMP N)
+		    (GENLABLIST (1- N))))))
+
+
+
+
+(COMMENT Driver Routines)
+
+;;; ($BATCHCHECK)
+;;;
+;;;  This is the driver routine. It reads all the necessary data, opens
+;;;  i/o files, and then dispatches to BATCHCHECK\LOOP which will read
+;;;  and evaluate sets of data from the input stream.
+
+(DEFUN $BATCHCHECK ()
+       (LET ((ST ())
+	     ($% '$%)
+	     ($LABELS (NCONS (NCONS 'MLIST)))
+	     (INPUT-FILE       (FILESTRIP (CDR ($READ "Input filename?"))))
+	     (OUTPUT-FILE      (FILESTRIP (CDR ($READ "Output filename?"))))
+	     (NUMBER-OF-LINES  ($READ "How many lines per set?"))
+	     (ERRCHECK         ($QUERY "Does file contain error checks?")))
+	    (COND ((AND (NOT ERRCHECK)
+			($QUERY "Does file contain an error predicate?"))
+		   (SETQ ERRCHECK 'FUNCTION)))
+	    (IOTA ((INSTREAM INPUT-FILE '(IN ASCII))
+		   (OUTSTREAM (MERGEF OUTPUT-FILE '|_BATCH OUTPUT|)
+			      '(OUT ASCII)))
+		  (BATCHCHECK\LOOP INSTREAM OUTSTREAM NUMBER-OF-LINES ERRCHECK)
+		  (RENAMEF OUTSTREAM OUTPUT-FILE)
+		  T)))
+
+
+
+;;; (BATCHCHECK\LOOP <instream> <outstream> <number-of-lines> <errcheck>)
+;;;
+;;;  This function will read <number-of-lines> at a time, evaluating them
+;;;  in sequence as dependent sets of lines, but losing the information 
+;;;  about anything returned by them after exit from the function 
+;;;  (GC-efficient). Exits when an EOF is seen.
+
+(DEFUN BATCHCHECK\LOOP (INSTREAM OUTSTREAM NUMBER-OF-LINES ERRCHECK)
+       (COND ((EQ ERRCHECK 'FUNCTION) ; Error predicate definition?
+	      (LET ((^R T) (^W T) (OUTFILES (NCONS OUTSTREAM)))
+		   (MEVAL (CADR ($BATCHREADLINE INSTREAM))))))
+       (DO ((C))
+	   ((EQ C INSTREAM)) ; Eof check
+	   (SETQ C (*CATCH 'BATCHCHECK
+			   (PROGN
+			    (EOFFN INSTREAM (LAMBDA (STREAM ())
+					     (CLOSE STREAM)
+					     (*THROW 'BATCHCHECK STREAM)))
+			    (BATCHCHECK INSTREAM
+					NUMBER-OF-LINES
+					(GENLABLIST NUMBER-OF-LINES)
+					ERRCHECK
+					OUTSTREAM))))))
+
+;;; (BATCHCHECK <instream> <no-of-lines> <temps> <errcheck> <outstream>)
+;;;
+;;;  <instream>    ::= a MacLISP input file object.
+;;;  <no-of-lines> ::= the number of Macsyma input lines per set.
+;;;  <temps>	   ::= a set of labels for the input lines to be read.
+;;;  <errcheck>    ::= NIL ! T ! FUNCTION
+;;;  <outstream>   ::= the output stream to write data to.
+
+(DEFUN BATCHCHECK (INSTREAM NUMBER-OF-LINES TEMPS ERRCHECK OUTSTREAM)
+       (SETQ $LABELS (NCONS (NCONS 'MLIST)) $% '$%) ; Init environment
+       (DO ((I 1. (1+ I))
+	    (T-LIST TEMPS (CDR T-LIST)))
+	   ((> I NUMBER-OF-LINES)
+	    (MDISPLAY (CAR (LAST TEMPS)) OUTSTREAM)
+	    (COND (ERRCHECK
+		   (ANALYZE-CORRECTNESS ERRCHECK INSTREAM OUTSTREAM))))
+	   (COND ((NOT (BATCHCHECK1 (CAR T-LIST) INSTREAM OUTSTREAM))
+		  (MDISPLAY "Cycle Aborted" OUTSTREAM)
+		  ;; Clean up this cycle -- gobble any pending lines
+		  (DO ((I (1+ I) (1+ I))) 
+		      ((> I NUMBER-OF-LINES))
+		      ($BATCHREADLINE INSTREAM))
+		  (COND (ERRCHECK ($BATCHREADLINE INSTREAM)))
+		  (RETURN T)))))
+
+
+
+;;; (ANALYZE-CORRECTNESS <errcheck> <instream> <outstream>)
+;;;
+;;;  IF <errcheck> is FUNCTION, 
+;;;     THEN the error check should return NIL for a correct answer
+;;;          or a listified correct answer if the answer is incorrect.
+;;;     ELSE the error check should be a correct answer to be compared
+;;;	     automatically to the return value via the Macsyma IS predicate.
+
+(DEFUN ANALYZE-CORRECTNESS (ERRCHECK INSTREAM OUTSTREAM)
+       (LET ((INPUT-LINE (CDR ($BATCHREADLINE INSTREAM)))
+	     ($LABELS ($CONS NIL $LABELS))
+	     (OUTPUT-LINE))
+	    (COND ((NULL INPUT-LINE)
+		   (MDISPLAY1 "Parse failure in error analysis:" OUTSTREAM)
+		   (MAPC (LAMBDA (X) (PRINC X OUTSTREAM)) (REVERSE ST))
+		   NIL)
+		  (T
+		   (LET ((^R T) (^W T) (OUTFILES (NCONS OUTSTREAM)))
+			(SETQ OUTPUT-LINE
+			      (ERRSET (MEVAL (CAR INPUT-LINE)) NIL)))
+		   (COND (OUTPUT-LINE
+			  (SETQ OUTPUT-LINE (CAR OUTPUT-LINE))
+			  (MDISPLAY1 $BATCHRETURN OUTSTREAM)
+			  (MDISPLAY  OUTPUT-LINE  OUTSTREAM)
+			  (CASEQ ERRCHECK
+			   ((FUNCTION)
+			    (COND ((NOT OUTPUT-LINE)
+				   (MDISPLAY1 $BATCHCORRECT OUTSTREAM))
+				  (T
+				   (MDISPLAY1 $BATCHERROR OUTSTREAM)
+				   (MDISPLAY (CADR OUTPUT-LINE) OUTSTREAM))))
+			   ((T)
+			    (COND ((IS `((MEQUAL) ,OUTPUT-LINE ,$%))
+				   (MDISPLAY1 $BATCHCORRECT OUTSTREAM))
+				  (T
+				   (MDISPLAY1 $BATCHERROR OUTSTREAM)
+				   (MDISPLAY OUTPUT-LINE OUTSTREAM)))))
+			  (SETQ $% OUTPUT-LINE))
+			 (T
+			  (MDISPLAY1
+			   "Error during evaluation of error predicate."
+			   OUTSTREAM)))))))
+
+(DEFUN BATCHCHECK1 (TEMPLABEL INSTREAM OUTSTREAM)
+       (LET ((INPUT-LINE (CDR ($BATCHREADLINE INSTREAM)))
+	     (OUTPUT-LINE))
+	    (COND ((NULL INPUT-LINE)
+		   (MDISPLAY1 "Parse failure in setup phase:" OUTSTREAM)
+		   (MAPC (LAMBDA (X) (PRINC X OUTSTREAM)) (REVERSE ST))
+		   NIL)
+		  ((LET ((^R T) (^W T) (OUTFILES (NCONS OUTSTREAM)))
+			(SETQ OUTPUT-LINE
+			      (ERRSET (MEVAL (CAR INPUT-LINE)) NIL)))
+		   (SETQ $LABELS ($CONS NIL $LABELS))
+		   (SETQ $% (SET  TEMPLABEL   (CAR OUTPUT-LINE)))
+		   (RPLACA (CDR $LABELS) TEMPLABEL)
+		   T)
+		  (T
+		   (MDISPLAY1 "Error during evaluation:" OUTSTREAM)
+		   (MDISPLAY (CAR INPUT-LINE) OUTSTREAM)
+		   NIL))))
+

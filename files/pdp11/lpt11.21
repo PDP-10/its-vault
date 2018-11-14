@@ -1,0 +1,311 @@
+; LPT11 - program to print output on PDP11 line printer    -*-MIDAS-*-
+versio==.fnam2
+
+TITLE	LPT11
+
+
+.insrt dsk:syseng;$call macro
+.insrt dsk:eak;macros >
+.insrt dsk:eak;mstuff >
+
+
+; channel no.s
+
+tyic==1			; console input
+tyoc==2			; console output
+
+lpto==3			; lpt output
+
+fili==5			; disk input
+
+errc==6			; error channel
+
+subttl	setup & command reader
+
+flag tty
+
+lpt11:	move p,[-lpdl,,pdl-1]	; setup pdl ptr
+	move t,[-2,,[	.roption,,f
+			.rsname,,commnd"dir ]]
+	.suset t		; get info from ITS
+	tlo f,%opint+%opopc
+	.suset [.soption,,f]
+	pushj p,init
+
+rloop:	pushj p,rcmdl		; read a line
+	ldb a,[350700,,cmdbuf]
+	caie a,^M
+	 pushj p,commnd		; parse it
+	trne f,%fdone		; was that last command?
+	 jrst quit		; yes, quit
+	jrst rloop		; no, keep on reading
+
+subttl	command line parser
+
+commnd:	begin
+
+flag fn1		; have got fn1
+
+var dev			; device name
+var dir			; directory name
+var fn1			; file name 1
+var fn2			; file name 2
+var odev		; output device
+var odir		; output directory name
+var ofn1		; output file name 1
+var ofn2		; output file name 2
+
+	move b,[440700,,cmdbuf]	; byte ptr to command string
+	setzm odev		; setup so can default if unspecified 
+cmdf:	setzm dev		; ...
+	setzm fn1		; ...
+	setzm fn2		; ...
+	trz f,%ffn1		; init flags
+cmd1:	move c,[440600,,d]	; for converting to sixbit
+	movei d,0		; ...
+cmd2:	pushj p,cmdchr		; get next char of command
+	cain a,^M		; end of command string?
+	 jrst cmdcr
+	cain a,"_		; output file specification?
+	 jrst cmdto
+	cain a,":		; device spec?
+	 jrst cmddev
+	cain a,";		; directory spec?
+	 jrst cmddir
+	cain a,"/		; switch?
+	 jrst cmdsw
+	cain a,40		; space?
+	 jrst cmdsp
+	cain a,^Q		; quote char?
+	 pushj p,cmdchr		; yes, read another without checks
+	subi a,40		; convert to sixbit
+	jumpl a,cmdilc		; illegal sixbit char if negative
+	cail a,100		; or greater than 77
+	 jrst cmdilc
+	tlne c,770000		; already have six chars?
+	 idpb a,c		; no add this one
+	jrst cmd2
+cmdsw:	pushj p,cmdchr		; get switch name
+	jrst cmd2
+cmdto:	pushj p,delim		; check if this delimits something
+	.i odev=dev		; copy filename to output filename
+	.i odir=dir		; ...
+	.i ofn1=fn1		; ...
+	.i ofn2=fn2		; ...
+	jrst cmdf
+cmddev:	movem d,dev		; set device name
+	jrst cmd1
+cmddir:	movem d,dir		; set directory name
+	jrst cmd1
+cmdsp:	pushj p,delim		; delimiting anything?
+	jrst cmd1
+cmdcr:	pushj p,delim		; delimiting anything?
+	jrst execut
+
+delim:	skipn d			; any sixbit assembled?
+	 popj p,		; no, do nothing
+	troe f,%ffn1		; already got a fn1?
+	 jrst del1
+	movem d,fn1		; no, set the fn1
+	popj p,
+del1:	movem d,fn2		; have a fn1, now we've got a fn2
+	popj p,
+
+cmdchr:	ildb a,b		; get char
+	cail a,"a		; lower case?
+	 caile a,"z
+	  caia
+	   subi a,40		; yes, convert to upper case
+	popj p,
+
+cmdilc:	sout #tyoc,,"Illegal character in filename
+"
+	popj p,
+
+subttl	command execution
+
+var code		; error code
+
+
+execut:	trz f,%ftty		; init flags
+	movsi t,'tty		; default output device if unspecified
+	skipn odev		; ...
+	 movem t,odev		; ...
+	movsi t,'dsk		; default input device if unspecified
+	skipn dev		; ...
+	 movem t,dev		; ...
+	movsi t,(sixbit />/)	; default fn2 if unspecified
+	skipn fn2		; ...
+	 movem t,fn2		; ...
+	$call open,[[.uai,,fili],dev,fn1,fn2,dir,?code]
+	 jrst ex2
+	movs t,odev
+	cain t,'tty		; output device = TTY?
+	 tro f,%ftty
+	$call open,[[%tjsio+.uio,,lpto],odev,?code]
+	 jrst ex2
+	pushj p,send
+	.close lpto,
+	.close fili,
+	popj p,
+ex2:	move a,code
+	pushj p,err
+	popj p,
+
+.end commnd
+
+subttl	send output
+
+send:	begin
+
+var hpos
+var ttycom		; saved TTYCOM variable
+var ttysts		; saved TTYSTS variable
+
+
+	$call cnsget,#lpto,[t,t,t,a]	; get TTYCOM variable
+	 .lose %lssys
+	movem a,ttycom		; save so can restore later
+	tlo a,%tcrfs		; put tty into refuse mode
+	$call cnsset,[#lpto,[-1],[-1],[-1],a]
+	 .lose %lssys
+	trne f,%ftty		; if output device is TTY and
+	 tlnn f,optddt		; superior is DDT then no typeout
+	  caia
+	   .value [ascii ":NOMSG 0
+P"]
+	.iot lpto,[1]		; put PDP11 into copy mode
+	.iot lpto,[^X]
+	setzm icc
+	move t,[440700,,obuf]
+	movem t,obp
+	movei t,lobuf*5
+	movem t,occ
+	pushj p,output
+	.iot lpto,[1]
+	.iot lpto,[^Y]
+	$call cnsset,[#lpto,[-1],[-1],[-1],ttycom]
+	 .lose %lssys
+	trne f,%ftty		; if output device was TTY and
+	 tlnn f,optddt		; superior is DDT then no typeout
+	  caia
+	   .value [ascii ":NOMSG 1
+P"]
+	.close fili,
+	.close lpto,
+	popj p,
+
+
+output:	.iot lpto,[14]		; form feed before output
+	movei a,30*5		; 5 second pause
+	.sleep a,
+	setzm hpos
+o1:	pushj p,getb
+	jumpl a,odone
+	caie a,177
+	 caige a,40
+	  jrst o3
+	aos hpos
+o2:	pushj p,putb
+	jrst o1
+o3:	cain a,^H
+	 jrst obs
+	cain a,^I
+	 jrst otab
+	cain a,^J
+	 jrst o2
+	cain a,^L
+	 jrst ocr
+	cain a,^M
+	 jrst ocr
+	push p,a
+	movei a,"^
+	aos hpos
+	pushj p,putb
+	pop p,a
+	xori a,100
+	aos hpos
+	pushj p,putb
+	jrst o1
+obs:	sosge hpos
+	 setzm hpos
+	jrst o2
+otab:	movei a,40
+	pushj p,putb
+	aos t,hpos
+	trne t,7
+	 jrst otab
+	jrst o1
+ocr:	setzm hpos
+	jrst o2
+odone:	movei a,^L
+	pushj p,putb
+	move t1,[440700,,obuf]
+	movei t2,5*lobuf
+	sub t2,occ
+	$call siot,[#lpto,t1,t2]
+	 .lose %lssys
+	popj p,
+
+.end send
+
+var icc
+var ibpx
+var occ
+var obp
+
+libuf==100
+lobuf==100
+var ibuf(libuf)
+var obuf(lobuf)
+
+getb:	skipe icc
+	 jrst gt1
+	move a,[440700,,ibuf]
+	movem a,ibpx
+	movei t,libuf*5
+	movem t,icc
+	$call siot,[#fili,a,icc]
+	 .lose %lssys
+	subm t,icc
+gt1:	ildb a,ibpx
+	sosge icc
+	 setom a
+	popj p,
+
+
+putb:	idpb a,obp
+	sose occ
+	 popj p,
+	move t1,[440700,,obuf]
+	movem t1,obp
+	movei t2,lobuf*5
+	movem t2,occ
+	$call siot,[#lpto,t1,t2]
+	 .lose %lssys
+	popj p,
+
+subttl	miscellaneous
+
+
+quit:	skipe debug		; debugging?
+	 .value			; yes, don't die, just stop
+	.logout			; logout if top-level
+	.break 16,160000	; ask superior to kill us
+
+litrl:	constants
+
+
+; impure stuff
+debug:	0			; nonzero if debugging
+pat:	block 100		; DDT patch area
+
+	variables
+
+lpdl==<.+20+1777>&776000-.	; use rest of page as pdl
+pdl:	block lpdl
+
+	-1
+
+
+end lpt11

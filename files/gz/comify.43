@@ -1,0 +1,584 @@
+	TITLE COMIFY - Convert a HEX file to a COM file
+
+;;22-Nov-83 20:24:51, GZ@MIT-OZ (GZ@MIT-MC.ARPA)
+
+.decsav
+
+F==:0				;Flags
+A=:5				;Record address, in rdline
+B=:6				;Buffer record BP, in rdline
+L=:7				;Length of record, in rdline
+CC=:10				;Record checksum, in rdline
+IB=:11				;Input BP, in comiff
+IC=:12				;Length of input file, in comiff
+PC=:13				;Max output PC, in comiff
+NPC=:14				;Next PC, in rdline, before know checksum ok
+
+P=:17
+call=:<pushj p,>
+ret=:<popj p,>
+rskp:	aos (p)
+r:	ret
+retskp=:<jrst rskp>
+calret==:<jrst>
+
+f%leof==:1,,0			;Last record was logical eof (length 0/type 01)
+f%low==:2,,0			;Output starts from 00 rather than 100H.
+f%wld==:4,,0			;Wildcards in input file
+define warn &str
+	call warn.
+	asciz str
+termin
+
+define warn1 &str
+	call [warn str
+	      ret]
+termin
+
+define $esout &str
+	hrroi 1,[asciz str]
+	ESOUT
+termin
+
+define $psout &str
+	hrroi 1,[asciz str]
+	PSOUT
+termin
+
+define $jfns ?jfn
+	hrrz 2,jfn
+	movei 1,.priou
+	setz 3,
+	JFNS
+termin
+
+define $nout ?val,#base=10.
+	move 2,val
+	movei 3,base
+	movei 1,.priou
+	NOUT
+	 nop
+termin
+
+define flddb. ?fnc,flags=0,data=0,&hlpm,defm,?nxt=0
+	..x==0
+	ifnb [hlpm] ..x==..x\cm%hpp
+	ifnb [defm] ..x==..x\cm%dpp
+	<<fnc>_27.>\<flags>\..x nxt
+	data
+	ifnb [hlpm][440700,,[asciz hlpm]]
+	.else [ifnb [defm][0]]
+	ifnb [defm][440700,,[asciz defm]]
+termin
+
+pdllen==:40
+	.vector pdl(pdllen)
+
+	.scalar RecNum		;Current record number
+	.scalar LinNum		;Current input line number
+	.scalar BadNum		;Number of bad characters encountered
+	.scalar MinPC		;Smallest address in output
+	.scalar injfn,outjfn	;Command line jfns
+	.scalar comjfn		;Actual output file jfn
+	.scalar LoadAd		;Desired load address
+
+opag==:40			;Output file page
+obuf=:opag_9
+membp:	441000,,obuf+1		;Leave room for DSK8
+
+ipag==:opag+41			;input file page
+ibuf=:ipag_9
+
+strbsz==:200.			;Command line parsing storage
+	.vector strbuf(strbsz/5),atmbuf(strbsz/5)
+cmdblk:	repars			;.CMFLG
+	.priin,,.priou		;.CMIOJ
+	440700,,[asciz "HEX file: "]	;.CMRTY
+	440700,,strbuf		;.CMBFP
+	0			;.CMPTR
+	0			;.CMCNT
+	0			;.CMINC
+	440700,,atmbuf		;.CMABP
+	strbsz			;.CMABC
+	0			;.CMGJB
+
+ingtb:	gj%old\gj%ifg		;.GJGEN
+	0			;.GJSRC
+	0			;.GJDEV
+	0			;.GJDIR
+	0			;.GJNAM
+	440700,,[asciz/HEX/]	;.GJEXT
+	block .gjbfp-.gjext
+
+outgtb:	gj%fou\gj%new\gj%ofg	;.GJGEN
+	0			;.GJSRC
+	0			;.GJDEV
+	0			;.GJDIR
+	440700,,[asciz/*/]	;.GJNAM
+	440700,,[asciz/COM/]	;.GJEXT
+	block .gjbfp-.gjext
+
+begin:	RESET
+	move p,[-pdllen,,pdl-1]
+	movei F,0
+	movei 1,400
+	movem 1,LoadAd
+	setzm injfn
+	setzm outjfn
+	movei 1,.rsini
+	RSCAN
+	  jrst lose
+	skipg 3,1
+	  jrst docmd
+	movei 4,40
+	dmove 1,[.cttrm ? -1,,atmbuf]	;Flush jname
+	SIN
+	jumpe 3,docmd
+	hrroi 1,.nulio
+	movem 1,cmdblk+.CMIOJ
+docmd:	move 1,cmdblk+.CMBFP
+	movem 1,cmdblk+.CMPTR
+	movei 1,strbsz
+	movem 1,cmdblk+.CMCNT
+	setzm cmdblk+.CMINC
+prompt:	movei 1,cmdblk
+	movei 2,[flddb. .cmini]
+	COMND
+repars:	move p,[-pdllen,,pdl-1]
+	skipe 1,injfn
+	 RLJFN
+	   erjmp lose
+	setzm injfn
+	skipe 1,outjfn
+	 RLJFN
+	   erjmp lose
+	setzm outjfn
+	movei 2,[asciz/HEX/]
+	movem 2,ingtb+.GJEXT
+	movei 2,ingtb
+	movem 2,cmdblk+.CMGJB
+	movei 1,cmdblk
+	movei 2,[flddb. .cmfil,cm%sdh,,"input HEX filespec"]
+	COMND
+	tlnn 1,(cm%nop)
+	  jrst outcmd
+	caie 2,gjfx19		;No such file type?
+	 jrst cmderr
+	setzm ingtb+.GJEXT	;Try without default
+	movei 2,[flddb. .cmfil,cm%sdh,,"input HEX filespec"]
+	COMND
+	tlne 1,(cm%nop)
+	  jrst cmderr
+outcmd:	movem 2,injfn
+	movei 2,[flddb. .cmnoi,,<-1,,[asciz "output to"]>]
+	COMND
+	tlne 1,(cm%nop)
+	  jrst cmderr
+	movei 2,outgtb
+	movem 2,cmdblk+.CMGJB
+	movei 2,[flddb. .cmfil,cm%sdh,,"output filespec or CR for *.COM"]
+	COMND
+	tlne 1,(cm%nop)
+	  jrst cmderr
+	movem 2,outjfn
+	movei 2,[flddb. .cmcfm]
+	COMND
+	tlne 1,(cm%nop)
+	  jrst cmderr
+	move 1,injfn
+	tlne 1,(gj%dev\gj%unt\gj%dir\gj%nam\gj%ext\gj%ver)
+	 tloa f,(f%wld)
+	  tlz f,(f%wld)
+dofile:	move IB,[440700,,ibuf]
+	hrrz 1,injfn		;Compute file size
+	move 2,[2,,.fbbyv]
+	movei 3,3
+	GTFDB
+	ldb 3,[.bp fb%bsz,3]
+	caie 3,7
+	  imuli 4,5
+	caie 3,7
+	 cain 3,44
+	   jrst dofil1
+	$esout "File "
+	$jfns injfn
+	$psout " is not an ascii file"
+	jrst nextf
+dofil1:	skiple IC,4
+	  jrst dofil2
+	movei 1,"?
+	$psout "File "
+	$jfns injfn
+	$psout " is empty"
+	jrst nextf
+dofil2:	hrrz 1,injfn
+	movei 2,of%rd
+	OPENF
+	  jrst [push p,1
+		$esout "Can't open "
+		$jfns injfn
+		$psout " -- "
+		pop p,2
+		call erstr.
+		jrst nextf]
+	call oname		;Cons output filename in atmbuf
+	movsi 1,(gj%sht\gj%new\gj%fou)
+	hrroi 2,atmbuf
+	GTJFN
+	  jrst [push p,1
+		$esout "Bad output filename "
+		hrroi 1,atmbuf
+		PSOUT
+		$psout " -- "
+		pop p,2
+		call erstr.
+		jrst closef]
+	movem 1,comjfn
+	movei 2,of%wr
+	OPENF
+	  jrst [push p,1
+		$esout "Can't create "
+		$jfns comjfn
+		$psout " -- "
+		pop p,2
+		call erstr.
+		move 1,comjfn
+		RLJFN
+		  jrst lose
+		jrst closef]
+	hrli 1,.fbbyv
+	movsi 2,(fb%bsz)
+	movsi 3,(.dpb 44,.bp fb%bsz,)
+	CHFDB
+	move 1,[sixbit/DSK8/]	;Init output file
+	movem 1,obuf
+	$jfns injfn
+	$psout " ==> "
+	$jfns comjfn
+	move 3,IC
+	addi 3,4777
+	idivi 3,5000
+	hrli 3,(pm%cnt\pm%rd)
+	push p,3
+	move 2,[.fhslf,,ipag]
+	hrlz 1,injfn
+	PMAP
+	call comiff
+	seto 1,			;Don't need input file any more
+	move 2,[.fhslf,,ipag]
+	pop p,3
+	PMAP
+	skipn 2,BadNum
+	  jrst savef
+	$psout "
+%"
+	movei 1,.priou
+	movei 3,10.
+	NOUT
+	 nop
+	$psout " non-hex character"
+	movei 1,"s
+	caie 2,1
+	 PBOUT
+	$psout " ignored"
+savef:	;;MinPC has min PC, PC has max PC
+	jumpe PC,[$esout "No data bytes, not writing output file."
+		  move 1,comjfn
+		  hrli 1,(cz%abt)
+		  jrst savefx]
+	move NPC,MinPC
+	caml NPC,LoadAd
+	  jrst savef1
+	$psout "
+%Data before "
+	move 2,LoadAd
+	call hextyp
+	$psout ", changing load address to "
+	move 2,NPC
+	call hextyp
+	movem NPC,LoadAd
+savef1:	$psout "
+	Locations "
+	move 2,NPC
+	call hextyp
+	movei 1,"-
+	PBOUT
+	move 2,PC
+	soj 2,
+	call hextyp
+	$psout ", "
+	$nout RecNum
+	$psout " records, "
+	$nout LinNum
+	$psout " lines processed."
+	skipg 1,LoadAd		;Relocate
+	  jrst savef2
+	addi 1,3
+	lsh 1,-2
+	add 1,membp
+	hrl 1,membp
+	movss 1
+	sub PC,LoadAd		;# bytes to output
+	movei 2,3(PC)
+	lsh 2,-2
+	add 2,membp
+	blt 1,-1(2)
+savef2:	setz 1,			;0-fill to word boundary
+	trne PC,3
+	  jrst [move 2,PC
+		ibp 2,membp
+		dpb 1,2
+		aoja PC,.-1]
+	lsh PC,-2		;Number of words in file
+	aoj PC,			;Account for DSK8 header
+	movei 3,777(PC)
+	lsh 3,-9
+	hrli 3,(pm%cnt\pm%wr)
+	hrlz 2,comjfn
+	move 1,[.fhslf,,opag]
+	PMAP
+	move 1,comjfn
+	hrli 1,.fbsiz
+	seto 2,
+	move 3,PC
+	CHFDB
+	move 1,comjfn
+savefx:	CLOSF
+	  call [push p,1
+		$psout "
+%Error closing output file -- "
+		pop p,2
+		call erstr.
+		ret]
+closef:	hrrz 1,injfn
+	hrli 1,(co%nrj)
+	CLOSF
+	  call [push p,1
+		$psout "
+%Error closing input file -- "
+		pop p,2
+		call erstr.
+		ret]
+nextf:	$psout "
+"
+	move 1,injfn
+	GNJFN
+	 skipa
+	  jrst dofile
+	caie 1,GNJFX1
+	  jrst lose
+Die:	movei 1,[.prast,,.fhslf]	;Try to kill self, for MIT EXEC.
+	dmove 2,[[2,,0] ? 1]
+	PRARG
+	 erjmp .+1
+	HALTF
+	jrst begin
+
+;;Comify file at IB/IC.  Returns with PC=max address, RecNum=#records,
+;;LinNum=#lines, BadNum=#bad chars, MinPC=min address.
+comiff:	tlz f,(f%leof\f%low)
+	setzm RecNum
+	setzm LinNum
+	setzm BadNum
+	movei 1,200000
+	movem 1,MinPC
+	setz PC,
+rdline:	call rdchar
+	  jrst [tlnn f,(f%leof)
+		  warn1 "EOF reached but last record was not length 0 or type 01"
+		ret]
+	jumpge 1,[warn "stray hex digit, ignored"
+		  jrst rdline]
+	tlze f,(f%leof)
+	  warn1 "data after logical end of file"
+	setz CC,
+	call rdbyte		;Record length
+	  jrst eeof
+	move L,2
+	call rdbyte		;Address
+	  jrst eeof
+	move A,2
+	imuli A,256.
+	call rdbyte
+	  jrst eeof
+	add A,2
+	call rdbyte		;Type
+	  jrst eeof
+	move NPC,PC		;Set up for processing
+	caile 2,1
+	  jrst [warn "unknown record type"
+		jrst rddata]
+	setz 1,
+	skipg L
+	  hrroi 1,[asciz "Length 0"]
+	skipe 2
+	  hrroi 1,[asciz "Type 01"]
+	jumpe 1,rddata
+	push p,1
+	$psout "
+	"
+	pop p,1
+	PSOUT
+	$psout " record indicating execution address "
+	move 2,A
+	call hextyp
+	tlo f,(f%leof)
+	jumple L,rddata
+	warn "data in type 01 record"
+rddata:	jumple L,[move A,MinPC ? jrst rdchck]
+	camge A,NPC
+	  jrst rddat2
+	move B,NPC
+	ibp B,membp
+	setz 2,			;Fill with 0's if necessary
+rddat1: caml NPC,A
+	  jrst rddat3
+	idpb 2,B
+	aoja NPC,rddat1
+rddat2:	warn "overlapping address, overwriting"
+	move B,A		;Back up
+	ibp B,membp
+rddat3:	move 1,A
+	add 1,L
+	camle 1,NPC
+	  move NPC,1
+rddat4:	call rdbyte		;Data
+	  jrst eeof
+	idpb 2,B
+	sojg L,rddat4
+rdchck:	call rdbyte		;Checksum
+	 jrst eeof
+	trne CC,377
+	  jrst [warn "checksum error, record ignored"
+		jrst rdline]
+	move PC,NPC
+	camge A,MinPC
+	  movem A,MinPC
+	aos RecNum
+	jrst rdline
+
+eeof:	warn "premature end of file"
+	ret
+
+;;Read a byte into AC2 & update checksum.
+rdbyte:	call rdchar
+	  ret
+	skipge 2,1
+	  jrst [warn "stray : before end of record, ignored"
+		jrst rdbyte]
+	imuli 2,16.
+rdbyt1:	call rdchar
+	  ret
+	jumpl 1,[warn "stray : in the middle of a byte, ignored"
+		 jrst rdbyt1]
+	add 2,1
+	add CC,2	;Update checksum
+	retskp
+
+;;Read next legal char. Update BadNum, LinNum.  Non-skip if eof.
+;;returns: 1/ 0-16. or -1 for ":".
+rdchar:	sojl IC,r
+	ildb 1,IB
+	cail 1,"0
+	 caile 1,":		; : is just after 9 in ascii...
+	  jrst rdcha1
+	subi 1,"0
+	cail 1,10.
+	 seto 1,
+	retskp
+rdcha1:	cail 1,"A
+	 caile 1,"Z
+	  jrst rdcha2
+	subi 1,"A-10.
+	retskp
+rdcha2:	caie 1,^@		;Ignore padding entirely
+	 cain 1,^C
+	  jrst rdchar
+	aos BadNum
+	caie 1,^M		;See if maybe new line
+	  jrst rdchar
+	jumple IC,rdchar
+	move 1,IB
+	ildb 1,1
+	caie 1,^J
+	  jrst rdchar
+	sos BadNum		;Not a bad char after all
+	aos LinNum		;New line number
+	ibp IB			;Advance past the linefeed
+	soja IC,rdchar
+
+;;Output hex value
+hextyp:	move 3,[200400,,2]
+hexty1:	ildb 1,3
+	cail 1,10.
+	 jrst [addi 1,"A-10.
+	       jrst .+2]
+	  addi 1,"0
+	PBOUT
+	tlne 3,770000
+	  jrst hexty1
+	movei 1,"H
+	PBOUT
+	ret
+
+;;Cons output name in atmbuf
+oname:	hrroi 1,atmbuf
+	movei A,(gj%unt)
+	movei B,100000
+	move 2,outjfn		;Have to do this outside of loop
+	tlne 2,(gj%dev)		;because what should be gj%dev is gj%unt
+	  move 2,injfn
+oname1:	movei 2,(2)		;Output the desired field
+	movei 3,js%paf
+	hrl 3,B
+	JFNS
+	cain A,(gj%ver)
+	  ret
+	lsh B,-3		;Next field
+	lsh A,-1		;Next mask
+	move 2,outjfn
+	tlne 2,(A)		;Is output field wild?
+	  move 2,injfn		;Yes, use input field instead
+	jrst oname1		;Go output it
+
+
+warn.:	push p,3
+	push p,2
+	push p,1
+	$psout "
+%Line "
+	$nout LinNum
+	$psout " - "
+	hrro 1,-3(p)
+	PSOUT
+	movei 1,1(1)
+	hrrm 1,-3(p)
+	pop p,1
+	pop p,2
+	pop p,3
+	ret
+
+cmderr:	call snarl
+	skipg cmdblk+.CMIOJ	;Did we prompt?
+	  jrst Die		;No, fatal
+	jrst prompt		;Else try again
+
+lose:	movei 1,.fhslf
+	GETER
+	call snarl
+	jrst Die
+
+snarl:	hrroi 1,[asciz//]
+	ESOUT
+	;calret erstr.
+
+erstr.:	movei 1,.priou
+	hrli 2,.fhslf
+	setz 3,
+	ERSTR
+	  jrst [hrroi 1,[asciz/Unknown error/]	? PSOUT ? ret]
+	  jrst [hrroi 1,[asciz/Error typing error message/] ? ESOUT ? ret]
+	ret
+
+	end begin
+    

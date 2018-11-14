@@ -1,0 +1,184 @@
+; -*- Midas -*-
+
+title HISTGM
+
+a=:1
+b=:2
+c=:3
+d=:4
+e=:5
+f=:6
+t=:7
+tt=:10
+x=:11
+y=:12
+z=:13
+
+p=:17
+
+ch==:0,,-1
+chdski==:1
+chttyo==:2
+
+%fr==:0,,525252
+%fl==:1,,525252
+
+call=:pushj p,
+return=:popj p,
+save==:push p,
+rest==:pop p,
+flose=:.lose %lsfil
+slose=:.lose %lssys
+pause=:.break 16,100000
+tyo=:.iot chttyo,
+
+quit=:call .
+$quit:	skipe debug
+	 pause
+	.logout 1,
+
+define bltdup org,len
+	move tt,[<org>,,<org>+1]
+	blt tt,<org>+<len>-1
+termin
+
+define syscall name,args
+	.call [setz ? .1stwd sixbit /name/ ? args(400000)]
+termin
+
+define conc foo,bar
+foo!bar!termin
+
+; JSP T,LOSE is like .LOSE %LSSYS(TT) or SLOSE (TT)
+lose:	syscall lose,[movei %lssys(tt) ? movei -2(t)]
+	 slose
+
+popj1:	aos (p)
+cpopj:	return
+
+format"$$pcode==:1
+.insrt dsk:syseng;format >
+
+outstr:	syscall siot,[movei chttyo ? a ? b]
+	 slose
+	return
+
+define format &string&,args
+	call [
+	call $format
+.zzz.==-1
+irp arg,,[args]
+	save arg
+.zzz.==.irpcnt
+termin
+	hrroi a,[ascii string]
+	movei b,.length string
+	movni c,.zzz.+1
+	jrst format"format]
+termin
+
+$forma:	save a
+	save b
+	save c
+	call @-3(p)
+	rest c
+	rest b
+	rest a
+	rest (p)
+	return
+
+.vector pdl(lpdl==:100.)
+
+usrvar:	sixbit /OPTION/	? tlo %opint\%opopc
+	sixbit /MASK/	? move [%pipdl]
+lusrvar==:.-usrvar
+
+go:	move p,[-lpdl,,pdl-1]
+	.open chttyo,[.uao\%tjdis,,'tty ? setz ? setz]
+	 slose
+	move t,[-lusrvar,,usrvar]
+	syscall usrvar,[movei %jself ? move t]
+	 slose
+	syscall open,[movsi .bii ? movei chdski ? [sixbit /DSK/] ? [sixbit /./]
+			[sixbit /HISTRY/] ? [sixbit /BAWDEN/]]
+	 flose
+.vector totals(6)
+	move t,[-6,,totals]
+	.iot chdski,t
+.vector hist(lhist==:300.)
+	setzm hist
+	bltdup hist,lhist
+.scalar nall
+	setzm nall
+.scalar nhist
+	setzm nhist
+.scalar nfpcls
+	setzm nfpcls
+.scalar ttotal
+	setzm ttotal
+loop:	move t,[-6,,a]		; A - F
+	.iot chdski,t
+	jumpl t,done
+	aos nall
+repeat 6, addm a+.rpcnt,totals+.rpcnt
+cond:	caia a,1
+	 jrst loop
+	move t,a
+	idivm b,t
+	caia t,200.
+	 jrst loop
+	addm a,nhist
+	addm b,ttotal
+	addm c,nfpcls
+	move t,a
+	imul t,per
+	idivm b,t
+	cail t,lhist
+	 movei t,lhist-1
+	addm a,hist(t)
+	jrst loop
+
+per:	1
+
+done:	format "~&NFPCLS: ~D",nfpcls
+	move t,ttotal
+	imuli t,100.
+	idiv t,nhist
+	idivi t,100.
+	format "~&Average: ~D.~2<~;0~D~>",[t,tt]
+	format "~&Entries: ~D",nhist
+	movsi a,-lhist
+	setzi b,		; running total
+plp:	movei t,(a)
+	imul t,per
+	add b,hist(a)
+	format "~&~9<~D~> ~9<~D~> ~9<~D~>",[t,hist(a),b]
+	aobjn a,plp
+	pause
+	quit
+
+tsint:
+loc 42
+	-ltsint,,tsint
+loc tsint
+	400000,,p
+ltsint==:.-tsint
+
+dismis:	setz ? sixbit /DISMIS/ ? movsi 400000 ? setz p
+
+cnst0:
+constants
+repeat <.-cnst0+77>/100, conc cnst,\.rpcnt,=:cnst0+.rpcnt*100
+
+variables
+
+debug:	0
+
+patch::
+pat:	block 100.
+epatch:	-1			; Make memory exist, end of patch area
+
+ffaddr:
+ffpage==:<ffaddr+1777>_-12
+
+end go

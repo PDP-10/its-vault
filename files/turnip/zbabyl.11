@@ -1,0 +1,304 @@
+-*-Text-*-
+
+### NOTE: This file is not yet ready for installation on the INFO directory ###
+
+This is the file INFO;ZBABYL >, which documents ZBabyl, an extension to the
+Babyl mail reading subsystem.
+
+File: ZBabyl	Node: Top		Up: (Babyl)	Next: Differences
+
+ZBabyl is a basically upward-compatible extension to Babyl which is 
+inspired by the Lisp Machine's mail reader, ZMail.
+
+* Menu:
+
+* Differences::		Discussion of minor incompatibilities with Babyl.
+* Commands::		Commands offered by ZBabyl
+* Extended::		New m-X commands in ZBabyl
+* Filters::		Making and using filters
+* InitFiles::		About the format of a ZBabyl init file
+
+
+File: ZBabyl	Node: Differences	Up: Top		Next: Visible
+
+The following commands do not behave in ZBabyl as they would in Babyl:
+
+* Menu:
+
+* Visible::		About visible changes.
+* Internals::		About how the internals are restructured.
+
+
+File: ZBabyl	Node: Visible		Up: Differences	Next: Commands
+
+Command    Babyl Function		ZBabyl Function
+
+ c-X	   Exit Babyl Temporarily	Command prefix.
+					To get the old behavior, use
+					c-X c-C on ITS or c-X c-Z on Twenex.
+
+ c-S	   Survey Prefix		Survey Prefix, but several of the
+					dispatch characters have changed.
+					Type c-S ? for documentation.
+
+
+File: ZBabyl	Node: Internals		Up: Differences	Next: Commands
+
+All survey commands (Survey All Messages, Survey Labeled Messages, etc)
+work by using filters.
+
+The only really noticeable loss in speed is to Survey All Messages.
+Users are encouraged to use the B command to get rapid, unconditional
+surveying. Survey All Messages is provided for upward compatibility 
+only. It is not worth anyone's address space to make a special version
+of this which is fast since the B command already suffices.
+
+
+File: ZBabyl	Node: Commands		Up: Top		Next: Extended
+
+The following commands are new and/or different in ZBabyl:
+
+Command		Function
+
+ K, Y		Changed upward compatibly:
+		 The K and Y commands now cooperate to retain some 
+		 information in the message header about what messages have
+		 been put together. ZMail can later use this info and ZBabyl
+		 may some day be able to also.
+
+ @		If you type @ at one or more messages, Babyl will remember
+		the `name' of each message. If you later type 1@, Babyl will
+		yank a "References" field into the message you are looking
+		at which is made from the names of all the remembered messages.
+		Also, when sending mail from Babyl, m-X Yank References
+		works to yank the references into the mail you are sending.
+		Its behavior is relatively harmless, so it is safe to 
+		experiment with.
+
+ c-X		Command Prefix. Dispatches on next char typed:
+		c-C, c-Z	Exit Babyl temporarily.
+		c-B		Mail File `Buffer' Menu.
+				Lets you select another mail file to edit.
+				A menu form of the I command in normal Babyl.
+		1, 2, O, ^	These work like the normal window 
+				manipulation commands c-X 1, c-X 2,
+				c-X O, and c-X ^ in normal Emacs.
+		E		Same as Set Event Date.
+		R		Same as Set Start Date.
+		S		Same as Set Stop Date.
+		X		Same as Set Expiration Date.
+
+ c-S		Survey Command Prefix. Dispatches on next char typed:
+		A, c-A	Survey All Messages	
+		D, c-D	Survey Deleted Messages
+		F, c-F	Survey Filtered Messages
+		L, c-L	Survey Labeled Messages 
+		M, c-M	Survey Messages Containing String
+		R, c-R	Survey Reminders
+		S	Survey Seen Messages
+		X, c-X	Survey Expired Messages
+		U, c-U	Prefix. Dispatches on next char typed:
+			D, c-D	Survey UnDeleted Messages
+			L, c-L	Survey UnLabeled Messages
+			S	Survey UnSeen Messages
+		As with Babyl, c-S followed by c-S or c-Q is ignored to
+		account for VT52 lossage.
+
+ c-E		Edits (creates or modifies) a filter.
+
+		With an argument, as in 0 c-E, shows the filter and
+		the Teco compiled code for the filter.
+
+
+File: ZBabyl	Node: Extended	Up: Top		Next: Filters
+
+m-X Set Start Date
+
+	Sets the Start-Date for a message.
+	If a message has a Start-Date, then it is a reminder.
+	By default, a reminder is active if the current date is after
+	the start date (unless the message also has a Start-Date or
+	Expiration-Date which also in the past).
+
+m-X Set Stop Date
+
+	Sets the Stop-Date for a message.
+	If a message has a Stop-Date, then it is not a reminder if
+	that Stop-Date is in the past.
+
+m-X Set Expiration Date
+
+	Sets the Expiration-Date for a message.
+	If a message has an Expiration-Date but no Stop-Date, the
+	Expiration-Date behaves as a Stop-Date. By default, a message
+	is said to hae expired if it has an Expiration-Date and that
+	date is in the past.
+
+m-X Set Event Date
+
+	Simultaneously sets the Start-Date and Expiration-Date for a message.
+	The Start-Date is set to a time 48 hours before the given time.
+	The Stop-Date is set to a time 1 hour after the given time.
+	If a precomma argument is given, it is the number of hours ahead
+	 to use for the Start-Date.
+	If a single (or postcomma) argument is given, it is the number of hours
+	 after to use for the Stop-Date.
+	For example,		 72,8 X Set Event DateTomorrow at 3pm
+	is equivalent to:	      X Set Start DateTwo days ago at 3pm
+				      X Set Stop DateTomorrow at 11pm
+
+m-X Yank References
+
+	Yanks references saved by the @ command into the current message.
+
+	At Babyl command level, this is the same as 1@. When sending mail,
+	it operates on the *Mail* buffer instead of the current message.
+
+m-X Sort All Messages By Date
+
+	This sorts the messages by date.
+	With a negative argument, the file is sorted in reverse by date.
+
+	Due to address space limitations, only works for small Babyl files.
+	Also, only works well if your Babyl file has headers reformed.
+
+
+File: ZBabyl	Node: Filters		Up: Top		Next: Concepts
+
+* Menu:
+
+* Concepts::		About the concept of a filter.
+* Functions::		About the Lisp functions allowed in filters.
+* Menus::		About the creation of a filter.
+* Predefined::		About filters that are initially defined for you.
+* Usage::		About the usage of a filter.
+
+
+File: ZBabyl	Node: Concepts		Up: Filters	Next: Menus
+
+Filtering messages is a way of talking about messages by some
+unifying characteristic or characteristics.
+
+For example, a common filter which was offered by Babyl was the
+filter which matched all messages with a given label. Babyl's 
+filter facility was, however, not extensible or modifiable in 
+the way ZBabyl's is.
+
+Here are some simple ZBabyl filter descriptions:
+
+Filter...			Matches...
+
+T				;all messages
+
+NIL				;no messages
+
+(LABEL "Foo")			;any message having the label "Foo"
+
+(NOT (LABEL "Foo"))		;any message not having the label "Foo"
+
+(AND (LABEL "Foo") 
+     (LABEL "Bar"))		;any message labeled both "Foo" and "Bar"
+
+(LABEL (PROMPT LABEL "Label"))	;any message labeled with a label that
+				;will be prompted for interactively.
+				;The prompt string will be "Label: "
+
+
+
+File: ZBabyl	Node: Menus		Up: Filters	Next: Predefined
+
+
+File: ZBabyl	Node: Predefined	Up: Filters	Next: Usage
+
+
+File: ZBabyl	Node: Usage		Up: Filters	Next: InitFiles
+
+
+File: ZBabyl	Node: InitFiles		Up: Top		Next: Forms
+
+The format of a ZBabyl init file is Lisp code.
+
+* Menu:
+
+* Forms::		Special forms allowed in an init file.
+* SampleInit::		A sample init file.
+
+
+File: ZBabyl	Node: Forms		Up: InitFiles	Next: SampleInit
+
+Filter Definitions
+
+	A DEFINE-FILTER form defines a filter. The syntax is 
+
+		(DEFINE-FILTER <name> ...ignored... <lisp-code>)
+
+	This defines a filter called <name> with definition of <lisp-code>.
+	The ignored portion is for compatibility with ZMail filter
+	definition conventions. Only the name and the last form in 
+	the DEFINE-FILTER form are actually looked at. eg,
+
+	 (DEFINE-FILTER FOOBAR (AND (LABEL "FOO") (LABEL "BAR")))
+
+Auxiliary Mail Files
+
+	An assignment to *OTHER-MAIL-FILE-NAMES* using SETQ or 
+	LOGIN-SETQ will be recognized to initialize the set of 
+	filenames offered by c-X c-B. eg,
+
+	 (SETQ *OTHER-MAIL-FILE-NAMES*
+	       '("<MYDIR>FOO.XMAIL" "<MYDIR>BAR.XMAIL"))
+
+Load Commands
+
+	If the file contains calls to LOAD at toplevel, the contents of
+	the files which are arguments to LOAD will be rocessed -after- any
+	filter definitions or other assignments in the current file. eg,
+
+	 (LOAD "MC:MYDIR;MORE FILTRS")
+
+
+Notes:
+
+ Init files are not scanned linearly. They are scanned as a 
+ multi-pass process. This will only matter, however, if your init 
+ defines the same filter or variable more than once.
+
+ Also, filter definitions and load commands will only be processed 
+ if they begin in column 0. This may change at some point, so don't
+ rely on it, but it may explain occasional unusual behavior.
+
+
+
+File: ZBabyl	Node: SampleInit	Up: InitFiles
+
+;;; -*- Mode:LISP; -*-
+;;; Sample ZBabyl init file
+
+(SETQ *OTHER-MAIL-FILE-NAMES*
+      '("OZ:PS:<MYNAME.XMAIL>FOO.XMAIL"
+	"OZ:PS:<MYNAME.XMAIL>BAR.XMAIL"
+	"MC:MYNAME;OLD MAIL"))
+
+(DEFINE-FILTER UnProcessed (MSG)
+  "Messages that haven't been processed yet."
+  (AND (NOT (LABEL "deleted"))
+       (OR (LABEL "recent")
+	   (LABEL "unseen")
+	   (NOT (LABEL)))))
+
+(DEFINE-FILTER Event (MSG)
+  "Seminars, Conferences, etc. which are active."
+  (AND (OR (LABEL "Conference")
+	   (LABEL "Seminar")
+	   (LABEL "Meeting")
+	   (LABEL "SocialEvent")
+	   (LABEL "Event")
+	   (SEARCH-FIELD SUBJECT "seminar")
+	   (SEARCH-FIELD RE "seminar")
+	   (SEARCH-FIELD TO "COG-SCI")
+	   (SEARCH-FIELD CC "COG-SCI"))
+       (OR (NOT (SEARCH-FIELD START-DATE))
+	   (PRECEDES START-DATE))
+       (OR (NOT (SEARCH-FIELD EXPIRATION-DATE))
+	   (FOLLOWS EXPIRATION-DATE))))
+

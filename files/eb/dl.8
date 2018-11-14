@@ -1,0 +1,65 @@
+; Program to use @ to list files on the Dover.
+
+a=1
+b=2
+c=3
+d=4
+p=15
+pdllen==10
+
+
+pdl:	block pdllen
+jclbuf:	block 40
+
+; Subroutine.  Takes B/ and C/ string pointer, terminated with
+; byte in D.  Copies B string to C string, not including terminator.
+
+strcpy:	ildb a,b
+	camn a,d
+	 popj p,
+	idpb a,c
+	jrst strcpy
+
+jcl1:	asciz\:KILL
+:@ /L[RANDOM] /-D[DOVER] /S /O[MC:.DOVR.;PRESS >] /# /& /2" /M[1000,,,1000] /R /H\
+	; /R - stray LF's and CR's act like LF's and CR's instead of uparrows
+	; /H - backspaces backspaces
+        ; those two for the convenience of LPT-style files.
+	; /-D[DOVER] - press file output, do not queue since we do 
+	; /S - just one output file for multiple input files
+	; /O - output; putting it in .DOVR.; means it will be printed
+	;      and deleted
+        ; /# - no line numbers
+	; /& - no banner page
+	; /2" - reserve two lines for header information, don't share
+	;       with first text line
+	; /M[1000,,,1000] - for RICH, set left margin to one inch;
+	;      we also set bottom margin
+
+retval: block 100
+
+go:	move p,[-pdllen,,pdl-1]
+	.break 12,[5,,jclbuf]
+	skipn jclbuf	
+	 .value [asciz /: Use JCL specifying ascii files to list on Dover KILL
+/]
+	move b,[440700,,jcl1]
+	move c,[440700,,retval]
+	setzm d
+	pushj p,strcpy
+
+	move b,[440700,,jclbuf]
+	movei d,15
+	pushj p,strcpy
+
+	movei a,^V
+	idpb a,c
+	movei a,15
+	idpb a,c
+	setz a,
+	idpb a,c
+	.value retval
+	.value
+
+	end go
+

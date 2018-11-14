@@ -1,0 +1,543 @@
+; -*- MIDAS -*-
+TITLE TTY OUTPUT SPY
+
+.MLLIT==1
+
+x=0
+A=1
+B=2
+C=3
+D=4
+N=5
+OBP=6
+CH=7
+t=10
+tt=11
+P=17
+sp=17				;I hate P for SP
+
+call=<pushj sp,>
+ret=<popj sp,>
+
+TTYO=10
+TTYI=11
+DIRI=12
+dsko=13
+
+DEFINE UTYI AC
+	CAMN OBP,@TOIP
+	 .HANG
+	CAMN OBP,@TOBEP
+	 JRST [	MOVE OBP,@TOBBP
+		JRST .-3]
+	ILDB AC,OBP
+	ANDI AC,377
+TERMIN
+
+DEFINE SYSCAL A,B
+	.CALL [SETZ ? SIXBIT \A\ ? B ((SETZ)) ]
+TERMIN
+
+%%cnt==0
+
+DEFINE SBLK INSTR
+%%cnt=<%%cnt_1>+<%%cnt_<-43>>+<instr>
+instr
+termin
+
+argi==1000,,0
+val==2000,,0
+cnti==5000,,0
+
+
+define type &string
+       move t,[440700,,[ascii string]]
+       movei tt,<.length string>
+       .call typblk
+         .lose %lssys
+termin
+
+typblk:	setz
+	sixbit /SIOT/
+	argi ttyo
+	t ? setz tt
+
+
+init:
+
+LOC 42
+	JSR TSINT
+LOC init
+	movei p,pdl
+	call ttyopn		   ;open the TTY's
+reinit:	type /ANew system, redumping.
+/
+	syscal sstatu,[val sysvrs ? val sysvrs ? val sysvrs ? val sysvrs
+		       val sysvrs
+		       val sysnam
+		       val sysvrs]
+	  .lose %lssys
+	movsi a,-nsyms
+symlp:	move b,syms(a)
+	.EVAL B,
+	  .lose
+	movem b,syms+1(a)
+	add a,[1,,1]
+	aobjn a,symlp
+	move a,syscn
+	MOVEI B,1
+	PUSHJ P,MAKPAG
+	MOVE A,TOIP	;MAKE SURE WE HAVE THE PAGES THE BUFFER POINTERS ARE IN
+	MOVE B,NCT
+	PUSHJ P,MAKPAG
+	MOVE A,TOOP
+	PUSHJ P,MAKPAG
+	MOVE A,TOBEP
+	PUSHJ P,MAKPAG
+	MOVE A,TOBBP
+	PUSHJ P,MAKPAG
+
+	MOVSI A,N
+	IORM A,TOIP	;SET UP INDEX FIELD FOR INDIRECTION
+	IORM A,TOOP
+	IORM A,TOBEP
+	IORM A,TOBBP
+
+	syscal open,[cnti .uio ? argi dsko
+	       [sixbit /DSK/]
+	       [sixbit /_TS_/]
+	       [sixbit /F/]
+	       [sixbit /RWK/]]
+	  .lose %lsfil
+	setz 0,
+	syscal pdump,[argi %jself ? argi dsko ? 0]
+	  .lose %lsfil
+	move a,[444400,,[jrst go
+			 sblk [-4,,2]
+			 sblk sixbit /DSK/
+			 sblk sixbit /TS/
+			 sblk sixbit /NAME/
+			 sblk sixbit /SYS/
+			 %%cnt
+			 jrst go]]
+	movei b,10
+	syscal siot,[argi dsko ? a ? b]
+	  .lose %lsfil
+	syscal renmwo,[argi dsko ? [sixbit /TS/] ? [sixbit /F/]]
+	  .lose %lsfil
+	.close dsko,
+	skipa
+go:	  call ttyopn
+
+	syscal sstatu,[val a ? val a ? val a ? val a ? val a
+	       val a
+	       val b]
+	  .lose %lssys
+	camn a,sysnam		   ;Is it the same ITS
+	  came b,sysvrs		   ;  and the same version?
+	    jrst reinit		   ;    no.  Re-purify
+
+	skipe ltctyp		   ;if we're a winning TTY
+	  .iot ttyo,[^P]	   ;  clear the screan
+	skipe ltctyp
+	  .iot ttyo,["C]
+
+	.suset [.rxjname,,a]
+	came a,[sixbit /WHEN/]	   ;is it some standard frob?
+	  camn a,[sixbit /NAME/]
+	    jrst name		   ;    yes
+	came a,[sixbit /FINGER/]
+	  camn a,[sixbit /WHOIS/]
+	    jrst name
+
+	.SUSET [.SMASK,,[%PIIOC]]
+	SETZM JCL
+	MOVE A,[JCL,,JCL+1]
+	BLT A,JCL+20
+
+	.break 12,[..rjcl,,jcl]	   ;get our JCL
+
+	SKIPN JCL
+	 JRST [	SKIPE DEBUG
+		 .VALUE
+		jrst name]
+	PUSHJ P,GETNUM
+	ANDI N,77
+	SYSCAL CNSGET,[argi 400000(N)
+		       val A ? val A ? val A]
+	  .lose %lssys
+	MOVEM A,FTCTYP
+	CAIN A,%TNTV
+	 jrst name
+
+	MOVE A,@TOBBP
+	MOVE B,@TOBEP
+	SUB B,A
+	PUSHJ P,MAKPAG	;MAKE SURE WE HAVE THE PAGE(S) THE BUFFER ITSELF IS IN
+	MOVE A,TOIP
+	MOVE B,FTCTYP	;TV'S HAVE NO INFO IN TOOP, SO MUST USE TOIP.
+	CAIN B,%TNTV
+	 MOVEM A,TOOP
+	.suset [.simask,,[%PITYI]] ;turn on TTY interrupts!
+rego:	SETZM VPOS
+	MOVE OBP,@TOOP	;HAVE TO START SOMEWHERE
+	CAMN OBP,@TOBEP
+	 MOVE OBP,@TOBBP
+	IBP OBP
+LPE:	setzm crlflg
+LP:	UTYI A
+	TRZE A,%TXDIS
+	 JRST TYPD	;DISPLAY OR CURSOR POS, DISPATCH
+	skipn upaflg		;already got an uparrow?
+	  caie a,"^		;uparrow?
+	    caia
+	      jrst [setom upaflg	;  note the fact
+		    jrst lp]	
+	skipe upaflg
+	  caie a,"?		;  ^? ?
+	    caia		;     nope
+	      jrst delete	;	delete the char backwards
+	skipe upaflg		;need an uparrow?
+	  .iot ttyo,["^]
+	setzm upaflg		;note the fact
+	cain a,33		   ;altmode?
+	  jrst [utyi A
+	        jrst lp]  ;  yes, flush a char
+	.IOT TTYO,A
+	JRST LP
+
+delete:	.iot ttyo,[^P]		;^PX
+	.iot ttyo,["X]
+	setzm upaflg		;^ has been handled
+	jrst lp
+
+TYPD:	CAIL A,TYPDMX
+	 JRST LPE
+	JRST @TYPDTB(A)
+DTB::
+TYPDTB:	TYMOV	;MOVE CURSOR
+	TYMOV1	;DUMMY FOR ABOVE
+	TYEEOF	;CLEAR EOF
+	TYEEOL	;CLEAR EOL
+	TYDELF	;DELETE FWD
+	LPE	;TERMINET MOTOR ON
+	LPE	;   "       "   OFF
+	TYECRL	;CRLF TO DATAPOINTS & IMLACS
+	LPE	;"NOP FOR SUPERDUPER IMAGE MODE"
+	TYEBS	;BS
+	TYELF	;LF
+	TYECRL	;CARRET
+	LPE	;OUTPUT RESET
+	LPE	;QUOTE
+	TYEFS	;FWD SPACE
+	TYMOV1	;MOVE CURSOR NEW STYLE
+	TYECLR	;CLEAR SCREEN
+TYPDMX==.-TYPDTB
+
+TYMOV:	UTYI C	;OLD VPOS
+	UTYI B	;OLD HPOS OR 201
+	UTYI A	;NEW VPOS
+	UTYI B	;NEW HPOS
+	SKIPE FTCTYP
+	 JRST TYMOV0
+	SUB A,C
+	ADD A,VPOS
+	EXCH A,B
+	move c,vsz		   ;generate a number to force B positive
+	imuli c,10		   ;yet member of same equivalence class
+	add b,c
+	IDIV B,vsz		   ;and take the modulus
+	MOVE B,C
+	EXCH A,B
+tymovx:	move d,a
+	sub d,vpos
+	skipge d
+	  add d,vsz
+tymvx1:	sojl d,tymov0		   ;for every line we move down, clear it
+	.iot ttyo,[^M]		   ;terpri
+	.iot ttyo,[^J]
+	jrst tymvx1
+
+TYMOV0:	MOVEM A,VPOS
+	MOVEI A,10(A)
+	MOVEI B,10(B)
+	.IOT TTYO,[^P]
+	.IOT TTYO,["V]
+	.IOT TTYO,A
+	.IOT TTYO,[^P]
+	.IOT TTYO,["H]
+	.IOT TTYO,B
+	JRST LPE
+TYMOV1:	UTYI A	;NEW VPOS
+	UTYI B	;NEW HPOS
+	SKIPE FTCTYP
+	 JRST TYMOV0
+	move d,a		   ;copy new vpos
+	sub d,vpos		   ;find out how much it's moved
+
+tym0v1:	EXCH A,B
+	IDIV B,VSZ
+	MOVE B,C
+	EXCH A,B
+	JRST TYMOVX		   ;do TYMOV0 for printing TTY's
+
+TYEFS:	skipe ltctyp		   ;if we have losing terminal
+	  skipe ftctyp		   ;  or he has winning one
+	    caia		   ;    don't kludge
+	      jrst space	   ;	  otherwise, do what's usually right
+	MOVEI A,"F
+	JRST PTYO
+
+space:	.iot ttyo,[40]		   ;a space is usually what's meant!
+	jrst lpe		   ;that's all!
+
+TYECLR:	MOVEI A,"C
+	JRST PTYO
+
+TYEEOF:	MOVEI A,"E
+PTYO:	.IOT TTYO,[^P]
+	.IOT TTYO,A
+	JRST LPE
+TYDELF:	MOVEI A,"F
+	JRST PTYO
+TYEEOL:	MOVEI A,"L
+	JRST PTYO
+TYECRL:	.IOT TTYO,[^M]
+	skipe ltctyp		   ;if we've got losing terminal
+	  skipe ftctyp		   ;  or he's got a winning one
+	    JRST LPE		   ;    That's it, otherwise get a fresh line
+	setom crlflg		   ;note that we've gotten a CR, no double LF
+	jrst tyelf1		   ;and do a LF
+TYELF:	skipe crlflg		   ;was last frob an CRLF?
+	  jrst lpe
+tyelf1:	.IOT TTYO,[^J]
+	AOS VPOS
+	JRST LP			   ;don't reset CRLFLG
+
+TYEBS:	.IOT TTYO,[^H]
+	JRST LPE
+
+crlflg:	0
+
+
+GETNUM:	MOVE C,[440700,,JCL]	;TRY OCTAL FIRST
+	SETZ N,
+GETNLP:	ILDB A,C
+	CAIN A,^M
+	 POPJ P,
+	CAIG A,"7
+	CAIGE A,"0
+	 JRST NAM	;MUST BE A UNAME
+	SUBI A,"0
+	LSH N,3
+	IORI N,(A)
+	JRST GETNLP
+
+NAM:	MOVNI D,6  ;SET UP FOR 6 CHARS, INCL SPACES IF NECESS
+	MOVE C,[440700,,JCL]
+NAM1:	ILDB A,C
+	CAIN A,^M
+	 JRST NAM2
+	CAIN A,40
+	 JRST NAM2
+	CAIL A,140
+	 SUBI A,40
+	DPB A,C
+	AOJL D,NAM1
+	JRST DIR1
+NAM2:	MOVEI A,40
+	DPB A,C
+	AOJGE D,DIR1
+	IDPB A,C
+	AOJL D,.-1
+
+DIR1:	MOVE D,JCL
+	CAMN D,[ASCII /SYS  /]
+	 JRST [	SKIPL N,@SYSCN
+		 POPJ P,
+		JRST .+1]
+	syscal open,[cnti .uai
+	       argi diri
+	       [sixbit /TTY/]
+	       [sixbit /.FILE./]
+	       [sixbit /(DIR)/]]
+	   .lose %lssys
+	MOVNI B,2
+DIRLP1:	.IOT DIRI,A
+	CAIE A,^J
+	 JRST DIRLP1
+	AOJL B,DIRLP1
+DIRLP2:	MOVNI D,6	;NO. CHARS IN UNAME
+	MOVE C,[440700,,JCL]
+	.IOT DIRI,A	;"T" AT START OF LINE
+	CAIN A,"D
+	 JRST FLSLIN
+	CAIE A,"T
+	 JRST [	SKIPE DEBUG
+		 .VALUE
+		jrst name]
+	.IOT DIRI,TMN
+	.IOT DIRI,TMN+1
+	.IOT DIRI,A	;SPACE
+DIRLP3:	.IOT DIRI,A	;1ST CHAR OF UNAME
+	ILDB B,C
+	CAIE B,(A)
+	 JRST FLSLIN	;NOT ON THIS LINE OF THE DIR
+	AOJL D,DIRLP3
+	MOVE N,TMN	;WE FOUND HIM
+	SUBI N,"0
+	LSH N,3
+	MOVE A,TMN+1
+	SUBI A,"0
+	ADDI N,(A)
+	.CLOSE DIRI,
+	POPJ P,
+FLSLIN:	.IOT DIRI,A
+	CAIE A,^J
+	 JRST FLSLIN
+	JRST DIRLP2
+
+7TYPE:	HRLI A,440700
+7TYLP:	ILDB B,A
+	JUMPE B,CPOPJ
+	.IOT TTYO,B
+	JRST 7TYLP
+CPOPJ:	POPJ P,
+
+;GET THE SAME PAGE THE SYS JOB HAS IN ITS PAGE WHOSE ADDRESS IS IN A, # WORDS IN B
+MAKPAG:	ANDI A,-1
+	PUSH P,A
+	ASH A,-10.
+	MOVEM A,CBLK1	;GET FIRST PAGE
+	.CALL CBLK
+	  .lose %lssys
+	POP P,A
+	ADDI A,-1(B)	;ADDRESS OF LAST WORD
+	ASH A,-10.
+	CAMN A,CBLK1
+	 POPJ P,
+	MOVEM A,CBLK1
+	.CALL CBLK	;CROSSES PAGE BOUNDARY, GET SECOND PAGE
+	  .lose %lssys
+	POPJ P,
+
+TSINT:	0
+	0
+	EXCH A,TSINT
+TSIN1:	TRZE A,%PIIOC	;TYPICALLY ILLEGAL CHAR AFTER ^P
+	 JRST [	AOS TSINT+1	;SO FORGET IT
+		JRST INTRET]
+	TRZE A,%PITYI
+	 JRST [	MOVEI CH,TTYI
+		.ITYIC CH,
+		  JRST INTRET
+		JRST VALRT]
+	
+	type /Unknown Interrupt?/
+	.lose
+
+INTRET:	JUMPN A,TSIN1
+	MOVE A,TSINT
+	.DISMIS TSINT+1
+
+VALRT:	CAIN CH,40
+	 .IOT TTYI,CH		; EAT UP SPACE
+	cain ch,^K		   ;request for re-display?
+	  jrst val2
+	CAIN CH,^L
+	  JRST VAL1
+	.IOT TTYO,[^M]
+BYEBYE:	.logout 1,
+
+VAL1:	skipe ltctyp		   ;if we're a winning TTY
+	  .iot ttyo,[^P]	   ;  clear the screan
+	skipe ltctyp
+	  .iot ttyo,["C]
+val2:	.IOT TTYI,CH		; EAT UP ^L or ^K
+	movei b,rego		   ;start at begining of buffer
+	movem b,tsint+1		   ;instead of where we came from
+	jrst intret		   ;dismis!
+
+CBLK:	SETZ
+	SIXBIT \CORBLK\
+	argi 210000	;READ ACCESS, FAIL IF CAN'T
+	[-1]	;PUT PAGE IN SELF
+	CBLK1
+	SETZI 400000	;GET FROM SYS JOB
+CBLK1:	0	;GETS -#PAGES,,PAGE # TO START
+
+JCL:	BLOCK 20
+	-1			   ;terminate what JCL will read into
+upaflg:	0
+TMN:	0 ? 0	;HOLDS 2 DIGIT TTY NO. FOR DIRI
+LTCTYP:	0	;LOCAL TCTYP
+FTCTYP:	0	;FOREIGN TCTYP
+VSZ:	0	;LOCAL VERTICAL SCREEN SIZE
+HSZ:	0	;  "   HORIZONTAL  "    "
+VPOS:	0	;CURRENT (HOPEFULLY) LOCAL VERTICAL CURSOR POS
+RUNFLG:	0	;NONZERO IF SETUP DONE ALREADY
+DEBUG:	0	;-1 => INHIBIT :KILLS.
+SYMS:
+IRPS X,,[NCT TOBEP TOBBP TOIP TOOP SYSCN]
+	SQUOZE 0,X
+x:	0
+TERMIN
+NSYMS==.-SYMS
+CONSTA ? VARIAB
+LPDL==20
+PDL:	BLOCK 20
+PATCH":	BLOCK 100
+
+;;; Barf, I had to snarf this from TS3TTY ...
+
+;OUTPUT BUFFER BIT:
+%TXDIS==200	;1 => THIS IS A %TD CHARACTER.
+IF2 EXPUNGE %TXDIS ;SO %TX BIT TYPEOUT MODE LOOKS NICE.
+
+name:	.suset [.smask,,[0]]	   ;turn off interrupts
+	syscal open,[cnti .uii
+	       argi 1
+	       [sixbit /DSK/]
+	       [sixbit /TS/]
+	       [sixbit /NAME/]
+	       [sixbit /SYS/]]
+	  .lose %lsfil
+	move 17,[acprog,,0]
+	blt 17,17
+	jrst 0
+
+acprog:	.call 6
+	.logout 1,
+	.iot 1,0
+	.break 12,5		   ;set the starting address
+	xct 0			   ;execute start instruction
+	400001,,0		   ;starting adress
+	setz
+	sixbit /LOAD/
+	argi %jself
+	setzi 1
+	block 20-<.-acprog>
+
+sysvrs:	0			   ;verson of system last used in.
+sysnam:	0			   ;name of system purified on.
+
+
+;; routine to open the TTY channels
+
+ttyopn:	syscal open,[cnti .uao\%tjdis ? argi ttyo ? [sixbit /TTY/]]
+	  .lose %lsfil
+	syscal open,[cnti .uii ? argi ttyi ? [sixbit /TTY/]]
+	  .lose %lsfil
+	SYSCAL TTYSET,[MOVEI TTYO ? [032323,,232323] ? [232323,,232323]
+					[(%TSMOR)]]
+	  .lose %lssys
+
+	SYSCAL CNSGET,[	argi TTYO ? val VSZ
+			val HSZ ? val LTCTYP]
+	  .lose %lssys
+	ret
+
+
+
+END init
+
