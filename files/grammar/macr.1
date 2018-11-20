@@ -1,0 +1,156 @@
+
+
+(DEFPROP P
+ (LAMBDA (A)
+	 (TYO 14)
+	 (SPRINT (TWP (APPLY '* A))
+		 0
+		 LINEL)
+	 '*)
+ FEXPR)
+
+(DEFPROP TWP
+ (LAMBDA (X)
+  (COND
+   ((ATOM X) X)
+   ((LIST
+     (FE X)
+     (FROM (NB X) (N X))
+     (COND ((ATOM (H X))
+	    (CADDDR (CAR (NB X))))
+	   ((MAPLIST 'TWP
+		     (REVERSE (H X)))))))))
+ EXPR)
+
+(DEFPROP REMMAC
+	 (LAMBDA NIL
+		 (REMPROP 'MACR
+			  'EXPR)
+		 (REMPROP 'MAC
+			  'EXPR)
+		 (REMPROP 'PDEFINE
+			  'FEXPR)
+		 (REMPROP 'REMMAC
+			  'EXPR))
+	 EXPR)
+
+(DEFPROP PDEFINE
+	 (LAMBDA (A)
+		 (PUTPROP (CAR A)
+			  T
+			  'GRAMUNIT)
+		 (PUTPROP (CAR A)
+			  (MACR (CDR A))
+			  'EXPR)
+		 (CAR A))
+	 FEXPR)(DEFPROP MAC
+	 (LAMBDA (A) (COND ((NULL A) NIL)
+			   ((EQ A 'RETURN) '(GO RETURN))
+			   ((ATOM A) (SETQ TAG2 (CONS A TAG2)) (LIST 'GO A))
+			   (T (LIST 'PROG2
+				    (LIST 'MQ (CAR A))
+				    '(GO FAIL)))))
+	 EXPR)
+
+(DEFPROP MACR
+ (LAMBDA (GET)
+  (LIST
+   'LAMBDA
+   NIL
+   (APPEND
+    (LIST 'PROG
+	(APPEND '(FE H ME NB C SM REGISTERS  CUT NN T1 T2 T3)(CAR GET))
+	     '(SETQ NN T)
+	     '(SETQ CUT END)
+           '(SETQ REGISTERS (DSYM 'REGISTER))
+	     '(SETQ C
+		   (LIST (LIST (SETQ FE (REVERSE REST)) (SETQ NB N) N H NIL REGISTERS ))))
+    (REVERSE
+     (APPEND
+      '((RETURN (LIST (REVERSE FE) NB N H SM REGISTERS )) (SETQ MES ME)
+						 RETURN
+						 (RETURN NIL)
+						 (SETQ N NB)
+						 (SETQ MES ME)
+						 FAIL)
+      (PROG (W X Y Z FIN CRK TAGLIST TAG2)
+	    (SETQ TAGLIST '(RETURN FAIL))
+		(SETQ GET (CDR GET));STRIP OFF VARIABLE DECLARATION
+       LOOP (COND ((ATOM (CAR GET))
+		   (COND ((MEMQ (CAR GET) TAGLIST) (ERTSTOP TAG2))
+			 ((SETQ TAGLIST (CONS (SETQ CRK (CAR GET)) TAGLIST))
+			  (GO END))))
+		  ((EQ (CAAR GET) '/: ) (RPLACA GET (CDAR GET)) (GO COLON))
+		  ((EQ (CAAR GET) 'GOCOND)
+		   (SETQ CRK (LIST 'COND
+				   (LIST 'NN (LIST 'GO (CADAR GET)))
+				   (LIST 'T (LIST 'GO (CADDAR GET)))))
+		   (GO END))
+		  ((ATOM (CAAR GET)) (SETQ CRK (CAR GET)) (GO END)))
+COLON	    (SETQ W (CAAR GET))
+	    (SETQ X (MAC (CADAR GET)))
+	    (SETQ Y (MAC (CADDAR GET)))
+	    (SETQ Z (COND ((CDDDAR GET) (MAC (CADDDR (CAR GET)))) (T X)))
+	    (SETQ CRK
+		  (COND ((EQ X Y)
+			 (COND ((EQ X Z)
+				(COND ((NULL X) W) (T (LIST 'PROG2 W X))))
+			       (T (COND ((NULL X)
+					 (LIST 'COND
+					       (LIST (LIST 'AND
+							   W
+							   '(NULL NN))
+						     Z)))
+					((NULL Z)
+					 (LIST 'COND
+					       (LIST (LIST 'OR
+							   (LIST 'NOT W)
+							   'NN)
+						     X)))
+					(T (LIST 'COND
+						 (LIST (LIST 'OR
+							     (LIST 'NOT W)
+							     'NN)
+						       X)
+						 (LIST 'T Z)))))))
+			((EQ X Z)
+			 (COND ((NULL X)
+				(LIST 'COND (LIST (LIST 'NOT W) Y)))
+			       ((NULL Y) (LIST 'COND (LIST W X)))
+			       (T (LIST 'COND (LIST W X) (LIST 'T Y)))))
+			((EQ Y Z)
+			 (COND ((NULL X) (LIST 'COND
+					       (LIST (LIST 'OR
+							   (LIST 'NOT W)
+							   '(NULL NN))
+						     Y)))
+			       ((NULL Y)
+				(LIST 'COND
+				      (LIST (LIST 'AND W 'NN) X)))
+			       (T (LIST 'COND
+					(LIST (LIST 'AND W 'NN) X)
+					(LIST 'T Y)))))
+			(T (COND ((NULL X) (LIST 'COND
+						 (LIST (LIST 'NOT W) Y)
+						 (LIST '(NULL NN) Z)))
+				 ((NULL Y) (LIST 'COND
+						 (LIST W
+						       (LIST 'COND
+							     (LIST 'NN X)
+							     (LIST 'T Z)))))
+				 ((NULL Z) (LIST 'COND
+						 (LIST (LIST 'NOT W) Y)
+						 (LIST 'NN X)))
+				 (T (LIST 'COND
+					  (LIST W (LIST 'COND
+							(LIST 'NN X)
+							(LIST 'T Z)))
+					  (LIST 'T Y)))))))
+       END  (SETQ FIN (CONS CRK FIN))
+	    (COND ((SETQ GET (CDR GET)) (GO LOOP)))
+	    (MAPC (FUNCTION (LAMBDA (TAG) (COND ((NOT (MEMQ TAG TAGLIST))
+						 (ERTSTOP NOTAG)))))
+		  TAG2)
+	    (RETURN FIN)))))))
+ EXPR)
+
