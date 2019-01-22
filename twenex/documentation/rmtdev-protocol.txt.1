@@ -1,0 +1,315 @@
+			RMTDEV protocol
+
+This is the protocol used by the RMTDEV device on ITS for talking to OZ
+and anybody else who will listen.
+
+Contact name is "RMTDEV <space> username"  where username identifies the
+user on ITS (NOT on the server machine).  The server may wish to use this to
+set the author of any files it creates.  E.g. OZ sets the author to
+"username@host".
+
+Once a connection is established, the user will send commands in packets
+with opcode 220.  The format of a command packet is:
+	bytes 0-1: transaction id.
+	byte 2	 : command opcode.
+	byte 3 on: command arguments (an ascii string).
+
+The server executes the commands and (usually) sends back responses in 221
+packets.  The format of a response packet is:
+	bytes 0-1: transaction id from the command packet.
+	byte 2	 : command opcode from the command packet.
+	byte 3	 : error code
+	byte 4 on: response text (an ascii string)
+
+If an error occured, byte 3 of the response contains a small non-zero number
+described below (see Command Error Codes) and the rest of the packet may
+contain an explanatory error message (which is however not used by ITS).  If
+no error occured, byte 3 contains 0 followed by response text appropriate
+for the command.
+
+The exact command arguments depend on the command opcode, but they are in
+(8-bit) ascii, to be parsed by the server.  Arguments are separated
+by the lispm newline (215) character.  All numbers are written in decimal,
+dates are numbers representing lispm-style universal time, and filenames are in
+extended ITS syntax: DEV:DEV: ... DEV: DIR; DIR; ... DIR; NAME NAME ... NAME
+All the device components come before all directory components which come
+before all name components.  Any amount of whitespace is allowed around any
+component.  Quoting of special characters is done with ^Q.  The server should
+try to interpret names "<" and ">" as smallest and largest version,
+respectively, when they occur in appropriate positions in a filename.
+
+The defined commands and their opcodes and argument syntax are described
+below.
+
+	Initial commands
+
+The following commands are only legal if no file is open.
+
+opcode 0 (open file for output)
+opcode 1 (open file for input)
+  The argument is:
+    <byte-size> <nl> <options> <nl> <allocation> <nl> <filename>
+
+    <Byte-size> is the number of bits per byte to read or write.  (Currently
+    ITS will only request 7 or 36 bit bytes).  See Data Transfers.
+
+    <Options> are of the form "/option/option/option", option names preceeded
+	by a slash, where an option is one of:
+          NRF - do not set reference dates
+	  NLK - do not follow links
+	  RWT - reader wait - on output, make readers wait for file
+		to close.
+	  WOV - write over mode - only for output opens, it means the
+	        specified file must already exist and should be opened
+		for possible writing over or appending.  After the open,
+		the access pointer should be at the beginning of the file.
+    <allocation> - initial allocation (see Data Transfers) for input opens.
+		Ignored on output opens.
+  The response text is:
+    <file size in open bytes> <nl>
+    <natural file byte-size> <nl> <file size in natural bytes> <nl>
+    <file creation date> <nl> <file reference date> <nl> <file author> <nl>
+    <true filename>
+  'Natural' file byte size usually refers to the byte size in which the file
+  was last written in.
+  Only the <true filename> field is required.  If a server cannot get some
+  of the other information, it should not err out but just return that field
+  as empty (i.e. <nl><nl>).
+
+opcode 2 (list a directory)
+   Arguments:  <allocation> <nl> <directory name>
+   Response text: like for open (though most of the fields are ignored).
+
+  Should behave as if an ascii (7 bit) file containing a directory listing in
+  some reasonable format was opened for input.
+
+opcode 3 (rename file)
+   Arguments: <source filename> <nl> <target filename>
+   Response text:  <resulting true filename>
+
+  Rename source file to target file
+
+opcode 4 (delete a file)
+    Arguments: <filename>
+    Response text: <true filename of deleted file>
+
+  Delete the specified file
+
+opcode 5 (expunge a directory)
+   Arguments: <directory name>
+   Response text: <whatever - some string to be displayed to user>
+
+  Expunge the directory, if that makes sense on the host system.
+
+;opcode 6 (create a directory)
+;  Not defined yet.
+
+;opcode 7 (make a link)
+;  Not defined yet.
+
+opcode 8 (reuse)
+   Argument: <username>
+   Response text: none
+
+  This command tells the server to reinitialize itself and behave as if it
+  just received an RFC with the specified username.  The server may refuse
+  by sending an error response or accept by sending a non-error one.
+
+
+	Stream commands
+
+The following commands are only legal if a file is open (i.e. following
+an open or list directory command)
+
+opcode 16. (close)
+   Argument: none
+   Response text: none
+  Close the currently open file.
+
+opcode 17. (increment allocation)
+   Argument: <additional allocation>
+  Increases the allocation for input (see Data Transfer), will not happen
+  on output.  This command is unique in that the server does NOT send a
+  response.
+
+opcode 18. (set file position)
+   Argument: <file position>[<nl><allocation>]
+   Response text: none
+
+  Set file access pointer to specified position.  The position is the number of
+  bytes (of the size specified in the open) before the pointer -- top of
+  file is 0.
+  For input opens, there is a second argument which specifies the new
+  allocation (see Data Transfers).
+
+Opcode 19. (rename while open)
+   Argument: <new filename>
+   Response: <new true filename>
+
+ Rename the currently open file.  This usually happens just before the file
+ is closed.
+
+Opcode 20. (delete while open)
+   Argument: none
+   Response text: <true filename>
+
+ Delete the currently open file.
+
+Opcode 21. (set reference date)
+   Argument: <new date>
+   response text: none
+
+  Set the file reference date of the currently open file.
+
+Opcode 22. (set creation date)
+   Argument: <new date>
+   Response text: none
+
+  Set the file creation date of the currently open file.
+
+Opcode 23. (set file author)
+    Argument: <new author name>
+    Response text: none
+
+  Set the file author of the currently open file.
+
+Opcode 24. (read file status)
+   Argument: none
+   Response: as for open
+
+  Get info on the currently open file.
+
+		Data Transfers
+
+Data is transferred over the same connection as the commands, using packets
+with opcodes between 200 and 217 (octal).
+
+Conceptually, the transfer medium is considered to be a bit stream, with the
+bits packed consecutively into the 8-bit bytes of the packet (the msb of each
+byte being its first bit).  The exact number of bits in the packet is
+determined as follows:  If the packet has B bytes and opcode 2xy (where x is
+0 or 1 and y is between 0 and 7) then it contains B*8-y bits.  That is,
+the last y bits of the last byte are padding, i.e. not part of the data
+in the packet.  The middle digit of the opcode, x, is used to indicate end
+of file on input opens.  The server sets this if it reaches end of the file
+being read, to indicate that no more data will follow this packet.
+
+A file is considered to be a sequence of bytes of the size specified in
+the open, and the bytes are sent along the bit stream.  [What all this means,
+basically, is that logical bytes of arbitrary size are packed for transfer into
+8-bit bytes of the transport medium just like image mode in FTP, so go steal
+the image mode code from your FTP server...]
+
+It is up to the server to determine how to get the bytes of the requested size
+from/to the file -- e.g. for a 7-bit open, it should read/write text in a
+manner appropriate for the OS (truncating and/or translating to ascii as
+appropriate; local newlines should be rendered as <CR><LF>).  For a 36-bit open
+on a non-pdp10 machine, your guess is as good as mine, but whatever you do,
+that's how the file is going to be stored on the ITS machine, so make reading &
+writing mutually reversible.
+
+When a file is opened for output, ITS will start sending data (opcode 20y)
+packets to the server, which it should unpack and write to the file.  That's
+all there is to it.
+
+When a file is opened for input, the server should start sending data
+immediately after sending the open response.  But it cannot send arbitrary
+amounts of data because it would swamp the user.  That's where allocation comes
+in.  At any time, the server has an 'allocation', which is the number of bits
+it is allowed to send.  When a file is opened for input, the allocation is set
+from the <allocation> argument in the open command.  Whenever the server sends
+out some data, it subtracts the number of bits it sent from its allocation.
+When an increment-allocation command (opcode 17.) is received, the argument
+is added to the current allocation.  When a set-file-pointer command is
+received, the allocation is reset from the <allocation> argument.  The
+allocation must never go negative. When its allocation hits 0, the server must
+not send any more data until it gets an increment-allocation (or
+set-file-pointer) command.  Whenever its allocation is positive, the server
+should be sending data with no further requests from the user.
+
+The server must not assume that it may send its entire allocation before
+checking for commands from the user.  It must either listen for commands
+asynchronously or check for incoming commands between data packets.
+
+When the server reaches end of file, it should give the last data packet
+a 21y opcode rather than 20y (or it may simply send an extra empty 210 packet
+as an end-of-file indicator).  It should not close the file, as the user
+may do a set-file-pointer command.
+
+When the server receives a set-file-pointer command, it should immediately
+start sending data from the new position, just as for the initial open.
+
+			Asynchronous errors
+
+When the server gets an asynchronous error (i.e. an error which didn't
+happen while executing a command and hence cannot be reported in a response
+packet), it should send a 222 packet containing a one byte 'error code',
+one of the following (pick one that comes closest....):
+	  1	ILLEGAL HARDWARE OPERATION ATTEMPTED
+	  2	ATTEMPTED RANDOM ACCESS TO ADDRESS BEYOND END OF FILE
+	  3	NON-RECOVERABLE DATA ERROR
+	  4	NON-EXISTENT SUB-DEVICE
+	  5	OVER IOPOP
+	  6	OVER IOPUSH
+	  7	USR OP CHNL DOES NOT HAVE USR OPEN
+	 10	CHNL NOT OPEN
+	 11	DEVICE FULL (can also mean a directory is full)
+	 12	CHNL IN ILLEGAL MODE ON IOT
+	 13	ILLEGAL CHR AFTER CNTRL P ON TTY DISPLAY
+
+		Command Error Codes
+
+The following are the error codes for use in response packets.  Pick one
+that comes closest.  These messages are exactly what the ITS user will see...
+
+1	;NO SUCH DEVICE
+2	;WRONG DIRECTION
+3	;TOO MANY TRANSLATIONS
+4	;FILE NOT FOUND
+5	;DIRECTORY FULL
+6	;DEVICE FULL
+7	;DEVICE NOT READY
+10	;DEVICE NOT AVAILABLE
+11	;ILLEGAL FILE NAME
+12	;MODE NOT AVAILABLE
+13	;FILE ALREADY EXISTS
+14	;BAD CHANNEL NUMBER
+15	;TOO MANY ARGUMENTS (CALL)
+16	;PACK NOT MOUNTED
+;17 FORMERLY DIRECTORY NOT AVAIL
+20	;NON-EXISTENT DIRECTORY
+21	;LOCAL DEVICE ONLY
+22	;SELF-CONTRADICTORY OPEN
+23	;FILE LOCKED
+24	;M.F.D. FULL
+25	;DEVICE NOT ASSIGNABLE TO THIS PROCESSOR
+26	;DEVICE WRITE-LOCKED
+27	;LINK DEPTH EXCEEDED
+30	;TOO FEW ARGUMENTS (CALL)
+31	;CAN'T MODIFY JOB
+32	;CAN'T GET THAT ACCESS TO PAGE
+33	;MEANINGLESS ARGS
+34	;WRONG TYPE DEVICE
+35	;NO SUCH JOB
+36	;VALID CLEAR OR STORED SET
+37	;NO CORE AVAILABLE
+40	;NOT TOP LEVEL
+41	;OTHER END OF PIPELINE GONE OR NOT OPEN
+42	;JOB GONE OR GOING AWAY
+43	;ILLEGAL SYSTEM CALL NAME
+44	;CHANNEL NOT OPEN
+45	;INPUT BUFFER EMPTY OR OUTPUT BUFFER FULL
+46	;UNRECOGNIZABLE FILE (LOAD)
+47	;LINK TO NON-EXISTENT FILE
+
+
+Comments:
+
+Because of the way ITS works, it is quite likely that certain commands will be
+re-executed repeatedly, especially if they take a long time.  Thus it might be
+worthwhile for the server to keep some state to avoid reexecuting expensive
+commands.  For example it might keep track of the current file position and
+current filename, and compare it against requested new position/rename
+argument, etc.
+
+The Twenex server source is in SSY:RMTSLV.MID on OZ.
