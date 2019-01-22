@@ -1,0 +1,198 @@
+;-*-lisp-*-
+
+;|Defs for lisp machine version of king and pawn hacker --- KWC|
+
+;|a setoff is an offset into a board 0-63
+; a boff is an offset into a fringed board 0-119
+; stb and bts are arrays for converting from one format to the other|
+
+
+(setq open-code-map-switch t)
+
+(special stb					;|setoff --> boff|
+	 bts					;|boff --> setoff|
+	 )
+
+;|get the neighbors of a setoff in setoff format|
+
+(special setoff$squs-next-to)
+
+;|the universal set -- every square is there|
+
+(special cset$universe)
+
+(special cset$empty)				;|the empty set|
+
+(special chess-font)				;|holds atoms for each kind of piece|
+
+(defstruct (pawn-obst :NAMED ;(named-structure pawn-obst-handler)
+		      )
+	   po$blockers					;|eneny pawns on same file|
+	   po$unhelpers					;|eneny pawns on adjacent file|
+	   po$doublers					;|friendly pawns on same file|
+	   po$unhelpers&blockers			;|both unhelpers and blockers|
+	   )
+
+(special k-remote$blocked)			;|illegal for king in k-remote|
+
+(defstruct (pq :NAMED ;(named-structure pq-handler)
+	       )
+	   pq$apawns#					;|# of apawns| 
+	   pq$afiles					;|# of files in apawn cluster|
+	   pq$dpawns#
+	   pq$dfiles
+	   pq$apawns					;|array decsribing each attacker file|
+	   pq$dpawns					;|array which decscribe each dfile|
+	   pq$dking					;|dking ploc|
+	   pq$aking					;|aking ploc|
+	   pq$aside					;|the attacker|
+	   pq$fun					;|the expert for this kind of cluster|
+	   )
+
+(defstruct (pawn-db :NAMED ;(named-structure pawn-db-handler)
+		    )
+	   pawn-db$boff					;|boff rep of pawn| 
+	   pawn-db$rank
+	   pawn-db$file
+	   pawn-db$protme				;| min 5 (- 8 rank) |
+	   pawn-db$qsqu					;| queening-squ |
+	   )
+
+(special piece-names)					;|atom --> pval|
+
+(special sqname)					;|atom --> boff|
+
+(special init-pos)					;|initial position|
+
+(special compas-points					;|list of directions (not N dirs)|
+	 alldirs)					;|list of directions|
+
+(special pawn-obst-array)				;|boff --> pawn-obst|
+
+(special tar-defend-distance				;|boff --> k-remote --> d-dis from tar|
+	 tar-attack-distance				;|same as above but for attacker|
+	 )
+
+(special time-to-queen-if-obst-dies)			;|boff --> time-to-queen|
+
+(defstruct (static-eval-val :NAMED ;(named-structure static-handler)
+			    )		;result of a static evaluation 
+	   static-result				;win, loss, draw, dont-know 
+	   static-number				;normalized for white 0=loss, 100 = win
+	   static-aside					;attacking side
+	   static-reason				;for debuging only
+	   )
+
+(special static-win-number				;constants for static-number slot above
+	 static-draw-number
+	 static-loss-number)
+
+(defstruct (key :NAMED ;(named-structure key-handler)
+		) 
+	   key-name					;atomic name of key 
+	   key-static					;returns a static-eval-val
+	   key-forward-cutoff				;(pos) returns (bool)
+	   key-prescan-sort
+	   key-temps					;inits temps for given position
+	   key-progress					;tests position
+							;aginst father 
+	   key-sort-fun
+	   key-of-children				;select key for child
+	   )
+
+(defstruct (prescan-sort-struc :NAMED ;(named-structure prescan-sort-handler)
+			       )
+	   prescan-fun
+	   sort-fun
+	   applicable-prescan?
+	   combination-fun
+	   combination-args
+	   )
+
+(special active-key					;the currently active key struc
+	 single-pawn-key				;the single pawn key struct
+	 r-vs-p-key					;lone rook vs lone pawn
+	 r-vs-p-prescan
+	 r-vs-ps-key					;lone rook vs several pawns
+	 r&p-vs-r-key
+	 r&ps-vs-r&ps-key
+	 basic-rook-mate-key				;lone rook vs naked king
+	 r&p-vs-r&p-key
+	 r&2p-vs-r&p-key
+	 cheops-prescan					;sorts moves on a setd3
+	 tempos-prescan					;sorts moves by threats (using cheops)
+	 )
+
+(defstruct (active-key :NAMED ;(named-structure active-key-handler)
+		       ) 
+	   active-key-struc				;a key structure (above) 
+	   active-key-temps				;the neccessary tempories
+	   )
+
+;singlep key assumes that the only pieces left are a single pawn, white king
+; and black king
+
+(defstruct (singlep-temps :NAMED ;(named-structure singlep-temps-handler)
+			  )	;temps for single pawn key
+	   singlep$aside-p				;side who has pawn 
+	   singlep$pawn-p					;the pawn's boff
+	   singlep$aking-p				;the aking's boff
+	   singlep$dking-p				;the dking's boff
+	   )
+
+(defstruct (rtemps :NAMED ;(named-structure rtemps-handler)
+		   )
+	   rtemps$aside
+	   rtemps$arook
+	   rtemps$drook
+	   rtemps$apawns
+	   rtemps$dpawns
+	   rtemps$aking
+	   rtemps$dking)
+
+;(defstruct (position :NAMED ;(named-structure position-handler)
+;		      )
+;	   position-handler
+;	   position-move-list
+;	   position-scanned-moves
+;	   position-statev
+;	   position-search-value
+;	   position-search-reason)
+
+(special default-setd					;for full width searching
+	 default-setw					;a list of cutoffs for each depth
+	 default-my-assured-worst
+	 default-his-assured-worst
+	 initial-setd
+	 default-key)
+
+;bound in e-full-width-search
+
+(special setd
+	 setw 
+	 move-list
+	 move-list-idx
+	 active-key
+	 active-key-struc
+	 key-temps
+	 principle-variation)
+
+(special c-fs-n-positions				;counts positions seen
+         c-fs-n-ab-cut					;counts alpha beta cuts
+	 c-fs-n-forward-cut				;counts forward cutoffs
+	 number-of-depth-cutoffs
+	 number-of-already-have-forced-win-cutoffs
+	 number-of-width-cutoffs
+	 number-of-search-all-plaus-moves
+	 number-of-repetition-of-position-cutoffs
+	 number-of-anti-progressive-cutoffs
+	 number-of-illegal-positions
+	 number-of-transpositions
+         )
+
+(special pawn-structure-array
+	 pawn-structure-array-size)
+
+(special default-rating-threshold)			;min value for a prescan rating fun
+
+(special c-root-position)

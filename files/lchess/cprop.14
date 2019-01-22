@@ -1,0 +1,112 @@
+;;; -*-Mode:LISP; Package:USER; Base: 10. -*-
+;READ IN LCHESS;CHDEFS > BEFORE RUNNING THIS INTERPRETED..
+
+;PROPOSING A MOVE.
+
+;GIVEN A GOAL, IDENTIFY MOVES THAT MIGHT CONTRIBUTE TO THAT GOAL.
+
+;C-PROPOSE-DEFENSE
+;C-PROPOSE-INTERPOSE
+;C-PROPOSE-CAPTURE-ATTACKER
+;C-PROPOSE-MOVE-PIECE
+
+;C-PROPOSE-PAWN-ADVANCE
+;  C-PROPOSE-CLEAR-WAY 
+
+;C-PROPOSE-STOP-HIS-MOVE 
+; C-PROPOSE-CAPT-HIS-PIECE 
+; C-PROPOSE-BLOCK-HIS-PIECE
+; C-PROPOSE-DEFEND-SQUARE 
+; C-PROPOSE-CONSTRAIN-HIS-PIECE
+; C-PROPOSE-STOP-HIS-PAWN-MOVE
+;  C-PROPOSE-MOVE-TO-SQUARE
+
+;C-PROPOSE-SIMPLE-DEVELOPING-MOVE 
+;C-PROPOSE-IMPROVE-POSTING-MOVE
+;C-PROPOSE-IMPROVE-POSTING-MANEUVER-MOVE
+
+;C-PROPOSE-DEPLOYING-MOVE  (TO AREA, SIDE OF BOARD, IN FRONT OF P, ETC?)
+
+(defun csk-propose-defense (sq ska)
+  (do ((sk (ar-1 ska sq)(cdr sk))
+       (res))
+      ((null sk) res)
+    ((eq (caar sk) 'attacks-to-square)
+     (setq res (cons (cadar sk) res)))))
+
+
+;(DEFUN CSK-PROPOSE-DEFENSE (SQ SKA)
+;  (PROG (RES SK)
+;	(SETQ SK (AR-1 SKA SQ))
+;    L	(COND ((NULL SK) (RETURN RES))
+;	      ((EQ (CAAR SK) 'ATTACKS-TO-SQUARE)
+;	       (SETQ RES (CONS (CADAR SK) RES))))
+;    	(SETQ SK (CDR SK))
+;	(GO L)))
+
+(defun cml-propose-defense (sq move-list bos)   ;move-opinion must be filled in,
+						;cat-data valid
+  (do ((res)
+       (idx 0 (1+ idx))
+       (lim (array-active-length move-list))
+       (mo)	   
+       (dop))
+      ((not (< idx lim)) res)
+    (setq mo (ar-1 move-list (+ idx c-mvl-mo-keys)))
+    (cond ((or (and (setq dop (cdr (assq 'will-defend-our-pieces mo)))
+		    (assq sq dop)
+		    (null (assq (ar-1 move-list (+ idx c-mvl-moving-pc))
+				(ar-1 bos sq))))
+	       (and (setq dop (cdr (assq 'will-defend-our-pieces-discovered mo)))
+		    (assq sq dop)))
+	   (setq res (cons idx res))))))
+
+;(DEFUN CML-PROPOSE-DEFENSE (SQ MOVE-LIST BOS)   ;MOVE-OPINION MUST BE FILLED IN, CAT-DATA VALID
+;  (PROG (RES IDX LIM MO DOP)
+;	(SETQ IDX 0 LIM (ARRAY-ACTIVE-LENGTH MOVE-LIST))
+;    L	(COND ((NOT (< IDX LIM)) (RETURN RES)))
+;    	(SETQ MO (AR-1 MOVE-LIST (+ IDX C-MVL-MO-KEYS)))
+;	(COND ((OR (AND (SETQ DOP (CDR (ASSQ 'WILL-DEFEND-OUR-PIECES MO)))
+;			(ASSQ SQ DOP)
+;			(NULL (ASSQ (AR-1 MOVE-LIST (+ IDX C-MVL-MOVING-PC))
+;				    (AR-1 BOS SQ))))
+;		   (AND (SETQ DOP (CDR (ASSQ 'WILL-DEFEND-OUR-PIECES-DISCOVERED MO)))
+;			(ASSQ SQ DOP)))
+;	       (SETQ RES (CONS IDX RES))))
+;	(SETQ IDX (+ IDX C-MVL-NQS))
+;	(GO L)))
+
+
+(DEFUN CSK-PROPOSE-INTERPOSE (SQ SKA BOSE)
+  (PROG (RES SK DIR SQC)
+	(COND ((OR (NULL (SETQ DIR (CADR BOSE)))
+		   (CDDR BOSE))
+	       (RETURN NIL)))
+	(SETQ DIR (MINUS DIR))
+    L	(COND ((OR (= (SETQ SQC (AR-1 BOARD-ARRAY (SETQ SQ (+ SQ DIR))))
+		      SQUARE-OFF-BOARD)
+		   (= SQC (CAR BOSE)))
+	       (RETURN RES)))
+   	(SETQ SK (AR-1 SKA SQ))
+    L1	(COND ((NULL SK) (GO L))
+	      ((EQ (CAR SK) 'MOVES-TO-SQUARE)
+	       (SETQ RES (CONS (CADAR SK) RES))))
+    	(SETQ SK (CDR SK))
+	(GO L1)
+))
+
+(DEFUN CML-PROPOSE-INTERPOSE (SQ MOVE-LIST BOSE)
+  (PROG (RES MO DIR IDX LIM WBAB WBABE)
+	(COND ((OR (NULL (SETQ DIR (CADR BOSE)))
+		   (CDDR BOSE))
+	       (RETURN NIL)))
+	(SETQ IDX 0 LIM (ARRAY-ACTIVE-LENGTH MOVE-LIST))
+   L	(COND ((NOT (< IDX LIM)) (RETURN RES)))
+	(SETQ MO (AR-1 MOVE-LIST (+ IDX C-MVL-MO-KEYS)))
+	(COND ((AND (SETQ WBAB (CDR (ASSQ 'WILL-BE-ATTACKED-BY MO)))
+		    (SETQ WBABE (ASSQ (CAR BOSE) WBAB))
+		    (EQ DIR (CADAR WBABE)) )     ;SHOULD TEST IN RANGE
+	       (SETQ RES (CONS IDX RES))))
+	(SETQ IDX (+ IDX C-MVL-NQS))
+	(GO L)
+))

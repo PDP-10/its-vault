@@ -1,0 +1,217 @@
+;OPERATION IN "BUFFERRED" MODE.
+;   BUFFERED MODE MAKES USE OF A PDP-11 MEMORY WHICH IS CONNECT ON THE UNIBUS
+; WITH THE 10-11 INTERFACE AND THE UNIFACE. THIS MEMORY IS CURRENTLY 4096 WORDS.
+; THE FIRST 100 (OCTAL) WDS ARE A PARAMETER AREA.  THE REMAINDER IS USED TO
+; STORE STANDARD 100 (OCTAL) WORD ARGUMENT BLOCKS FOR CHEOPS.  CONTAINED WITHIN 
+; THIS STANDARD BLOCK IS THE BOARD POSITION TOGETHER WITH ALL OTHER PARAMETERS 
+; AND DATA (INITIAL ALPHA AND BETA, DEPTH TO SEARCH, INITIAL FLAGWORD, SIDE-TO-MOVE,
+; ETC ETC).  ALSO INCLUDED IS SPACE TO RECEIVE THE RETURNED VALUES AND PRINCIPLE
+; VARIATION.  THE STANDARD ARGUMENT BLOCK INCLUDES PROVISION TO CHAIN TO
+; ANOTHER BLOCK (IE CAUSE CHEOPS TO PROCESS THE OTHER BLOCK WHEN THIS ONE IS COMPLETED).
+;   IN THE PARAMETER AREA ARE THE HEAD POINTERS OF TWO CHAINS, CALLED THE PRIORITY
+; POINTER AND THE BACKGROUND POINTER.  IN ITS IDLE STATE, CHEOPS IS LOOPING
+; REFERENCING THE BACKGROUND POINTER TO SEE IF IT POINTS TO A VALID ARG BLOCK.
+; IF IT DOES, THAT BLOCK IS PROCESSED, FOLLOWED BY ANY IT POINTS TO, ETC.
+;   THE PRIORITY POINTER IS ACTIVATED BY DOORBELL COMMAND 0.  WHEN THAT COMMAND IS
+; RECEIVED, THE BACKGROUND STATE IS SAVED, AND THE PRIORITY CHAIN PROCESSED.
+; WHEN FINISHED, THE BACKGROUND STATE IS RESTORED AND RESUMED.
+;  BUFFERED MODE IS INITIATED BY UNIBUS COMMAND 2.  FROM THAT POINT, THE PROCESS
+; IS CONTROLLED BY THE PARAMETER AREA AND THE FLAGWORDS IN THE ARGUMENT BLOCKS.
+
+;  THE ARGUMENT BLOCK:
+;     ;WD0  STATEWORD  0 -> BLOCK FREE
+;     ;		       1 -> BLOCK CONTAINS CHEOPS RESULTS
+;     ;		      -1 -> BLOCK CONTAINS CHEOPS ARGUMENTS
+;     ;WD1  ALWAYS 0  (FOR CONVIENENCE OF PDP-10)
+;     ;WD2  BITS AND MODES:
+;     ;  100000 SIDE-TO-MOVE,  1 -> BLACK
+;     ;   40000 ALPHA-CARRY-OVER-MODE, 1 -> INITIALIZE ALPHA FROM VALUE OF LAST SEARCH
+;     ;   20000 BETA-CARRY-OVER-MODE,  1 ->    "        BETA  "
+;     ;   10000 USE ALPHA AS DELTA AROUND CURRENT MATERIAL VALUE WHEN SETTING UP REAL
+;     ;   	  ALPHA AND BETA
+;     ;    4000 ASYMETRICAL A/B MODE.  ONCE IT IS VERIFIED STM IS NOT GETTING MATED,
+;     ;		  AUTOMATICALLY GIVE HIM THE OPTION OF TAKING PCSATS + OR - 1.
+;     ;		  THIS MODE IS USEFUL FOR OCM PMG AND PCG WHICH ARENT INTERESTED IN HOW
+;     ;		  MUCH WORSE VALUE IS FOR STM UNLESS STM IS MATED.
+;     ;    2000 INCREMENT SETD BEFORE STARTING SEARCH.  SINCE THE SETD IS STORED BACK
+;     ;         WHEN RESULTS ARE STORED, THIS IS USEFUL IN PROGRESSIVE DEEPENING MODE.
+;     ;    1000 ANOTHER ARG BLOCK CHAINED TO THIS ONE.  POINTED TO BY WD7
+;     ;     400 BOTH SIDES MODE.  ALSO DO ANOTHER SEARCH WITH EVERYTHING THE SAME
+;     ;           BUT OTHER SIDE TO MOVE.  ONLY WORKS IN BUFFERED MODE.
+;     ;WD3  DEPTH TO SEARCH (SETD)
+;     ;WD4  INITIAL ALPHA
+;     ;WD5  INITIAL BETA
+;     ;WD6  INITIAL FLAGWORD
+;     ;WD7  UNIBUS WORD ADDRESS OF FOLLOWING ARG BLOCK (TURNED ON BY 1000 BIT OF MODE SELECT)
+;     ;WD16 "RETURNED" STATA (LOW ORDER)
+;     ;WD17 "RETURNED" STATB (HIGH ORDER)
+;     ;WD20 RETURNED VALUE  -- SPECIAL VALUE 100000 -> INPUT POSITION WAS ILLEGAL
+;     ;WD21 INITIAL MATERIAL 
+;     ;WD22-WD27 RETURNED PRINCIPLE VARIATION.
+;     ;WD30-35 RETURNED PRINCIPLE VARIATION W/ OTHER SIDE TO MOVE
+;     ;WD36 VALUE W/ OTHER SIDE TO MOVE (IF ENABLED BY OPTION SELECTION)
+;     ;WD37 BEGINS PIECE LOCATION DESCRIPTION. 
+;	     EACH WORD HAS PIECE NUMBER IN LEFT HALF, SQUARE IN RIGHT HALF
+;	     LIST IS TERMINATED BY AN ALL ZERO WORD. SINCE THERE CAN BE 32 PIECES
+;            MAX, THE ZERO MUST OCCUR BY WD77.
+;	FOR PROMOTED PIECES, HIGH 2 BITS OF "SQUARE" BYTE GIVE TYPE WOOD:
+;	    0 -> Q, 1 -> R, 2 -> B, 3 -> N	
+
+;  THE PARAMETER AREA
+;     ;WD0 ALWAYS 0
+;     ;WD1 IF NOT 105, CHEOPS IS BEING USED FOR DEBUGGING, SPECIAL RUNS, ETC
+;     ;   AND NOT LOOKING AT ALL THIS CRUFT.
+;     ;WD2,WD3  PDP-10 SIDE PARAMETER AREA SOFTWARE LOCK.  IN NORMAL IDLE STATE,
+;     ;   THESE ARE BOTH -1 (THUS -20 AS SEEN FROM 10).
+;     ;   A PDP-10 PROCESS WISHING TO LOCK THESE PARAMETERS SHOULD DO:
+;     ;   	MOVEI AC,20
+;     ;		ADDB AC,<THIS LOCN>
+;     ;   IF AC GETS 0, THE PROCESS HAS THE LOCK AND SHOULD STORE ITS PDP-10
+;     ;   JOB NUMBER IN WDS 4 AND 5 FOR DEBUGGING PURPOSES.  OTHERWISE, BETTER
+;     ;   LUCK NEXT TIME
+;     ;WD4,WD5 SEE ABOVE
+;     ;WD6,WD7   POINTER TO PRIORITY ARG BLOCK, HAD BETTER BE SET UP WHEN
+;		  DOORBELL OP 0 GIVEN.  SIGN SET -> NONE.
+;       WD6 IS CONTINUALLY WRITTEN -1 BY CHEOPS WHEN IN LOOP WAITING FOR WD7 SIGN
+;	   TO BE CLEARED.
+;     ;WD10,WD11 UNUSED
+;     ;WD12,WD13 POINTER TO BACKGROUND ARG BLOCK, SIGN SET -> NONE.
+;       WD12 IS CONTINUALLY WRITTEN -1 BY CHEOPS WHEN IN LOOP WAITING FOR WD13 SIGN
+;	   TO BE CLEARED.
+
+
+
+
+;(DEFUN CHEOPS-FETCH-RESULTS (BADR)
+;  (PROG (V M)
+;       L   (COND ((NOT (= (AR-1 CHEOPS-BUFFER-MEMORY BADR)
+;			  1))
+;                  (SETQ CHEOPS-WAIT-BADR BADR)
+;                  (PROCESS-WAIT "CHEOPS-WAIT" 
+;                                (FUNCTION 
+;                                 (LAMBDA NIL 
+;                                         (= (AR-1 CHEOPS-BUFFER-MEMORY CHEOPS-WAIT-BADR)
+;                                            1))))
+;		  (GO L)))			;WAIT FOR CHEOPS TO FINISH
+;	   (COND ((NOT (ZEROP (LOGAND (SETQ M (AR-1 CHEOPS-BUFFER-MEMORY (+ BADR #o21)))
+;				      #o100000)))
+;		  (SETQ M (LOGIOR M #o-200000)))) ;#o77600000
+;	   (COND ((= (SETQ V (AR-1 CHEOPS-BUFFER-MEMORY (+ BADR #o20)))
+;		     #o100000)
+;		  (RETURN (COND ((NOT (ZEROP (LOGAND (AR-1 CHEOPS-BUFFER-MEMORY 
+;                                                           (+ BADR CHEOPS-ARG-MODES))
+;                                                     #o100000)))
+;                                 (MINUS V))
+;                                (T V))
+;                          M 0 0)))   ;POSITION SHIPPED OVER WAS ILLEGAL
+;       	   (COND ((NOT (ZEROP (LOGAND V #o100000)))
+;		  (SETQ V (LOGIOR V #o-200000))))	;#o77600000
+;           (RETURN V						;RETURNED VALUE
+;		   M						;INITIAL MATERIAL
+;		   (AR-1 CHEOPS-BUFFER-MEMORY (+ BADR #o17))	;STATB (HIGH ORDER)
+;		   (AR-1 CHEOPS-BUFFER-MEMORY (+ BADR #o16))	;STATA (LOW ORDER)
+;		   (CHEOPS-CONVERT-PV BADR))
+;))
+
+
+
+     ;WD0  STATEWORD  0 -> BLOCK FREE
+     ;		       1 -> BLOCK CONTAINS CHEOPS RESULTS
+     ;		      -1 -> BLOCK CONTAINS CHEOPS ARGUMENTS
+     ;WD1  ALWAYS 0  (FOR CONVIENENCE OF PDP-10)
+     ;WD2  BITS AND MODES:
+     ;  100000 SIDE-TO-MOVE,  1 -> BLACK
+     ;   40000 ALPHA-CARRY-OVER-MODE, 1 -> INITIALIZE ALPHA FROM VALUE OF LAST SEARCH
+     ;   20000 BETA-CARRY-OVER-MODE,  1 ->    "        BETA  "
+     ;   10000 USE ALPHA AS DELTA AROUND CURRENT MATERIAL VALUE WHEN SETTING UP REAL
+     ;   	  ALPHA AND BETA
+     ;    4000 ASYMETRICAL A/B MODE.  ONCE IT IS VERIFIED STM IS NOT GETTING MATED,
+     ;		  AUTOMATICALLY GIVE HIM THE OPTION OF TAKING PCSATS + OR - 1.
+     ;		  THIS MODE IS USEFUL FOR OCM PMG AND PCG WHICH ARENT INTERESTED IN HOW
+     ;		  MUCH WORSE VALUE IS FOR STM UNLESS STM IS MATED.
+     ;    2000 INCREMENT SETD BEFORE STARTING SEARCH.  SINCE THE SETD IS STORED BACK
+     ;         WHEN RESULTS ARE STORED, THIS IS USEFUL IN PROGRESSIVE DEEPENING MODE.
+     ;    1000 ANOTHER ARG BLOCK CHAINED TO THIS ONE.  POINTED TO BY WD7
+     ;     400 BOTH SIDES MODE.  ALSO DO ANOTHER SEARCH WITH EVERYTHING THE SAME
+     ;           BUT OTHER SIDE TO MOVE.  ONLY WORKS IN BUFFERED MODE.
+     ;WD3  DEPTH TO SEARCH (SETD)
+     ;WD4  INITIAL ALPHA 
+     ;WD5  INITIAL BETA
+     ;WD6  INITIAL FLAGWORD
+     ;WD7  UNIBUS WORD ADDRESS OF FOLLOWING ARG BLOCK
+     ;WD16 "RETURNED" STATA (LOW ORDER)
+     ;WD17 "RETURNED" STATB (HIGH ORDER)
+     ;WD20 RETURNED VALUE  -- SPECIAL VALUE 100000 -> INPUT POSITION WAS ILLEGAL
+     ;WD21 INITIAL MATERIAL
+     ;WD22-WD27 RETURNED PRINCIPLE VARIATION.
+     ;WD30-35 RETURNED PRINCIPLE VARIATION W/ OTHER SIDE TO MOVE
+     ;WD36 VALUE W/ OTHER SIDE TO MOVE
+
+(DEFPROP PB print-arg-block C-COMMAND)
+(DEFPROP PB (OPTIONAL NUMBER number) C-ARGS-PROP)
+(defun print-arg-block (&optional (badr CHEOPS-BUFFER-MEMORY-PRIORITY-BLOCK)
+			(stream debugging-stream))
+  (prog (stateword word-1 word-2 side-to-move alpha-carry-over-mode beta-carry-over-mode
+	 alpha-as-delta asymetrical-a-b-mode increment-setd another-arg-block-chained
+	 both-sides-mode depth-to-search initial-alpha initial-beta initial-flagword
+	 unibus-word-address-following stata-low-order statb-high-order
+	 returned-value initial-material value-with-other-side result-of-convert)
+     l   (cond ((not (= (ar-1 cheops-buffer-memory badr)
+			1))
+		(setq cheops-wait-badr badr)
+		(process-wait "cheops-wait" 
+			      (function 
+				(lambda nil 
+				  (= (ar-1 cheops-buffer-memory cheops-wait-badr)
+				     1))))
+		(go l)))			;wait for cheops to finish
+	(setq stateword (ar-1 cheops-buffer-memory (+ badr #o0)))
+        (setq word-1    (ar-1 cheops-buffer-memory (+ badr #o1)))
+	(setq word-2    (ar-1 cheops-buffer-memory (+ badr #o2)))
+	(setq side-to-move              (logand #o100000 word-2))
+	(and (> side-to-move 0)(setq side-to-move 1))
+	(setq alpha-carry-over-mode     (logand  #o40000 word-2))
+	(and (> alpha-carry-over-mode 0)(setq alpha-carry-over-mode 1))
+	(setq beta-carry-over-mode      (logand  #o20000 word-2))
+	(and (> beta-carry-over-mode 0)(setq beta-carry-over-mode 1))
+	(setq alpha-as-delta            (logand  #o10000 word-2))
+	(and (> alpha-as-delta 0)(setq alpha-as-delta 1))
+	(setq asymetrical-a-b-mode      (logand   #o4000 word-2))
+	(and (> asymetrical-a-b-mode 0)(setq asymetrical-a-b-mode 1))
+	(setq increment-setd            (logand   #o2000 word-2))
+	(and (> increment-setd 0)(setq increment-setd 1))
+	(setq another-arg-block-chained (logand   #o1000 word-2))
+	(and (> another-arg-block-chained 0)(setq another-arg-block-chained 1))
+	(setq both-sides-mode           (logand    #o400 word-2))
+	(and (> both-sides-mode 0)(setq both-sides-mode 1))
+	(setq depth-to-search               (ar-1 cheops-buffer-memory (+ badr  #o3)))
+	(setq initial-alpha                 (ar-1 cheops-buffer-memory (+ badr  #o4)))
+	(setq initial-beta                  (ar-1 cheops-buffer-memory (+ badr  #o5)))
+	(setq initial-flagword              (ar-1 cheops-buffer-memory (+ badr  #o6)))
+	(setq unibus-word-address-following (ar-1 cheops-buffer-memory (+ badr  #o7)))
+	(setq stata-low-order               (ar-1 cheops-buffer-memory (+ badr #o16)))
+	(setq statb-high-order              (ar-1 cheops-buffer-memory (+ badr #o17)))
+	(setq returned-value                (ar-1 cheops-buffer-memory (+ badr #o20)))
+	(setq initial-material              (ar-1 cheops-buffer-memory (+ badr #o21)))
+	(setq value-with-other-side         (ar-1 cheops-buffer-memory (+ badr #o36)))
+	(setq result-of-convert (cheops-convert-pv badr))
+	(funcall stream ':clear-screen)
+	(format stream "~%State-Word ~o   Word-1 (better be zero) ~o" stateword word-1)
+	(format stream "~%From Word-2:     Side to move (1 -> black) ~o"
+		side-to-move)
+	(format stream "~%	Alpha carry over (1 -> init from last) ~o Beta carry over mode ~o"
+		alpha-carry-over-mode beta-carry-over-mode)
+	(format stream "~%	Asymetrical-a-b ~o Increment SETD ~o Arg Block Chained ~o"
+		asymetrical-a-b-mode increment-setd another-arg-block-chained)
+	(format stream "~%	Both sides mode ~o" both-sides-mode)
+	(format stream "~2%Depth to Search ~o Initial Alpha ~o Initial Beta ~o"
+		depth-to-search initial-alpha initial-beta)
+	(format stream "~%Init Flagword ~o Unibus Add Follow ~o StatA Low ~o StatB High ~o"
+		initial-flagword unibus-word-address-following stata-low-order
+		statb-high-order)
+	(format stream "~%Returned Value ~o Initial Material ~o Value With Other Side ~o"
+		returned-value initial-material value-with-other-side)
+	(format stream "~2%Returned from cheops-convert-pv ~A" result-of-convert)
+	(terpri stream)
+	(c-print-variation result-of-convert stream)
+	(return unibus-word-address-following)))

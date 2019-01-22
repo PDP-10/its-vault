@@ -1,0 +1,150 @@
+;;; -*-Mode:LISP; Package:USER; Base: 10. -*-
+;READ IN LCHESS;CHDEFS > BEFORE RUNNING THIS INTERPRETED..
+
+(DECLARE (SPECIAL TV-BUFFER TV-SCREEN-WIDTH ;CONSOLE-IO-PC-PPR
+		  FONTS:CPTFONT FONTS:S50CHS FONTS:S30CHS))
+
+(defflavor coord-frame 
+	()
+	(tv:bordered-constraint-frame)
+  (:default-init-plist :font-map '(fonts:cptfont fonts:s50chs) :save-bits t)
+  (:documentation :special-purpose "window for hacking"))
+
+(defmethod (coord-frame :before :init) (ignore &aux io-buffer)
+  (setq io-buffer (tv:make-default-io-buffer))
+  (setq tv:panes `((interaction tv:lisp-listener-pane :label nil
+				:io-buffer ,io-buffer)
+		   (chess-board-pane eh:error-handler-lisp-listener-pane :label nil
+				:font-map (fonts:s50chs)
+				:io-buffer ,io-buffer)
+		   (chess-annotation eh:error-handler-lisp-listener-pane :label nil
+				:io-buffer ,io-buffer)
+		   (debugging eh:error-handler-lisp-listener-pane :label nil
+				:io-buffer ,io-buffer))))
+
+(defmethod (coord-frame :name-for-selection) () tv:name)
+(defmethod (coord-frame :internal-panes) () tv:internal-panes)
+
+(defvar gf (tv:window-create 'coord-frame
+  ':constraints
+  '((main . ((temp debugging interaction)
+	     ((temp :horizontal (8. :lines chess-board-pane)
+		    (chess-board-pane chess-annotation)
+		    ((chess-board-pane .58s0))
+		    ((chess-annotation :even))))
+	     ((debugging 15. :lines))
+	     ((interaction :even)))))
+  ':selected-pane 'interaction))
+
+(defvar gw (cdr (assq 'chess-board-pane (funcall gf ':internal-panes))))
+
+; This makes the variable chess-board point to the correct window.
+(defvar chess-board (funcall gf ':get-pane 'chess-board-pane))
+(defvar chess-annotation-stream (funcall gf ':get-pane 'chess-annotation))
+(defvar debugging-stream        (funcall gf ':get-pane 'debugging))
+
+;this is used to set the font for the chess board
+
+(defun print-chess-font (&optional (font fonts:s50chs))
+   (funcall chess-board ':set-font-map (list font))
+   (funcall chess-board ':set-current-font font))
+
+(defvar color-switch NIL)
+
+(defun c-display-board (white-at-top-p
+			&optional (piece-array piece-array) (board-array board-array)
+			(initial-board NIL))
+  (let ((font-width (font-char-width (tv:sheet-current-font chess-board)))
+	(first-board-x 0)
+	(second-board-x)
+	rank file pc tw)
+    (cond ((null color-switch)
+	   (setq second-board-x (+ (* 9 font-width) first-board-x))
+	   (cond (initial-board
+		  (funcall chess-board ':clear-screen))
+		 (T (funcall chess-board ':draw-rectangle
+			     (* 8 font-width)(* 8 font-width)
+			     second-board-x 0 tv:alu-andca)
+		    (or (equal (tv:sheet-current-font chess-board)
+			       fonts:s50chs)
+			(funcall chess-board ':bitblt tv:alu-ior
+				 (* 8 font-width)(* 8 font-width)
+				 (tv:sheet-screen-array chess-board)
+				 first-board-x 0
+				 second-board-x 0))))
+	   (do ((sq wqr1 (1+ sq)))			;loop through all board places
+	       ((> sq wkr8))
+	     (setq rank (ar-1 c-board-white-rank-number sq))	;find rank number of place
+	     (setq file (ar-1 c-board-file-number sq))	        ;find file number of place
+	     (cond ((null white-at-top-p) (setq rank (- 9 rank) file (- 9 file))))
+	     ;invert for white at bottom
+	     (cond ((< (setq pc (ar-1 board-array sq))
+		       square-off-board)
+		    (funcall chess-board ':set-cursorpos
+			     (* font-width (1- file))
+			     (* font-width (1- rank)))
+		    (funcall chess-board ':clear-char)
+		    (funcall chess-board ':tyo
+			     (+ (logand 1 (logxor file rank))
+				(cond ((> pc piece-array-size)   ;vacant sq
+				       #o60)
+				      ((= (setq tw (ar-1 (piece-type-wood-number-array 
+							   piece-array)
+							 pc))
+					  6)
+				       #o152)    ;black p
+				      ((= tw 7)
+				       #o112)   ;white p
+				      (t (+ (cond ((white-p pc) #o100) (t #o140))
+					    (* 2 (1- tw))))))) ) ))
+	   (draw-lines-around-boards first-board-x second-board-x font-width))
+	  (T (let ((font-width (font-char-width color-font)))
+	       (color:clear)
+	       (do ((sq wqr1 (1+ sq)))			;loop through all board places
+		   ((> sq wkr8))
+		 (setq rank (ar-1 c-board-white-rank-number sq))	;find rank number of place
+		 (setq file (ar-1 c-board-file-number sq))        ;find file number of place
+		 (cond ((null white-at-top-p) (setq rank (- 9 rank) file (- 9 file))))
+		 ;invert for white at bottom
+		 (cond ((< (setq pc (ar-1 board-array sq))
+			   square-off-board)
+			(color:color-draw-char
+			  color-font
+			  (+ (logand 1 (logxor file rank))
+			     (cond ((> pc piece-array-size)   ;vacant sq
+				    #o60)
+				   ((= (setq tw (ar-1 (piece-type-wood-number-array 
+							piece-array)
+						      pc))
+				       6)
+				    #o152)    ;black p
+				   ((= tw 7)
+				    #o112)   ;white p
+				   (t (+ (cond ((white-p pc) #o100) (t #o140))
+					 (* 2 (1- tw))))))
+			  (* font-width (1- file))(* font-width (1- rank))
+			  12.)))))))))
+	   
+	   
+	   
+
+
+
+
+
+(defun draw-lines-around-boards (first-x second-x font-width)
+  (let ((height (* 8 font-width))
+	(list-of-starts (list first-x second-x)))
+    (do ((x list-of-starts (cdr x)))
+	((or (null x)
+	     (and (null (cdr x))
+		  (equal (tv:sheet-current-font chess-board)
+			       fonts:s50chs))))
+    (funcall chess-board 'draw-line
+	     (car x) 0 (car x) height tv:alu-ior t)
+    (funcall chess-board 'draw-line
+	     (car x) 0 (+ (car x) height) 0 tv:alu-ior t)
+    (funcall chess-board 'draw-line
+	      (+ (car x) height) 0 (+ (car x) height) height tv:alu-ior t)
+    (funcall chess-board 'draw-line
+	     (car x) height (+ (car x) height) height tv:alu-ior t))))

@@ -1,0 +1,965 @@
+;;; -*-Mode:LISP; Package:USER; Base: 10. -*-
+;READ IN LCHESS;CHDEFS > BEFORE RUNNING THIS INTERPRETED..
+
+(DEFUN C-CREATE-PAWN-INFO NIL 
+  (PROG (PI WG BG PKA WPOFA BPOFA)
+	(SETQ PI (MAKE-ARRAY NIL ART-Q (C-PAWN-INFO-ARRAY-SIZE)
+			     NIL NIL NIL 'C-PAWN-INFO))
+	(SETQ WPOFA (C-CREATE-PAWN-ON-FILE-ARRAY 0))
+	(SETQ BPOFA (C-CREATE-PAWN-ON-FILE-ARRAY #o20))
+	(MULTIPLE-VALUE (WG BG) (C-ASSIGN-PAWN-GROUPS WPOFA BPOFA))
+	(SETF (C-PAWN-INFO-WHITE-PAWN-GROUPS PI) WG)
+	(SETF (C-PAWN-INFO-BLACK-PAWN-GROUPS PI) BG)
+	(SETF (C-PAWN-INFO-WHITE-PAWNS-ON-FILE-ARRAY PI) WPOFA)
+	(SETF (C-PAWN-INFO-BLACK-PAWNS-ON-FILE-ARRAY PI) BPOFA)
+	(SETQ PKA (C-CREATE-PAWN-KEYS WPOFA BPOFA))
+	(SETF (C-PAWN-INFO-PAWN-KEYS-ARRAY PI) PKA)
+	(SETF (C-PAWN-INFO-WHITE-POSITION-KEYS PI)
+	      (C-INTEGRATE-PAWN-AND-PAWN-GROUP-INFO 0 WG PKA))
+	(SETF (C-PAWN-INFO-BLACK-POSITION-KEYS PI)
+	      (C-INTEGRATE-PAWN-AND-PAWN-GROUP-INFO #o20 BG PKA))
+	(SETF (C-PAWN-INFO-FILE-KEYS-ARRAY PI)
+	      (C-CREATE-FILE-KEYS PKA WG BG WPOFA BPOFA))
+	(RETURN PI)
+))
+
+(DEFUN C-CREATE-FILE-KEYS (PKA WG BG WPOFA BPOFA)
+  (PROG (FKA WPOF BPOF WP WPSQ WP-KEYS WP-RANK BP BPSQ BP-KEYS BP-RANK TEM)
+	(SETQ FKA (MAKE-ARRAY NIL ART-Q 10.
+			       NIL (FILE-KEYS-ARRAY-LEADER-SIZE)
+			       NIL 'FILE-KEYS))
+	(DO FILE 1 (1+ FILE) (= FILE 9.)
+	    (COND ((NULL (SETQ WPOF (AR-1 WPOFA FILE)))
+		   (COND ((NULL (SETQ BPOF (AR-1 BPOFA FILE)))
+			  (AS-1 (CONS '(OPEN) (AR-1 FKA FILE))
+				FKA
+				FILE))
+			 (T (AS-1 (CONS '(HALF-OPEN-TO-WHITE) (AR-1 FKA FILE))
+				  FKA
+				  FILE))))
+		  ((NULL (SETQ BPOF (AR-1 BPOFA FILE)))
+		   (AS-1 (CONS '(HALF-OPEN-TO-BLACK) (AR-1 FKA FILE))
+			 FKA
+			 FILE))
+		  (T
+		   (PROG NIL 
+			 (SETQ WPSQ (CAAR WPOF) WP (CADAR WPOF))
+			 (SETQ WP-KEYS (AR-1 PKA WP))
+			 (SETQ WP-RANK (AR-1 C-BOARD-WHITE-RANK-NUMBER WPSQ))
+			 (SETQ BPSQ (CAAR BPOF) BP (CADAR BPOF))
+			 (SETQ BP-KEYS (AR-1 PKA BP))
+			 (SETQ BP-RANK (AR-1 C-BOARD-WHITE-RANK-NUMBER BPSQ))
+			 (COND ((< (SETQ TEM (- BP-RANK WP-RANK)) 0)
+				(AS-1 (CONS '(OVERLAP) (AR-1 FKA FILE))
+				      FKA
+				      FILE)
+				(RETURN NIL))		;SHOULD DO MORE HERE.
+			       ((= TEM 1)
+				(AS-1 (CONS '(RAM-FILE) (AR-1 FKA FILE))
+				      FKA
+				      FILE)))
+;SPAN HACKERY
+;DOUBLED FILES  REAR-MOST SPAN
+			 
+)
+))
+)
+	(RETURN FKA)
+))
+
+(DEFUN C-INTEGRATE-PAWN-AND-PAWN-GROUP-INFO (SIDE GROUP-LIST PKA)
+  (PROG (POS-KEYS G-MEM G-KEYS PAWN PSQ PAWN-KEYS)
+	(DO GRP GROUP-LIST (CDR GRP) (NULL GRP)
+	    (SETQ G-MEM (PAWN-GROUP-MEMBERS (CAR GRP)))
+	    (SETQ G-KEYS (PAWN-GROUP-KEYS (CAR GRP)))
+	    (COND ((ASSQ 'ISOLATED G-KEYS)
+		   (SETQ POS-KEYS (CONS (LIST 'ISOLATED-GROUP (CAR GRP))
+					POS-KEYS)))
+		  (T (DO GE G-MEM (CDR GE) (NULL GE)
+			 (SETQ PSQ (CAAR GE))
+			 (SETQ PAWN (CADAR GE))
+			 (SETQ PAWN-KEYS (AR-1 PKA PAWN))
+)
+)))
+	(RETURN POS-KEYS)
+))
+
+(DEFUN C-CREATE-PAWN-ON-FILE-ARRAY (SIDE)
+  (PROG (TWN POFA PC LIM LOC FILE FCTN)
+	(SETQ TWN (PIECE-TYPE-WOOD-NUMBER-ARRAY PIECE-ARRAY))
+	(SETQ POFA (MAKE-ARRAY NIL ART-Q 10.))
+	(SETQ PC SIDE LIM (+ PC #o10))
+    L	(COND ((AND (NOT (ZEROP (SETQ LOC (AR-1 PIECE-ARRAY PC))))
+		    (> (AR-1 TWN PC) 5))
+	       (SETQ FILE (AR-1 C-BOARD-FILE-NUMBER LOC))
+	       (AS-1 (CONS (LIST LOC PC) (AR-1 POFA FILE))
+		     POFA
+		     FILE)))
+	(COND ((NOT (= (SETQ PC (1+ PC)) LIM))
+	       (GO L)))
+	(SETQ FCTN (COND ((ZEROP SIDE) (FUNCTION >))
+			 (T (FUNCTION <))))
+;	(DO FILE 1 (1+ FILE) (= FILE 9)
+;	    (COND ((CDR (SETQ TEM (AR-1 POFA FILE)))
+;		   (SORTCAR-SHORT-LIST TEM FCTN))))
+	(RETURN POFA)
+))
+
+(DEFUN C-ASSIGN-PAWN-GROUPS (WPOFA BPOFA) 
+  (PROG (TWA FILE WGROUP WGROUPS BGROUP BGROUPS TEM
+	 WLOW WHIGH BLOW BHIGH)
+	(SETQ TWA (PIECE-TYPE-WOOD-ARRAY PIECE-ARRAY))
+	(DO TFILE 0 (1+ TFILE) (= TFILE 9)
+	    (COND ((NULL WGROUP) (SETQ FILE TFILE)))    ;STARTING FILE #
+	    (COND ((SETQ TEM (AR-1 WPOFA TFILE))
+		   (SETQ WGROUP (APPEND TEM WGROUP))))
+	    (COND ((AND WGROUP 
+                        (NULL (AR-1 WPOFA (1+ TFILE))))
+		   (SETQ WGROUPS (CONS (C-CREATE-PAWN-GROUP
+					   FILE
+					   TFILE
+					   (SORTCAR-SHORT-LIST WGROUP (FUNCTION >)))
+				       WGROUPS))
+		   (SETQ WGROUP NIL))))
+	(DO TFILE 0 (1+ TFILE) (= TFILE 9)
+	    (COND ((NULL BGROUP) (SETQ FILE TFILE)))    ;STARTING FILE #
+	    (COND ((SETQ TEM (AR-1 BPOFA TFILE))
+		   (SETQ BGROUP (APPEND TEM BGROUP))))
+	    (COND ((AND BGROUP 
+                        (NULL (AR-1 BPOFA (1+ TFILE))))
+		   (SETQ BGROUPS (CONS (C-CREATE-PAWN-GROUP
+					   FILE
+					   TFILE
+					   (SORTCAR-SHORT-LIST BGROUP (FUNCTION <)))
+				       BGROUPS))
+		   (SETQ BGROUP NIL))))
+	(DO WG WGROUPS (CDR WG) (NULL WG)
+	    (SETQ WLOW (1- (PAWN-GROUP-LOW-FILE (CAR WG))))
+	    (SETQ WHIGH (1+ (PAWN-GROUP-HIGH-FILE (CAR WG))))
+	    (DO BG BGROUPS (CDR BG) (NULL BG)
+		(SETQ BLOW (PAWN-GROUP-LOW-FILE (CAR BG)))
+		(SETQ BHIGH (PAWN-GROUP-HIGH-FILE (CAR BG)))
+		(COND ((OR (AND (>= BLOW WLOW)
+				(<= BLOW WHIGH))
+			   (AND (>= BHIGH WLOW)
+				(<= BHIGH WHIGH))
+			   (AND (< BLOW WLOW)
+				(> BHIGH WHIGH)))
+		       (SETF (PAWN-GROUP-OPPOSING-PAWN-GROUPS (CAR WG))
+			     (CONS (CAR BG) (PAWN-GROUP-OPPOSING-PAWN-GROUPS (CAR WG))))
+		       (SETF (PAWN-GROUP-OPPOSING-PAWN-GROUPS (CAR BG))
+			     (CONS (CAR WG) (PAWN-GROUP-OPPOSING-PAWN-GROUPS (CAR BG))))))))
+	(DO WG WGROUPS (CDR WG) (NULL WG)
+	    (SETF (PAWN-GROUP-KEYS (CAR WG))
+		  (C-GET-PAWN-GROUP-KEYS (CAR WG)))
+;	    (SETF (PAWN-GROUP-LOW-HEAD-DUO-STATE (CAR WG))
+;		  (C-GET-DUO-STATE -1				;*****
+;				   (MINUS BOARD-WIDTH)
+;				   (SETQ TEM (CAR (PAWN-GROUP-MEMBERS (CAR WG))))))
+;	    (SETF (PAWN-GROUP-HIGH-HEAD-DUO-STATE (CAR WG))
+;		  (C-GET-DUO-STATE 1 (MINUS BOARD-WIDTH) TEM))
+)
+	(DO BG BGROUPS (CDR BG) (NULL BG)
+	    (SETF (PAWN-GROUP-KEYS (CAR BG))
+		  (C-GET-PAWN-GROUP-KEYS (CAR BG)))
+;	    (SETF (PAWN-GROUP-LOW-HEAD-DUO-STATE (CAR BG))
+;		  (C-GET-DUO-STATE -1				;*****
+;				   BOARD-WIDTH 
+;				   (SETQ TEM (CAR (PAWN-GROUP-MEMBERS (CAR BG))))))
+;	    (SETF (PAWN-GROUP-HIGH-HEAD-DUO-STATE (CAR BG))
+;		  (C-GET-DUO-STATE 1 BOARD-WIDTH TEM))
+)
+	(RETURN WGROUPS BGROUPS)
+))
+
+;REWRITE NOT TO REF BOARD-ARRAY *****
+(DEFUN C-GET-DUO-STATE (FILE-SIDE BACKWARD-BOARD-STEP P-SQUARE)
+  (PROG (BASE-P DSQ DSQC STATE TWA)
+	(SETQ TWA (PIECE-TYPE-WOOD-ARRAY PIECE-ARRAY))
+	(SETQ BASE-P (AR-1 BOARD-ARRAY P-SQUARE))
+	(SETQ DSQ (+ P-SQUARE FILE-SIDE)
+	      DSQC (AR-1 BOARD-ARRAY DSQ))
+	(COND ((= DSQC SQUARE-OFF-BOARD)
+	       (RETURN NIL))
+	      ((= DSQC SQUARE-VACANT)
+	       (SETQ STATE 'POSSIBLE-IN-ONE))		;MAYBE, IF AT ALL
+	      ((ZEROP (LOGAND #o20 (LOGXOR BASE-P DSQC)))
+	       (COND ((EQ (AR-1 TWA BASE-P)
+			  (AR-1 TWA DSQC))
+		      (RETURN 'EXISTS))
+		     (T (SETQ STATE 'BLOCKED-BY-US))))	;IF POSSIBLE AT ALL
+	      ((PAWN-P DSQC)
+	       (SETQ STATE 'BLOCKED-BY-HIS-PAWN))
+	      (T (SETQ STATE 'BLOCK-BY-HIM)))
+   L	(SETQ DSQ (+ DSQ BACKWARD-BOARD-STEP)
+	      DSQC (AR-1 BOARD-ARRAY DSQ))
+   	(COND ((= DSQC SQUARE-OFF-BOARD)
+	       (RETURN NIL))
+	      ((= DSQC SQUARE-VACANT))
+	      ((ZEROP (LOGAND #o20 (LOGXOR BASE-P DSQC)))
+	       (COND ((EQ (AR-1 TWA BASE-P)
+			  (AR-1 TWA DSQC))
+		      (RETURN STATE))		;FOUND PAWN, THAT REALLY IS THE STATE.
+		     (T (COND ((EQ STATE 'POSSIBLE-IN-ONE)
+			       (SETQ STATE 'BLOCKED-BY-US))))))	;IF POSSIBLE AT ALL
+	      ((PAWN-P DSQC)
+	       (SETQ STATE 'BLOCKED-BY-HIS-PAWN))
+	      (T (COND ((NOT (EQ STATE 'BLOCKED-BY-HIS-PAWN))
+			(SETQ STATE 'BLOCK-BY-HIM)))))
+	(COND ((EQ STATE 'POSSIBLE-IN-ONE)
+	       (SETQ STATE 'NOT-POSSIBLE-IN-ONE)))
+	(GO L)
+))
+
+(DEFUN C-GET-PAWN-GROUP-KEYS (PG)
+  (PROG (KEYS PG-NUM OG OG-NUM TEM)
+	(COND ((= (PAWN-GROUP-LOW-FILE PG)
+		  (PAWN-GROUP-HIGH-FILE PG))
+	       (SETQ KEYS (CONS '(ISOLATED) KEYS))))
+	(COND ((> (SETQ PG-NUM (LENGTH (PAWN-GROUP-MEMBERS PG)))
+		  (1+ (- (PAWN-GROUP-HIGH-FILE PG) (PAWN-GROUP-LOW-FILE PG))))
+	       (SETQ KEYS (CONS '(CONTAINS-AT-LEAST-DOUBLED) KEYS))))
+	(COND ((AND (= 1 (LENGTH (SETQ TEM (PAWN-GROUP-OPPOSING-PAWN-GROUPS PG))))
+		    (= 1 (LENGTH (PAWN-GROUP-OPPOSING-PAWN-GROUPS (SETQ OG (CAR TEM))))))
+	       (SETQ OG-NUM (LENGTH (PAWN-GROUP-MEMBERS OG)))
+	       (SETQ KEYS (CONS (COND ((= PG-NUM OG-NUM)
+				       '(EVENLY-MATCHED-OPPOSING-GROUP))
+				      ((< PG-NUM OG-NUM)
+				       '(LARGER-MATCHED-OPPOSING-GROUP))
+				      (T '(SMALLER-MATCHED-OPPOSING-GROUP)))
+				KEYS))))
+	(RETURN KEYS)))
+
+(DEFUN C-CREATE-PAWN-GROUP (LOWF HIGHF MEMS &AUX PG)
+       (SETQ PG (MAKE-ARRAY NIL 'ART-Q (PAWN-GROUP-ARRAY-SIZE)
+			    NIL NIL NIL 'PAWN-GROUP))
+       (SETF (PAWN-GROUP-LOW-FILE PG) LOWF)
+       (SETF (PAWN-GROUP-HIGH-FILE PG) HIGHF)
+       (SETF (PAWN-GROUP-MEMBERS PG) MEMS)
+       PG)
+
+(DEFUN C-CREATE-PAWN-KEYS (WPOFA BPOFA)
+  (PROG (PKA PC LOC RANK TEM OFM OHFM OLFM HFM HHFM HLFM)
+	(SETQ PKA (MAKE-ARRAY NIL ART-Q PIECE-ARRAY-SIZE
+			       NIL (PAWN-KEYS-ARRAY-LEADER-SIZE)
+			       NIL 'PAWN-KEYS))
+  (DO FILE 1 (1+ FILE) (= FILE 9)
+      (DO FILE-LIST (AR-1 WPOFA FILE) (CDR FILE-LIST) (NULL FILE-LIST)
+	  (SETQ LOC (CAAR FILE-LIST))
+	  (SETQ PC (CADAR FILE-LIST))
+	  (SETQ RANK (AR-1 C-BOARD-WHITE-RANK-NUMBER LOC))
+	  (SETQ OFM (AR-1 WPOFA FILE)
+		OHFM (AR-1 WPOFA (1- FILE))
+		OLFM (AR-1 WPOFA (1+ FILE)))
+	  (SETQ HFM (AR-1 BPOFA FILE)
+		HHFM (AR-1 BPOFA (1- FILE))
+		HLFM (AR-1 BPOFA (1+ FILE)))
+	  (SETQ TEM HFM)
+      L1  (COND ((NULL TEM) (GO E1))    ;EITHER HALF-FREE OR PASSED
+		((> (AR-1 C-BOARD-WHITE-RANK-NUMBER (CAAR TEM)) RANK)
+		 (GO X1)))		;NEITHER HALF-FREE NOR PASSED
+      	  (SETQ TEM (CDR TEM))
+	  (GO L1)
+      E1  (SETQ TEM HLFM)
+      L2  (COND ((NULL TEM) (GO E2))   ;STILL A CANDIDATE FOR PASSED
+		((> (AR-1 C-BOARD-WHITE-RANK-NUMBER (CAAR TEM)) RANK)
+		 (GO X1A)))	       ;ONLY HALF-FREE
+          (SETQ TEM (CDR TEM))
+	  (GO L2)
+      E2  (SETQ TEM HHFM)
+      L3  (COND ((NULL TEM) 
+		 (AS-1 (CONS '(PASSED) (AR-1 PKA PC))
+		       PKA
+		       PC)
+		 (GO X1))             ;REALLY PASSED!
+		((> (AR-1 C-BOARD-WHITE-RANK-NUMBER (CAAR TEM)) RANK)
+		 (GO X1A)))	       ;ONLY HALF-FREE
+          (SETQ TEM (CDR TEM))
+	  (GO L3)
+      X1A (AS-1 (CONS '(HALF-FREE) (AR-1 PKA PC))
+		PKA
+		PC)
+      X1  (COND ((OR (ASSQ (1+ (- LOC BOARD-WIDTH)) OHFM)
+		     (ASSQ (1- (- LOC BOARD-WIDTH)) OLFM))
+		 (AS-1 (CONS '(DEFENDED-BY-PAWN) (AR-1 PKA PC))
+		       PKA
+		       PC))
+		((AND (NULL (ASSQ (+ LOC BOARD-WIDTH) HFM))  ;BLOCKED BY P.
+		      (OR (ASSQ (1+ LOC) OHFM)
+			  (ASSQ (1- LOC) OLFM)))
+;		 (AS-1 (CONS '(WOULD-BE-DEFENDED-BY-PAWN-IF-COULD-BE-PUSHED)
+;			     (AR-1 PKA PC))
+;		       PKA
+;		       PC)
+)
+		((OR (AND (ASSQ (1+ (- LOC BOARD-WIDTH*2)) OHFM)
+			  (NULL (ASSQ (1+ (- LOC BOARD-WIDTH)) HHFM)))
+		     (AND (ASSQ (1- (- LOC BOARD-WIDTH*2)) OLFM)
+			  (NULL (ASSQ (1- (- LOC BOARD-WIDTH)) HLFM))))
+		 (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-ADJ-P-COULD-BE-PUSHED)
+			     (AR-1 PKA PC))
+		       PKA
+		       PC))
+		((AND (= RANK 2)
+		      (OR (AND (ASSQ (1+ (+ LOC BOARD-WIDTH)) OHFM)
+			       (NULL (ASSQ (1+ (+ LOC BOARD-WIDTH*2)) HHFM)))
+			  (AND (ASSQ (1- (+ LOC BOARD-WIDTH)) OLFM)
+			       (NULL (ASSQ (1- (+ LOC BOARD-WIDTH*2)) HLFM)))))
+		 (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-COULD-BE-DOUBLE-PUSHED)
+			     (AR-1 PKA PC))
+		       PKA
+		       PC))
+		((AND (= RANK 5)
+		      (OR (AND (ASSQ (1+ (- LOC BOARD-WIDTH*3)) OHFM)
+			       (NULL (ASSQ (1+ (- LOC BOARD-WIDTH*2)) HHFM))
+			       (NULL (ASSQ (1+ (- LOC BOARD-WIDTH)) HHFM))
+			       (OR (= FILE 1)
+				   (NULL (ASSQ (+ 2 (- LOC BOARD-WIDTH))
+					       (AR-1 BPOFA (- FILE 2))))))
+			  (AND (ASSQ (1- (- LOC BOARD-WIDTH*3)) OLFM)
+			       (NULL (ASSQ (1- (- LOC BOARD-WIDTH*2)) HLFM))
+			       (NULL (ASSQ (1- (- LOC BOARD-WIDTH)) HLFM))
+			       (OR (= FILE 8)
+				   (NULL (ASSQ (+ -2 (- LOC BOARD-WIDTH))
+					       (AR-1 BPOFA (+ FILE 2))))))))
+		 (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-ADJ-PAWN-COULD-BE-DOUBLE-PUSHED)
+			     (AR-1 PKA PC))
+		       PKA
+		       PC))
+		(T (AS-1 (CONS '(CANNOT-BE-DEFENDED-BY-P-IN-ONE-MOVE)
+			       (AR-1 PKA PC))
+			 PKA
+			 PC)))
+      (COND ((OR (ASSQ (1+ (+ LOC BOARD-WIDTH)) HHFM)
+		 (ASSQ (1- (+ LOC BOARD-WIDTH)) HLFM))
+	     (COND ((ASSQ (+ LOC BOARD-WIDTH) HFM)
+		    (AS-1 (CONS '(RAM-LEVER-PAWN) (AR-1 PKA PC))
+			  PKA
+			  PC))
+		   (T (AS-1 (CONS '(LEVER-PAWN) (AR-1 PKA PC))
+			    PKA
+			    PC))))
+	    ((ASSQ (+ LOC BOARD-WIDTH) HFM)
+	     (AS-1 (CONS '(RAM-PAWN) (AR-1 PKA PC))
+		   PKA
+		   PC)))
+)
+      (DO FILE-LIST (AR-1 BPOFA FILE) (CDR FILE-LIST) (NULL FILE-LIST)
+	  (SETQ LOC (CAAR FILE-LIST))
+	  (SETQ PC (CADAR FILE-LIST))
+	  (SETQ RANK (AR-1 C-BOARD-WHITE-RANK-NUMBER LOC))
+	  (SETQ OFM (AR-1 BPOFA FILE)
+		OHFM (AR-1 BPOFA (1- FILE))
+		OLFM (AR-1 BPOFA (1+ FILE)))
+	  (SETQ HFM (AR-1 WPOFA FILE)
+		HHFM (AR-1 WPOFA (1- FILE))
+		HLFM (AR-1 WPOFA (1+ FILE)))
+	  (SETQ TEM HFM)
+      L1  (COND ((NULL TEM) (GO E1))    ;EITHER HALF-FREE OR PASSED
+		((< (AR-1 C-BOARD-WHITE-RANK-NUMBER (CAAR TEM)) RANK)
+		 (GO X1)))		;NEITHER HALF-FREE NOR PASSED
+      	  (SETQ TEM (CDR TEM))
+	  (GO L1)
+      E1  (SETQ TEM HLFM)
+      L2  (COND ((NULL TEM) (GO E2))   ;STILL A CANDIDATE FOR PASSED
+		((< (AR-1 C-BOARD-WHITE-RANK-NUMBER (CAAR TEM)) RANK)
+		 (GO X1A)))	       ;ONLY HALF-FREE
+          (SETQ TEM (CDR TEM))
+	  (GO L2)
+      E2  (SETQ TEM HHFM)
+      L3  (COND ((NULL TEM) 
+		 (AS-1 (CONS '(PASSED) (AR-1 PKA PC))
+		       PKA
+		       PC)
+		 (GO X1))             ;REALLY PASSED!
+		((< (AR-1 C-BOARD-WHITE-RANK-NUMBER (CAAR TEM)) RANK)
+		 (GO X1A)))	       ;ONLY HALF-FREE
+          (SETQ TEM (CDR TEM))
+	  (GO L3)
+      X1A (AS-1 (CONS '(HALF-FREE) (AR-1 PKA PC))
+		PKA
+		PC)
+      X1  (COND ((OR (ASSQ (1+ (+ LOC BOARD-WIDTH)) OHFM)
+		     (ASSQ (1- (+ LOC BOARD-WIDTH)) OLFM))
+		 (AS-1 (CONS '(DEFENDED-BY-PAWN) (AR-1 PKA PC))
+		       PKA
+		       PC))
+		((AND (NULL (ASSQ (- LOC BOARD-WIDTH) HFM))  ;BLOCKED BY P.
+		      (OR (ASSQ (1+ LOC) OHFM)
+			  (ASSQ (1- LOC) OLFM)))
+;		 (AS-1 (CONS '(WOULD-BE-DEFENDED-BY-PAWN-IF-COULD-BE-PUSHED)
+;			     (AR-1 PKA PC))
+;		       PKA
+;		       PC)
+)
+		((OR (AND (ASSQ (1+ (+ LOC BOARD-WIDTH*2)) OHFM)
+			  (NULL (ASSQ (1+ (+ LOC BOARD-WIDTH)) HHFM)))
+		     (AND (ASSQ (1- (+ LOC BOARD-WIDTH*2)) OLFM)
+			  (NULL (ASSQ (1- (+ LOC BOARD-WIDTH)) HLFM))))
+		 (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-ADJ-P-COULD-BE-PUSHED)
+			     (AR-1 PKA PC))
+		       PKA
+		       PC))
+		((AND (= RANK 7)
+		      (OR (AND (ASSQ (1+ (- LOC BOARD-WIDTH)) OHFM)
+			       (NULL (ASSQ (1+ (- LOC BOARD-WIDTH*2)) HHFM)))
+			  (AND (ASSQ (1- (- LOC BOARD-WIDTH)) OLFM)
+			       (NULL (ASSQ (1- (- LOC BOARD-WIDTH*2)) HLFM)))))
+		 (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-COULD-BE-DOUBLE-PUSHED)
+			     (AR-1 PKA PC))
+		       PKA
+		       PC))
+		((AND (= RANK 4)
+		      (OR (AND (ASSQ (1+ (+ LOC BOARD-WIDTH*3)) OHFM)
+			       (NULL (ASSQ (1+ (+ LOC BOARD-WIDTH*2)) HHFM))
+			       (NULL (ASSQ (1+ (+ LOC BOARD-WIDTH)) HHFM))
+			       (OR (= FILE 1)
+				   (NULL (ASSQ (+ 2 (+ LOC BOARD-WIDTH))
+					       (AR-1 WPOFA (- FILE 2))))))
+			  (AND (ASSQ (1- (+ LOC BOARD-WIDTH*3)) OLFM)
+			       (NULL (ASSQ (1- (+ LOC BOARD-WIDTH*2)) HLFM))
+			       (NULL (ASSQ (1- (+ LOC BOARD-WIDTH)) HLFM))
+			       (OR (= FILE 8)
+				   (NULL (ASSQ (+ -2 (+ LOC BOARD-WIDTH))
+					       (AR-1 WPOFA (+ FILE 2))))))))
+		 (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-ADJ-PAWN-COULD-BE-DOUBLE-PUSHED)
+			     (AR-1 PKA PC))
+		       PKA
+		       PC))
+		(T (AS-1 (CONS '(CANNOT-BE-DEFENDED-BY-P-IN-ONE-MOVE)
+			       (AR-1 PKA PC))
+			 PKA
+			 PC)))
+      (COND ((OR (ASSQ (1+ (- LOC BOARD-WIDTH)) HHFM)
+		 (ASSQ (1- (- LOC BOARD-WIDTH)) HLFM))
+	     (COND ((ASSQ (- LOC BOARD-WIDTH) HFM)
+		    (AS-1 (CONS '(RAM-LEVER-PAWN) (AR-1 PKA PC))
+			  PKA
+			  PC))
+		   (T (AS-1 (CONS '(LEVER-PAWN) (AR-1 PKA PC))
+			    PKA
+			    PC))))
+	    ((ASSQ (- LOC BOARD-WIDTH) HFM)
+	     (AS-1 (CONS '(RAM-PAWN) (AR-1 PKA PC))
+		   PKA
+		   PC)))
+))
+  (RETURN PKA)
+))
+	  
+;PAWN-KEYS-ARRAY  
+;  RAM-PAWN LEVER-PAWN RAM-LEVER-PAWN PASSED HALF-FREE DEFENDED-BY-PAWN 
+;  WOULD-BE-DEFENDED-BY-PAWN-IF-PUSHED 
+;  WOULD-BE-DEFENDED-IF-ADJACENT-P-PUSHED WOULD-BE-DEFENDED-IF-DOUBLE-PUSHED 
+;  WOULD-BE-DEFENDED-BY-DOUBLE-ADVANCE-OF-ADJ-P CANNOT-BE-DEFENDED-BY-P-IN-ONE-MOVE 
+;   --NOT IMPLEMENTED- HANGING-PAWN
+;DEFENDED-BY-A-PAWN
+(DEFUN OLD-C-CREATE-PAWN-KEYS NIL 
+  (PROG (TWA PKA SSA LOC FILE TEM)
+	(SETQ PKA (MAKE-ARRAY NIL ART-Q PIECE-ARRAY-SIZE
+			       NIL (PAWN-KEYS-ARRAY-LEADER-SIZE)
+			       NIL 'PAWN-KEYS))
+	(SETQ SSA (C-GET-STOP-SQUARE)) 
+	(SETQ TWA (PIECE-TYPE-WOOD-ARRAY PIECE-ARRAY))
+	(DO WP 0 (1+ WP) (= WP #o10)
+	    (COND ((AND (NOT (ZEROP (SETQ LOC (AR-1 PIECE-ARRAY WP))))
+			(EQ (AR-1 TWA WP) 'WHITE-PAWN))
+                   (COND ((NULL (SETQ TEM (AR-1 SSA WP)))
+                          (AS-1 (CONS '(PASSED) (AR-1 PKA WP))
+                                PKA 
+                                WP))
+			 (T
+			  (PROG NIL 
+				(SETQ FILE (AR-1 C-BOARD-FILE-NUMBER LOC))
+			     L  (COND ((= FILE (AR-1 C-BOARD-FILE-NUMBER (CAR TEM)))
+				       (RETURN NIL))
+				      ((SETQ TEM (CDR TEM))
+				       (GO L)))
+			        (AS-1 (CONS '(HALF-FREE) (AR-1 PKA WP))
+				      PKA
+				      WP)
+				(RETURN T)) ))
+                   (COND ((OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1+ (- LOC BOARD-WIDTH))))
+                                      PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'WHITE-PAWN))
+                              (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1- (- LOC BOARD-WIDTH))))
+                                      PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'WHITE-PAWN)))
+                          (AS-1 (CONS '(DEFENDED-BY-PAWN) (AR-1 PKA WP))
+                                PKA 
+                                WP))
+                         ((AND (OR (= (SETQ TEM (AR-1 BOARD-ARRAY (+ LOC BOARD-WIDTH)))
+                                      SQUARE-VACANT)
+                                   (ZEROP (LOGAND #o20 TEM)))  ;PUSHING NOT STOPPED BY HIM
+                               (OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1+ LOC)))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'WHITE-PAWN))
+                                   (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1- LOC)))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'WHITE-PAWN))))
+;                         (AS-1 (CONS '(WOULD-BE-DEFENDED-BY-PAWN-IF-PUSHED)
+;                                     (AR-1 PKA WP))
+;                               PKA 
+;                               WP)
+                          )
+                         ((OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                      (1+ (- LOC BOARD-WIDTH*2))))
+                                  PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'WHITE-PAWN)
+                                   (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                          (1+ (- LOC BOARD-WIDTH))))
+                                          SQUARE-VACANT)
+                                       (ZEROP (LOGAND #o20 TEM))))
+                              (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                      (1- (- LOC BOARD-WIDTH*2))))
+                                  PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'WHITE-PAWN)
+                                   (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                          (1- (- LOC BOARD-WIDTH))))
+                                          SQUARE-VACANT)
+                                       (ZEROP (LOGAND #o20 TEM)))))
+                          (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-ADJACENT-P-PUSHED)
+                                      (AR-1 PKA WP))
+                                PKA 
+                                WP))
+                         ((AND (= (AR-1 C-BOARD-WHITE-RANK-NUMBER LOC)
+                                  2)
+                               (OR (= (SETQ TEM (AR-1 BOARD-ARRAY (+ LOC BOARD-WIDTH)))
+                                      SQUARE-VACANT)
+                                   (ZEROP (LOGAND #o20 TEM)))
+                               (OR (= (SETQ TEM (AR-1 BOARD-ARRAY (+ LOC BOARD-WIDTH*2)))
+                                      SQUARE-VACANT)
+                                   (ZEROP (LOGAND #o20 TEM)))
+                               (OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1+ (+ LOC BOARD-WIDTH))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'WHITE-PAWN)
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (1+ (+ LOC BOARD-WIDTH*2))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'BLACK-PAWN))))
+                                   (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1- (+ LOC BOARD-WIDTH))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'WHITE-PAWN)
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (1- (+ LOC BOARD-WIDTH*2))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'BLACK-PAWN))))))
+                          (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-DOUBLE-PUSHED)
+                                      (AR-1 PKA WP))
+                                PKA 
+                                WP))
+                         ((AND (= (AR-1 C-BOARD-WHITE-RANK-NUMBER LOC)
+                                  5)
+                               (OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1+ (- LOC BOARD-WIDTH*3))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM)
+                                            'WHITE-PAWN)
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1+ (- LOC BOARD-WIDTH*2))))
+                                               SQUARE-VACANT)
+                                            (ZEROP (LOGAND #o20 TEM)))
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1+ (- LOC BOARD-WIDTH))))
+                                               SQUARE-VACANT)
+                                            (ZEROP (LOGAND #o20 TEM)))
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (+ 2 (- LOC BOARD-WIDTH))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'BLACK-PAWN))))
+                                   (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1- (- LOC BOARD-WIDTH*3))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM)
+                                            'WHITE-PAWN)
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1- (- LOC BOARD-WIDTH*2))))
+                                               SQUARE-VACANT)
+                                            (ZEROP (LOGAND #o20 TEM)))
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1- (- LOC BOARD-WIDTH))))
+                                               SQUARE-VACANT)
+                                            (ZEROP (LOGAND #o20 TEM)))
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (+ -2 (- LOC BOARD-WIDTH))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'BLACK-PAWN))))))
+                          (AS-1 (CONS '(WOULD-BE-DEFENDED-BY-DOUBLE-ADVANCE-OF-ADJ-P)
+                                      (AR-1 PKA WP))
+                                PKA 
+                                WP))
+			 (T (AS-1 (CONS '(CANNOT-BE-DEFENDED-BY-P-IN-ONE-MOVE)
+					(AR-1 PKA WP))
+				  PKA
+				  WP))
+)
+                   (COND ((OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1+ (+ LOC BOARD-WIDTH))))
+				      PIECE-ARRAY-SIZE)
+				   (EQ (AR-1 TWA TEM)
+				       'BLACK-PAWN))
+			      (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1- (+ LOC BOARD-WIDTH))))
+				      PIECE-ARRAY-SIZE)
+				   (EQ (AR-1 TWA TEM)
+				       'BLACK-PAWN)))
+			  (COND ((AND (< (SETQ TEM (AR-1 BOARD-ARRAY (+ LOC BOARD-WIDTH)))
+					 PIECE-ARRAY-SIZE)
+				      (EQ (AR-1 TWA TEM)
+					  'BLACK-PAWN))
+				 (AS-1 (CONS '(RAM-LEVER-PAWN) (AR-1 PKA WP))
+				       PKA 
+				       WP))
+				(T (AS-1 (CONS '(LEVER-PAWN) (AR-1 PKA WP))
+					 PKA
+					 WP))))
+			 ((AND (< (SETQ TEM (AR-1 BOARD-ARRAY (+ LOC BOARD-WIDTH)))
+                                  PIECE-ARRAY-SIZE)
+                               (EQ (AR-1 TWA TEM)
+                                   'BLACK-PAWN))
+                          (AS-1 (CONS '(RAM-PAWN) (AR-1 PKA WP))
+                                PKA 
+                                WP))) )))
+	(DO BP #o20 (1+ BP) (= BP #o30)
+	    (COND ((AND (NOT (ZEROP (SETQ LOC (AR-1 PIECE-ARRAY BP))))
+			(EQ (AR-1 TWA BP) 'BLACK-PAWN))
+                   (COND ((NULL (SETQ TEM (AR-1 SSA BP)))
+                          (AS-1 (CONS '(PASSED) (AR-1 PKA BP))
+                                PKA 
+                                BP))
+			 (T
+			  (PROG NIL
+				(SETQ FILE (AR-1 C-BOARD-FILE-NUMBER LOC))
+			     L  (COND ((= FILE (AR-1 C-BOARD-FILE-NUMBER (CAR TEM)))
+				       (RETURN NIL))
+				      ((SETQ TEM (CDR TEM))
+				       (GO L)))
+			        (AS-1 (CONS '(HALF-FREE) (AR-1 PKA BP))
+				      PKA
+				      BP)
+				(RETURN T)) ))
+                   (COND ((OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1+ (+ LOC BOARD-WIDTH))))
+                                      PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'BLACK-PAWN))
+                              (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1- (+ LOC BOARD-WIDTH))))
+                                      PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'BLACK-PAWN)))
+                          (AS-1 (CONS '(DEFENDED-BY-PAWN) (AR-1 PKA BP))
+                                PKA 
+                                BP))
+                         ((AND (OR (= (SETQ TEM (AR-1 BOARD-ARRAY (- LOC BOARD-WIDTH)))
+                                      SQUARE-VACANT)
+                                   (NOT (ZEROP (LOGAND #o20 TEM))))  ;PUSHING NOT STOPPED BY HIM
+                               (OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1+ LOC)))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'BLACK-PAWN))
+                                   (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1- LOC)))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'BLACK-PAWN))))
+;                         (AS-1 (CONS '(WOULD-BE-DEFENDED-BY-PAWN-IF-PUSHED)
+;                                     (AR-1 PKA BP))
+;                               PKA 
+;                               BP)
+                          )
+                         ((OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                      (1+ (+ LOC BOARD-WIDTH*2))))
+				      PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'BLACK-PAWN)
+                                   (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                          (1+ (+ LOC BOARD-WIDTH))))
+                                          SQUARE-VACANT)
+                                       (NOT (ZEROP (LOGAND #o20 TEM)))))
+                              (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                      (1- (+ LOC BOARD-WIDTH*2))))
+				      PIECE-ARRAY-SIZE)
+                                   (EQ (AR-1 TWA TEM)
+                                       'BLACK-PAWN)
+                                   (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                          (1- (+ LOC BOARD-WIDTH))))
+                                          SQUARE-VACANT)
+                                       (NOT (ZEROP (LOGAND #o20 TEM))))))
+                          (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-ADJACENT-P-PUSHED)
+                                      (AR-1 PKA BP))
+                                PKA 
+                                BP))
+                         ((AND (= (AR-1 C-BOARD-WHITE-RANK-NUMBER LOC)
+                                  7)
+                               (OR (= (SETQ TEM (AR-1 BOARD-ARRAY (- LOC BOARD-WIDTH)))
+                                      SQUARE-VACANT)
+                                   (NOT (ZEROP (LOGAND #o20 TEM))))
+                               (OR (= (SETQ TEM (AR-1 BOARD-ARRAY (- LOC BOARD-WIDTH*2)))
+                                      SQUARE-VACANT)
+                                   (NOT (ZEROP (LOGAND #o20 TEM))))
+                               (OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1+ (- LOC BOARD-WIDTH))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'BLACK-PAWN)
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (1+ (- LOC BOARD-WIDTH*2))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'WHITE-PAWN))))
+                                   (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1- (- LOC BOARD-WIDTH))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM) 
+                                            'BLACK-PAWN)
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (1- (- LOC BOARD-WIDTH*2))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'WHITE-PAWN))))))
+                          (AS-1 (CONS '(WOULD-BE-DEFENDED-IF-DOUBLE-PUSHED)
+                                      (AR-1 PKA BP))
+                                PKA 
+                                BP))
+                         ((AND (= (AR-1 C-BOARD-WHITE-RANK-NUMBER LOC)
+                                  4)
+                               (OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1+ (+ LOC BOARD-WIDTH*3))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM)
+                                            'BLACK-PAWN)
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1+ (+ LOC BOARD-WIDTH*2))))
+                                               SQUARE-VACANT)
+                                            (NOT (ZEROP (LOGAND #o20 TEM))))
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1+ (+ LOC BOARD-WIDTH))))
+                                               SQUARE-VACANT)
+                                            (NOT (ZEROP (LOGAND #o20 TEM))))
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (+ 2 (+ LOC BOARD-WIDTH))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'WHITE-PAWN))))
+                                   (AND (< (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                           (1- (+ LOC BOARD-WIDTH*3))))
+                                           PIECE-ARRAY-SIZE)
+                                        (EQ (AR-1 TWA TEM)
+                                            'BLACK-PAWN)
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1- (+ LOC BOARD-WIDTH*2))))
+                                               SQUARE-VACANT)
+                                            (NOT (ZEROP (LOGAND #o20 TEM))))
+                                        (OR (= (SETQ TEM (AR-1 BOARD-ARRAY 
+                                                               (1- (+ LOC BOARD-WIDTH))))
+                                               SQUARE-VACANT)
+                                            (NOT (ZEROP (LOGAND #o20 TEM))))
+                                        (NOT (AND (< (SETQ TEM 
+                                                           (AR-1 BOARD-ARRAY 
+                                                                 (+ -2 (+ LOC BOARD-WIDTH))))
+                                                     PIECE-ARRAY-SIZE)
+                                                  (EQ (AR-1 TWA TEM)
+                                                      'WHITE-PAWN))))))
+                          (AS-1 (CONS '(WOULD-BE-DEFENDED-BY-DOUBLE-ADVANCE-OF-ADJ-P)
+                                      (AR-1 PKA BP))
+                                PKA 
+                                BP))
+			 (T (AS-1 (CONS '(CANNOT-BE-DEFENDED-BY-P-IN-ONE-MOVE)
+					(AR-1 PKA BP))
+				  PKA
+				  BP))
+)
+                   (COND ((OR (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1+ (- LOC BOARD-WIDTH))))
+				      PIECE-ARRAY-SIZE)
+				   (EQ (AR-1 TWA TEM)
+				       'WHITE-PAWN))
+			      (AND (< (SETQ TEM (AR-1 BOARD-ARRAY (1- (- LOC BOARD-WIDTH))))
+				      PIECE-ARRAY-SIZE)
+				   (EQ (AR-1 TWA TEM)
+				       'WHITE-PAWN)))
+			  (COND ((AND (< (SETQ TEM (AR-1 BOARD-ARRAY (- LOC BOARD-WIDTH)))
+					 PIECE-ARRAY-SIZE)
+				      (EQ (AR-1 TWA TEM)
+					  'WHITE-PAWN))
+				 (AS-1 (CONS '(RAM-LEVER-PAWN) (AR-1 PKA BP))
+				       PKA 
+				       BP))
+				(T (AS-1 (CONS '(LEVER-PAWN) (AR-1 PKA BP))
+					 PKA
+					 BP))))
+			 ((AND (< (SETQ TEM (AR-1 BOARD-ARRAY (- LOC BOARD-WIDTH)))
+                                  PIECE-ARRAY-SIZE)
+                               (EQ (AR-1 TWA TEM)
+                                   'WHITE-PAWN))
+                          (AS-1 (CONS '(RAM-PAWN) (AR-1 PKA BP))
+                                PKA 
+                                BP))) )))
+	(RETURN PKA)
+))
+
+;STOP-SQUARE IS A PIECE-SIZE ARRAY.  FOR EACH PC WHICH IS A PAWN, ENTRY IS
+;A LIST OF SQUARES WHICH CONTAIN OPPONENT'S PAWNS WHICH "GUARD" THIS ONE.
+;THIS LIST IS IN SORTED ORDER, CLOSEST OBSTACLE FIRST.
+(DEFUN C-CREATE-STOP-SQUARE-ARRAY NIL 
+  (PROG (SSA TWA WSQ BSQ WFILE WRANK BFILE TEM)
+	(SETQ SSA (MAKE-ARRAY NIL ART-Q PIECE-ARRAY-SIZE NIL 
+			      (STOP-SQUARE-ARRAY-LEADER-SIZE)
+			      NIL 'STOP-SQUARE))
+;	(SETQ PHFA (MAKE-ARRAY NIL ART-1B PIECE-ARRAY-SIZE))
+;	(DO I 0 (1+ I) (= I #o30)
+;	    (AS-1 1 PHFA I))
+	(SETQ TWA (PIECE-TYPE-WOOD-ARRAY PIECE-ARRAY))
+	(DO WP 0 (1+ WP) (= WP #o10)
+	    (COND ((AND (NOT (ZEROP (SETQ WSQ (AR-1 PIECE-ARRAY WP))))
+			(EQ (AR-1 TWA WP) 'WHITE-PAWN))
+		   (SETQ WFILE (AR-1 C-BOARD-FILE-NUMBER WSQ))
+		   (SETQ WRANK (AR-1 C-BOARD-WHITE-RANK-NUMBER WSQ))
+		   (DO BP #o20 (1+ BP) (= BP #o30)
+		       (COND ((AND (NOT (ZEROP (SETQ BSQ (AR-1 PIECE-ARRAY BP))))
+				   (EQ (AR-1 TWA BP) 'BLACK-PAWN)
+				   (<= (ABS (- WFILE (SETQ BFILE 
+							   (AR-1 C-BOARD-FILE-NUMBER BSQ))))
+				       1)
+				   (< WRANK (AR-1 C-BOARD-WHITE-RANK-NUMBER BSQ)))
+;			      (COND ((= WFILE BFILE)
+;				     (AS-1 0 PHFA WP)
+;				     (AS-1 0 PHFA BP)))
+			      (AS-1 (CONS WSQ (AR-1 SSA BP))
+				    SSA
+				    BP)
+			      (AS-1 (CONS BSQ (AR-1 SSA WP))
+				    SSA
+				    WP)))))))
+	(DO WP 0 (1+ WP) (= WP #o10)
+	    (COND ((SETQ TEM (AR-1 SSA WP))
+		   (AS-1 (SORT-SHORT-LIST TEM (FUNCTION <))
+			 SSA
+			 WP))))
+	(DO BP #o20 (1+ BP) (= BP #o30)
+	    (COND ((SETQ TEM (AR-1 SSA BP))
+		   (AS-1 (SORT-SHORT-LIST TEM (FUNCTION <))
+			 SSA
+			 BP))))
+	(RETURN SSA)
+))
+
+;OLD PAWN DATA STUFF
+
+
+;(DEFUN C-CALCULATE-GROUP-DATA NIL 	    ;FILL IN DATA FOR PAWN-GROUPS
+;  (PROG (IDX LIM PGA TWA SQ BIT BFA FN)
+;	(SETQ LIM (BOARD-PAWN-DATA-LOWEST-UNUSED-PAWN-GROUP BOARD-PAWN-DATA-ARRAY))
+;	(DO IDX 0 (1+ IDX) (= IDX LIM)
+;	    (SETQ PGA (AR-1 BOARD-PAWN-DATA-ARRAY IDX))
+;	    (SETF (PAWN-GROUP-MEMBERS PGA) 0)		;REALLY WINS
+;	    (SETF (PAWN-GROUP-OPPOSING-GROUPS PGA) NIL) ;NOT COMPLETED
+;	    (SETF (PAWN-GROUP-CRIPPLED PGA) NIL)	;NOT COMPLETED
+;	    (SETF (PAWN-GROUP-MAJORITY PGA) NIL)	;NOT COMPLETED
+;	    (SETF (PAWN-GROUP-PASSERS PGA) 0)		;NOT COMPLETED
+;	    (SETF (PAWN-GROUP-CANDIDATES PGA) 0)	;NOT COMPLETED
+;	    (SETF (PAWN-GROUP-HALF-FREES PGA) 0)	;NOT COMPLETED
+;	    (SETF (PAWN-GROUP-CAN-MAKE-PASSER-FLAG PGA) 0)	;NOT COMPLETED
+;)
+;	(SETQ TWA (PIECE-TYPE-WOOD-ARRAY PIECE-ARRAY))
+;	(SETQ BFA (BOARD-PAWN-DATA-WHITE-PAWNS-ON-FILE-ARRAY BOARD-PAWN-DATA-ARRAY))
+;	(DO I 0 (1+ I) (= I #o10)
+;	    (COND ((AND (NOT (ZEROP (SETQ SQ (AR-1 PIECE-ARRAY I))))
+;			(EQ (AR-1 TWA I) 'WHITE-PAWN))
+;		   (SETQ PGA (AR-1 BOARD-PAWN-DATA-ARRAY 
+;			       (AR-1 (BOARD-PAWN-DATA-WHITE-PAWN-GROUP-NUMBER-ARRAY 
+;				         BOARD-PAWN-DATA-ARRAY)
+;				     (SETQ FN (AR-1 C-BOARD-FILE-NUMBER SQ)))))
+;		   (SETQ BIT (LSH 1 I))
+;		   (SETF (PAWN-GROUP-MEMBERS PGA)
+;			 (LOGIOR (PAWN-GROUP-MEMBERS PGA) BIT))
+;		   (COND ((AND (ZEROP (AR-1 BFA (1+ FN)))
+;			       (ZEROP (AR-1 BFA (1- FN))))
+;			    ))  ;THIS PAWN ISOLATED
+;)))
+;	(SETQ BFA (BOARD-PAWN-DATA-BLACK-PAWNS-ON-FILE-ARRAY BOARD-PAWN-DATA-ARRAY))
+;	(DO I #o20 (1+ I) (= I #o30)
+;	    (COND ((AND (NOT (ZEROP (SETQ SQ (AR-1 PIECE-ARRAY I))))
+;			(EQ (AR-1 TWA I) 'BLACK-PAWN))
+;		   (SETQ PGA (AR-1 BOARD-PAWN-DATA-ARRAY 
+;			       (AR-1 (BOARD-PAWN-DATA-BLACK-PAWN-GROUP-NUMBER-ARRAY 
+;				         BOARD-PAWN-DATA-ARRAY)
+;				     (SETQ FN (AR-1 C-BOARD-FILE-NUMBER SQ)))))
+;		   (SETQ BIT (LSH I (- I #o20)))
+;		   (SETF (PAWN-GROUP-MEMBERS PGA)
+;			 (LOGIOR (PAWN-GROUP-MEMBERS PGA) BIT)))))
+;))
+
+;(DEFUN C-CALCULATE-ASSIGN-PAWN-GROUPS NIL   ;ASSIGNS FILES TO PAWN-GROUP NUMBER
+;  (PROG (WPA BPA SQ TWA GN FN GNA)
+;	(SETQ TWA (PIECE-TYPE-WOOD-ARRAY PIECE-ARRAY))
+;	(SETQ WPA (BOARD-PAWN-DATA-WHITE-PAWNS-ON-FILE-ARRAY BOARD-PAWN-DATA-ARRAY))
+;	(SETQ BPA (BOARD-PAWN-DATA-BLACK-PAWNS-ON-FILE-ARRAY BOARD-PAWN-DATA-ARRAY))
+;	(DO I 0 (1+ I) (= I 10.)
+;	    (AS-1 0 WPA I)
+;	    (AS-1 0 BPA I))
+;	(DO I 0 (1+ I) (= I #o10)
+;	    (COND ((AND (NOT (ZEROP (SETQ SQ (AR-1 PIECE-ARRAY I))))
+;			(EQ (AR-1 TWA I) 'WHITE-PAWN))
+;		   (SETQ FN (AR-1 C-BOARD-FILE-NUMBER SQ))
+;		   (AS-1 (1+ (AR-1 WPA FN))
+;			 WPA 
+;			 FN))))
+;	(DO I #o20 (1+ I) (= I #o30)
+;	    (COND ((AND (NOT (ZEROP (SETQ SQ (AR-1 PIECE-ARRAY I))))
+;			(EQ (AR-1 TWA I) 'BLACK-PAWN))
+;		   (SETQ FN (AR-1 C-BOARD-FILE-NUMBER SQ))
+;		   (AS-1 (1+ (AR-1 BPA FN))
+;			 BPA 
+;			 FN))))
+;	(SETQ GN 0 FN 1)
+;	(SETQ GNA (BOARD-PAWN-DATA-WHITE-PAWN-GROUP-NUMBER-ARRAY BOARD-PAWN-DATA-ARRAY))
+;	(DO I 1 (1+ I) (> I 8)
+;	    (AS-1 NIL GNA I))
+;    L1	(COND ((> FN 8) (GO X1))		;LOOP TO FIND A FILE WITH P'S ON IT
+;	      ((ZEROP (AR-1 WPA FN))
+;	       (SETQ FN (1+ FN))
+;	       (GO L1)))
+;    L2	(AS-1 GN GNA FN)
+;    	(COND ((> (SETQ FN (1+ FN)) 8) (GO X2))
+;	      ((NOT (ZEROP (AR-1 WPA FN)))
+;	       (GO L2)))	    ;THIS FILE HAS P S TOO, PART OF SAME GROUP
+;  	(SETQ GN (1+ GN))
+;	(GO L1)
+;    X2	(SETQ GN (1+ GN))
+;    X1	(SETF (BOARD-PAWN-DATA-LOWEST-BLACK-PAWN-GROUP BOARD-PAWN-DATA-ARRAY) GN)
+;    	(SETQ FN 1)
+;	(SETQ GNA (BOARD-PAWN-DATA-BLACK-PAWN-GROUP-NUMBER-ARRAY BOARD-PAWN-DATA-ARRAY))
+;	(DO I 1 (1+ I) (> I 8)
+;	    (AS-1 NIL GNA I))
+;    L3	(COND ((> FN 8) (GO X3))
+;	      ((ZEROP (AR-1 BPA FN))
+;	       (SETQ FN (1+ FN))
+;	       (GO L3)))
+;    L4	(AS-1 GN GNA FN)
+;    	(COND ((> (SETQ FN (1+ FN)) 8) (GO X4))
+;	      ((NOT (ZEROP (AR-1 BPA FN)))
+;	       (GO L4)))
+;	(SETQ GN (1+ GN))
+;	(GO L3)
+;    X4	(SETQ GN (1+ GN))
+;    X3	(SETF (BOARD-PAWN-DATA-LOWEST-UNUSED-PAWN-GROUP BOARD-PAWN-DATA-ARRAY) GN)
+;))
+;;LOOP OVER PAWNS, SETTING FOR EACH ITS BIT IN ITS GROUP
+;;   TEST BACKWARD, ISOLATED, ETC

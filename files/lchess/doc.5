@@ -1,0 +1,310 @@
+;;; -*- Mode:Text; Package:USER -*-
+.dv press
+.fo 0 timesroman10
+.fo 1 timesroman10B
+.fo 2 timesroman12B
+.so r.macros
+.tr @
+.nf
+.chapter 2LISP@LCHESS0
+
+.section 1Starting@LCHESS0
+
+0The general instructions for starting the LCHESS are as follows:
+
+(login 'lchess)
+
+Answer Y to the question of loading the programs.
+
+After the programs are loaded.
+(funcall gf ':select)
+(print-chess-font)
+
+(c-input)
+
+Useful commands in C-input besides piece moves.
+
+:ct n      Loads Cheops with present board and runs as foreground process.
+:pb        Prints the argument block in the debugger window.
+.chapter 2CHEOPS0
+
+.section 1Communication@with@CHEOPS@and@LISPM0
+
+0Signaling between the unibus and the running cheops program in the "closely 
+    coupled" mode. 
+  cheops -> unibus.  info passed via 6 bit star register.
+  unibus -> cheops.  info passed via pdp-11-flag-0 and pdp-11-flag-1.
+		these show up as flagword bits.
+
+Operation in "CLOSE-COUPLED" mode (10 loads position directly into CHEOPS
+memories) 0  initial state: star zero, flagbits 0.
+1  CHEOPS process signals it is alive: 1 -> star
+1  unibus commands CHEOPS to start close coupled position evaluation:
+     unibus command 1
+2  CHEOPS acknowleges that it is searching:  2-> star
+3a CHEOPS signals that it has completed search:  4-> star and cheops halts
+3b  if CHEOPS detects a fatal error condition: CHEOPS halts
+
+Operation in "BUFFERED" mode.
+
+.fi b
+Buffered mode makes use of a pdp-11 memory which is connected on the unibus with the 10-11
+interface and the UNIFACE. This memory is currently 4096 words.  The first 100 (octal) words
+are a parameter area.  The remainder is used to store standard 100 (octal) word argument
+blocks for CHEOPS.  Contained within this standard block is the board position together
+with all other parameters and data (initial alpha and beta, depth to search, initial
+flagword, side-to-move, etc).  Also included is space to receive the returned values
+and principle variation.  The standard argument block includes provision to chain to
+another block (ie cause cheops to process the other block when this one is completed).  In
+the parameter area are the head pointers of two chains, called the priority pointer and
+the background pointer.  In its idle state, CHEOPS is looping referencing the background
+pointer to see if it points to a valid arg block.  If it does, that block is processed,
+followed by any it points to, etc.  The priority pointer is activated by doorbell command
+0.  When that command is received, the background state is saved, and the priority chain
+processed.  When finished, the background state is restored and resumed.  Buffered mode is
+initiated by unibus command 2.  From that point, the process is controlled by the
+parameter area and the flagwords in the argument blocks.
+
+.section 1The@ARGUMENT@BLOCK:0
+
+.nf
+0WD0 STATEWORD	@0 -> block free
+		@1 -> block contains CHEOPS results
+		-1 -> block contains CHEOPS arguments
+WD1	always 0  (for convienence of pdp-10)
+WD2  BITS and MODES:
+.in 4
+.ilist 4 1
+100000 SIDE-TO-MOVE (STM),  1 -> black
+.next
+@40000	ALPHA-CARRY-OVER-MODE, 1 -> initialize alpha from value of last search
+.next
+@20000	BETA-CARRY-OVER-MODE,  1 ->    "        beta  "
+.next
+@10000	Use ALPHA as delta around current material value when setting up real
+alpha and beta.
+.next
+@@4000	ASYMETRICAL A/B MODE.  Once it is verified STM is not getting mated,
+automatically give him the option of taking PCSATS + or - 1.
+This mode is useful for OCM PMG and PCG which aren't interested in how
+much worse value is for STM unless STM is mated.
+.next
+@@2000	Increment SETD before starting search.  Since the SETD is stored back
+when results are stored, this is useful in progressive deepening mode.
+.next
+@@1000	Another arg block chained to this one.  Pointed to by WD7
+.next
+@@@400	BOTH SIDES MODE.  Also do another search with everything the same
+but other side to move.  Only works in buffered mode.
+.end_list
+.in 0
+WD3  DEPTH TO SEARCH (SETD)
+WD4  INITIAL ALPHA
+WD5  INITIAL BETA
+WD6  INITIAL FLAGWORD
+WD7  UNIBUS word address of following arg block (turned on by 1000 bit of mode select)
+WD16 "RETURNED" STATA (LOW ORDER)
+WD17 "RETURNED" STATB (HIGH ORDER)
+WD20 RETURNED VALUE  -- special value 100000 -> input position was illegal
+WD21 INITIAL MATERIAL 
+WD22-WD27 RETURNED PRINCIPLE VARIATION.
+WD30-35 RETURNED PRINCIPLE VARIATION W/ OTHER SIDE TO MOVE
+WD36 VALUE W/ OTHER SIDE TO MOVE (if enabled by option selection)
+.fi b
+.ilist 4 1
+WD37	Begins piece location description. Each word has piece number in left half, square
+in right half.  List is terminated by an all zero word. Since there can be 32 pieces
+max, the zero must occur by WD77.  For promoted pieces, high 2 bits of "SQUARE" byte give
+type wood: 0 -> q, 1 -> r, 2 -> b, 3 -> n
+.end_list
+
+.section 1The@PARAMETER@AREA:0
+.sp
+.ilist 4 1
+0WD0	Always 0.
+WD1	If not 105, CHEOPS is being used for debugging, special runs, etc, and not looking
+at all this cruft.
+.next
+WD2,WD3	PDP-10 side parameter area software lock.  In normal idle state, these are
+both -1 (thus -20 as seen from 10).  A PDP-10 process wishing to lock these parameters
+should do:  movei ac,20    ddb ac,<this locn>.  If ac gets 0, the process has the lock
+and should store its PDP-10 job number in WDS 4 and 5 for debugging purposes.  Otherwise,
+better luck next time.
+.next
+WD4,WD5	See above.
+WD6,WD7	Pointer to PRIORITY ARG BLOCK, had better be set up when doorbell op 0 given.
+Sign Set -> none.  WD6 is continually written -1 by CHEOPS when in loop waiting for WD7
+sign to be cleared.
+.next
+WD10,WD11	Unused.
+.next
+WD12,WD13	Pointer to background arg block, sign set -> none.  WD12 is continually
+written -1 by CHEOPS when in loop waiting for WD13 sign to be cleared.
+.end_list
+
+.section 1Background@-@Foreground@Hackery@--@The Doorbell0
+
+0The DOORBELL is a 4 bit R/W register accessible to the unibus.  In addition, the low bit
+can be tested  conveniently by CHEOPS via the @DOORBELL condition.  When the 10 wants to
+buzz CHEOPS, it writes into the DOOBELL ones in the low two bits plus a 2 bit code as
+desired in the high two bits.  When CHEOPS senses the low bit set, it interrupts what it
+was doing and saves its state.  CHEOPS acknowledges receipt of the command by clearing the
+low bit of the doorbell.  After having completely executed command, CHEOPS signals the 10
+of this by clearing the 2nd from low bit in the doorbell register.  CHEOPS meanwhile,
+restores the saved state and picks up where it was when interrupted.
+
+.nf
+.ilist 4 1
+Operations are:	0 -> initiate foreground search
+1 -> abort foreground search
+2 -> abort background search
+.end_list
+.fi b
+
+Aborting is effected by clobbering bits-and-modes and deep-parameter to zero.
+This will cause things to unwind and exit shortly.  The parameter results
+will be stored as usual and of course are invalid.  (This is signified by
+the setd being stored 0).  The background search may be aborted while a
+foreground search is in progress.  In this case, the stored state is clobbered
+so that when the background search is resumed, it aborts.
+
+The position buffer is the top 3/4 of buffer memory (2000-7777).
+Since each argument block is 100 words, the position buffer can hold
+60 octal ( 48.) blocks.
+
+.section 1On@the@significance@of@the@DEEP@FLAG:0
+
+0Bit 5 in the flagcell register is called the deep flag.  It can be set and cleared
+directly by flag-control operations.  Of course, it is also loaded with all the other bits
+on a LOAD-FLAGCELL-FROM-NEXT-FLAGCELL operation.  When an INITIALIZE-NEXT-FLAGCELL-WORD
+operation is done, bits 15 thru 4 of the next-flagcell register are cleared.  Bit 5 is not
+affected by subsequent operations, thus bit 5 of the flagcell is always 0 when reaching
+<move-or-capture>-played.  If it is determined that WDEPTH > DEEP-PARAMETER and KCHK is 0,
+deep is set.  In any case, the program proceeds to search captures starting at genallcapt.
+When all captures are exhausted, deep is examined to determine whether the decision was
+made to also look at moves.  When returning from a position without having made a move, it
+is not a checkmate or stalemate unless deep is zero.
+
+.section 1On@KCHK@vs@F-C-BIT-KCHK@etc:0
+
+0The KCHK condition can be tested at two different points by the cond
+multiplexor.  However, they are not the same!!!  F-C-BIT-KCHK comes
+directly off the flagcell register.  Just KCHK is a flip-flop which
+is loaded from F-C-BIT-KCHK.  Thus after F-C-BIT-KCHK changes,
+KCHK changes on the next clock.  KCHK should be used when it is assured
+to have been at least one clock since F-C-BIT-KCHK changed, since
+that gives the micro-assembler greater flexibility in laying out storage.
+The same relation holds between F-C-BIT-DEEP and DEEP and between
+F-C-BIT-LEGAL and LEGAL.  In these cases, though, there is no advantage to
+using the non F-C- type ones where it doesn't make any logical difference.
+
+.section 1A@Special@Note@On@The@PAWN-MOVE@CONDITION0
+	(an thus on promote-move)
+
+0The hardware uses the mofsel logic to locate the moving piece.  If DESTINATION-ARRAY is
+selected, moving piece is assumed to come from PR, DESTINATION SQUARE from SR.  If
+ORIGIN-ARRAY is selected, moving piece is assumed to come from POUT.  DESTINATION SQUARE
+from SIR.  The special point is that for DESTINATION ARRAY, PAWN-MOVE does not become
+valid until one cycle after PR and SR have been loaded.
+
+.section 1The@RETURNED@PRINCIPLE@VARIATION0
+
+0Three plies of P.V. are always stored.  However, if the SETD is less than 3, the plies in
+excess of the SETD are garbage.  If a mate or stalemate is reached in the PV, the PV is
+terminated by an all zero word in the PIECE-MOVED,,ORIGIN WORD.
+
+.chapter 2Architecture@of@CHEOPS0
+
+.section 1Modes@for@ARRAY@Instructions0
+
+.ilist 4 1
+0Destination Array	This is to specify which array to use in the array instruction.
+The choice is between the destination array and the origination array.
+.next
+All Squares	This determines how many squares one uses to input to the array.  The
+choices are between using all the squares or a specific square.
+.next
+All Pieces	This determines which pieces on the squares are valid as inputs.  The
+choices are between all pieces and just pawns.  At present the just pawns mode is not used
+but is there in the hardware.
+.next
+Move/Capture Mode	This determines whether this cycle through the array list up possible
+squares pertaining to captures or to moves.
+.next
+Piece Scanner
+.next
+Piece Bus
+.end_list
+
+Some examples of likely combinations of the above are interpreted as follows:
+
+.nf
+Destination-Array, Orig-all-squares,
+Enable-all-pieces, Capture-Mode
+Piece-scanner from PR,
+Piece-bus from Next-Piece
+
+.fi b
+This means, Light up all squares that can be captured using any piece from any square.
+
+
+
+.section 1Notes@on@Alu@Functions0
+
+.nf
+0SET-A	Return value from A-bus
+
+SETZ	Return zero.
+
+SETO	Return all ones (-1).
+
++	Addition
+
+-	Subtraction
+
+OR-C-A	
+
+SET-C-A	Return complement of A-bus  (1's complement)
+
+INC-B	Return B-bus + 1.
+
+B-A-1
+
+DEC-B	Return B-bus - 1.
+
+NO-OP	Nothing
+
+.section 1Storage@Layout@in@DATA-PDL@MEMORY0
+.nf
+
+00       not used (hacked with by console program)
+1-26    (active-pdl-block-origin thru active-pdl-block-end)
+          active variables
+40-51   saved state of ac s, aac s, etc, during forground search
+157-200  storage of pdl constants (assigned by conslp, this works down)
+300 ->   move pdl, 4 wds per level of recursion
+1540 -> 1577   saved loc 60 -> 77 in val and typ memories.
+		  val in even-word, typ in odd word
+1600 -> 1677  (saved-pdl-block-origin thru saved-pdl-block-end)
+	    saved copy of active pdl block variables
+1700 -> 1777  saved board position.  in piece,,square form.
+
+.fi b
+For convenience of the console program, the MOVE PDL is defined to be based at
+a location which is a multiple of 4.  It is sometimes referenced up to +4(par).
+Thus, when state-saving, 10 (for good measure) is added to the par and the result
+adjusted upwards to the nearest multiple of 4.
+
+.nf
+PDL format:			
+	Piece moved,, origin
+	Piece-capt ,, destination
+	Saved flagcell
+	Saved alpha/beta
+.fi b
+
+An extra note about the PDL stack.  It is used to store constants needed in the
+compilation of the microcode.  Thus the statement PDL[constant 1000] means to store into a
+PDL location the constant 1000 such that it can be referred to as PDL[CONSTANT 1000].
+The statement PDL[HW-CONSTANT FOO BAR] means to store a word which has the FOO and BAR as
+the two half words where FOO and BAR also are constants.
