@@ -1,0 +1,941 @@
+.sbttl file routines
+chrfil:	mov #filep,a		;thing to prompt with
+	mov #filehl,e		;thing to prompt with if he delays 
+	jsr pc,dmenu		;do a standard menu thingy
+	rts pc
+
+
+;edit a file. Opens specicified file for reading and file> for writing
+fedit:	jsr pc,savef		;save any already open file(s)
+	jsr pc,grfile		;get a file to read
+	bne 1$			;Branch No Error
+	cmp #.efnf,a		;last error a file not found?
+	bne 2$			;yes, just blast ahead
+	jsr pc,wfile		;open file for writing
+	beq 2$			;error of some sort
+	br filext		;no error, exit with the file open
+
+1$:	jsr pc,kilbuf		;file open for read, kill old buffer
+	jsr pc,wfile
+	bne filecm
+	jsr pc,incls		;close the input too
+2$:	filerr			;and give error message
+
+;read a file. Opens a file for reading without opening one for writing.
+fread:	jsr pc,incls		;close previously open input file
+	jsr pc,grfile		;try to open a file for reading
+	bne filecm		;error opening?
+filer1:	filerr			;yes, give error message
+filecm:	jsr pc,chrpag		;read a page
+filext:	jsr pc,delcur		;no longer need the cap to the directory
+	clr prompt		;flush the old prompt
+	jsr pc,dstat		;and refresh the status line
+	clz
+	rts pc
+
+;this is like insert only it first sets the cursor to the end of the buffer
+fappen:	mov bufend,curlin
+	clr curcar
+;fall into insert
+
+;like read only the first page of the file is inserted at the current cursor
+finsrt:	jsr pc,incls		;close previously open input file
+	jsr pc,grfile		;try to open a file for reading
+	beq filer1		;lose on error
+	jsr pc,readpg		;read the page
+	br filext
+
+
+;close the open file(s)
+fsave:	tst outcap		;anything open for write?
+	bne 1$			;yup, we have something to do
+	mov #savep,prompt	;special prompt
+	jsr pc,gwfile		;get a file to write
+1$:	jsr pc,savef		;close the input/output
+	jmp filext		;and clean up
+
+;close the open file(s)
+savef:	tst incap		;anything open for read?
+	beq 1$			;nope
+	tst outcap		;anything open for write?
+	beq 3$			;no
+	jsr pc,chrpag		;turn the page
+	br savef
+
+1$:	tst outcap		;anything open for write?
+	beq 3$			;nope
+	jsr pc,chrpag		;write out the page
+3$:	jsr pc,incls		;close any input
+	jsr pc,outcls		;and close any output
+	rts pc
+
+
+;just show the indeices
+sindex:	jsr pc,gfile		;this does it just fine
+	jmp filext		;do the normal file exit
+
+;create an index
+icreat:	jsr pc,gfile
+	beq 1$			;getting a file lost
+	jsr pc,copcur		;copy the curcap
+	save <,#string,a>
+	bis #.faad,(p)
+	.invok			;try to create the directory
+	beq 2$
+	save <#0,a>
+	.wrdo			;make file file 1 block long
+	beq 3$
+	save <,,a>
+	bis #.famd,(p)
+	.invok			;make into a dir
+	beq 3$
+	jsr pc,deldcp
+	jmp filext
+3$:	save <,,a>
+	bis #.fadl,(p)
+	.invok			;try to delete aborted file
+2$:	jsr pc,deldcp
+	jsr pc,delcur
+1$:	filerr
+
+.if nz lsi&sits
+;Chain to a specified program
+fchain:	mov #maxstr,maxstl	;set up the max length
+	mov #-1,strtrc		;don't terminate on space
+	jsr pc,strge2		;gobble down string
+	tstb string		;test for non-null
+	bne 1$
+	badarg
+1$:	jsr pc,reseta		;reset the world
+	mov memtop,a		;top of memory
+	sub #1000,a		;random place
+	mov a,f			;for the new pdl pointer
+	tst -(f)
+	mov a,@memtop		;store pointer
+	mov #string,b		;file to boot
+2$:	movb (b)+,c
+	jsr pc,upcase
+	movb c,(a)+
+	bne 2$
+	jmp 173002		;go to the hardware boot
+.endc
+
+;open a file for reading
+grfile:	mov #inname,defstr	;set the default
+	jsr pc,rfile
+	beq 1$
+	mov tmpcap,incap
+	clr tmpcap
+	mov incap,a
+	mov #inname,b
+	jsr pc,getfnm		;get the real file name
+	mov #inflag,filein	;set the flag for the status line
+	clr dibufp		;set the buffer pointer
+	clr dibufe		;and end of buffer pointer 
+	clz
+1$:	rts pc
+
+;Open a file for reading on tmpcap
+rfile:	jsr pc,gfile		;get the file name
+	beq 1$			;lost somehow
+	mov #string,a		;the file name string
+	mov #tmpnam,b		;copy it
+3$:	movb (a)+,(b)+
+	bne 3$
+	jsr pc,copcur
+	beq 1$			;something went wrong
+	mov a,tmpcap
+	save <#0,#tmpnam,tmpcap>
+	bis #.famu,(p)		;to mutate to file
+	.invok
+	beq 2$			;error
+	mov tmpcap,a
+	jsr pc,dirchk		;did we get a directory?
+	bne 1$			;yup, lose
+	clz
+	rts pc
+
+2$:	add #6,p		;flush invoke args
+1$:	jsr pc,tmpfls
+	jsr pc,glerr		;get the last error code
+	sez			;lose, indicate error to next level up
+	rts pc
+
+;come here on a quit
+flscqu:	jsr pc,delcur		;flush the current directory
+	jmp chrqui		;and quit out normally
+
+;delete a directory
+ddelet:	mov pc,ftemp		;special flag for gfile
+	jsr pc,gfilen		;get the file name
+	br fdele1		;go do a delete
+
+;delete a file
+fdelet:	jsr pc,gfile		;get a file
+fdele1:	beq 1$			;lost somehow
+	jsr pc,copcur
+	beq 1$			;something went wrong
+	save <#0,#string,a>
+	bis #.famu,(p)		;to mutate to file
+	.invok
+	beq 2$			;error
+	save <,,a>
+	mov #deletp,prompt	;set up the query prompt
+	jsr pc,dstat
+	jsr pc,mgetyn		;get a yes or no answer
+	clr prompt
+	jsr pc,dstat		;flush prompt
+	tst c			;c is non-zero for yes
+	beq 2$			;no, quit
+	bis #.fadl,(p)		;to delete the file
+	.invok
+	beq 2$			;lost
+	jsr pc,deldcp		;delete the copy
+	rts pc
+
+2$:	jsr pc,deldcp		;delete the copied cap
+1$:	jsr pc,delcur
+	filerr
+
+;turn a page: write out the current page if a file is open and read in
+;the next page 
+chrpag:	tst outcap		;output file?
+	beq 1$
+	jsr pc,writpg		;write out the current buffer
+	jsr pc,kilbuf		;kill the old buffer
+	tst incap		;anything to input from?
+	beq 4$			;nope, done
+1$:	tst incap		;input file?
+	beq 3$			;nope
+2$:	jsr pc,kilbuf		;make sure it's dead
+	jsr pc,readpg		;read in the page
+	clr curlin		;set the cursor
+	clr curcar		;to the top of the buffer
+	clr goalcl
+4$:	rts pc
+3$:	ding
+
+;read a page in from the disk starting at the end of the buffer
+readpg:	cmp bufend,curlin	;are we exactly at the end of the buffer?
+	beq readpf		;yes, do it the fast way
+1$:	jsr pc,readc		;read a character
+	beq 3$			;end of file
+	cmpb #40,c		;regular character?
+	bhi 2$			;nope, control
+	jsr pc,inschr		;insert character into the buffer
+	br 1$
+
+2$:	cmp #14,c		;end of page character?
+	beq 3$			;yup
+	cmp #15,c		;carrige return?
+	beq 4$			;yes, end th eline
+	br 1$			;for now, ignore all other controls
+
+3$:	rts pc			;done
+
+4$:	mov #chrcr,f		;carrige return
+	jsr pc,skeycl
+	br 1$
+
+;read the page in to the end of the buffer fast
+readpf:	mov buffer,a		;pointer to the buffer
+	cmp blused(a),bllen(a)	;is it all used up?
+	blo 1$			;nope
+	mov #bufinc,b		;amount to expand by
+	jsr pc,expand		;try to expand the buffer
+	beq readpn		;buffer full
+	mov a,buffer		;new buffer
+1$:	mov a,b			;copy buffer pointer
+	mov #500,a		;huge line
+	mov a,f			;counter
+	jsr pc,getblk		;get a block of storage
+	beq readpn		;no more room
+	mov curlin,d		;current line number
+	asl d
+	add buffer,d
+	add #blhead,d
+	inc curlin		;move cursor down past this line
+	inc bufend		;one more line in buffer
+	add #2,blused(b)	;one more line in buffer
+3$:	mov a,(d)		;put the new line into the buffer
+	mov a,b			;copy the pointer to the line
+	add #blhead,b		;get a pointer to the data
+	add blused(a),b		;in case we get back here
+2$:	jsr pc,readc		;read a character from the file
+	beq 4$			;done
+	cmpb #40,c		;control?
+	bhi 5$			;yup
+	movb c,(b)+		;put the char into the line
+	inc blused(a)		;one more in the line
+	sob f,2$		;keep reading
+	mov #500,b		;amount to expand
+	mov b,f
+	jsr pc,expand
+	beq readpn		;no space left
+	br 3$
+
+4$:	mov #blhead,f		;need at least enough for a header
+	jsr pc,shrink		;shrink the last line
+	rts pc
+
+5$:	cmpb #15,c		;end of line?
+	beq 6$			;yup
+	cmpb #14,c		;end of page?
+	beq 4$			;yup, done
+	br 2$			;ignore any other control char
+
+6$:	mov #blhead,f		;allow only enough for a header
+	jsr pc,shrink		;lop off any extra
+	br readpf		;continue reading
+
+readpn:	noroom			;no room left
+
+;read a character form the input buffer. If the buffer is empty, read a new buffer
+;if the end of file is reached, return with z set
+readc:	cmp dibufp,dibufe	;at the end of the buffer?
+	beq 1$			;yes, read new block
+	movb @dibufp,c		;get a character from the buffer
+	inc dibufp
+	rts pc
+
+1$:	mov #dibuf,dibufp	;reset input pointer
+	save <#dibuf,#-dbufl,incap>
+	.blki
+	bne 2$			;win, read in the whole block
+	cmp (p)+,(p)+		;flush top two args
+	rest dibufe		;new end of buffer
+	cmp #dibuf,dibufe	;did we read in anything?
+	bne readc		;go read a character
+	jsr pc,incls		;close file
+	sez
+	rts pc			;end of file, return with z set
+
+2$:	mov #dibuf+dbufl,dibufe	;set the new end pointer
+	br readc		;and go read a character
+
+;open a file for writing, requesting the file name in the usual manner
+gwfile:	mov #outnam,defstr	;set up the defualt
+	jsr pc,gfile
+	beq wfile9		;something went wrong
+	mov #string,a
+	mov #outnam,b
+1$:	movb (a)+,(b)+
+	bne 1$
+	br wfile1
+
+;open a file for writeing
+;a the moment this just takes the input file name, tacks a > on the end
+;if it lacks one, and creates the file
+;obviously, more hair than that is needed
+wfile:	mov #inname,a		;pointer to the input name
+	mov #outnam,b		;pointer to the output name
+2$:	movb (a)+,(b)+		;copy the name
+	bne 2$
+wfile1:	jsr pc,outcls		;close any output file already open
+	clr writen		;nothing written in the new file
+	jsr pc,copcur
+	beq wfile9		;something went wrong
+	mov a,outcap		;this will become the output cap
+	mov #outnam,b
+2$:	cmpb #'#,(b)		;start of version #?
+	beq 3$
+	cmpb #'>,(b)		;already has a > ?
+	beq 3$			;yes, terminate name
+	tstb (b)+		;at end of name?
+	bne 2$
+	dec b
+3$:	movb #'>,(b)+		;put the > onto the end
+	clrb (b)+
+	save <#0,#outnam,outcap>
+	bis #.faad,(p)		;want ot create a new file
+	.invok
+	beq 10$			;lost
+	mov outcap,a
+	mov #outnam,b
+	jsr pc,getfnm		;get the real file name
+	mov #outflg,filout	;set the falg for the status line
+	br wrtbu1		;reset pointers
+
+10$:	add #6,p
+	jsr pc,outcls		;close the aborted output file
+1$:
+wfile9:	jsr pc,glerr		;get the reason for failure
+	sez
+	rts pc
+
+;write out the contents of the disk output buffer to the outcap
+wrtbuf:	save <#dobuf,#dobuf>
+	sub dobufp,(p)		;giving negative character count
+	save outcap
+	mov #dobuf,dobufp	;reset pointer
+	.blko
+	bne wrtbu1		;no error
+	jsr pc,outcls		;flush the cap
+	filerr
+wrtbu1:	mov #dobuf,dobufp	;reset pointer
+	clz
+	rts pc
+
+;write a character into the output buffer and output it if full
+writec:	movb c,@dobufp		;put a character in the buffer
+	inc dobufp		;move the pointer
+	cmp #dobuf+dbufl,dobufp	;at the end?
+	blos wrtbuf		;yup, write the buffer
+	rts pc
+
+;write out the current buffer to the file
+writpg:	jsr f,acsav
+	mov bufend,f		;the count of lines in the buffer
+	beq 9$			;zero, don't output anything
+	mov buffer,a		;pointer into buffer
+	add #blhead,a
+	cmp #1,f		;only one line?
+	bne 1$			;nope, more than that
+	mov (a),b		;get the line
+	tst bllen(b)		;anything there?
+	beq 9$			;nope, don't output anything
+1$:	tst writen		;anything writen before?
+	beq 5$			;nope
+	mov #14,c		;form feed
+	jsr pc,writec		;before the new stuff
+5$:	mov (a)+,b		;get a line
+	add #blhead,b		;pointer to the data
+	mov blused-blhead(b),d	;count of chars on the line
+	beq 3$			;none
+2$:	movb (b)+,c		;get a character
+	jsr pc,writec		;output it to the file
+	sob d,2$		;for as many as are on the line
+3$:	movb #15,c		;carrige return
+	jsr pc,writec
+	sob f,5$
+	mov pc,writen		;something was writen
+9$:	jsr f,acres
+	rts pc
+;get a SITS file name. If the user types the name of an existing directory
+;we mutate down to it, otherwise we exit
+;read from the TTY into the status line in the normal fashion. If the
+;name is an index the path is updated and another name read.
+;if the name is the no character the last index is flushed
+;if too much delay happens the directory is displayed
+;if a name is the scroll up or down characters the directory display is
+;scrolled.
+gfile:	clr ftemp		;do the normal mutate down directories thing
+gfilen:	mov #flscqu,quitrt	;set up the quit routine
+	jsr pc,getcur		;try to set up the current directory
+	beq gfile3		;no current directory possible, ask for disk number
+gfile4:	mov #60.,f		;time to wait before displaying dir
+	clr strdir		;start directory at the top
+gfile1:	clr dirend		;say that it is zero lenght
+	mov #dirdis,e		;routine to call if things get too dull waiting for the user
+gfile2:	mov #maxfnm,maxstl	;set the max string length
+	jsr pc,strget		;get a string
+	cmp #40,a		;terminated with space?
+	beq 2$			;yup, gobble that directory
+	cmp #15,a		;return?
+	beq 2$			;likewise
+	jsr pc,getnam		;get the name of the key
+	cmp #chrno,f		;"no"?
+	beq gfileb		;back up one name
+	cmp #chrscd,f		;scroll down?
+	beq gfiled		;scroll directory display down
+	cmp #chrscu,f		;scroll up?
+	beq gfileu		;scroll directory display back up
+	mov a,rescan		;to re-read
+	ding
+
+2$:	jsr pc,copcur		;copy it
+	mov #string,b		;the place where the string is
+	jsr pc,upstrn		;upper case the string
+	tst ftemp		;check the flag
+	bne 4$			;don't mutate if set
+	save <#0,#string,a>	;now mutate the copy
+	bis #.famu,(p)
+	.invok
+	beq 3$			;mutate failed
+	jsr pc,dirchk		;is the new thing a directory?
+	beq 4$			;nope, return with file
+	jsr pc,delcur		;get rid of the old current thing
+	mov a,curcap		;and replace it with the new one
+	mov #curnam,b		;current path
+	mov #string,c		;thing to add to path
+5$:	tstb (b)+		;find the end of the current dir name
+	bne 5$
+	tstb -(b)		;now we point at the zero
+	cmpb #40,-1(b)		;is there a separator?
+	beq 6$			;yup
+	movb #40,(b)+		;add one
+6$:	movb (c)+,(b)+		;add new thing
+	bne 6$			;until we run off the end
+	jmp gfile4		;go get next thing
+
+3$:	add #6,p		;flush mutate args
+4$:	jsr pc,deldcp		;delete the copied cap
+	rts pc			;and return
+
+;no current disk, get a disk number
+gfile3:	save prompt		;save the old prompt
+	mov #disknp,prompt	;prompt for disk number
+	clr e			;no other prompt
+	clr f			;instantly
+1$:	mov #1,maxstl		;one character disk number
+	jsr pc,strget		;go get the disk number
+	jsr pc,quread		;quit on illegal terminator
+	tstb string+1		;single character?
+	bne 2$			;ding and try again
+	movb string,a		;get the single character
+	sub #'0,a		;better be a number
+	cmp #4,a		;better be less than 4
+	blos 2$			;nope
+	mov a,curdsk		;this will be the new disk
+	rest prompt		;restore prompt
+	br gfile		;once more, with feeling
+
+2$:	jsr pc,bell		;ding!
+	br 1$
+
+;scrol the directory display down
+gfiled:	mov numlin,a		;total lines on the screen
+	sub #4,a		;status+path+2 for continutiy
+	add strdir,a		;get the new starting place
+	cmp dirend,a		;is the new start after the old end?
+	blos gfile2		;yup, don't move the start
+	mov a,strdir		;new start
+	clr f			;redisplay immediately
+	br gfile1
+
+;scrol the directory display up
+gfileu:	mov numlin,a		;total lines on the screen
+	sub #4,a		;status+path+2
+	clr f			;immediate redisplay
+	sub a,strdir		;go back that many
+	bge gfile1		;did we go off the top?
+	jmp gfile4		;set to top of dir
+
+gfileb:	jsr pc,delcur		;flush the current thing
+	mov #curnam,b		;the current name string
+1$:	tstb (b)+		;find the end
+	bne 1$
+	dec b			;go back to last valid char
+5$:	cmp #curnam,b		;zero string?
+	beq 2$			;flush curdsk
+	cmpb #40,-(b)		;any spaces on the end?
+	beq 5$
+3$:	cmpb #40,-(b)		;look back for separator
+	beq 4$			;found one
+	cmp #curnam,b		;back to beg?
+	bne 3$			;not yet
+4$:	clrb (b)		;new termination
+	jmp gfile		;start from stracth
+
+2$:	mov #-1,curdsk		;flush current disk
+	clr curnam
+	jmp gfile
+
+
+
+
+;display the current disk directory on the screen
+;the top line is the path used to get to the current directory
+;the rest of the display is the directory contents, starting
+;with the entry number strdir and ending either at the end of
+;the directory or at the end of the screen
+dirdis:	jsr f,acsav
+	jsr pc,scrfls		;we will clobber the whole screen
+	clr a
+	clr b
+	jsr pc,babsps		;put ourselves at zero, zero display area
+	mov curdsk,d		;disk number
+	blt 9$			;none, just a blank line
+	mov #'(,c
+	jsr pc,htyo		;want to type N(DISKNAME) PATH
+	mov #dname,b		;disk name
+	jsr pc,htype		;type the disk name
+	mov #'),c
+	jsr pc,htyo
+	jsr pc,.space
+	mov #curnam,b		;current path
+	jsr pc,htype
+1$:	jsr pc,.space		;space out
+	cmp #40.,carpos		;to 40
+	bhi 1$
+	save <,,curcap>
+	bis #.fadi,(p)		;get the disk info
+	$invok
+	rest d			;free blocks
+	jsr pc,prdn		;print
+	mov #frblms,b		; free blocks on disk 
+	jsr pc,htype
+	rest d
+	jsr pc,prdn
+	jsr pc,.crlf
+;now actually type the directory
+	jsr pc,poentb		;set access to zero and get entry
+	mov strdir,a		;entry to start with
+	mov strdir,dirend	;the end is at least past the start
+2$:	jsr pc,poenti		;the parent entry, first time
+	dec a			;got the ones that were on the previous screen?
+	bgt 2$			;not yet
+3$:	mov linpos,a		;current line
+	add #2,a		;plus two
+	cmp a,numlin		;about to overflow screen?
+	bhi 4$			;yup, quit
+	jsr pc,poenti		;input an entry
+	bne 5$			;ok, got an entry
+4$:	jsr pc,@eosclr		;clear to the end of the screen
+	jsr pc,ttyfls
+	jsr f,acres
+	rts pc
+
+5$:	movb entry+1,f		;get type byte
+	bic #177761,f		;get type field
+
+	jmp @6$(f)		;dispatch to service routine
+
+6$:	3$			;parent entry
+	7$			;directory
+	8$			;file
+	3$			;not implemented
+	3$			;self entry
+	3$			;link (unimplemented)
+	3$			;unimplemented
+	3$			;unimplemented
+
+
+7$:	inc dirend		;one more line on the screen
+	mov #'I,c
+	jsr pc,htyo
+	jsr pc,.space
+	mov #-1,e
+	jsr pc,podiri		;print name,version, and size
+	br 3$			;do the next entry
+
+8$:	inc dirend		;one more line on the screen
+	jsr pc,.space
+	jsr pc,.space
+	jsr pc,podirn
+	br 3$
+
+9$:	jsr pc,.crlf
+	jsr f,acres
+	rts pc
+
+poset:	save <d,#0,curcap>
+	bis #.fasp,(p)
+	$invok
+	rts pc
+
+poentb:	clr d					;set to beggining of dir
+	jsr pc,poset
+
+poenti:	save e
+	save <#entry,#-4,curcap>
+	.blki			;input the header word and vern #
+	bne 2$
+3$:	add #6,p
+	rest e
+	sez
+	rts pc
+2$:	mov #tvern+2,e		;where the rest of the thing goes
+	mov entry,f		;header word
+	blt 1$			;skip if eof, time+ date exist
+	mov #enname,e		;not date+time, rest of entry goes here
+	clr date
+1$:	inc f
+	bic #177401,f		;size of this entry
+	add f,d
+	save e
+	sub #4,f		;already read this much
+	neg f
+	save <f,curcap>
+	sub f,e			;get the end address of the buffer
+	sub #entend,e
+	ble 4$			;there is room for all of it
+	add e,2(p)		;can only read part of it in
+4$:	.blki			;input the header word and vern #
+	beq 3$			;disk error
+	tst e			;did we read it all in?
+	ble 5$			;yup
+	jsr pc,poset
+5$:	rest e
+	clz
+	rts pc
+
+				;print out a line of information about file
+				;(c)= points to entry to print
+				;save registers a,b,d
+
+podirn:	mov enteof,f
+	add #1777,f		;round up to block boundary
+	clr e			;clear high part
+	ashc #3,e
+	add entefh,e		;page number
+	ashc #3,e		;now legnth in blocks
+podiri:	save <a,d,e>		;save legnth and version number
+	mov #enname,e
+2$:	movb (e),c
+	bic #177600,c		;clear top bit of byte
+	cmpb #'#,c
+	beq 8$
+	cmpb #'",c
+	beq 8$
+	cmpb #'>,c
+	beq 8$
+	cmpb #'<,c
+	bne 9$
+8$:	mov #'",c
+	jsr pc,htyo
+	movb (e),c
+9$:	jsr pc,htyo		;print a character
+	tstb (e)+		;last byte has 200 bit set
+	bpl 2$
+	mov tvern,d
+	blt 3$			;no version number
+	mov #'#,c
+	jsr pc,htyo
+	jsr pc,prdn		;print the version number
+3$:	rest <d>		;print the block legnth
+	blt 1$
+	jsr pc,.space
+	jsr pc,.space
+	jsr pc,prdn
+1$:	jsr pc,prdat
+	jsr pc,.crlf
+	rest <d,a>
+	rts pc			;done with this entry
+
+
+				;prdat prints date & time, if any
+prdat:	jsr f,acsav		;save all registers  
+	jsr pc,.space
+	jsr pc,.space
+	mov date,e		;put date in e 
+	beq 5$			;if no date & time, return
+	cmp #-1,e		;see if initialized
+	bne prdat1		;go on if initialized
+	mov #'-,c		;print " -" if not
+	jsr pc,htyo
+5$:	jsr f,acres		;restore all registers
+	rts pc
+
+
+prdat1:	mov #dttab,b		;point to beg. of dttab	
+	jsr pc,prdat2		;print date in e
+	mov time, e		;put time in e				
+	jsr pc,prdat2		;print time
+	jsr f,acres		;restore all registers
+	rts pc
+
+				;table driven routine to print date & time segment by segment
+				;ztype & prdn take argument in a 
+prdat2:	mov #3,a		;a is loop index
+prdat3:	mov e,d			;put date or time in d
+	ash (b)+,d		;shift quantity to low byte
+	bic (b)+,d		;zap all but relevant bits
+	ash (b)+,d		;mult. factor: 0 except for sec/2
+	cmp #3,a		;first time thru loop?
+	beq 1$				
+	jsr pc,zprdn		;print with leading 0 if < 10
+	br 2$
+1$:	jsr pc,prdn		;print without leading 0 if < 10	
+2$:	mov (b)+,c		;pick up delimiter character
+	jsr pc,htyo		;print character
+	sob a,prdat3		;do next segment
+prdat4:	rts pc
+
+
+
+.sbttl low level SITS file routines
+
+;make sure that curcap is set up with a capability to the current directory
+getcur:	tst curcap		;is it already non-zero?
+	bne 1$			;yup, nothing to do
+	jsr pc,getrot		;get the current root, copy it to curcap
+	beq 2$			;none, have to ask about a root disk
+	save <#0,#curnam,curcap>
+	bis #.famu,(p)		;want to get back to the current directory
+	.invok			;mutate
+	bne 1$			;succesful
+	rest <,a,>		;get back the pointer to how far it went
+	clrb (a)		;this is the new current name
+1$:	clz
+	rts pc
+
+2$:	sez			;failed to get a cap
+	rts pc
+
+;return a copy of the current disk root in curcap
+;set z if there is no current disk, or if we can make a root for it
+getrot:	mov curdsk,a		;get the current disk number
+	blt 8$			;no current disk
+	jsr pc,crtrot		;try to get a root
+	beq 8$			;can't
+	mov b,a
+	jsr pc,copcap		;copy it
+	beq 8$			;failed for some reason
+	mov a,curcap
+	mov #dname,b		;the name of the disk
+	jsr pc,getfnm		;get from the capability
+	clz
+	rts pc			;return with z clear
+
+8$:	sez
+	rts pc
+
+;try to return a root cap to the disk in a
+;cap is returned in b
+crtrot:	asl a
+.if nz lsi			;this stuff only on the lsi
+	tst rotcps(a)
+	bne 3$			;already got one
+	mov a,ttemp		;set up the block for the create
+	bis #.farut,ttemp	;say we want to create a root
+	save <#-1,#ttemp,#.facap*400+0>
+	.invok			;try to create a root cap
+	bne 1$			;success
+2$:	add #6,p
+	save rotcps(a)
+	clr rotcps(a)
+	rest a
+	jsr pc,deldcp
+	jsr pc,delcur
+	sez
+	rts pc
+1$:	mov (p),rotcps(a)		;and the table of caps
+	save a
+	mov 2(p),a
+	jsr pc,copcap		;copy root to curcap
+	mov a,b
+	rest <a,>
+	save <#0,#bits,b>	;want to get the bits file
+	bis #.famu,(p)		;mutate to it
+	.invok
+	beq 4$			;!!! no bits file, lose
+	save <,,b>		;tell LSITS this is the bits file
+	bis #.famb,(p)		;this is the bit table
+	.invok
+	bne 5$			;got the bit table
+4$:	save a
+	mov b,a
+	jsr pc,deldcp		;flush the bit table cap
+	rest a
+	br 2$
+5$:	mov #2,rotref(a)		;so it doesn't go away
+	save a
+	mov b,a
+	jsr pc,deldcp		;flush the bit table cap
+	rest a
+	clr rotref(a)		;no caps but the root
+.endc
+3$:	mov rotcps(a),b
+	clz
+	rts pc
+
+;get the name of the file on cap in a and copy it to string area in b
+getfnm:	save <#filblk,#filbll,a>
+	bis #.fari,(p)		;read information
+	$invok
+	mov #filnam,a		;copy the name
+1$:	movb (a)+,(b)+
+	bne 1$
+	rts pc
+
+;make a copy of curcap
+copcur:	mov curcap,a
+;fall in to copcap
+
+;copy the disk capability in a, return new cap in a, set z if failed
+copcap:	save <#-1,,a>
+	bis #.cpycp,(p)		;copy the cap
+	.invok
+	beq 1$			;lost somehow
+	rest a			;this is the new cap
+	save <,,a>		;we want to get the disk number
+	bis #.fadi,(p)
+	$invok
+	tst (p)+		;free block count
+	asl (p)			;make a word index
+	add #rotref,(p)		;we want to keep the reference count
+	inc @(p)+		;up to date
+	clz
+	rts pc
+
+1$:	sez
+	rts pc
+
+;delete the temp cap
+tmpfls:	mov tmpcap,a
+	br incls1
+	
+;close the input channel
+incls:	mov incap,a		;delete the input capability
+	clr incap		;clear the capability
+	clr filein		;clear the status line
+incls1:	jsr pc,deldcp
+	rts pc
+
+;close the output channel
+outcls:	tst outcap		;anything to close?
+	beq 1$			;nope
+	tst writen		;anything written?
+	bne 2$			;yup
+	save <,,outcap>
+	bis #.fadl,(p)		;rather than leave an empty file, delete it
+	.invok
+	bne 3$			;no error, ok
+	filerr			;give error message
+2$:	jsr pc,wrtbuf		;output the buffer
+3$:	mov outcap,a
+	jsr pc,deldcp
+	clr outcap
+	clr filout		;for the status line
+1$:	rts pc
+
+;delete the currrent directory cap
+delcur:	save a
+	mov curcap,a
+	jsr pc,deldcp
+	clr curcap
+	rest a
+	rts pc
+
+;delete the disk capability in a
+deldcp:	tst a			;anything there?
+	beq 1$			;nope, just return
+	save <,,a>		;we want to get the disk number
+	bis #.fadi,(p)
+	$invok
+	tst (p)+		;free block count
+				;disk number is left on the stack
+	jsr pc,delcap		;actually delet ethe cap
+	rest a
+	asl a			;make a word index
+	dec rotref(a)		;update the reference count
+.ifnz lsi
+	bne 1$			;not zero, do nothing
+	save rotcps(a)
+	clr rotcps(a)
+	rest a
+	jsr pc,deldcp		;delete the cap
+.endc ;lsi
+1$:	rts pc
+
+;delete the cap in a
+delcap:	save <,,a>
+	bis #.delcp,(p)
+	$invok
+	rts pc
+
+;see if the cap in a is to a file or a directory
+dirchk:	save <#filblk,#10,a>
+	bis #.fari,(p)
+	$invok			;find out if we've opened a file or a directory
+	bit #.fadir,filblk+2	;well, which?
+	rts pc
+
+;get last error
+glerr:	.gerrw
+	beq 1$
+	rest <,eword>
+1$:	mov eword,a
+	rts pc
+
