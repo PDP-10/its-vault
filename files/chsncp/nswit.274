@@ -1,0 +1,2037 @@
+;;; -*-PALX-*-
+
+.TITLE NSWIT - New switch program
+version==%fnam2
+
+;;; New switch program.  The idea of this program is to support connections
+;;; between an arbitrary set of sources and destinations of data.  It is
+;;; based on ideas from the proposed Amber i/o system, which in turn is
+;;; inspired by the ideas from Smalltal and elsewhere.  [Actually, this is
+;;; nothing new or special; I used the same ideas in NCONSOLE long before I
+;;; ever heard of Smalltalk or Amber, though not quite as formally.]  The
+;;; basic idea is to define data destinations as objects that obey a
+;;; predefined protocol.  Here, however, the protocol is very simple.  For
+;;; example, to send data to a destination, the following is executed:
+;;;	mov <<byte>>,r1
+;;;	mov <<destination>>,r0
+;;;	call @send(r0)
+;;; In other words you call the destination object at its SEND entrypoint,
+;;; with a pointer to itself in R0.  Passing the object itself to the
+;;; entrypoint allows the code to service many similar objects by keeping
+;;; local varibles in the object.  In addition, protocols and objects are
+;;; sometimes built on top of other protocols and objects, in a fashion
+;;; similar to Simula classes.
+
+;;; Five types of sources and destinations are currently implemented; DL11s,
+;;; DZ11s, chaosnet connections, tasks, and grinnells.  The sources generate
+;;; data at either interrupt level or task level as appropriate, and send it
+;;; to destinations.  Destinations typically buffer data, whereas sources do
+;;; not (but this is just a convention).  DL11/DZ11 destination handlers
+;;; simply buffer the data for transmission at interrupt level and insure
+;;; that interrupts are on.  Task destination handlers buffer the data for
+;;; use at task level and insure that the task is running or queued for
+;;; running.  Chaosnet destination handlers add the data to the current
+;;; packet, which will be transmitted at clock level(?).  Destinations can
+;;; act like a coroutine by changing their SEND entrypoint.
+
+;;; Unfortunately, the code here had to be designed for efficiency instead of
+;;; simplicity in order to handle the large throughput requirements.  For
+;;; example, queue insertion and deletion is typically done inline to take
+;;; advantage of special cases.
+
+;;; Keyboards will have as destinations tasks that will act as command
+;;; processors in addition to forwarding data to the real destination.
+
+;;; Conventions:
+;;;
+;;;	Tasks run with the stack pointer pointing directly into the stack
+;;;	area allocated for the task (i.e. the stack is not copied back and
+;;;	forth) for efficiency.  Thus interrupt routines can potentially run
+;;;	using the task stack.  Since these are limited in size, interrupt
+;;;	routines must not use much stack space.  Currently, 7 words are
+;;;	available (this is the area where the registers and PC/PS are saved
+;;;	when the task is dormant.)
+;;;
+;;;	Arguments are passed either on the stack, or in registers.  Usually
+;;;	the registers are used when efficiency is important.  When arguments
+;;;	are passed on the stack, the callee removes them.
+;;;
+;;;	In general, registers are saved by the callee rather than the caller.
+;;;	Besides being easier, this allows interrupt routines to avoid saving
+;;;	all the registers.  Registers used to pass arguments are fair game,
+;;;	however.
+;;;
+;;;	A lot of code expects R0 to point to the current object.
+
+;;; Issues to ponder:
+;;;
+;;;	Should have way to add DLs and DZs after startup.
+;;;
+;;;	Priority levels.
+
+;;; History:
+;;;	Designed and written by EAK (with kibitzing from CBF) 2-3 hours a
+;;;	week starting January 1981.
+
+;;;	Worked first time.  Never modified since.
+
+.sbttl	Definitions
+
+
+;;; Define configuration assembling for.
+
+.insrt conf
+
+
+;;; Registers, instruction macros, etc.
+
+$$pic===0			; don't bother with PIC pointers
+.insrt defs
+
+
+;;; For old MIT Math department sources.
+
+.macro	crash message
+	bpt
+.endm
+
+.sbttl	Configuration
+
+
+;;; Configuration defaults
+.iif ndf chaos, chaos===0	; no chaosnet
+.iif ndf asmrt11, asmrt11===0	; not running under RT11
+.iif ndf asmmap, asmmap===0	; don't use mapping by default
+.iif ndf asmled, asmled===0	; default line editor off
+.if eq chaos
+  asmchp===0			; no chaosnet, no chaos heap
+.iff
+  .if eq asmmap
+    asmchp===0			; no mapping, no chaos heap
+  .iff
+    .iif ndf asmchp, asmchp===1	; default is separate chaos heap in
+				; mapped memory
+    ;;; Chaos map.  If no chaos heap, and there's a Newman, make that
+    ;;; the chaos map.  Otherwise, use identity map.
+    .iif ndf chpar, .iif eq asmchp, .iif df nmpar, chpar==nmpar
+    .iif ndf chpar, .iif ne asmchp, chpar==6*200
+  .endc
+.endc
+
+
+nhport==0			; count no. of hardware ports defined
+nkbd===0			; no. of keyboards
+
+.macro	.port s,kbd,pword
+.string ^Ôs¨%%desc
+.if p2
+  %%save===.
+  .=desctb+<nhport*2>
+	.word %%desc
+  .if nb kbd
+    .=kbds+nkbd
+    .byte nhport
+    .=ptab+nhport
+    .iif nb word, .byte -1
+    .iif b pword, .byte 0
+  .endc
+    
+  .=%%save
+.endc
+.iif nb kbd, nkbd==nkbd+1
+nhport==nhport+1
+.endm
+
+ndl===0				; count of no. of DL11s configured
+ndle===0			; no. of DL11-Es
+.macro	dl vector,address,oqsize,desc,kbd
+	.word dlinit,vector,address,oqsize
+	.port ^‰esc¨kbd
+ndl==ndl+1
+.endm
+.macro	dle vector,address,oqsize,desc,kbd
+	.word dleini,vector,address,oqsize
+	.port ^‰esc¨kbd
+ndl==ndl+1
+ndle==ndle+1
+.endm
+
+.iif ndf ndzl, ndzl==4		; no. of lines on a DZV11
+ndz===0				; count of no. of DZ11s configured
+.macro	dz vector,address
+	.word dzinit,vector,address
+ndz==ndz+1
+.endm
+.macro	dzl lparm,oqsize,desc,kbd
+	.word lparm,oqsize
+	.port ^‰esc¨kbd
+.endm
+
+.insrt dhmacs
+
+nsail===0
+nsmxl==9.			; 8 SAIL lines, 1 molehill line
+.macro	sail port
+	.word sinit,port
+nsail==nsail+1
+.endm
+
+.macro	saill oqsize,desc,kbd
+	.word oqsize
+	.port ^‰esc¨kbd
+.endm
+
+ngrin===0
+.macro	grinnell vector,address
+	.word grnini,address,vector
+ngrin==ngrin+1
+.endm
+
+.macro  grinl sport,kbdtyp,jno,desc,kbd
+	.word grlini,sport,kbdtyp,jno,1
+	.port ^‰esc¨kbd
+.endm
+
+.macro  grin2 oport,jno,desc,kbd
+	.word gr2ini,oport,jno,0
+	.port ^‰esc¨kbd
+.endm
+
+nlpt===0
+;;; line printer spooler
+.macro  lpt lptp,errp,canonf
+	; printer port, error logging port, canon flag (0=la120, 1=canon)
+	.word lptsin,lptp,errp,canonf
+nlpt==nlpt+1
+.endm
+
+nperitek===0
+.macro	peritek a1,a2,sport,desc,kbd
+	.word ptinit,a1,a2,sport*2
+	.port ^‰esc¨kbd
+nperitek==nperitek+1
+.endm
+
+.macro	maksvr staddr,cntnam	; macro to make a server
+	;; call spnsvr with start address of server, contact name
+	.word spnsvr,staddr
+	.string ^„ntnamä	asm'staddr===1		; assemble the server called for
+				; servers must be unique in first 3 letters
+.endm	
+
+ns1iom===0
+.macro	s1iomem
+	.word s1init
+ns1iom==ns1iom+1
+.endm
+
+ns1t===0			; count of no. of S-1 terminals configured
+.macro	s1t desc,kbd
+	.word s1mini
+	.port ^‰esc¨kbd
+ns1t==ns1t+1
+.endm
+
+;;; Macro for creating tables for GETKWD.
+.macro	key name,value
+	.string ^Ônameä	.word value
+.endm
+
+.macro	netkey name,host
+   .string ^Ôname¨%%temp
+	.word %%temp
+	.litrl <.word "NO,host,%%temp>
+.endm
+
+.macro	conkey name,host
+	.string ^Ônameä	.litrl <.word "CO,host,constr>
+.endm
+
+.macro	telkey name,host
+	.string ^Ônameä	.litrl <.word "TL,host>
+.endm
+
+.macro  arpkey name,host
+	.string ^Ônameä	.string ^Ëost¨%%temp
+	.litrl <.word "AR,%%temp>
+.endm
+
+
+;;; Destination object protocol.
+dsect <
+name::	 .blkw 1		; object name
+send::	 .blkw 1		; output character in R1
+sendw::	 .blkw 1		; output character in R1, using task waiting
+				; if necessary
+sends::	 .blkw 1		; output string, pointer in R1, length in R2.
+				; string is sent uninterrupted.  caller must
+				; be a task.
+break::	 .blkw 1		; send a break on the line
+force::	 .blkw 1		; force data to be sent
+close::	 .blkw 1
+	;; more variables defined by protocol go here.
+	>,ldptcl
+
+
+;;; Source object protocol.
+dsect <
+name::	 .blkw 1		; object name
+link::	 .blkw 1		; R1/ destination object
+				; to unlink, use link to the null destination
+status:: .blkw 1		; returns R1/ destination object,
+	>,lsptcl
+
+.sbttl	Beginning
+
+.=100				; set a reasonable clock vector before
+	.+2			; (and addition to) initialization to avoid
+	rti			; lossage on LSI11s, which can't disable the
+				; clock
+
+stack==1000			; stack after regular interrupt vectors,
+				; before Newman vectors
+.=1000				; code just above stack
+.iif ne asmmap, .=1200		; code after RUGMAP's transfer vector
+.iif df nmaddr, .=1300		; code after Newman interrupt vectors
+
+start::	go::			; satisfy all camps
+nswit:	spl 7			; high priority during initialization
+	reset			; bus reset
+	mov #stack,sp		; initialize stack pointer
+	mov #1,initp		; set flag during initialization
+
+.if ne  asmmap
+	pcall mapini		; set identify map
+	mov #8*200,nxtblk	; initialize GETPAG allocation at 32K
+	mov #<<endpur_-paglog>&7>-1,r0	; the number of pages to
+					; make readonly
+	mov #kipdr+2,r1		; start with second page
+loop <	  bic #4,(r1)+		; make the page readonly
+	  sorl r0
+	  >
+.endc
+
+.if eq asmrt11
+	;; initialize most interrupt vectors to halt.
+	mov #20,r1		; R1: vector address
+loop <	  mov r1,(r1)		; set vector PC to point to PS word
+	  add #2,(r1)+		; ...
+	  mov #3,(r1)+		; and point all the vectors at a BPT
+	  cmp r1,#600		; reached 600 yet?
+	  rptl lo		; no, keep going
+	  >
+.endc
+
+.if df  nmaddr
+	mov #1200,r1		; R1: vector address
+loop <	  mov r1,(r1)		; set vector PC to point to PS word
+	  add #2,(r1)+		; ...
+	  mov #3,(r1)+		; and point all the vectors at a BPT
+	  cmp r1,#1300		; reached 1300 yet?
+	  rptl lo		; no, keep going
+	  >
+.endc
+
+
+	;; Initialize power fail trap
+	clr pwfsta		; clear power fail state
+	mov #pwfint,@#24	; set up the handler
+	mov #pr7,@#26
+
+	;; storage allocation initialization
+.if ne asmrt11			; RT11
+	push #darea,#last,#105000; FSINIT args: bottom and top of free area
+	pcall fsinit		; initialize heap in memory up to a RUG120
+.iff				; not RT11
+  .if df  nmaddr
+	clr @#nm.enb		; no Newman mapping while sizing memory
+  .endc
+	pcall nxmcat		; turn expected NXM trap to JMP 1$
+	 1$			; ...
+	clr r0			; R0: 1st NXM address
+loop <	  tst (r0)		; keep testing until we get a NXM trap
+	  add #4000,r0		; check by 1K word increments
+	  rptl			; ...
+	  >
+1$:	;; R0/ last word of memory + 2.
+	;; compute end of free storage area.
+
+	;; Initialize parity error trap
+	mov #parerr,@#114
+	mov #pr7,@#116
+	pcall nxmcat		; in case this isn't a TI memory
+	  3$
+	mov #1,@#172100		; enable trap on parity error
+	pcall nxmclr
+3$:
+
+  .if eq asmmap			; assume if we use mapping, so does RUG
+	sub #31000,r0		; room for RUG and symbols
+  .iff
+	cmp r0,#maplo		; end of memory above page 6?
+	if hi,<			; yes
+	  mov #maplo,r0		; end heap at page 6 then
+	  >
+  .endc
+	push #darea,#last,r0	; FSINIT args: bottom and top of free area
+	pcall fsinit		; initialize heap
+.endc	; RT11
+
+	pcall clkini		; clock initialization
+	pcall timini
+
+	pcall tgo		; task management initialization
+
+.if ne  chaos
+  .if ne asmchp
+	push #pkarea,#maplo,#maplo+pagsiz
+	pcall fsinit
+  .endc
+	pcall chinit		; chaosnet initialization
+.endc
+
+	mov #"ND,nulldo+name		; label as null destination
+	mov #nopsub,nulldo+send		; ignore received data
+	mov #nopsub,nulldo+sendw	; ...
+	mov #nopsub,nulldo+sends	; ...
+	mov #nopsub,nulldo+break	; ...
+	mov #nopsub,nulldo+force	; ...
+	mov #nopsub,nulldo+close	; ...
+
+	pcall whoini		; initialize who table
+	
+	;; initialize i/o devices, creating source/destination objects
+	mov #sport,nexts
+	mov #dport,nextd
+	mov #hports,r5		; R5: pointer to hardware configuration
+loop <	  mov (r5)+,r0		; R0: init routine
+	  exitl eq		; done?
+	  pcall (r0)		; call init routine (it can pick up arguments
+				; with (R5)+).
+	  rptl
+	  >
+
+	;; create keyboard tasks for specified ports
+	mov #kbds,r5
+loop <	  movb (r5)+,r0
+	  exitl mi
+	  mov r0,r1
+	  asl r0		; *2 for word indexing
+	  tst sport(r0)
+	  rptl eq
+	  push r1		; KINIT arg: port number
+	  pcall kinit
+	  rptl
+	  >
+
+	mov nexts,r0
+	sub #sport,r0
+	asr r0
+	mov r0,fnetp
+
+.if eq config-lswit
+	push #3,sport+6,dport+6
+	pcall lsinit
+.endc
+
+.if df clkadr
+	pcall clktim		; get time from calendar clock
+	if cc,<			; if available
+	  pcall timset		; set software clock
+	  br 2$
+	  >
+.endc
+
+.if ne chaos
+;;; Define macros etc. used by Chaosnet NCP.
+
+.insrt dcls
+
+	push #0,#0,#0,#0,#0,#0,#timtsk
+	call crtask		; create task to get time via net
+.endc
+2$:
+
+.if ne  chaos
+.if eq config-cswit
+	jsr r5,arplsn
+	  .string ^"SERVER 27 2 TELNET 0,0"
+.endc
+.endc
+
+	clr initp		; done initialization
+	jmp taskm1		; begin task multiplexing
+
+$$dmul===1
+$$ddiv===1
+.insrt stuff
+
+.sbttl Static Storage
+
+nopsub:	preturn			; NOP subroutine for random entrypoints
+
+defvar <
+initp:	.blkw 1			; nonzero if still initializing
+
+nulldo:	.blkb ldptcl		; null destination object
+
+;;; Comment goes here.
+nexts:	.blkw 1
+nextd:	.blkw 1
+>
+
+
+;;; HPORTS is a list of addresses of initialization routines followed by
+;;; their parameters.  An initialization routine is called with R5
+;;; pointing to its parameter list, and must advance R5 past its own
+;;; parameters even if it chooses not to initialize the device (perhaps
+;;; because the address of the device was NXM).  The variables NEXTS and
+;;; NEXTD point to the entry in the SPORT or DPORT table that the next
+;;; initialization routine should fill in if it is creating a new source
+;;; or destination.  There a ridiculous number of places where these
+;;; tables are used in various and different ways; some assume
+;;; corresponding SPORT/DPORT pairs, some don't.
+
+hports:	.hports
+	.word 0
+	.blkw 
+10.		; for patching
+.iif ne chaos,nhport==nhport+20. ; room for 20 servers on any chaos machine
+nhport==<<<nhport+3>/2>*2>	; +2 or +3 for patching (always even)
+
+defvar <
+sport:	.blkw nhport		; source port objects
+dport:	.blkw nhport		; destination port objects
+fnetp:	.blkw 1			; first free net port
+>
+
+desctb:	.blkw nhport
+
+pnames:	.pnames
+	.word 0
+
+;;; The kdbs table contains a byte with a PORT number.  At initialization
+;;; a command processor object will be created reading from the SPORT
+;;; entry indexed by that port number and echoing to the DPORT entry.
+kbds:	.blkb nkbd		
+	.byte -1
+	.blkb 4			; for patching
+	.even
+
+;;; Table of lines which get passwords.
+ptab:	.blkb nhport
+
+defvar <
+;;; Table of pointers to "user" objects.  Zero means the port is not
+;;; associated with a user.
+wtab:	.blkw nhport
+
+;;; Table of back pointers.  For each source & destiantion pair, which
+;;; user is linked to them.  Zero back pointers means port is free.
+btab:	.blkw nhport
+>
+
+whoini:	mov #nhport,r0		; initilialize wtab, btab
+	mov #wtab,r1
+	mov #btab,r2
+	mov #sport,r3
+	mov #dport,r4
+loop <	  clr (r1)+
+	  clr (r2)+
+	  clr (r3)+
+	  clr (r4)+
+	  sorl r0
+	  >
+	preturn
+
+.if ne asmmap
+.sbttl	Mapping
+
+p6dmap==chpar			; default map is chaos map
+
+.insrt map
+
+;;; Allocate and map the requested amount of memory into page 6 or address
+;;; space for this task.
+
+getpag:	push r1			; save register
+	mov nxtblk,@#kipar6	; set current map too
+	mov 4(sp),r1		; R1: size to allocate in bytes
+	cmp r1,#pagsiz		; larger than a page?
+	if hi,<			; yes
+	  bpt			; lose
+	  >
+	tstb maplo-1(r1)	; check that last address exists
+	add #77,r1		; convert to number of blocks rounding up
+	ash #-6,r1		; ...
+	add r1,nxtblk		; next allocation is N blocks higher
+
+	;; clear the page
+	ash #5,r1
+	if ne,<
+	  push r2
+	  mov #maplo,r2
+  loop <    clr (r2)+
+	    sorl r1
+	    >
+	  pop r2
+	  >
+	pop r1,(sp)		; restore register, remove argument
+	preturn
+
+defvar <
+nxtblk:	.blkw 1			; block address of next free physical memory
+>
+
+.endc	; ne asmmap
+
+.sbttl	Parity Error
+
+parerr: 0
+	inc parcnt		; increment error count
+	;; perhaps should clear the error bit?
+	push r0			; save register
+	mov dport+0,r0		; destination object for console
+	jsr r5,strout
+	  .string ^"Parity error
+"
+	pop r0
+	rti
+
+defvar <
+parcnt:	.word 0			; count of parity errors since reload
+>
+
+.sbttl Power Fail Handler
+
+defvar <
+pwfsta:	.word 0			; power fail state, non-zero if power is
+				; supposed to be failed
+>
+
+;;; Power fail interrupt.  We presume a system with volatile memory,
+;;; therefore there is no point trying to save the registers in memory.
+;;; However, since most of the interrupts seem spurious, we will just
+;;; print a message out and return.
+pwfint:	push r0			; save register
+	mov dport+0,r0		; destination object for console
+	com pwfsta		; on way down or up?
+	if ne,<
+	  jsr r5,strout
+	   .string ^"Power fail
+"
+	  >
+	else <
+	  jsr r5,strout
+	   .string ^"Power restored
+"
+	  >
+	pop r0
+	rti
+
+
+;;; STROUT - print out a string from interrupt level.
+;;; Called with JSR R5,STROUT, asciz pointer follows call.
+;;; R0 should contain destination object.
+strout:	push r2,r1
+	mov (r5)+,r2
+loop <    movb (r2)+,r1
+	  exitl eq
+	  pcall @send(r0)
+	  rptl
+	  >
+	pop r1,r2
+	rts r5
+
+;;; Called with JSR R5,CNSOUT, asciz pointer follows call.
+;;; CNSOUT: outputs a character string to the console.
+;;; SYNCHRONOUSLY.  I.e. it busy waits on the console.
+cnsout:	push r1,r0
+	mov #177564,r0
+	mov (r5)+,r1
+loop < 
+  loop <    tstb (r0)
+	    rptl pl
+	    >
+	  movb (r1)+,2(r0)
+	  rptl ne
+	  >
+	pop r0,r1
+	rts r5
+
+.sbttl	Storage management
+
+;;; ALLOCW - allocate storage with waiting.  Stack argument is size in
+;;; bytes.  Pointer is returned on top of stack.
+
+allocw:	push #darea		; ALLOC arg: area
+	mov 4(sp),-(sp)		; ALLOC arg: size in words
+	inc (sp)		; ...
+	asr (sp)		; ...
+	pcall alloc		; try allocation
+				; ALLOC results: pointer, code
+	tst 2(sp)		; test code, did it succeed?
+	if ne,<			; no,
+	  tst initp		; initialization?
+	  if ne,<		; yes
+	    crash ^"No memory at initialization."
+	    >
+	  cmp (sp)+,(sp)+	; punt the return parameters
+	  jsr pc,resced		; busy wait
+	  br allocw
+	  >
+	pop 2+2(sp),*		; return pointer, toss error code away
+	preturn
+
+
+%enacr==1			; error code for FSM
+
+.insrt fsm
+
+defvar <
+darea:	.blkb larea
+>
+
+.insrt nxmcat
+
+$$sleep==1			; use sleep code features
+.insrt taskm
+.insrt clock
+.insrt time
+
+.sbttl	Circular buffer management
+
+;;; Destination object with output queue.  This is defined merely so that the
+;;; individual destinations can use the same INSQ and REMQ routines.
+dsect <
+	.blkb ldptcl		; destination object protocol
+qep::	.blkw 1			; pointer to first address after buffer
+qsize::	.blkw 1			; size of buffer
+qrp::	.blkw 1			; pointer into buffer to rear of queue
+qfp::	.blkw 1			; pointer into buffer to front of queue
+qtask::	.blkw 1			; sending task waiting for queue to empty
+	>,ldqobj
+
+
+;;; Initialize a queue in a destination object.  R0 is the object with the
+;;; queue.  Stack argument is queue size.
+
+initq:	mov 2(sp),qsize(r0)	; set queue buffer size
+	push 2(sp)		; ALLOCW arg: size
+	pcall allocw		; allocate buffer for queue
+	mov (sp),qfp(r0)	; set front and rear pointers to beginning of
+	mov (sp),qrp(r0)	; buffer
+	mov (sp)+,qep(r0)	; create pointer to end of buffer
+	add 2(sp),qep(r0)	; ...
+	clr qtask(r0)		; no task waiting on queue
+	pop (sp)		; remove our argument from stack
+	preturn
+
+.if ne asmmap
+;;; Initialize a queue in a destination object, but don't allocate
+;;; the queue, presumably because the caller has found his own memory.
+;;;   R0 ->  Destination object with output queue to init
+;;;   SP ->  queue ptr
+;;;	     queue size
+minitq:	push r1			; save r1
+	mov 4+2(sp),qsize(r0)	; set the qsize
+	mov 2+2(sp),r1		; get ptr to queue
+	mov r1,qfp(r0)		; set front and rear pointers to beginning
+	mov r1,qrp(r0)		; of buffer
+	mov r1,qep(r0)		; create pointer to end of buffer
+	add 4+2(sp),qep(r0)	; ...
+	clr qtask(r0)		; no task waiting on queue
+	pop r1,(sp),(sp)	; restore R1, remove our args
+	preturn
+.endc
+
+;;; Free a queue's buffer.  R0 is the object with the queue.
+
+freeq:	push #darea		; FREE arg1: area
+	push qep(r0)		; FREE arg2: ptr to end of queue
+	sub qsize(r0),(sp)	; make it ptr to start of queue
+	pcall free		; and free it
+	preturn
+
+;;; FINISH entrypoint for destination objects with queues.  Caller must be a
+;;; task.
+
+finiq:	spl 7			; high priority so test is meaningful
+	cmp qrp(r0),qfp(r0)	; queue empty?
+	if ne,<			; no
+	  pcall waitq		; wait for queue to empty
+	  >
+	spl 0			; low priority once again
+	preturn
+
+
+;;; Add a character to current object's queue.  Must be high priority.  Does
+;;; nothing if queue is full.
+
+insq:	;; The following code takes advantage of the fact that a full queue
+	;; does not use the last buffer position.
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 1$		; yes, queue was full, so undo the insertion
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	if eq,<			; yes, that means it was full
+	  add qsize(r0),qrp(r0)	; undo wraparound
+1$:	  dec qrp(r0)		; undo advance
+	  inc qovfl		; count overflows
+	  >
+	preturn
+
+
+;;; Add a character to current object's queue.  Caller must be a task.
+
+insqw:	spl 5			; ?
+	;; The following code takes advantage of the fact that a full queue
+	;; does not use the last buffer position.
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 2$		; yes, queue is full, so undo the insertion
+1$:	  spl 0			; return to low priority
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	bne 1$			; no, just return
+	add qsize(r0),qrp(r0)	; undo wraparound
+2$:	dec qrp(r0)		; undo advance
+	pcall waitq		; wait for queue to empty
+	br insqw		; try again
+
+
+;;; Remove character from object with queue.  Caller must be a task.
+
+remq:	cmp qfp(r0),qrp(r0)	; queue empty?
+	if eq,<			; yes
+	  mov qtask(r0),r1	; is there a task waiting for queue to empty?
+	  if ne,<		; yes
+	    wake.l r1		; wake it up
+	    clr qtask(r0)	; but only once
+	    >
+	  sec
+	  preturn
+	  >
+	clr r1			; get next character
+	bisb @qfp(r0),r1	; ...
+	inc qfp(r0)		; skip over that character
+	cmp qfp(r0),qep(r0)	; reached end of storage area?
+	if eq,<			; yes
+	  sub qsize(r0),qfp(r0)	; wrap around to beginning
+	  >
+	clc
+	preturn
+
+
+;;; Get next character from queue in task object and return it, waiting if
+;;; necessary.
+
+remw:	cmp qfp(r0),qrp(r0)	; queue empty?
+	if eq,<			; yes
+	  mov qtask(r0),r1	; is there a task waiting for queue to empty?
+	  if ne,<		; yes
+	    wake.l r1		; wake it up
+	    clr qtask(r0)	; but only once
+	    >
+	  iot			; wait for wakeup
+	  br remw		; don't get garbage char due to spurious
+				; wakeup
+	  >
+	clr r1			; get next character
+	bisb @qfp(r0),r1	; ...
+	inc qfp(r0)		; skip over that character
+	cmp qfp(r0),qep(r0)	; reached end of storage area?
+	if eq,<			; yes
+	  sub qsize(r0),qfp(r0)	; wrap around to beginning
+	  >
+	preturn
+
+
+;;; Wait for queue to empty (must not be empty when this is called, so caller
+;;; should have probably tested for that at high priority).  Returns at low
+;;; priority.
+
+waitq:	tst qtask(r0)		; is someone else already waiting (this
+				; happens rarely)
+	bne 1$			; yes, go handle that
+	mov ctask,qtask(r0)	; have a removal of last character from queue
+				; wake us up
+	spl 0			; give interrupts a chance
+	nop			; ...
+	iot			; wait for that wakeup
+	preturn
+1$:	;; someone else already waiting!
+	spl 0			; give interrupts a chance
+	jsr pc,resced		; pause
+	spl 7			; restore high priority so test is valid
+	cmp qrp(r0),qfp(r0)	; queue empty yet?
+	bne waitq		; no, try getting wake up again
+	spl 0			; empty!, lower priority
+	preturn
+
+
+;;; Return number of characters in queue.  Returns R1/ number.
+;;; Z bit set approriately.
+
+numq:	mov qrp(r0),r1
+	sub qfp(r0),r1
+	if lo,<
+	  add qsize(r0),r1
+	  >
+	preturn
+
+defvar <
+qovfl:	.word 0
+>
+
+.if ne  ndl
+.sbttl	DL11 support
+
+;;; DL11s are PDP11 interfaces to one serial line.  The receiver is supported
+;;; by one source object, and the transmitter by one destination object.
+
+;;; DL11 source object structure.
+dsect <
+	 .blkb lsptcl		; source object protocol
+	 ;; The relative positions of the following fields is assumed in
+	 ;; DLRINT.
+dlrjsr:: jsr r0,@#dlrint	; interrupt vector points here
+dlrb::	 .blkw 1		; RBUF address
+dldst::	 .blkw 1		; destination object to send to
+	>,ldlsobj
+
+
+;;; DL11 receiver interrupt handler.  Interrupt vector points to DLJSR field
+;;; of source object, which contains JSR R0,@#DLRINT.  Thus on entry here R0
+;;; is saved on the stack and initialized to line specific data.  Because the
+;;; JSR is in the object rather than before it, R0 does not contain a pointer
+;;; to the beginning of the object.  This is purely an efficiency hack (see
+;;; code below).
+
+;;; The branches and labels are the way they are to make the common
+;;; (important case fast).
+
+dlrint:	push r1			; save register
+dlri1:	mov @(r0)+,r1		; get received character
+;	bmi 3$			; error bit?
+1$:	mov (r0),r0		; get destination object
+	pcall @send(r0)		; call it with received character as argument
+2$:	pop r1,r0		; restore saved registers
+	rti			; return from interrupt
+; the code below is madness, most break destinations
+; must be called from tasks
+;3$:	bit #20000,r1		; framing error?
+;	beq 1$			; no, overrun then (parity error is other
+;				; bit, except we don't strap parity on, and
+;				; even if we did, what else can we do but
+;				; pass it along as data?)
+;	mov (r0),r0		; get destination object
+;	pcall @break(r0)	; call it at break entrypoint
+;	br 2$
+
+.if ne  ndle
+derint:	;; extensive auto inc/decing of R0 is purely to save cycles in the
+	;; common case, i.e. a received character.
+	push r1			; save register
+	mov @(r0)+,r1		; get RCSR
+	bpl dlri1		; not data set change interrupt, handle
+				; normally
+	bit #20000,@-(r0)	; clear to send?
+	if ne,<			; clear to send, enable output interrupts if
+				; necessary
+	  mov (r0),r1		; R1: RCSR address
+	  bis #100,4(r1)	; turn on output interrupts
+	  >
+	tstb @(r0)+		; see if input character also waiting
+	bmi dlri1		; yes, handle it
+	pop r1,r0		; restore registers
+	rti
+.endc
+
+
+;;; LINK entrypoint.
+dllink:	mov r1,dldst(r0)	; set our destination to our argument
+	preturn
+
+;;; STATUS entrypoint.
+dlstat:	mov dldst(r0),r1	; return our destination as our value
+	preturn
+
+
+dletsk:
+loop <	  push #60.		; SLEEP arg: duration in 60ths
+	  pcall sleep		; sleep one second
+	  tstb (r1)		; character waiting?
+	  rptl pl		; no
+	  tstb (r1)		; still there??
+	  rptl pl		; no, we caught it just before interrupt
+	  inc dlelos		; increment lossage count
+	  tstb 2(r1)		; read out character to get things going
+	  rptl
+	  >
+
+defvar <
+dlelos:	.word 0			; number of times DLE fell asleep
+>
+
+;;; DL11 destination object structure.
+
+dsect <
+	 .blkb ldqobj		; basic destination object with output queue
+dlxs::	 .blkw 1		; XCSR address
+dlxb::	 .blkw 1		; XBUF address
+	>,ldldobj
+
+
+;;; DL11 transmitter interrupt handler.  Interrupt vector points at object
+;;; representing the specific DL11 starting with JSR R0,@#DLXINT.  Thus on
+;;; entry here R0 is saved on the stack and initialized to the destination
+;;; object for the appropriate DL11.  Unlike the receiver, the JSR is not in
+;;; the object but actually before it.
+
+dlxint:	;; Remove next character from queue in DL11 object and send it.  If
+	;; queue becomes empty, then disable interrupts.  This code can fail
+	;; if interrupted by a queue insertion; thus our source cannot be an
+	;; interrupt routine that runs at higher priority than we do.
+	movb @qfp(r0),@dlxb(r0)	; give next character to DL11
+	inc qfp(r0)		; skip over that character
+	cmp qfp(r0),qep(r0)	; reached end of storage area?
+	if eq,<			; yes
+	  sub qsize(r0),qfp(r0)	; wrap around to beginning
+	  >
+	cmp qfp(r0),qrp(r0)	; any more data left in buffer?
+	if eq,<			; no
+	  bicb #100,@dlxs(r0)	; turn off interrupts
+	  tst qtask(r0)		; is there a task waiting for queue to empty?
+	  if ne,<		; yes
+	    wake.h qtask(r0)	; wake it up
+	    clr qtask(r0)	; but only once
+	    >
+	  >
+	pop r0			; restore register
+	rti			; return from interrupt
+
+
+;;; DL11 destination object SEND entrypoint.  Caller must be running at PR5
+;;; at least.
+
+dlsend:	bisb #100,@dlxs(r0)	; insure interrupts are on
+	;; The following code takes advantage of the fact that a full queue
+	;; does not use the last buffer position.
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 1$		; yes, queue was full, so undo the insertion
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	if eq,<			; yes, that means it was full
+	  add qsize(r0),qrp(r0)	; undo wraparound
+1$:	  dec qrp(r0)		; undo advance
+	  inc qovfl		; count overflows
+	  >
+	preturn
+
+
+;;; DL11 destination object SENDW entrypoint.  Caller must be a task.
+
+dlsndw:	spl 5			; lock out DL11 interrupts and other senders
+	bisb #100,@dlxs(r0)	; insure interrupts are on
+	;; The following code takes advantage of the fact that a full queue
+	;; does not use the last buffer position.
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 2$		; yes, queue is full, so undo the insertion
+1$:	  spl 0			; return to low priority
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	bne 1$			; no, just return
+	add qsize(r0),qrp(r0)	; undo wraparound
+2$:	dec qrp(r0)		; undo advance
+	pcall waitq		; wake us up when queue empties
+	br dlsndw		; try again
+
+
+;;; DL11 destination object BREAK entrypoint.  Caller must be a task.
+
+dlbrk:	push r1,r2      	; save registers
+	pcall finiq		; wait for queue to empty
+	bis #1,@dlxs(r0)	; put line in continuous space condition
+	;; now "send" 1 character to count time?
+	mov #6,r2		; R2: count
+loop <	  pcall dlsndw		; put garbage in queue
+	  sorl r2
+	  >
+	pcall finiq		; wait for queue to empty
+	bic #1,@dlxs(r0)	; put line back to normal
+	pop r2,r1		; restore registers
+	preturn
+
+
+;;; DL11 destination object SENDS entrypoint.  Caller must be a task.
+
+dlsnds:	bpt
+
+;;; Initialize one DL11 line.  Called with R5 pointing to vector address,
+;;; device address, and output queue size.  Stores source and destination
+;;; objects in port tables.
+
+dlinit:	mov (r5)+,r1		; R1: vector address
+	mov (r5)+,r2		; R2: DL11 address
+	pcall nxmcat		; install catch for NXM errors
+	  dlnxm			; DLNXM is where to go
+	clr (r2)		; test DL11 by clearing its receiver
+	clr 4(r2)		; and transmitter control registers
+	pcall nxmclr		; end catch
+
+	;; initialize receiver
+	push #ldlsobj		; ALLOCW arg: size
+	pcall allocw		; allocate DL11 source object
+	pop r0			; ALLOCW result: pointer
+	mov r0,(r1)		; interrupt vector points to JSR R0,@#DLRINT
+	add #dlrjsr,(r1)+	; ...
+	mov #pr5,(r1)+		; DLs are priority 4, but interrupt routine
+				; runs at pr5
+	mov #4037,dlrjsr+0(r0)		; JSR R0,@#DLRINT
+	mov #dlrint,dlrjsr+2(r0)	; ...
+	mov #nulldo,dldst(r0)	; no destination yet
+	mov #dllink,link(r0)
+	mov #dlstat,status(r0)
+	mov r2,dlrb(r0)		; address of receiver buffer for DLRINT
+	add #2,dlrb(r0)		; ...
+;	mov #146,(r2)		; turn on receiver interrupts
+	mov #106,(r2)		; turn on receiver interrupts
+	mov r0,@nexts		; store source object as next source
+	add #2,nexts		; advance next source pointer
+
+	;; initialize transmitter
+	push #ldldobj+4		; ALLOCW arg: size
+	pcall allocw		; allocate DL destination object with 2 extra
+				; words for JSR
+	pop r0			; ALLOCW result: pointer
+	mov r0,(r1)+		; interrupt vector points to JSR
+	mov #pr5,(r1)+		; DLs are priority 4, but run at PR5
+	mov #4037,(r0)+		; JSR R0,@#DLXINT
+	mov #dlxint,(r0)+	; ...
+	mov #"LD,name(r0)	; mark as DL destination
+	mov #dlsend,send(r0)	; initialize protocol slots to corresponding
+	mov #dlsndw,sendw(r0)	; entry points
+	mov #dlsnds,sends(r0)	; ...
+	mov #dlbrk,break(r0)	; ...
+	mov #nopsub,force(r0)	; ...
+	mov #nopsub,close(r0)	; ...
+	push (r5)+		; INITQ arg: queue buffer size
+	pcall initq		; initialize output queue for DL
+	mov r2,dlxs(r0)		; address of transmitter status for
+	add #4,dlxs(r0)		; DLXINT and DLSEND
+	mov r2,dlxb(r0)		; address of transmitter buffer for
+	add #6,dlxb(r0)		; DLXINT
+	clr 4(r2)		; transmit status: no interrupts, no break
+	mov r0,@nextd		; store destination as next destination
+	add #2,nextd		; advance next destination pointer
+	preturn
+
+dlnxm:	tst (r5)+		; skip queue size
+	clr @nexts
+	add #2,nexts
+	clr @nextd
+	add #2,nextd
+	preturn
+
+.if ne  ndle
+
+;;; DL11-E source object structure.
+dsect <
+	 .blkb lsptcl		; source object protocol
+	 ;; The relative positions of the following fields is assumed in
+	 ;; DLEINT.
+dlrjsr:: jsr r0,@#derint	; interrupt vector points here
+dlers::	 .blkw 1		; RCSR address
+dlerb::	 .blkw 1		; RBUF address
+dledst:: .blkw 1		; destination object to send to
+	>,ldlesobj
+
+dsect <
+	 .blkb ldldobj
+dlecs::	 .blkw 1
+	>,ldledobj
+
+dexint:	;; Remove next character from queue in DL11 object and send it.
+	;; This code can fail if interrupted by a queue insertion; thus our
+	;; source cannot be an interrupt routine that runs at higher
+	;; priority than we do.
+	bit #20000,@dlecs(r0)	; clear to send?
+	beq 2$			; no, wait for it to go on
+	cmp qfp(r0),qrp(r0)	; queue empty?
+	beq 1$			; yes
+	movb @qfp(r0),@dlxb(r0)	; give next character to DL11
+	inc qfp(r0)		; skip over that character
+	cmp qfp(r0),qep(r0)	; reached end of storage area?
+	if eq,<			; yes
+	  sub qsize(r0),qfp(r0)	; wrap around to beginning
+	  >
+	pop r0			; restore register
+	rti
+1$:	tst qtask(r0)		; is there a task waiting for queue to empty?
+	beq 2$			; no
+	wake.h qtask(r0)	; wake it up
+	clr qtask(r0)		; but only once
+2$:	bic #100,@dlxs(r0)	; turn off interrupts
+	pop r0
+	rti
+
+
+
+;;; LINK entrypoint.
+delink:	mov r1,dledst(r0)	; set our destination to our argument
+	preturn
+
+;;; STATUS entrypoint.
+destat:	mov dledst(r0),r1	; return our destination as our value
+	preturn
+
+
+dleini:	mov (r5)+,r1		; R1: vector address
+	mov (r5)+,r2		; R2: DL11 address
+	pcall nxmcat		; install catch for NXM errors
+	  dlnxm			; DLNXM is where to go
+	clr (r2)		; test DL11 by clearing its receiver
+	clr 4(r2)		; and transmitter control registers
+	pcall nxmclr		; end catch
+
+	;; initialize receiver
+	push #ldlesobj		; ALLOCW arg: size
+	pcall allocw		; allocate DL11 source object
+	pop r0			; ALLOCW result: pointer
+	mov r0,(r1)		; interrupt vector points to JSR R0,@#DLRINT
+	add #dlrjsr,(r1)+	; ...
+	mov #pr5,(r1)+		; DLs are priority 4, but interrupt routine
+				; runs at pr5
+	mov #4037,dlrjsr+0(r0)		; JSR R0,@#DERINT
+	mov #derint,dlrjsr+2(r0)	; ...
+	mov #nulldo,dledst(r0)	; no destination yet
+	mov #delink,link(r0)
+	mov #destat,status(r0)
+	mov r2,dlers(r0)	; address of receiver status register for DLEINT
+	mov r2,dlerb(r0)	; address of receiver buffer for DLRINT
+	add #2,dlerb(r0)	; ...
+	mov #146,(r2)		; turn on receiver interrupts, data set
+				; change interrupts, and data terminal ready
+	mov r0,@nexts		; store source object as next source
+	add #2,nexts		; advance next source pointer
+
+	;; initialize transmitter
+	push #ldledobj+4	; ALLOCW arg: size
+	pcall allocw		; allocate DL destination object with 2 extra
+				; words for JSR
+	pop r0			; ALLOCW result: pointer
+	mov r0,(r1)+		; interrupt vector points to JSR
+	mov #pr5,(r1)+		; DLs are priority 4, but run at PR5
+	mov #4037,(r0)+		; JSR R0,@#DEXINT
+	mov #dexint,(r0)+	; ...
+	mov #"LD,name(r0)	; mark as DL destination
+	mov #dlsend,send(r0)	; initialize protocol slots to corresponding
+	mov #dlsndw,sendw(r0)	; entry points
+	mov #dlsnds,sends(r0)	; ...
+	mov #dlbrk,break(r0)	; ...
+	mov #nopsub,force(r0)	; ...
+	mov #nopsub,close(r0)	; ...
+	push (r5)+		; INITQ arg: queue buffer size
+	pcall initq		; initialize output queue for DL
+	mov r2,dlecs(r0)	; address of CSR for DEXINT
+	mov r2,dlxs(r0)		; address of transmitter status for
+	add #4,dlxs(r0)		; DLXINT and DLSEND
+	mov r2,dlxb(r0)		; address of transmitter buffer for
+	add #6,dlxb(r0)		; DLXINT
+	clr 4(r2)		; transmit status: no interrupts, no break
+	mov r0,@nextd		; store destination as next destination
+	add #2,nextd		; advance next destination pointer
+
+	push #ltcb
+	pcall allocw
+	mov (sp),r0
+	push #dletsk,#4*2
+	pcall tinit
+	mov tsp(r0),r0
+	mov r2,2(r0)
+
+	preturn
+.endc	; ne ndle
+
+.endc	; ne ndl
+
+.if ne  ndz
+.sbttl	DZ11 support
+
+;;; DZ11 receiver data block.  One per DZ11.
+dsect <
+	.blkw ndzl		; destination objects for DZ lines
+dzrb::	.blkw 1			; RBUF address
+	>,ldzrd
+
+;;; DZ11 receiver interrupt handler.  Interrupt vector points at a block of
+;;; data starting with JSR R2,@#DZRINT.  Thus on entry here R2 is saved on
+;;; the stack and initialized to DZ11 specific data.
+
+;;; [For efficiency we should operate DZ11 in silo overflow interrupt mode,
+;;; and also check it on clock interrupts.  Unfortunately, this is hairy to
+;;; do without another copy of DZRINT that's designed to be called normally.]
+
+dzrint:	push r1,r0		; save registers
+loop <	  mov @dzrb(r2),r1	; read RBUF
+	  exitl pl		; character not valid, stop reading silo
+	  mov r1,r0		; get line no.
+	  swab r0		; ...
+	  bic #177770,r0	; ...
+	  asl r0		; *2 for word indexing
+	  add r2,r0		; get destination object for line
+	  mov (r0),r0		; ...
+	  pcall @send(r0)	; call it with received character as argument
+	  rptl
+	  >
+	pop r0,r1,r2		; restore registers
+	rti
+
+
+;;; DZ11 source object.  One per DZ11 line.
+dsect <
+	 .blkb lsptcl		; source object protocol
+dzdstp:: .blkw 1		; pointer to destination variable for this
+				; line in DZ receiver data block
+	>,ldzsobj
+
+
+dzlink:	mov r1,@dzdstp(r0)
+	preturn
+
+dzstat:	mov @dzdstp(r0),r1
+	preturn
+
+;;; DZ11 transmitter data block.  One per DZ11.
+dsect <
+	.blkw ndzl		; destination object for each line
+dzrs::	.blkw 1			; CSR address
+dzxb::	.blkw 1			; XBUF address
+	>,ldzxd
+
+;;; DZ11 destination object.  One per DZ11 line.
+dsect <
+	.blkb ldqobj		; basic destination object with output queue
+dzxs::	.blkw 1
+dzbit::	.blkb 1			; bit for dz line
+	.even
+	>,ldzdobj
+
+;;; DZ11 transmitter handler.  Interrupt vector points at object representing
+;;; the specific DZ11 starting with JSR R2,@#DZXINT.  Thus on entry here R2
+;;; is saved on the stack and initialized to the DZ11 transmitter data block.
+;;; This routine sends to all lines that are ready.
+
+dzxint:	push r0			; save register
+loop <	  mov @dzrs(r2),r0	; read CSR
+	  exitl pl		; no more lines ready
+	  swab r0		; get line no.
+	  bic #177770,r0	; ...
+	  asl r0		; *2 for word offset
+	  add r2,r0		; get destination object for line
+	  mov (r0),r0		; ...
+
+	  ;; Remove next character from queue in DZ11 object and send it.
+	  ;; This code can fail if interrupted by a queue insertion; thus our
+	  ;; source cannot be an interrupt routine that runs at higher
+	  ;; priority than we do.
+	  cmp qfp(r0),qrp(r0)	; queue empty?
+	  if eq,<		; yes
+	    bicb dzbit(r0),@dzxs(r0)	; disable line
+	    tst qtask(r0)	; is there a task waiting for queue to empty?
+	    rptl eq		; no
+	    wake.h qtask(r0)	; wake it up
+	    clr qtask(r0)	; but only once
+	    rptl
+	    >
+	  movb @qfp(r0),@dzxb(r2)	; give next character to DZ11
+	  inc qfp(r0)			; skip over that character
+	  cmp qfp(r0),qep(r0)	; reached end of storage area?
+	  rptl ne		; no
+	  sub qsize(r0),qfp(r0)	; wrap around to beginning
+	  rptl
+	  >
+	pop r0,r2		; restore registers
+	rti
+
+
+;;; DZ11 destination object SEND entrypoint.  Caller must be running at PR5
+;;; at least.
+
+dzsend:	bisb dzbit(r0),@dzxs(r0)	; insure interrupts are on
+	;; The following code takes advantage of the fact that a full queue
+	;; does not use the last buffer position.
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 1$		; yes, queue was full, so undo the insertion
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	if eq,<			; yes, that means it was full
+	  add qsize(r0),qrp(r0)	; undo wraparound
+1$:	  dec qrp(r0)		; undo advance
+	  inc qovfl		; count overflows
+	  >
+	preturn
+
+
+;;; DZ11 destination object SENDW entrypoint.  Caller must be a task.
+
+dzsndw:	spl 5			; lock out DZ11 interrupts and other senders
+	bisb dzbit(r0),@dzxs(r0)	; insure interrupts are on
+	;; The following code takes advantage of the fact that a full queue
+	;; does not use the last buffer position.
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 2$		; yes, queue is full, so undo the insertion
+1$:	  spl 0			; return to low priority
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	bne 1$			; no, just return
+	add qsize(r0),qrp(r0)	; undo wraparound
+2$:	dec qrp(r0)		; undo advance
+	pcall waitq		; wake us up when queue empties
+	br dzsndw		; try again
+
+
+;;; DZ11 destination object SENDS entrypoint.  Caller must be a task.
+
+dzsnds:	bpt
+
+
+;;; DZ11 destination object BREAK entrypoint.  Caller must be a task.
+
+dzbrk:	push r1			; save register
+	pcall finiq		; wait for queue to empty
+	mov dzxs(r0),r1		; R1: transmitter control register
+	movb dzbit(r0),3(r1)	; put line in continuous space condition
+	;; now "send" 1 character to count time?
+	mov #4000,r1
+loop <	  pcall dzsndw		; put nulls in queue
+	  asl r1
+	  rptl cc
+	  >
+	pcall finiq		; wait for queue to empty
+	mov dzxs(r0),r1		; R1: transmitter control register
+	clrb 3(r1)		; put line back to normal
+	pop r1			; restore register
+	preturn
+
+
+;;; Initialize one DZ11, creating NDZL ports.
+
+dzinit:	mov (r5)+,r1		; R1: vector address
+	mov (r5)+,r2		; R2: DZ11 address
+
+	;; initialize receiver
+	pcall nxmcat
+	  dznxm
+	mov #20,(r2)		; master clear
+	pcall nxmclr
+loop <	  bit #20,(r2)		; busy wait for master clear to finish
+	  rptl ne
+	  >
+	mov #40140,(r2)		; set transmitter interrupt enable, enable,
+				; receiver interrupt enable, and master scan
+				; enable
+	push #ldzrd+4		; ALLOCW arg: byte size
+	pcall allocw		; allocate receiver data block with 2 extra
+				; words for JSR
+	pop r4			; ALLOCW result: pointer
+	mov r4,(r1)+		; interrupt vector points to JSR R2,@#DZRINT
+	mov #pr5,(r1)+		; DZs are priority 5
+	mov #4237,(r4)+		; JSR R2,@#DZRINT
+	mov #dzrint,(r4)+	; ...
+	mov r2,dzrb(r4)
+	add #2,dzrb(r4)
+	mov #ndzl,r3
+loop <	  push #ldzsobj		; allocate dz-11 source object
+	  pcall allocw
+	  pop r0
+	  mov #dzlink,link(r0)
+	  mov #dzstat,status(r0)
+	  mov r4,dzdstp(r0)	; set source's ptr to destination block
+	  mov #nulldo,(r4)+
+	  mov (r5)+,2(r2)	; set line parameters for line
+	  tst (r5)+		; skip output queue size
+	  mov r0,@nexts		; store source object as next source
+	  add #2,nexts		; advance next source pointer
+	  sorl r3
+	  >
+
+	;; initialize transmitter
+	mov #177400,4(r2)	; turn on data terminal ready for all lines,
+				; and turn off output interrupt enable for
+				; all lines
+	push #ldzxd+4		; ALLOCW arg: size in bytes
+	pcall allocw		; allocate transmitter data block with 2
+				; extra words for JSR
+	pop r4			; ALLOCW result: pointer
+	mov r4,(r1)+		; interrupt vector points to JSR R2,@#DZXINT
+	mov #pr5,(r1)+		; DZs are priority 5
+	mov #4237,(r4)+		; JSR R2,@#DZXINT
+	mov #dzxint,(r4)+	; ...
+	mov r2,dzrs(r4)
+	mov r2,dzxb(r4)
+	add #6,dzxb(r4)
+	sub #ndzl*4,r5		; back to individual line data
+	mov #ndzl,r3		; R3: count off no. of dz lines
+	mov #1,r1
+loop <	  push #ldzdobj		; ALLOCW arg: size in bytes
+	  pcall allocw		; allocate DZ destination object
+	  pop r0		; ALLOCW result: pointer
+	  mov r0,(r4)+		; store destination object in transmitter
+				; data block
+	  mov #"ZD,name(r0)	; mark as DZ destination
+	  mov #dzsend,send(r0)	; initialize protocol slots to corresponding
+	  mov #dzsndw,sendw(r0)	; entry points
+	  mov #dzsnds,sends(r0)	; ...
+	  mov #dzbrk,break(r0)	; ...
+	  mov #nopsub,force(r0)	; ...
+	  mov #nopsub,close(r0)	; ...
+	  tst (r5)+		; skip line parameter word
+	  push (r5)+		; INITQ arg: queue buffer size
+	  pcall initq		; initialize output queue for DZ
+	  mov r2,dzxs(r0)
+	  add #4,dzxs(r0)
+	  movb r1,dzbit(r0)
+	  asl r1
+	  mov r0,@nextd		; store destination as next destination
+	  add #2,nextd		; advance next destination pointer
+	  sorl r3
+	  >
+
+	preturn
+
+dznxm:	add #ndzl*2*2,r5	; skip line parameter words and queue sizes
+	mov #ndzl,r3
+loop <	  clr @nexts
+	  add #2,nexts
+	  clr @nextd
+	  add #2,nextd
+	  sorl r3
+	  >
+	preturn
+
+.endc	; ne ndz
+
+;;; DH11 support
+
+.if ne ndhv
+.insrt dhv
+.endc
+.if ne ndh
+.insrt dh
+.endc
+
+
+
+.if ne  nsail
+.sbttl	Sail multiplexor support
+
+;;; These objects/tasks handle a line using the PMF/HWC multiplexing
+;;; protocol, such as the line between the Switch 11 and the SAIL 11.
+
+
+dle==220			; ASCII data link escape character; used for
+				; changing the multiplexing
+
+;;; Sail receiver destination object.  1 of these as destination of actual
+;;; line.
+dsect <
+	 .blkb ldptcl		; destination object protocol
+srcdst:: .blkw 1		; ptr to current destination
+srdst::	 .blkw nsmxl		; destinations
+	>,lsrdobj
+
+;;; Data received from multiplexed SAIL line comes here.
+srsend:	cmpb r1,#dle		; escape character?
+	beq 2$			; yes
+1$:	;; normal data character.  send to current destination.
+	mov @srcdst(r0),r0	; R0: current destination
+	jcall @send(r0)		; tail end call to destination
+2$:	;; DLE received.
+	mov #3$,send(r0)	; next character should go to 3$
+	preturn
+3$:	;; character after DLE.
+	mov #srsend,send(r0)	; next character is data
+	cmpb r1,#dle		; doubled DLE?
+	beq 1$			; yes, send 1 as data
+	sub #52,r1		; subtract line number base
+	cmp r1,#<nsmxl-1>*2	; range check against number of lines
+	bhi 4$			; out of range, lose
+	bit #1,r1		; odd?
+	bne 4$			; yes, lose
+	;; now have line number * 2 in R1
+	add r0,r1		; set current destination to pointer to
+	add #srdst,r1		;  SRDST(R0)(R1)
+	mov r1,srcdst(r0)	;  ...
+	preturn
+4$:	;; illegal character after DLE
+	mov #srndst,srcdst(r0)	; set to null destination
+	preturn
+
+srndst:	nulldo
+
+srsndw:	srsnds:	bpt			; not prepared for these
+
+;;; BREAK entrypoint.  Just pass the break along.  This shouldn't be
+;;; necessary, but it's easy...
+srbrk:	mov @srcdst(r0),r0	; R0: current destination object
+	jcall @break(r0)	; tail call
+
+
+;;; Sail receiver source object.  1 of these for each of NSMXL virtual lines.
+dsect <
+	 .blkb lsptcl		; source object protocol
+srdstp:: .blkw 1		; pointer to SRDST word for line
+	>,lsrsobj
+
+;;; LINK entrypoint.
+srlink:	mov r1,@srdstp(r0)	; set virtual line's destination
+	preturn
+
+;;; STATUS entrypoint.
+srstat:	mov @srdstp(r0),r1	; return virtual line's destination
+	preturn
+
+;;; Sail transmitter destination object.  1 for each of NSMXL virtual lines.
+dsect <
+	 .blkb ldqobj		; destination object with queue
+sxtask:: .blkw 1		; tcb of multiplexing task
+	>,lsxdobj
+
+sxsend:	pcall insq
+	mov sxtask(r0),r0
+	inc sxwake(r0)
+	if eq,<
+	  wake.h r0
+	  >
+	preturn
+
+sxsndw:	pcall insq		; insert in queue
+				; this should be INSQW, but for now leave it
+				; as INSQ to avoid wedging
+	mov sxtask(r0),r0
+	inc sxwake(r0)
+	if eq,<
+	  wake.l r0
+	  >
+	preturn
+
+sxsnds:	bpt		; not prepared to handle this
+
+
+;;; Sail transmitter task.
+dsect <
+	 .blkb ltcb		; task control block
+sxwake:: .blkw 1
+sxline:: .blkw 1		; current line number
+sxinpq:: .blkw nsmxl		; transmitter destination object
+sxdst::	 .blkw 1
+	>,lsxtcb
+
+sxmult:	mov ctask,r5		; R5: our TCB
+loop <	  clr r4		; R4: current line number
+	  clr sxwake(r5)	; make sure we find out about input that
+				; arrives during this loop
+	  mov #-1,sxline(r5)	; start off with no line current
+  loop <    mov #20.,r3		; R3: number of characters to get
+    loop <    mov r5,r0		; get SXINPQ(R5)(R4)
+	      add r4,r0		; ...
+	      mov sxinpq(r0),r0	; R0: line's destination object
+	      pcall remq	; get character from queue
+	      exitl cs		; none there
+	      mov sxdst(r5),r0
+	      cmp r4,sxline(r5)	; already set to correct line?
+	      if ne,<		; no
+		push r1		; save data
+		mov #dle,r1	; SENDW arg: R1 = character
+		pcall @sendw(r0)	; send DLE
+		mov r4,r1	; SENDW arg: R1 = character
+		add #52,r1	; send line number * 2 + 52
+		pcall @sendw(r0)	; ...
+		mov r4,sxline(r5)	; set line number
+		pop r1		; restore data
+		>
+	      cmpb r1,#dle	; DLE as data?
+	      if eq,<		; yes
+		pcall @sendw(r0)	; quote it
+		>
+	      pcall @sendw(r0)	; send character out line
+	      sorl r3		; do up to 20 characters from one line before
+				; moving on to next
+	      inc sxwake(r5)	; don't sleep at end of loop
+	      >
+	    tst (r4)+		; next line number
+	    cmp r4,#<nsmxl-1>*2	; past maximum line number?
+	    rptl los		; no, keep going
+	    >
+	  dec sxwake(r5)	; if input arrived while we were running
+	  rptl pl		; then go handle it, otherwise leave SXWAKE
+				; set to -1 so we get a wakeup
+	  ;; put multiplexer in idle state
+	  mov sxdst(r5),r0
+	  mov #dle,r1
+	  pcall @sendw(r0)
+	  mov #50,r1
+	  pcall @sendw(r0)
+	  ;; (SXLINE set at start of loop)
+	  iot			; sleep until some data to send
+	  rptl			; go to it
+	  >
+
+;;; Initialize one SAIL multiplexed line, creating NSMXL ports.
+
+sinit:	mov (r5)+,r2		; R2: port no. of multiplexed line
+	asl r2
+	tst sport(r2)
+	beq nosail
+
+	push #lsrdobj		; ALLOCW arg: byte size
+	pcall allocw		; allocate receiver destination object
+	pop r1			; ALLOCW result: pointer
+	mov #"Sd,name(r1)
+	mov #srsend,send(r1)
+	mov #srsndw,sendw(r1)
+	mov #srsnds,sends(r1)
+	mov #srbrk,break(r1)
+	mov #nopsub,force(r1)
+	mov #nopsub,close(r1)
+	mov #srndst,srcdst(r1)	; init the current destination to be
+				; the null destination
+	mov sport(r2),r0
+	pcall @link(r0)
+	mov #nsmxl,r3
+	add #srdst,r1
+loop <	  push #lsrsobj
+	  pcall allocw
+	  pop r0
+	  mov #srlink,link(r0)
+	  mov #srstat,status(r0)
+	  mov r1,srdstp(r0)
+	  mov #nulldo,(r1)+
+	  mov r0,@nexts		; store source object as next source
+	  add #2,nexts		; advance next source pointer
+	  sorl r3
+	  >
+
+	;; initialize transmitter
+	push #lsxtcb		; ALLOCW arg: size in bytes
+	pcall allocw		; allocate multiplexor task tcb
+	pop r4			; ALLOCW result: pointer
+	mov dport(r2),sxdst(r4)
+	clr sxwake(r4)		; no wakeups yet
+	mov r4,r1
+	add #sxinpq,r1
+	mov #nsmxl,r3		; R3: count off no. of multiplexed lines
+loop <	  push #lsxdobj		; ALLOCW arg: size in bytes
+	  pcall allocw		; allocate DZ destination object
+	  pop r0		; ALLOCW result: pointer
+	  mov r0,(r1)+		; store destination object in transmitter
+				; data block
+	  mov #"SD,name(r0)
+	  mov #sxsend,send(r0)	; initialize protocol slots to corresponding
+	  mov #sxsndw,sendw(r0)	; entry points
+	  mov #sxsnds,sends(r0)	; ...
+	  mov #nopsub,break(r0)	; ...
+	  mov #nopsub,force(r0)	; ...
+	  mov #nopsub,close(r0)	; ...
+	  mov r4,sxtask(r0)
+	  push (r5)+		; INITQ arg: queue buffer size
+	  pcall initq		; initialize output queue for DZ
+	  mov r0,@nextd		; store destination as next destination
+	  add #2,nextd		; advance next destination pointer
+	  sorl r3
+	  >
+	push r4,#sxmult,#10.	; TINIT args: TCB, initial PC, stack size
+	pcall tinit
+
+	preturn
+
+nosail:	mov #nsmxl,r3
+loop <	  clr @nexts
+	  add #2,nexts
+	  clr @nextd
+	  add #2,nextd
+	  sorl r3
+	  >
+	preturn
+
+.endc
+
+.sbttl	Task objects
+
+;;; Task object.
+dsect <
+	 .blkb ldqobj		; destination object protocol with queue
+tdinpt:: .blkw 2		; time of last input
+tdtcb::	 .blkb ltcb		; task control block (actually included in
+				; task object rather being separate for
+				; efficiency in TDSEND/TDSNDW).
+	>,ltdobj
+
+
+;;; Create a task destination object.  Stack arguments are size of
+;;; storage desired for object, initial PC, stack size, and size of input
+;;; queue.  Return object in R0.
+
+tdinit:	push 10(sp)		; ALLOCW arg: size
+	pcall allocw		; allocate storage for object
+	pop r0			; ALLOCW result: storage
+	pcall uptime		; get system uptime
+	pop tdinpt+0(r0),tdinpt+2(r0)	; set time of last input
+	mov #"TD,name(r0)
+	mov #tdsend,send(r0)
+	mov #tdsndw,sendw(r0)
+	mov #tdsnds,sends(r0)
+	mov #nopsub,break(r0)
+	mov #nopsub,force(r0)
+	mov #nopsub,close(r0)
+	push 2(sp)		; INITQ arg: size of queue buffer
+	pcall initq		; initialize queue
+	push r0			; TINIT arg: pointer to TCB
+	add #tdtcb,(sp)		; ...
+	push 6+2(sp),4+4(sp)	; TINIT arg: initial PC, stack size
+	pcall tinit		; create a task
+	pop 6(sp)		; remove arguments
+	add #6,sp		; ...
+	preturn
+
+
+;;; Task object SEND entrypoint.  High priority assumed.
+
+tdsend:	mov clock+0,tdinpt+0(r0)	; save current time for idle time
+	mov clock+2,tdinpt+2(r0)	; computation
+tdsen1:	;; because this code is at high priority, it doesn't have to
+	;; worry about being interrupted by a TDREMW.
+	wake.h r0,tdtcb		; wakeup task destination task
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 1$		; yes, queue is full, so undo the insertion
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	if eq,<			; yes
+	  add qsize(r0),qrp(r0)	; undo wraparound
+1$:	  dec qrp(r0)		; undo advance
+	  inc qovfl		; count overflows
+	  >
+	preturn
+
+
+;;; Task object SENDW entrypoint.  Caller is assumed to be a task.
+
+tdsndw:	;; next two instructions can read wrong time if clock ticks between
+	;; them.  should we worry?
+	mov clock+0,tdinpt+0(r0)	; save current time for idle time
+	mov clock+2,tdinpt+2(r0)	; computation
+tdsnd1:	;; because both this code and TDREMW run at task level and there's
+	;; no preemption, this code doesn't have to worry about being
+	;; interrupted by a TDREMW.
+	wake.l r0,tdtcb		; wakeup task destination task
+	;; the following code will lose if it is interrupted by a routine
+	;; that does a TDSEND to the same line.  worry?
+	movb r1,@qrp(r0)	; put character in buffer
+	inc qrp(r0)		; advance pointer for next character
+	cmp qrp(r0),qep(r0)	; reached end of storage area?
+	if ne,<			; no
+	  cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	  beq 1$		; yes, queue is full, so undo the insertion
+	  preturn
+	  >
+	sub qsize(r0),qrp(r0)	; wrap around to beginning
+	cmp qrp(r0),qfp(r0)	; did this insertion make queue appear empty?
+	if eq,<			; yes
+	  add qsize(r0),qrp(r0)	; undo wraparound
+1$:	  dec qrp(r0)		; undo advance
+	  pcall waitq		; wake us up when queue empties
+	  br tdsndw		; try again
+	  >
+	preturn
+
+tdsnds:	bpt
+
+
+;;; Get next character from queue in task object and return it, waiting if
+;;; necessary.  Called by the task code implementing data sink.
+
+tdremw==remw
+tdremq==remq
+
+asmxon===0			; force off until we fix up TDINP stuff
+.iif ndf asmxon, asmxon===0
+.if ne  asmxon
+.sbttl	Stupid (XON/XOFF) Flow Control
+
+dsect <
+	 .blkb ltdobj
+xosrc::	 .blkb lsptcl
+xodst::	 .blkw 1
+xoxmts:: .blkw 1
+xoxmtd:: .blkw 1
+xostop:: .blkw 1
+xostrt:: .blkw 1
+	 >,lxodobj
+
+xosend:	pcall tdsen1
+	cmp tdinp(r0),xostop(r0)
+	if eq,<
+	  mov xoxmtd(r0),r0
+	  mov #'S&37,r1
+	  jcall @send(r0)
+	  >
+	preturn
+
+xosndw:	pcall tdsnd1
+	cmp tdinp(r0),xostop(r0)
+	if eq,<
+	  mov xoxmtd(r0),r0
+	  mov #'S&37,r1
+	  jcall @sendw(r0)
+	  >
+	preturn
+
+xosnds:	xobrk:	xoforc:	xocls:
+	bpt
+
+xolink:	mov r1,xodst-xosrc(r0)
+	preturn
+
+xostat:	mov xodst-xosrc(r0),r1
+	preturn
+
+xotask:	mov r5,r0
+	pcall tdremw
+	mov xodst(r5),r0
+	pcall @sendw(r0)
+	cmp tdinp(r5),xostrt(r5)
+	bne xotask
+	mov xoxmtd(r5),r0
+	mov #'Q&37,r1
+	pcall @sendw(r0)
+	br xotask
+
+xokill:	push #darea
+	push qep(r5)
+	sub qsize(r5),(sp)
+	pcall free
+	mov r5,r0
+	jcall tkill
+
+
+;;; Stack arguments are transmitter source and destination objects and queue
+;;; size.  Returns source object.
+
+xoinit:	push r0,r1,r2
+	push #lxodobj		; ALLOCW arg: size in bytes
+	pcall allocw		; allocate XON/XOFF object
+	pop r0			; ALLOCW result: pointer
+	mov #"XO,name(r0)
+	mov #xosend,send(r0)
+	mov #xosndw,sendw(r0)
+	mov #xosnds,sends(r0)
+	mov #xobrk,break(r0)
+	mov #xoforc,force(r0)
+	mov #xocls,close(r0)
+	mov #xolink,xosrc+link(r0)
+	mov #xostat,xosrc+status(r0)
+	mov #nulldo,xodst(r0)
+	mov 14(sp),xoxmts(r0)
+	mov 12(sp),xoxmtd(r0)
+	push 10(sp)
+	pcall initq
+	clr tdinp(r0)
+	mov 10(sp),r1
+	mov r1,r2
+	asr r2
+	asr r2
+	sub r2,r1
+	mov r1,xostop(r0)
+	mov r2,xostrt(r0)
+
+	mov r0,r1
+	add #tdtcb,r1
+	push r1,#xotask,#10.*2
+	pcall tinit
+	mov tsp(r1),r1
+	mov r0,5*2(r1)
+
+	mov r0,r1
+	add #xosrc,r0
+	mov r0,14(sp)
+	mov xoxmts(r1),r0
+	pcall @link(r0)
+	pop r2,r1,r0,(sp),(sp)	; restore register, remove argument slots
+				; from stack
+	preturn
+.endc	; ne asmxon
+
+.iif ne  nperitek, .insrt peritk
+
+.iif ne ngrin, .insrt grin
+
+.iif ne nlpt, .insrt lptser
+
+.iif ne ns1iom, .insrt s1term
+
+.insrt cmds
+
+.iif ne chaos, .insrt chsprt
+
+.sbttl	End
+
+const:	constants
+endpur==.
+
+.iif ndf asm2kio, asm2kio===1-asmrt11
+.if ne asm2kio
+last:
+.=160000
+.endc
+	variables		; put down the variables.
+
+patch:	pat:			; reserve space for patching
+	.blkw 64.
+
+.iif eq asm2kio, last:		; runtime allocation starts here
+
+
+.end nswit

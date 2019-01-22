@@ -1,0 +1,1677 @@
+; Netwrk subroutines  -*-MIDAS-*-
+; New version for HOSTS2, CHAOS net, etc. 12/12/78.
+; Changes from previous installed version:
+;  Entry-point symbols are not exported into enclosing block.
+;  $$ARPA flag
+;  Uses HOSTS2 rather than HOSTS1
+;  All network addresses are now in new-format, with network-number
+;  ..
+
+;******* If you modify this, inform TAA @ dm, who maintains *******
+;******* the corresponding routines for muddle.             *******
+
+.AUXIL			;Don't mention all my symbols in crefs of programs that use me.
+
+;Calling Conventions:
+;
+;All subroutines herein are called by PUSHJ P,
+;and take their skip return if successful, non-skip if error.
+;Arguments are passed in ACs A,B,C,D,E.  ACs T and TT are freely smashable.
+;However, "low level" subroutines generally take arguments and
+;return values in T and TT and leave A-E alone.
+;Subroutines may alter A-E as documented with each routine.
+;The only ACs assumed are A,B,C,D,E,T,TT,P.  TT=T+1 is assumed.
+;
+;The following externally defined symbols are assumed:
+;
+;GETCHR	Routine to read character for HOSTNM/SYMGET routine.
+;	Returns in T, clobbers TT, skip return unless no chars available.
+;
+;PUTCHR	Routine to write character for HOSTNM/SYMGET and ANALYZE routines.
+;	Char is passed in T (!!).  Mustn't clobber any ACs.  Never skips (!!).
+;
+;SPCHAN	Routine to handle special characters for HOSTNM/SYMGET.
+;	Char is passed in T, number so far read in TT.
+;	Non-skip return to restart reader, skip to ignore char.
+;
+;DEBUG	Nonzero if debugging.  SERVE doesn't time out, and .VALUE'S
+;	if anything bad happens.
+;
+;The usual values for ITS predefined symbols are assumed.
+;
+;The NETWRK subroutines are enclosed in a MIDAS begin block to
+;avoid confusion in the local tags.  All code produced is pure.  Any impure locations
+;needed are created as MIDAS variables (eg, .VECTOR).
+
+	;PRINT VERSION NUMBER
+	.TYO6 .IFNM1
+	.TYO 40
+	.TYO6 .IFNM2
+	PRINTX/ INCLUDED IN THIS ASSEMBLY.
+/
+
+
+;The following symbols are used to select only necessary routines
+
+IFNDEF $$HOSTNM, $$HOSTNM==0		;Host name file lookup routines.
+IFNDEF $$SYMGET, $$SYMGET==0		;Interactive symbol input routine
+IFNDEF $$SYMLOOK,$$SYMLOOK==0		;table lookup routine.
+IFNDEF $$HSTMAP, $$HSTMAP==0		;HSTMAP, HSTUNMAP, HSTSRC host name table rts
+IFNDEF $$HSTSIX, $$HSTSIX==0		;Sixbit host name abbreviation
+IFNDEF $$OWNHST, $$OWNHST==0		;Routine to get own host address
+IFNDEF $$ICP,	 $$ICP==0		;Initial Connection Protocol
+IFNDEF $$SERVE,  $$SERVE==0		;Respond to an ICP (for a server)
+IFNDEF $$SYSDBG, $$SYSDBG==0		;ARPSRV, CHASRV shouldn't handle SYSDBG itself
+IFNDEF $$CONNECT, $$CONNECT==0		;Network Connection Routine (ARPCON, CHACON)
+IFNDEF $$ANALYZE, $$ANALYZE==0		;Network Error Analysis Routine
+IFNDEF $$ERRHAN, $$ERRHAN==0		;Automatic ANALYZE in ARPCON, CHACON, etc.
+IFNDEF $$UPTM,	 $$UPTM==1		;ANALYZ should give estimated time up again
+IFNDEF $$CHAOS,	 $$CHAOS==0		;1 to support Chaosnet hosts and routines
+IFNDEF $$ARPA,	 $$ARPA==0		;1 to support Arpanet hosts and routines
+
+;;; Summary of entry-points and calling sequences.
+;;; Note that all routines listed here skip-return on success, clobber T and TT.
+;;;
+;;; SYMGET(E:table_p) => A:symbol_value, B,C,D,E:junk
+;;; SYMLOOK(A:input, E:table_p) => B:result_descr, T:numeric_value
+;;; HSTMAP(A:page#, B:channel#) => RH(A):next_free_page
+;;; HSTUNMAP()
+;;; HSTSRC(B:host#) => A:TIP_flag,,name_p, D:site_p
+;;; HOSTNM() => A:host#, TT:network#, B,C,D,E:junk
+;;; HSTLOOK(A:input) => A:host#, TT:network#, B:result_desc, E:junk
+;;; HSTSIX(A:host#) => A:sixbit_host_name
+;;; OWNHST(A:network#) => A:host#  (address of this machine on that network)
+;;; ARPICP(A:pin#, B:host#, C:socket#, D:imode,,omode) => clobbers all, opens pin+2,pin+3
+;;; ICPASN(A:pin#, B:host#, C:socket#, D:imode,,omode, E:phase#)
+;;; ARPSRV(A:pin#, B:socket#, C:imode,,omode) => B:host#, C:sysdbg, A,D:junk, opens pin+2,+3
+;;; ARPCON(A:pin#, B:host#, C:frn_socket#, D:async,,mode)
+;;; CONFIN(A:pin#, , , D:mode)
+;;; CHASRV(A:channel#, C:contact_name_p, D:window_size) => B:host#, C:sysdbg, A,D:junk
+;;; CHACON(A:channel#, B:host#, C:contact_name_p, D:window_size)
+;;; CHALSN(A:channel#, B:zero_or_host#, C:contact_name_p, D:window_size)
+;;; ANALYZE(A:channel#) => prints error message, with no CRLF
+
+IFE $$CHAOS+$$ARPA, .FATAL You have to specify at least one network
+IFN $$ERRHAN,$$ANALYZE==1
+IFN $$SYMGET,$$SYMLOOK==1
+IFN $$HOSTNM,$$HSTMAP==1
+
+	.BEGIN NETWRK
+
+NW%CHS==:7	;Chaos net
+NW%ARP==:12	;Arpa net
+;NW%DLN==:26	;Dial net (not supported by these routines)
+NW$BYT==:331000	;Byte pointer to network number
+
+IFN $$CHAOS, IFNDEF $CPKOP, .INSRT SYSTEM; CHSDEF >
+
+.CALL==43_33			;IN CASE OUR .INSRT'ER USES CALRET .CALL MACRO.
+DEFINE SYSCAL NAME,ARGS
+.CALL [SETZ ? SIXBIT /NAME/ ? ARGS ((SETZ))]
+TERMIN
+
+POP2J:	SUB P,[1,,1]		;Exits used in a few places.
+POP1J:	SUB P,[1,,1]
+CPOPJ:	POPJ P,
+
+POPJ1:	AOS (P)
+	POPJ P,
+
+IFNDEF NWLOSS,[			; SO .INSRT'ER CAN SUBSTITUTE SOMETHING FOR LOSSAGE CHKS
+DEFINE NWLOSS
+.LOSE
+TERMIN
+];NWLOSS
+
+IFN $$SYMGET,[
+
+;Interactive symbol readin and lookup.
+;
+; Call:	MOVE E,TABLEP
+;	PUSHJ P,SYMGET
+;	 error
+;	value of symbol now in A.
+;
+;Smashes B, C, D, E, T, TT.
+;
+; TABLEP should be an aobjn ptr to the table
+; of symbols from which user input is to select.
+; Num is an arbitrary 18-bit field derived from the table.
+; The format of the table is:
+;	[asciz/prompt string/]
+;  -->	value1,,[asciz/upper-case-symbol-1/]
+;	value2,,[asciz/upper-case-symbol-2/]
+;	. . .
+; Note that this table is an argument to the SYMGET entry.  The
+; HOSTNM entry uses the table from the HOSTS2 file, not in the same format.
+;
+;Subroutines used:
+;	GETCHR, PUTCHR, SPCHAN (see previous page for call sequences)
+;
+; GETCHR subroutine to get a character (1 arg)
+; PUTCHR subroutine to type a character (1 arg).
+;	   input is echoed/completed through PUTCHR
+; SPCHAN if a character other than a letter, a number,
+;	  a hyphen, a period, a space, or a CR is seen,
+;	   SPCHAN is called with the char in T and the
+;		number read so far in TT.  Non-skip
+;		return restarts reader, skip return
+;		continues ignoring chr.
+;
+
+.VECTOR RCPBUF(6)		;input buffer for this routine
+
+;Register Usage
+;
+;A	octal host number accum  -  scratch, if reading name.
+;B	decimal host number accum  -  scratch, if reading name.
+;C	scratch.
+;D	byte pointer into input buffer
+;E	(aobjn) pointer to table
+;T	character or random data
+;TT	miscellany
+
+SYMGET:		;interactive symbol input routine, with completion.
+	SETZM HSTNMF'	;Say we are not using the host names table (it has no prompt string).
+HSTNM1: REGO:
+	SKIPN HSTNMF
+	 SKIPA TT,-1(E)	;prompt
+	  MOVEI TT,[ASCIZ /Host: /]
+	PUSHJ P,ZTYPE
+GO3A:	MOVEI D,RCPBUF	;PTR TO SPEC STRING
+	HRLI D,440700	;PTR INTO COLLECTED STRING
+	SETZM CHRCNT'	;COUNT OF CHARS IN STRING
+
+GO1:	PUSHJ P,GETCHR	;GET INPUT CHARACTER
+	 MOVEI T,^M	;NO CHARS AVAIL SAME AS A CR.
+	JUMPE T,GO1	;IGNORE NULLS.
+	CAIL T,"a
+	CAILE T,"z
+	 CAIA		;NOT LOWER CASE
+	  SUBI T,40	;CONVERT LOWER CASE TO UPPER
+	CAIE T,12
+	CAIN T,15
+	 JRST GOTRM	;E-O-L MEANS USER DONE WITH SPEC.
+	CAIN T,40
+	 JRST GOTRM0	;SPACE COMPLETE BUT DON'T TERM
+	CAIN T,177	;RUBOUT CAUSES COMPLETE RESTART
+	 JRST [	MOVEI TT,[ASCIZ\?
+\]
+		PUSHJ P, ZTYPE
+		JRST REGO ]
+	CAIE T,"?
+	CAIN T,33	;? OR ALT MEANS LIST ALL POSSIBLE HOSTS,
+	 JRST GOTALT	;GIVEN TYPEIN THUS FAR.
+	JRST GOTC
+
+BAD1:	SUB P,[1,,1]
+BAD:	MOVEI T,7	;IF BAD CHAR GIVEN, DING BELL.
+GOECH:	PUSHJ P,PUTCHR
+	JRST GO1
+
+;GOT A CHARACTER.  IS EITHER SPECIAL OR PART OF A NAME
+
+GOTC:	CAIN T,"-	;BY SPECIAL DISPENSATION, HYPHEN
+	 JRST GOTC00
+	CAIGE T,"0	;NUMBERS
+	 JRST SPECL
+	CAIG T,"9
+	 JRST GOTC00
+	CAIGE T,"A	;LETTERS
+	 JRST SPECL
+	CAIG T,"Z
+	 JRST GOTC00
+	CAIN T,"/	;SLASH AT THIS LEVEL IS JUST A CHARACTER
+	 JRST GOTC00	;SYML1 WILL HANDLE HOST/IMP AND ADDRESS/NETWORK-NAME CONSTRUCTS
+;OTHERWISE SPECIAL CHARACTER, HANDLE IT
+SPECL:	MOVE TT,A
+	PUSHJ P,SPCHAN
+	 JRST GO3A	;RESTART FROM THE BEGINNING
+	JRST GO1	;IGNORE THIS CHAR
+
+;GOT A CHAR.  STORE IF IT PLUS STRING THUS FAR MATCHES A NAME, DON'T STORE IF NOT.
+;CHAR (NOT ECHOED YET) IS IN T.
+GOTC00:	PUSH P,D	;PREPARE TO FLUSH THE CHAR IF IT MAKES AN UNDEF SYMBOL.
+	IDPB T,D	;STORE CHAR IN STRING, FOLLOWED BY A NULL.
+	PUSH P,D
+	SETZ TT,
+	IDPB TT,D
+	POP P,D
+	AOS CHRCNT	;INCREMENT COUNT OF CHARS IN STR.
+	PUSH P,T
+	MOVEI A,RCPBUF
+	PUSHJ P,SYML1	;SEARCH THE TABLE FOR THIS STRING.
+	 JFCL
+	POP P,T
+	POP P,TT
+	JUMPN B,GOECH	;NUMBER, OR SYMBOL FOUND OR AMBIGUOUS => THIS CHARACTER IS OK.
+	SETZ TT,	;SYMBOL UNDEFINED => ZERO OUT THIS CHAR IN THE STRING
+	DPB TT,D
+	MOVE D,TT	;BACK UP POINTER TO END OF STRING
+	SOS CHRCNT
+	JRST BAD	;AND COMPLAIN.
+
+;GOT A E-O-L, SEE IF HAVE ENOUGH OF NAME TO RENDER IT UNIQUE.
+GOTRM:	TDZA C,C	;COMPLETE AND TERMINATE
+GOTRM0:	 SETOM C	;JUST COMPLETE
+	SKIPG CHRCNT	;HMMM, ANYTHING IN STRING STORED?
+	 JRST BAD	;NO, DING...
+	MOVEI A,RCPBUF	;ELSE LOOK THE STRING UP.
+	PUSHJ P,SYML1
+	 JRST BAD	;UNDEFINED OR AMBIGUOUS => LOSE.
+	MOVE A,T
+	MOVE TT,B	;NUMBER => OK, AND DON'T TYPE ANYTHING.  RETURN NUMBER IN A.
+	AOJE TT,WIN
+	HRRZ TT,(B)	;FOUND AND UNAMBIGUOUS.  COMPLETE THE NAME IF ABBREVIATED.
+	SKIPE HSTNMF
+	 ADD TT,HSTADR	;GET POINTER TO THE FULL NAME.
+	HRLI TT,440700
+	MOVE A,CHRCNT
+	ILDB T,TT	;IGNORE AS MANY CHARS AS THE USER ACTUALLY GAVE.
+	SOJG A,.-1
+GOTRM1:	ILDB T,TT
+	JUMPE T,GOTRM2
+	IDPB T,D	;AS WE COMPLETE THE NAME, STORE THE CHARS INTO THE ARG
+	AOS CHRCNT	;SO THAT IF THIS IS A SPACE, THE FOLLOWING CR DOESN'T
+	PUSHJ P,PUTCHR	;TYPE THE SAME STUFF OUT AGAIN.
+	JRST GOTRM1
+
+GOTRM2:	HLRZ A,(B)	;WIN.  RETURN LH. OF TABLE WORD.
+	SKIPE HSTNMF	;NORMALLY IS SYMBOL VALUE, BUT IF READING HOST NAME, IS FILE-
+	 SETO TT,	;RELATIVE ADDRESS OF SITE TABLE ENTRY, TT NON-ZERO MEANS NOT NUMBER
+WIN:	JUMPN C,GO1	;SHOULD TERMINATE?  NO => GO READ MORE CHARS.
+	PUSHJ P,CRLF	;YES, GIVE CRLF
+	JRST POPJ1	;AND RETURN WINNING NUMBER IN A
+
+;GOT ? OR ALT, LIST ALL NAMES POSSIBLE AT THIS STAGE.
+GOTALT:	SKIPN CHRCNT
+	 JRST GO1	;ALTMODE OR ? AFTER A NUMBER IS A NO-OP.
+	MOVEI A,RCPBUF
+	SETOM NOABRV'
+	PUSHJ P,SYMLA	;SEARCH FOR ALL POSSIBLE ALTERNATIVES.
+	 JFCL
+	TLNN B,-1
+	 HRLS B		;IF ONLY ONE, SET IT UP AS RANGE  <ONLY ONE>,,<SAME ONE>.
+	MOVE TT,B
+	AOJE TT,GO1	;IF ARG IS A NUMBER, DON'T TYPE ANYTHING.
+	PUSHJ P,CRLF
+	HLRZ A,B	;A POINTS TO FIRST, RH(B) POINTS TO LAST.
+GOTAL1:	HRRZ TT,(A)	;GET THE ADDR OF THE NEXT POSSIBLE MATCH'S NAME STRING
+	SKIPE HSTNMF
+	 ADD TT,HSTADR
+	PUSHJ P,ZTYPE	;TYPE IT.
+	PUSHJ P,CRLF
+	ADDI A,1
+	CAIG A,(B)
+	 JRST GOTAL1
+	SKIPN HSTNMF	;GIVE PROMPT STRING AGAIN
+	 SKIPA TT,-1(E)
+	  MOVEI TT,[ASCIZ /Host: /]
+	PUSHJ P,ZTYPE
+	MOVEI TT,RCPBUF	;FOLLOWED BY THE ARG CHARS WE HAVE SO FAR.
+	PUSHJ P,ZTYPE
+	JRST GO1
+
+] ;END IFN $$SYMGET
+
+IFN $$SYMLOOK,[
+
+;Non-incremental symbol lookup routine, called by the incremental one.
+;
+;	movei a,[asciz /symbol or number/]
+;	move e,[-tablelen,,table]
+;	pushj p,symlook
+;	 lossage
+;	winnage
+
+;If we succeed, B points to the word in the table for the symbol we found.
+;If we fail, then B is 0 for an undefined symbol, or first,,last for an ambiguous one.
+;If the argument is a number, we return -1 in B and the number in T.
+;Numbers are normally octal, but a "." at the end implies decimal.
+;Decimal host slash decimal Imp and any address slash network name are allowed.
+;In the address slash network-name form, the argument is smashed then restored!
+;We clobber T and TT.
+
+SYMLOOK:
+	SETZM HSTNMF'
+SYML1:	SETZM NOABRV'
+SYMLA:	PUSH P,C
+	PUSH P,D
+	MOVE TT,A
+	HRLI TT,440700
+	LDB T,[350700,,(A)]
+	CAIL T,"0		;Is the argument a number (starts with a digit)?
+	 CAILE T,"9
+	  JRST SYML6
+	SETZB C,D		;Yes => accumulate octal number in C, decimal in D.
+SYML7:	ILDB T,TT
+	CAIL T,"0
+	 CAILE T,"9
+	  JRST SYML8
+	IMULI C,10
+	IMULI D,10.
+	ADDI C,-"0(T)
+	ADDI D,-"0(T)
+	JRST SYML7
+
+SYML8:	CAIN T,"/
+	 JRST SYMSL1		;Digits followed by slash
+	CAIE T,".		;Out of digits => "." means use the decimal number
+	 JRST SYML9		;(else use the octal).
+	MOVE C,D
+	ILDB T,TT
+	CAIN T,"/		;OK to have both a decimal point and a slash
+	 JRST SYMSL1
+SYML9:	JUMPN T,SYMUND		;Any stray chars after the last digit or the "." => error.
+	MOVE T,C
+	SETO B,			;Return the number in T and -1 (=> this is a number) in B.
+	JRST SYMWIN
+
+SYMSL1:	SKIPN HSTNMF		;Slash only magic if hacking hosts
+	 JRST SYML9
+	ILDB T,TT		;Look at character after slash
+	CAIL T,"0
+	 CAILE T,"9
+	  JRST SYMSL3
+IFE $$ARPA, JRST SYML9
+IFN $$ARPA,[
+	MOVE C,D		;Number slash number, use decimal
+	MOVEI D,-"0(T)
+SYMSL2:	ILDB T,TT
+	CAIL T,"0
+	 CAILE T,"9
+	  JRST [DPB D,[112000,,C]	;Deposit IMP number into HOST number
+		MOVEI D,NW%ARP		;And this is obviously Arpa net
+		DPB D,[NW$BYT,,C]
+		JRST SYML9 ]
+	IMULI D,10.
+	ADDI D,-"0(T)
+	JRST SYMSL2
+];$$ARPA
+
+SYMSL3:	ADD TT,[070000,,]	;Back up byte-pointer
+	PUSHJ P,SYMSL4		;Process slash network-name
+	JRST SYML9
+
+;;Subroutine to read network name and set NTSPCF to network number
+SYMSL4:	MOVEI D,0
+SYMSL5:	ILDB T,TT
+	JUMPE T,SYMSL6
+	LSH D,6
+	CAIL T,"a
+	 SUBI T,40
+	IORI D,-40(T)
+	JRST SYMSL5
+
+SYMSL6:	IRPS FLAG,,[$$CHAOS $$ARPA]NAME,,[CHAOS ARPA]NUM,,[NW%CHS NW%ARP]
+IFN FLAG,[			;Make sure we claim to support this network
+	 CAMN D,['NAME]
+	  MOVEI T,NUM
+];FLAG
+	 TERMIN
+	JUMPE T,[POP P,T ? JRST SYMUND]	;Unknown network name, barf
+	MOVEM T,NTSPCF
+	POPJ P,
+
+;Here to start processing an arg which is not a number.
+SYML6:	MOVE B,E
+	ILDB T,TT		;Check for slash and network name
+	JUMPE T,SYML2		;None found
+	CAIE T,"/
+	 JRST SYML6
+	MOVEI T,0		;Ugh, barf, clobber the argument
+	DPB T,TT
+	PUSH P,TT
+	PUSHJ P,SYMLA		;Go do that
+	 JRST [	POP P,TT ? MOVEI T,"/ ? DPB T,TT ? JRST SYMLZ ]	;Lost, propagate, fixing arg
+	POP P,TT		;Note, recursive call didn't return anything in T
+	MOVEI T,"/		; since this wasn't a number
+	DPB T,TT		;Fix argument
+	PUSHJ P,SYMSL4		;Process network-name argument
+	JRST SYMWIN		;And take success return
+
+SYML2:	HRRZ T,(B)		;Get the next symbol's name from the table.
+	SKIPE HSTNMF
+	 ADD T,HSTADR
+	PUSHJ P,SYMCMP		;Does the argument in A abbreviate it?
+	 CAIA
+	  JRST SYML3		;Yes, we have found the first match.
+	AOBJN B,SYML2
+SYMUND:	SETZ B,			;There is no match.  Return 0.
+	JRST SYMLZ
+
+SYML3:	PUSH P,B		;Remember where the first match is, and find the last.
+SYML4:	AOBJP B,SYML5
+	HRRZ T,(B)		;Get the next symbol's name from the table.
+	SKIPE HSTNMF
+	 ADD T,HSTADR
+	PUSHJ P,SYMCMP		;Does the argument in A abbreviate it?
+	 JRST SYML5		;No => we have gone past the last match.
+	JRST SYML4
+
+SYML5:	SUB B,[1,,1]		;B points at last match.
+	CAMN B,(P)		;Last and first match are the same table entry?
+	 JRST SYMLW		;Then that one is the value.
+	PUSH P,A
+	MOVE A,-1(P)		;A gets the symbol name of the first match
+	HRRZ A,(A)
+	SKIPE HSTNMF
+	 ADD A,HSTADR
+	HRLI A,440700
+	HRRZ T,(B)
+	SKIPE HSTNMF		;and T gets the name of the last match.
+	 ADD T,HSTADR
+	SKIPN NOABRV		;If processing "BBN?", show all names starting with BBN
+				;even though "BBN" by itself is a valid name.
+	 PUSHJ P,SYMCMP		;if the first match is an abbreviation of the last,
+	  JRST SYMLL
+	POP P,A			;then it's no ambiguity;  the first wins.
+SYMLW:	POP P,B
+	ANDI B,-1
+SYMWIN:	POP P,D
+	POP P,C
+	JRST POPJ1
+
+SYMLL:	POP P,A			;Here if argument is really ambiguous.
+	HRL B,(P)		;produce 1st match addr,,last match addr.
+	SUB P,[1,,1]
+SYMLZ:	POP P,D
+	POP P,C
+	POPJ P,
+
+;Compare the ASCIZ string <- A with the one <- T.
+;Skip if the one in A is an initial segment of the one in T.
+;We clobber C, D, T and TT but NOT A.
+
+SYMCMP:	HRLI T,440700
+	MOVE C,A
+	HRLI C,440700
+SYMCM1:	ILDB TT,T
+	ILDB D,C
+	JUMPE D,POPJ1		;1st string ended and no mismatch => win.
+	CAIL D,140
+	 SUBI D,40		;Ignore case in the string in A.  Assume string in T is all upper.
+	CAME D,TT
+	 POPJ P,		;mismatch => lose.
+	JRST SYMCM1
+
+] ;end IFN $$SYMLOOK
+
+IFN $$HSTMAP,[
+
+.SCALAR HSTADR		;Address of HOSTS2 file is stored here.
+.SCALAR HSTABN		; AOBJN page pointer to HOSTS2
+
+;The format of the compiled HOSTS2 file is:
+HSTSID==:0	; wd 0	SIXBIT /HOSTS2/
+HSTFN1==:1	; wd 1	SIXBIT /HOSTS/ usually
+HSTVRS==:2	; wd 2	FN2 of HOSTS file which this was compiled from.
+HSTDIR==:3	; wd 3  SIXBIT /SYSENG/ usually, directory name of source file
+HSTMCH==:4	; wd 4  SIXBIT /AI/ (e.g.), device name of source file
+HSTWHO==:5	; wd 5	UNAME of person who compiled this
+HSTDAT==:6	; wd 6	Date of compilation as sixbit YYMMDD
+HSTTIM==:7	; wd 7	Time of compilation as sixbit HHMMSS
+NAMPTR==:10	; wd 10 Address in file of NAME table.
+SITPTR==:11	; wd 11	Address in file of SITE table.
+NETPTR==:12	; wd 12 Address in file of NETWORK table.
+		;....expandable....
+
+;NETWORK table
+; wd 0	Number of entries in table.
+; wd 1	Number of words per entry. (2)
+;This table contains one entry for each network known about, sorted
+;by network number.  A network number is bits 4.8-4.1 of a network
+;address; these numbers are assigned by Jon Postel.  See symbols below.
+;The reason for keeping track of different networks is that the user
+;program must make different system calls to use each network.
+;Each entry contains:
+NETNUM==:0	; wd 0	network number
+NTLNAM==:1	; wd 1 LH - address in file of name of network
+NTRTAB==:1	; wd 1 RH - address in file of network's address table
+
+;ADDRESS table(s)
+; wd 0	Number of entries in table.
+; wd 1	Number of words per entry. (2)
+;There is one of these tables for each network.  It contains entries
+;for each site attached to that network, sorted by network address.
+;These tables are used to convert a numeric address into a host name.
+;Also, the list of network addresses for a site is stored
+;within these tables.
+;Each entry contains:
+ADDADR==:0	; wd 0	Network address of this entry (including network number).
+ADLSIT==:1	; wd 1 LH - address in file of SITE table entry
+ADRCDR==:1	; wd 1 RH - address in file of next ADDRESS entry for this site
+		;	    0 = end of list
+
+;SITE table
+; wd 0	Number of entries in table.
+; wd 1	Number of words per entry. (3)
+;This table contains entries for each network site,
+;not sorted by anything in particular.  A site can have more
+;than one network address, usually on different networks.
+;This is the main, central table.
+;Each entry looks like:
+STLNAM==:0	; wd 0 LH - address in file of official host name
+STRADR==:0	; wd 0 RH - address in file of first ADDRESS table entry for this
+		;	    site.  Successive entries are threaded together
+		;	    through ADRCDR.
+STLSYS==:1	; wd 1 LH - address in file of system name (ITS, TIP, TENEX, etc.)
+		;			May be 0 => not known.
+STRMCH==:1	; wd 1 RH - address in file of machine name (PDP10, etc.)
+		;			May be 0 => not known.
+STLFLG==:2	; wd 2 LH - flags:
+STFSRV==:400000	;	4.9 1 => server site (according to NIC)
+		; wd 2 RH - not used
+
+;NAMES table:
+; wd 0	Number of entries
+; wd 1	Number of words per entry. (1)
+;This table is used to convert host names into network addresses.
+; Followed by entries, sorted by the host name treated as a vector of
+; signed integers, looking like:
+NMLSIT==:0	; lh	address in file of SITE table entry for this host.
+NMRNAM==:0	; rh	address in file of host name
+		;This name is official if NMRNAM = STLNAM of NMLSIT.
+
+; All names are ASCIZ strings, all letters upper case.
+; The strings are stored before, after and between the tables.
+; All strings are word-aligned, and fully zero-filled in the last word.
+
+;Network addresses are defined as follows, for purposes of this table:
+;    4.9     0
+;    4.8-4.1 network number
+;    Chaos net (number 7):
+;	3.9-2.8	0
+;	2.7-1.1 address (2.7-1.9 subnet, 1.8-1.1 host)
+;    Arpa net (number 12):	(note, old-format Arpanet addresses
+;	3.9-3.8	0	 	never appear in the host table.)
+;	3.7-2.1	Imp
+;	1.9	0
+;	1.8-1.1	Host
+
+;Map the host table file SYSBIN;HOSTS2 > into core.
+;A should contain the page number to start it at.
+;B should contain the channel number to use.
+;We skip if we succeed, returning in RH(A) the number of the first page not used up.
+HSTMAP:	SYSCAL OPEN,[ B ? 5000,,.BII ? ['DSK,,] ? ['HOSTS2] ? [SIXBIT />/] ? ['SYSBIN]]
+	 POPJ P,
+	SYSCAL FILLEN,[B ? 2000,,T]
+	 POPJ P,
+	JUMPLE T,CPOPJ	
+	MOVEI T,1777(T)		;(round up)
+	LSH T,-10.
+	PUSH P,A
+	LSH A,10.
+	MOVEM A,HSTADR		;Save in HSTADR the address where we are mapping the file.
+	POP P,A
+	MOVNS T			;form AOBJN page ptr for CORBLK
+	HRL A,T
+	MOVEM A,HSTABN		; save AOBJN for unmapping
+	SYSCAL CORBLK,[ 1000,,%CBNDR	;Read-Only.
+			1000,,%JSELF	;into self
+			A		;as specified
+			B]		;from file open on channel.
+	 POPJ P,
+	SYSCAL CLOSE,B
+	 POPJ P,
+	MOVE T,HSTADR
+	MOVE T,HSTSID(T)	;Check that first word of file is really HOSTS2.
+	CAME T,[SIXBIT/HOSTS2/]
+	 POPJ P,
+	JRST POPJ1
+
+
+; Unmap HOSTS2.
+HSTUNMAP:
+	MOVE T,HSTABN		; AOBJN page pointer to HOSTS2
+	SYSCAL CORBLK,[	1000,,0		; delete
+			1000,,%JSELF	; from self
+			T ]
+	 JFCL
+	SETZM HSTADR
+	POPJ P,
+
+;Given host number in B, return its host name addr in rh(A) and set sign of A
+;if the host is a Tip.  Skip if successful.  No skip => unknown host.
+;We also return in D the address of the SITES table entry for the host.
+HSTSRC:	MOVE A,B
+	PUSHJ P,STDHST
+	MOVE B,A
+	SKIPN HSTADR		;Fail if the HOSTS2 file isn't loaded.
+	 POPJ P,
+	PUSH P,C
+	PUSH P,E
+        PUSH P,T
+	LDB C,[NW$BYT,,B]	;Get network number
+	MOVE D,HSTADR
+	ADD D,NETPTR(D)         ;get address of NETWORKS table.
+	MOVE TT,0(D)		;get # of entries,
+	MOVE T,1(D)		;and entry size.
+	ADDI D,2		;point at first entry.
+HSTSR1:	CAMN C,NETNUM(D)	;Find appropriate network
+	 JRST HSTSR2
+	ADD D,T
+	SOJG TT,HSTSR1		;no => look at next entry.
+HSTSRX:	POP P,T			;unknown network => return non-skipping.
+	POP P,E
+        POP P,C
+	POPJ P,
+
+HSTSR2:	HRRZ D,NTRTAB(D)	;Get address of ADDRESS table for that network
+	ADD D,HSTADR            ;Binary-search it
+	MOVE C,1(D)		;Words per entry
+	MOVE E,0(D)             ;Number of entries in table
+	MOVEI D,2(D)		;Base address of table
+HSTSR3:	CAIG E,1
+	 JRST HSTSR4		;Search narrowed down to one location
+	MOVE T,E
+	LSH T,-1
+	MOVE TT,T               ;Number of entries in bottom "half" of table
+	IMUL T,C
+	ADD T,D			;Probe point
+	CAMGE B,ADDADR(T)
+	 JRST [	MOVE E,TT	;Move down
+		JRST HSTSR3 ]
+	MOVE D,T		;Move up
+	SUB E,TT
+	JRST HSTSR3
+
+HSTSR4:	CAME B,ADDADR(D)	;Object exists in table?
+	 JRST HSTSRX		;No, take non-skip return
+	HLRZ D,ADLSIT(D)        ;Get address of SITES table entry
+	ADD D,HSTADR
+	HLRZ A,STLNAM(D)	;found the host => get the addr of its name
+	ADD A,HSTADR		;in our address space.
+	HLRZ C,STLSYS(D)
+	ADD C,HSTADR		;also get addr of its system type name
+	MOVE C,(C)
+	CAMN C,[ASCIZ /TIP/]	;If it's a TIP, set sign of A.
+	 TLO A,400000
+	AOS -3(P)               ;Take skip return
+	JRST HSTSRX
+
+] ;END $$HSTMAP
+
+IFN $$SYMGET*$$HOSTNM,[
+
+;Read in a host name.  Works like SYMGET except that the host names file's NAMES table
+;is the table that we search.  We return in A the number of the host, network# in TT.
+HOSTNM:			;Host name reader
+	PUSHJ P,HSTTBP	;E gets aobjn ptr to NAMES table, and set HSTNMF,NTSPCF
+	PUSHJ P,HSTNM1	;Do an interactive symbol table lookup.
+	 POPJ P,	;Failed
+	;TT=0 => A has a number
+	;else => A has file-relative address of SITE table entry
+	JUMPE TT,HOSTN1
+	;JRST HOSTN2
+];$$SYMGET*$$HOSTNM
+
+IFN <$$SYMGET*$$HOSTNM>+<$$SYMLOOK*$$HOSTNM>,[
+;Code to process result of Host-name lookup, returning full address in A
+;with network number extracted into TT.
+;Address was supplied, file-relative pointer to SITES table entry in A.
+HOSTN2:	ADD A,HSTADR
+	SKIPGE TT,NTSPCF	;Explicitly-specified network?
+	 JRST HOSTN4		;No, try all nets we know about
+HOSTN3:	HRRZ E,STRADR(A)	;Find an address for SITE in A on network in TT
+HSTN3A:	ADD E,HSTADR
+	LDB T,[NW$BYT,,ADDADR(E)]
+	CAMN T,TT
+	 JRST [	MOVE A,ADDADR(E)	;This is it
+		JRST POPJ1 ]
+	HRRZ E,ADRCDR(E)
+	JUMPN E,HSTN3A		;Try site's next address
+	POPJ P,			;Not found
+
+HOSTN4:	;Find a network address for this site
+IFN $$CHAOS,[			;Chaos net is preferred, try it first
+	MOVE TT,[SQUOZE 0,CHAOSP]	;If this machine has it
+	.EVAL TT,
+	 MOVEI TT,0
+	JUMPE TT,HOSTN5
+	MOVEI TT,NW%CHS
+	PUSHJ P,HOSTN3
+	 CAIA
+	  JRST POPJ1
+HOSTN5:
+];$$CHAOS
+IFN $$ARPA,[
+	MOVE TT,[SQUOZE 0,NETP]	;If this machine has Arpa net
+	.EVAL TT,
+	 MOVEI TT,0
+	JUMPE TT,HOSTN6
+	MOVEI TT,NW%ARP
+	PUSHJ P,HOSTN3
+	 CAIA
+	  JRST POPJ1
+HOSTN6:
+];$$ARPA
+	POPJ P,			;Host exists, but not on any network we know about
+
+;Number was supplied, it is in A.  Determine what network it is on.
+HOSTN1:	LDB TT,[NW$BYT,,A]	;Maybe network was specified explicitly as part of number
+	JUMPN TT,[		;Yes, make sure is on a network we know about
+		  IRPS FLAG,,[$$CHAOS $$ARPA]NUM,,[NW%CHS NW%ARP]
+IFN FLAG,[	   CAIN TT,NUM
+		    JRST POPJ1
+];FLAG
+		   TERMIN ]
+	SKIPGE TT,NTSPCF	;Maybe network was specified by name
+IFN $$ARPA, MOVEI TT,NW%ARP	;No, default to Arpa network if we support that
+.ELSE [
+IFN $$CHAOS, MOVEI TT,NW%CHS	;Otherwise to Chaos network if we support that
+.ELSE .ERR SCREW
+]
+	DPB TT,[NW$BYT,,A]
+	JRST POPJ1
+];<$$SYMGET*$$HOSTNM>+<$$SYMLOOK*$$HOSTNM>
+
+IFN $$SYMLOOK*$$HOSTNM,[
+
+;HSTLOOK takes args like SYMLOOK and looks in the HOSTS2 NAMES table.
+;It returns the same things that HOSTNM returns.  It clobbers E, T, TT.
+;B gets what SYMLOOK returns, pretty much.
+
+HSTLOOK:
+	PUSHJ P,HSTTBP	;E gets aobjn ptr to NAMES table, and set HSTNMF,NTSPCF
+	PUSHJ P,SYML1	;Do a non-interactive symbol table search.
+	 POPJ P,
+	MOVE A,T	;If the input was a number
+	AOJE B,HOSTN1	;go canonicalize it
+	HLRZ A,NMLSIT-1(B)	;Else B points at a NAMES table word, so get
+	SOJA B,HOSTN2	;the SITE table entry address, go find appropriate net address
+];$$SYMLOOK*$$HOSTNM
+
+IFN <$$SYMGET\$$SYMLOOK>*$$HOSTNM,[
+
+;Put in E an aobjn pointer to the HOSTS2 file's NAMES table.  Also set HSTNMF.
+HSTTBP:	SKIPN E,HSTADR
+	 NWLOSS
+	ADD E,NAMPTR(E)         ;Address of NAMES table
+	MOVE T,1(E)		;Make sure words per entry is 1
+	CAIE T,1
+	 NWLOSS
+	MOVN T,0(E)             ;Negative number of entries
+	HRL E,T
+	ADDI E,2		;E now has an aobjn pointer to the NAMES table.
+	SETOM HSTNMF		;Say that each address needs HSTADR added to it.
+	SETOM NTSPCF'		;Say that no network explicitly specified
+	POPJ P,
+];<$$SYMGET\$$SYMLOOK>*$$HOSTNM
+
+IFN $$SYMGET+$$ANALYZE,[
+
+;TYPE A CRLF.  CLOBBER T.
+CRLF:	MOVEI T,15
+	PUSHJ P,PUTCHR
+	MOVEI T,12
+	PUSHJ P,PUTCHR
+	POPJ P,
+
+;TYPE ASCIZ STRING POINTED TO BY TT, CLOBBER T.
+ZTYPE:	HRLI TT,440700
+ZTYPE0:	ILDB T,TT
+	JUMPE T,CPOPJ
+	PUSHJ P,PUTCHR
+	JRST ZTYPE0
+]
+
+IFN $$HSTSIX,[
+
+;Given a host number in A, returns a sixbit abbreviation of
+;the name of the host, also in A.  Clobbers only T and TT.
+;You better call HSTMAP before this.
+;Always skip returns.
+
+HSTSIX:	PUSH P,B
+	PUSHJ P,STDHST
+	PUSH P,C
+	PUSH P,D
+	PUSH P,E
+	MOVE B,A
+	PUSHJ P,HSTSRC          ;Find the SITES table entry for this host.
+	 JRST HSTSX9            ;none => unknown host.  Use HSTnnn.
+	SUB D,HSTADR            ;D gets addr of SITES table entry relative to file
+	MOVE B,HSTADR           ;(for comparison with LH's of NAMES table words).
+	ADD B,NAMPTR(B)         ;Get address of NAMES table.
+	MOVE T,1(B)		;Make sure 1 word per entry
+	CAIE T,1
+	 NWLOSS
+	MOVE T,0(B)             ;T gets number of entries in the table.
+	SETOB C,E               ;E will get the address of the
+                                ; longest name shorter than 7 chars, C its length.
+	HRRZ TT,A               ;Check out the official name first
+	AOJA B,HSTSX0
+
+HSTSX1:	ADDI B,1                ;B points at next untried NAMES table entry.
+	HLRZ TT,NMLSIT(B)
+	CAME TT,D               ;Does this name name the host we are serving?
+	 JRST HSTSX4
+	HRRZ TT,NMRNAM(B)       ;If so, how long is this name?
+	ADD TT,HSTADR
+HSTSX0:	HRLI TT,440700
+	PUSH P,TT
+	PUSH P,TT
+	SETZ A,
+HSTSX2:	ILDB TT,(P)
+	JUMPE TT,HSTSX3
+	AOJA A,HSTSX2
+
+HSTSX3:	POP P,TT	;Flush garbage
+	POP P,TT	;Restore pointer to name
+	CAIG A,6	;Fit in 6 characters?
+	 CAMG A,C	;and longer than the previous one?
+	  JRST HSTSX4
+	HRRZ E,TT	;Yes, save its name's address.
+	MOVE C,A	;and the length of that one
+HSTSX4:	SOJG T,HSTSX1	;look at all the names in the table.
+	JUMPGE E,HSTSX5	;Jump if found a reasonable name
+	ADD D,HSTADR	;No short name, truncate official one
+	MOVEI C,"-	;Also, will remove hyphens from it
+	HLRZ E,STLNAM(D)
+	ADD E,HSTADR	;Pointer to name
+HSTSX5:	MOVE B,E
+	HRLI B,440700	;Get BP to name string.
+;B has a B.P. to the name string we are going to use.
+;C has "- if we should remove all hyphens from it, otherwise C has a number from 1 to 6.
+;Convert the name string to SIXBIT in A.
+	MOVE D,[440600,,A]
+	SETZ A,		;Convert name to SIXBIT word in A
+HSTSX6:	ILDB T,B
+	JUMPE T,HSTSX7	;Stop if name string runs out (nice, it all fits).
+	CAMN T,C	;Remove hyphens if requested to
+	 JRST HSTSX6	;Note C has number from 1 to 6 or "-
+	SUBI T,40
+	IDPB T,D
+	TLNE D,770000	;Stop after getting one full word.
+	 JRST HSTSX6
+HSTSX7:	LDB T,D		;If last character is a hyphen, flush it.
+	CAIN T,'-
+	 MOVEI T,0
+	DPB T,D
+HSTSX8:	POP P,E
+	POP P,D
+	POP P,C
+	POP P,B
+	JRST POPJ1
+
+;Have to do it numerically.  Depends on network.
+HSTSX9:	LDB TT,[NW$BYT,,B]
+	CAIN TT,NW%CHS
+	 MOVSI A,'CHS
+	CAIN TT,NW%ARP
+	 JRST [ MOVSI A,'HST
+		LDB T,[112000,,B]	;Imp
+		CAIGE T,100
+		 TRNN B,774
+		  JRST .+1		;Doesn't fit in old-style
+		ANDI B,3
+		LSH B,6         	;Host
+		DPB T,[000600,,B]	;Convert to old-style
+		JRST .+1 ]
+	HRRI A,'000		;If host number less than 3 digits, pad with zeroes
+	TLZ B,(.BM (NW$BYT))	;Host number within network
+	SETZB T,TT		;T gets sixbit, TT gets char mask
+	PUSHJ P,HSTS9A	
+	ANDCM A,TT		;Clear characters from A to be clobbered from T
+	IOR A,T			;Bring in number
+	JRST HSTSX8
+
+HSTS9A:	IDIVI B,8
+	HRLM C,(P)
+	SKIPE B
+	 PUSHJ P,HSTS9A
+	HLRZ C,(P)
+	LSH T,6
+	IORI T,'0(C)
+	LSH TT,6
+	IORI TT,77
+	POPJ P,
+];$$HSTSIX
+
+;;; Standardize host number in A.  Clobber T.
+;;; No skip-return
+
+STDHST:	TLNE A,777000		;Network number specified?
+	 JRST STDHS1		;Yes, OK
+IFN $$ARPA, TLO A,NW%ARP_9	;No, default to some net we know about
+.ELSE IFN $$CHAOS, TLO A,NW%CHS_9
+STDHS1:
+IFN $$ARPA,[
+	LDB T,[NW$BYT,,A]	;If Arpanet, standardize to new format
+	CAIN T,NW%ARP
+	 TDNE A,[177777000]
+	  POPJ P,
+	LDB T,[000600,,A]	;Imp
+	LDB A,[060200,,A]	;Host
+	DPB T,[112000,,A]
+	TLO A,NW%ARP_9
+];$$ARPA
+	POPJ P,
+
+IFN $$OWNHST,[
+;;; Given a network number in A (which must be a netwrok this program is
+;;; conditionally assembled to support), return this machine's own
+;;; address on that network, in A.  Clobber T.  Skips unless host not on that net.
+OWNHST:
+IFN $$ARPA,[
+	CAIE A,NW%ARP
+	 JRST OWNHS1
+	SYSCAL NETHST,[MOVEI -1 ? MOVEM A ? MOVEM A]	;Get own Arpanet address
+	 POPJ P,		;must not be on Arpanet
+	PUSHJ P,STDHST		;System doesn't return number in standard format
+	JRST POPJ1
+
+OWNHS1:	];$$ARPA
+IFN $$CHAOS,[
+	CAIE A,NW%CHS
+	 JRST OWNHS2
+	MOVE A,[SQUOZE 0,MYCHAD]
+	.EVAL A,
+	 POPJ P,		;must not be on Chaos net
+	TLO A,NW%CHS_9
+	JRST POPJ1
+
+OWNHS2:	];$$CHAOS
+	POPJ P,		;Some network I don't know about
+];$$OWNHST
+
+;;; Arpanet connection routines
+IFN $$ARPA,[
+IFN $$ICP,[
+  $$CONNECT==1		;necessary subroutine
+
+; ARPA NETWORK ICP ROUTINE
+;
+;Call:	MOVEI A,pin	;first of group of 3 channels to use (nonconsecutively numbered)
+;			;PIN itself is used only for the ICP.  PIN+1 is unused.
+;			;PIN+2 and PIN+3 are the in and out sides of the TELNET connection.
+;	MOVEI B,host	;host number to connect to
+;	MOVEI C,frnsoc	;foreign socket number to icp through
+;	MOVE D,[imode,,omode] ;input and output modes as in OPEN on NET device.
+;	PUSHJ P,NETWRK"ARPICP	;do it.  Clobbers A,B,C,D,E,T,TT.
+;	 failed		;A holds the channel which lost.  If $$ERRHAN, ANALYZ was called.
+;	succeeded
+
+ARPICP:	MOVEI E,0	;synchronous mode
+ICPPHS:	PUSHJ P,ICP1	;This is also the phase table
+	PUSHJ P,ICP2	
+	PUSHJ P,ICP3
+	JRST POPJ1
+
+ICPASN:		;asynchronous mode.  Same args except E is phase (initially 1).
+	SKIPL E		;keep calling back with same ACs as returned, until E is zero.
+	 HRREI E,-3	;asynchronous init
+	XCT ICPPHS+3(E)	;call appropriate phase
+	AOJA E,POPJ1	;and advance to next
+
+;First phase - connect to ICP socket.
+ICP1:	PUSH P,D	;Assume that all sockets were closed, so ITS has deallocated any
+	SETZM SKTBAS	;old set of sockets, and we must ask it for a new set.
+	HRROI D,040044	;asynchronous, 32-bit read
+	PUSHJ P,ARPCON	;initiate connection
+	 JRST POP2J	;lose
+	POP P,D		;win
+	POPJ P,
+
+;Second phase - get server socket number and connect up.
+ICP2:	PUSHJ P,CONFIN	;finish ICP connection
+	 JRST POP1J	;lose
+	SYSCAL IOT,[MOVEI (A) ? MOVEM C]	;get foreign socket number
+	 .LOSE %LSSYS	;due to bug in NCP socket allocation, don't close contact pin yet
+	ADDI A,2	;connect our read pin
+	ADDI C,1	;to foreign write pin
+	PUSH P,D
+	HLROS D		;using input mode, asynchronously
+	PUSHJ P,ARPCON
+	 JRST POP2J	;lose
+	ADDI A,1	;connect our write pin
+	SUBI C,1	;to foreign read pin
+	HRRO D,(P)	;using output mode, asynchronously
+	PUSHJ P,ARPCON
+	 JRST POP2J	;lose
+	POP P,D
+	POPJ P,
+
+;Third phase - finish up connections.
+ICP3:	PUSHJ P,CONFIN	;finish write connection
+	 JRST POP1J
+	SUBI A,1
+	PUSHJ P,CONFIN	;finish read connection
+	 JRST POP1J
+	SYSCAL CLOSE,[MOVEI -2(A)]	;and now close contact pin
+	 .LOSE %LSSYS
+	POPJ P,
+
+] ;END IFN $$ICP
+
+IFN $$SERVE,[
+
+;Call:	MOVEI A,pin	;first channel number of three consecutive ones.
+;			;the first is the ICP listen channel,
+;			;the second is the input channel for the TELNET connection,
+;			;the third is the output channel for it.
+;	MOVEI B,icpsoc	;socket to listen for an ICP on.
+;	MOVE C,[imode,,omode] ;input and output modes as in OPEN on NET device.
+;	PUSHJ P,NETWRK"ARPSRV	;Listen for and accept an ICP.
+;	 timed out.
+;	succeeded.  B has number of foreign host.  
+;
+;If $$SYSDBG is 0, then connections from hosts locked out by SYSDBG are
+;refused, and SERVE fails to skip.
+;If $$SYSDBG is 1, then SERVE accepts all connections but returns in C
+;a value which is nonzero if the foreign host ought to be locked out by SYSDBG.
+
+;Clobbers A, D, T and TT.
+
+$$CONNECT==1	;We call ARPCON.
+
+ARPSRV:	SYSCAL SSTATU,[MOVEM TT ? MOVEM SYSDBG']
+	 .LOSE %LSSYS
+	MOVEI TT,377777		;If debugging, wait forever.
+	SKIPN DEBUG
+	 MOVEI TT,30.*60.	;Otherwise time out after 60 sec.
+ARPSR1:	SYSCAL OPEN,[ A ? 5000,,40065 ? [SIXBIT/NET/] ? B]
+	 JRST ARSVLS		;Open a channel to receive the RFC with.
+	SYSCAL WHYINT,[ A ? 2000,,T ? 2000,,T]
+	 JRST ARSVLS
+ARPSR2:	CAIN T,%NSRFC		;Have we an RFC to accept?
+	 JRST ARPSR3
+	SKIPN DEBUG		;No => OK only if debugging
+	 POPJ P,		;(so you can start your server before starting the user).
+	.CALL CONFIC		;So wait for it to change state and look again.
+	 JRST ARSVLS		;[They also serve who hang and wait]
+	JRST ARPSR2		;TRY AGAIN
+
+ARPSR3:	HLRZ D,C
+	TLO D,400000		;D gets mode for our input socket.
+	PUSH P,C
+	SYSCAL RCHST,[ A ? 2000,,C ? 2000,,C ? 2000,,C ? 2000,,B]
+	 .LOSE %LSFIL		;C gets foreign socket ICP'd with.
+				;B now has host number of host that ICP'd to us.
+	TLZ B,777000		;Make sure network number field is 0
+IFE $$SYSDBG,[
+	SKIPL T,SYSDBG		;If system being debugged, may refuse ICP
+	 JRST ARPSR4
+	ASH T,-9		;Set to -1000*host# allowed in
+	ADD T,B			;Zero if this guy allowed in
+	JUMPN T,ARSVL2
+ARPSR4:	];$$SYSDBG
+;remember that TT has the "sleep time" arguments for NETBLKs, including CONFI1.
+	SYSCAL NETAC,A
+	 JRST ARSVL1
+	ADDI A,1		;Channel to make input connection on.
+	ADDI C,3		;Foreign socket ICP'd with, plus 3, is target for our input.
+	SETZM SKTBAS'
+	PUSH P,TT		;See comment 6 lines above!
+	PUSHJ P,ARPCON
+	 JRST [ POP P,TT ? JRST ARSVL1 ]
+	MOVE TT,SKTBAS		;Get socket number of our input connection
+	ADD TT,A
+	SYSCAL IOT,[1000,,-1(A) ? TT]
+	 .LOSE %LSFIL		;Send our lower socket # to the ICPer.
+	SYSCAL CLOSE,[1000,,-1(A)]	;Don't need ICP socket any more.
+	 .LOSE %LSFIL
+	HRRZ D,-1(P)		;Saved C
+	HRLI D,400000
+	ADDI A,1		;Now open our output connection
+	SUBI C,1		;to a foreign socket 1 smaller than that used for our input.
+	PUSHJ P,ARPCON
+	 JRST [ POP P,TT ? JRST ARSVL1 ]
+	POP P,TT
+	POP P,C
+	PUSHJ P,CONFI1		;Then wait for the two connections to be finished.
+	 JRST ARSVLS		;TT still has the time period (or by now maybe the
+	SUBI A,1		;time to wait until).
+	PUSHJ P,CONFI1
+	 JRST ARSVLS
+IFN $$SYSDBG,[
+	SKIPL C,SYSDBG		;If system being debugged, may disallow
+	 JRST [ SETZ C, ? JRST ARPSR5 ]
+	ASH C,-9		;Set to -1000*host# allowed in
+	TLZ B,777000		;Clear network number from host number
+	ADD C,B			;Zero if this guy allowed in
+ARPSR5:	];$$SYSDBG
+	EXCH A,B		;Fix host# returned in B
+	PUSHJ P,STDHST
+	EXCH A,B
+	JRST POPJ1
+
+ARSVL2:	SYSCAL CLOSE,A
+	 .LOSE %LSFIL
+ARSVL1:	POP P,C
+ARSVLS:	SKIPE DEBUG
+	 NWLOSS
+	POPJ P,
+
+] ;END IFN $$SERVE
+
+IFN $$CONNECT,[
+
+.SCALAR SKTBAS		; ne 0 => socket number of pin zero
+
+; ARPA NETWORK CONNECT ROUTINE
+;
+;Call:	MOVEI A,pin	;local its chnl and relative socket number to connect
+;	MOVE B,host	;host number to connect to
+;	MOVEI C,frnsoc	;foreign socket number to connect to
+;	MOVEI D,mode	;mode to open in (RH).  Bit 4.9=1 => asynchronous
+;	PUSHJ P,NETWRK"ARPCON
+;	 lossage	;you may call ANALYZE to get an error message.
+;			;If $$ERRHAN is nonzero, we call ANALYZE for you.
+;
+;Clobbers only T and TT.  If using asynchronous mode,
+;call CONFIN later (with pin number in A) to finish up.
+;
+; NOTE:  AT PRESENT YOU MUST CONNECT THE LOWEST NUMBERED
+; PIN FIRST, DUE TO BUGS IN SOCKET-SET ASSIGNMENT IN NCP.
+
+ARPCON:	MOVE T,A		;Open operand word
+	HRL T,D			;is mode,,channel
+	SKIPN TT,SKTBAS		;get base of local socket group
+	 TLO T,10		;not yet allocated, use gensoc mode
+	ADD TT,A		;get local sock number to be opened
+	TLZ B,777000	;*** TEMPORARILY CLEAR NETWORK NUMBER UNTIL ITS IS FIXED ***
+	MOVEM B,ARPHST'		;Save last Arpanet host hacked for ANALYZE
+	.CALL [	SETZ		;open 'er up
+		SIXBIT/OPEN/
+		T		;mode,,channel
+		['NET,,]	;arpanet device
+		TT		;local socket
+		C		;foreign socket
+		SETZ B ]	;foreign host
+IFN $$ERRHAN,JRST ANALNS
+.ELSE	 POPJ P,
+	SKIPE SKTBAS
+	 JRST CONNE0
+	SYSCAL RCHST,[A ? MOVEM T ? MOVEM T] ;Get local socket, from first pin
+	 .LOSE %LSSYS
+	SUB T,A			;get socket base
+	MOVEM T,SKTBAS
+CONNE0:	JUMPL D,POPJ1		;asynchronous, return now
+				;otherwise, drop into CONFIN
+
+;Call:	MOVEI A,pin		;pin number of connection
+;	MOVEI D,flags		;20 if listening, 0 if not.  Left over from call to ARPCON.
+;	PUSHJ P,CONFIN		;finish connection
+;	 lossage - you may call ANALYZE to get an error message
+;	win - clobbers only T and TT
+
+CONFIN:	MOVEI TT,30.*60.	;wait at most one minute
+	SKIPE DEBUG		;In debug mode, wait forever
+	 MOVSI TT,177777
+CONFI1:	MOVEI T,%NSRFS		;Which state we started out in depends
+	TRNE D,20		;on whether we were listening or initiating.
+	 MOVEI T,%NSLSN
+	.CALL CONFIC		;Wait up to time in TT to leave state in T.
+	 .LOSE %LSSYS
+	CAIE T,%NSOPN		;check good state
+	 CAIN T,%NSINP
+	  JRST POPJ1
+	CAIE T,%NSRFC
+	 CAIN T,%NSCLI
+	  JRST POPJ1
+IFN $$ERRHAN,JRST ANALNS	;losing state
+.ELSE	POPJ P,
+
+CONFIC:	SETZ		;wait for connection to open up
+	'NETBLK
+	A
+	T		;wait until not in state in T
+	TT
+	SETZM T		;return state
+
+IFN $$ERRHAN,[
+ANALNS:	PUSH P,B	;ANALYZE AND THEN POPJ
+	PUSH P,C
+	JRST ANALN1
+] ;END IFN $$ERRHAN
+];$$CONNECT
+];$$ARPA
+
+;;; Chaos network connection routines
+IFN $$CHAOS,[
+IFN $$SERVE,[
+
+;Call:	MOVEI A,chnl	;Input channel number.  That+1 is output channel.
+;	MOVEI C,contact name	;an ASCIZ string
+;	MOVEI D,window size
+;	PUSHJ P,NETWRK"CHASRV
+;	 lossage	;you may call ANALYZE to get an error message.
+;			;If $$ERRHAN is nonzero, we call ANALYZE for you.
+;
+;Returns in B the number of the foreign host.
+;
+;If $$SYSDBG is 0, then connections from all hosts are
+;refused, and SERVE fails to skip.
+;If $$SYSDBG is 1, then SERVE accepts all connections but returns in C
+;a value which is nonzero if the foreign host ought to be locked out by SYSDBG.
+
+;Clobbers A, D, T and TT.
+
+$$CONNECT==1	;We call CHALSN.
+
+CHASRV:	SYSCAL SSTATU,[MOVEM TT ? MOVEM SYSDBG']
+	 .LOSE %LSSYS
+	MOVEI TT,%COLSN
+	PUSHJ P,CHACN0		;Start things up
+	 POPJ P,		;Lost
+;Listen done.  Check host number, return OPN or CLS
+	CAIE TT,%CSRFC		;Have we an RFC to accept?
+	 POPJ P,		;No, something went wrong
+	SYSCAL PKTIOT,[MOVEI (A) ? MOVEI PKTBUF]	;Get the RFC packet
+	 .LOSE %LSSYS
+	LDB B,[$CPKSA+PKTBUF]	;Get source host
+	TLO B,NW%CHS_9		;Including network number
+IFE $$SYSDBG,[			;Reject rfc if system down
+	SKIPL SYSDBG
+	 JRST CHASV1
+	MOVEI T,%COCLS		;Return CLS
+	DPB T,[$CPKOP+PKTBUF]
+	PUSH P,C
+	MOVEI C,[ASCIZ/System not up/]
+	PUSHJ P,CHSTNG
+	POP P,C
+	SYSCAL PKTIOT,[MOVEI 1(A) ? MOVEI PKTBUF]
+	 .LOSE %LSSYS
+	JRST CHASRV		;Try again
+
+CHASV1:	];$$SYSDBG
+	MOVEI T,%COOPN		;Return Open
+	DPB T,[$CPKOP+PKTBUF]
+	SYSCAL PKTIOT,[MOVEI 1(A) ? MOVEI PKTBUF]
+	 .LOSE %LSSYS
+IFN $$SYSDBG,[
+	SKIPL C,SYSDBG		;If system being debugged, may disallow
+	 JRST [ SETZ C, ? JRST POPJ1 ]
+	;Unlike Arpanet, we don't have selective disallow, just disallow everyone
+];$$SYSDBG
+	JRST POPJ1
+] ;END IFN $$SERVE
+
+IFN $$CONNECT,[
+;CHAOS NETWORK CONNECT ROUTINE
+;
+;Call:	MOVEI A,chnl	;Input channel number.  That+1 is output channel.
+;	MOVEI B,host	;host number to connect to
+;	MOVEI C,contact name	;an ASCIZ string
+;	MOVEI D,window size
+;	PUSHJ P,NETWRK"CHACON
+;	 lossage	;you may call ANALYZE to get an error message.
+;			;If $$ERRHAN is nonzero, we call ANALYZE for you.
+;
+;Clobbers only T and TT.
+;
+;CHALSN is the same as CHACON except that it uses LSN instead of RFC.
+; B is host number it must be from, or 0 if any host is acceptable.
+
+.VECTOR PKTBUF(%CPMXW)		;Buffer used by Open, Close, and Analyze
+
+CHACON:	MOVEI TT,%CORFC
+	PUSHJ P,CHACN0		;Start things up
+	 POPJ P,		;Lost
+	CAIE TT,%CSOPN
+	 JRST CHACNL		;Started but didn't get open
+	JRST POPJ1		;CHACON done
+
+CHACN0:	SETZM PKTBUF
+	MOVE T,[PKTBUF,,PKTBUF+1]
+	BLT T,PKTBUF+%CPMXW-1	;For extra luck, clear the packet buffer
+	DPB B,[$CPKDA+PKTBUF]	;Destination host
+	DPB TT,[$CPKOP+PKTBUF]
+	PUSHJ P,CHSTNG		;Store string from C
+	SYSCAL CHAOSO,[MOVEI (A) ? MOVEI 1(A) ? D]	;Assign Chaos index
+	 JRST CHACNL
+	SYSCAL PKTIOT,[MOVEI 1(A) ? MOVEI PKTBUF]	;Send RFC or LSN
+	 .LOSE %LSFIL
+	MOVEI TT,30.*30.	;30-second timeout
+	SKIPE DEBUG
+	 MOVSI TT,177777	;Or infinite, in debug mode
+	LDB T,[$CPKOP+PKTBUF]
+	CAIE T,%COLSN		;Get the boring state
+	 SKIPA T,[%CSRFS]
+	  MOVEI T,%CSLSN
+	SYSCAL NETBLK,[MOVEI 1(A) ? T ? TT ? MOVEM TT]	;Await completion of connection
+	 JRST CHACNL
+	JRST POPJ1		;Return to second half
+
+CHALSN: MOVEI TT,%COLSN
+	PUSHJ P,CHACN0		;Start things up
+	 POPJ P,		;Lost
+;Listen done.  Check host number, return OPN or CLS
+	CAIE TT,%CSRFC		;Should be RFC into LSN
+	 JRST CHACNL
+	SYSCAL PKTIOT,[MOVEI (A) ? MOVEI PKTBUF]	;Get the RFC packet
+	 .LOSE %LSFIL
+	LDB T,[$CPKSA+PKTBUF]	;Check source host
+	CAIE T,(B)		;Not looking at network number
+	 JUMPN B,CHALS2		;Jump if doesn't match
+	MOVEI T,%COOPN		;Matches or we don't care, return open
+	DPB T,[$CPKOP+PKTBUF]
+	SYSCAL PKTIOT,[MOVEI 1(A) ? MOVEI PKTBUF]
+	 .LOSE %LSFIL
+	JRST POPJ1
+
+CHALS2:	MOVEI T,%COCLS		;Return CLS
+	DPB T,[$CPKOP+PKTBUF]
+	PUSH P,C
+	MOVEI C,[ASCIZ/You are the wrong host./]
+	PUSHJ P,CHSTNG
+	POP P,C
+	SYSCAL PKTIOT,[MOVEI 1(A) ? MOVEI PKTBUF]
+	 .LOSE %LSFIL
+	JRST CHALSN		;Try again
+
+CHACNL:	;CHACON or CHALSN lost
+IFN $$ERRHAN, JRST ANALNS
+.ELSE	POPJ P,
+
+;Store string from C into PKTBUF. Bash T, TT
+CHSTNG:	PUSH P,B
+	PUSH P,C
+	MOVE B,[440800,,PKTBUF+%CPKDT]
+	MOVEI TT,0
+	HRLI C,440700
+CHSTG1:	ILDB T,C
+	JUMPE T,CHSTG2
+	IDPB T,B
+	CAIGE TT,%CPMXC-1
+	 AOJA TT,CHSTG1
+CHSTG2:	DPB TT,[$CPKNB+PKTBUF]
+	POP P,C
+	POP P,B
+	POPJ P,
+] ;END IFN $$CONNECT
+] ;END IFN $$CHAOS
+
+IFN $$ANALYZE,[
+
+; Network error analysis.
+
+;Call:	MOVEI A,pin		;channel number that is losing
+;	PUSHJ P,ANALYZE
+;	 .VALUE			;always skip-returns
+;
+;Clobbers only T and TT.  Uses the PUTCHR routine to type out its messages.
+;Does not type a crlf after the message.
+
+.VECTOR WHYINT(4)		;Cruft returned from WHYINT
+
+ANALYZE:
+	AOS (P)
+	PUSH P,B
+	PUSH P,C
+ANALN1:	SYSCAL USRVAR,[MOVEI %JSELF ? MOVEI .RIOC(A) ? MOVEM T ]	;Channel open?
+	 .LOSE %LSSYS
+	JUMPE T,ANALN2		;No, don't clobber error code with WHYINT
+	SYSCAL WHYINT,[A ? MOVEM T ;Get device type
+			 MOVEM WHYINT ? MOVEM WHYINT+1 ? MOVEM WHYINT+2 ? MOVEM WHYINT+3 ]
+	 .LOSE %LSFIL
+IFN $$ARPA,[
+	CAIN T,%WYNET
+	 JRST ANAL1		;Arpa network channel open, further info available
+];$$ARPA
+IFN $$CHAOS,[
+	CAIN T,%WYCHA
+	 JRST ANLCHA		;Chaos net channel open, further info available
+];$$CHAOS
+ANALN2:	SYSCAL USRVAR,[MOVEI %JSELF ? MOVEI .RIOS(A) ? MOVEM T] ;Get I/O status wd for channel
+	 .LOSE %LSSYS
+	LDB TT,[220600,,T]	;only the open-loss code is available
+	CAIN TT,%EFLDV		;Device full (this one applies to both Arpanet & Chaos net)
+	 JRST [	JSP TT,SPEAK
+		ASCIZ \All sockets in use.\ ]
+	CAIN TT,%ENRDV		;Device not ready
+	 JRST [	JSP TT,SPEAK
+		ASCIZ \Network down.\ ]
+IFN $$ARPA,[
+	CAIE TT,%ENAPP		;Other end of pipeline gone, or
+	CAIN TT,%ENSDR		;No such directory
+	 JRST [ ;Host is down, say why.
+		MOVE T,ARPHST	;Go print status for last host hacked, is probably right one
+		JRST ANALC1 ]	;Unfortunately, channel not open, can't get right host
+	CAIN TT,%ESCO		;Self-contradictory open
+	 JRST [	JSP TT,SPEAK
+		ASCIZ \Connection cannot be opened because of inconsistent byte sizes.\ ]
+];$$ARPA
+	SYSCAL IOPUSH,[A]	;Some other error - get ITS error message
+	 .LOSE %LSSYS
+	.CALL [	SETZ
+		SIXBIT/OPEN/
+		MOVEI (A)	;here we rely on .UAI=0
+		['ERR,,]
+		MOVEI 3		;Status from T
+		SETZ T ]
+	 .LOSE %LSFIL
+	MOVEI TT,[ASCIZ\? Internal error - \]
+	PUSHJ P,ZTYPE
+ANAL0:	SYSCAL IOT,[MOVEI (A) ? MOVEM T] ;copy error message to output device
+	 .LOSE %LSSYS
+	CAIGE T,40
+	 JRST ANALYX
+	PUSHJ P,PUTCHR
+	JRST ANAL0
+
+ANALYX:	SYSCAL IOPOP,[A]
+	 .LOSE %LSSYS
+ANALX:	POP P,C
+	POP P,B
+	POPJ P,
+
+IFN $$ARPA,[
+; Arpanet channel still open - further information available
+
+ANAL1:	HRRZ TT,WHYINT		;get socket state
+	JUMPE TT,ANALC .SEE %NSCLS	;connection closed
+	CAIN TT,%NSRFS		;state is %NSRFS => we must have timed out at CONFIN.
+	 JRST ANALT
+	PUSH P,TT
+	MOVEI TT,[ASCIZ\? Socket entered illegal state #\]
+	PUSHJ P,ZTYPE
+	LDB T,[030300,,(P)]
+	SKIPE T
+	 PUSHJ P,[ ADDI T,"0 ? JRST PUTCHR ]
+	POP P,T
+	ANDI T,7
+	ADDI T,"0
+	PUSHJ P,PUTCHR
+	JRST ANALX
+
+ANALT:	MOVEI TT,[ASCIZ /Attempt to open connection timed out./]
+];$$ARPA
+SPEAK:	PUSHJ P,ZTYPE		;send message from TT
+	JRST ANALX		; and return
+
+IFN $$ARPA,[
+
+;Say why connection was closed
+ANALC:	.CALL [	SETZ		;Get host number and close reason
+		SIXBIT/RCHST/
+		MOVEI (A)
+		MOVEM T		;device name
+		MOVEM T		;local socket
+		MOVEM T		;foreign socket
+		MOVEM T		;1.1-1.9 foreign host
+		MOVEM TT	;IMP down,,state
+		MOVEM TT	;Open mode
+		SETZM TT ]	;1.1-2.9 Close reason
+	 .LOSE %LSSYS
+	HRRZS TT
+	CAIL TT,LCLSTB
+	 SETO TT,
+	MOVE TT,CLSTAB(TT)	;get asciz close reason
+	PUSH P,T		;save host number
+	PUSH P,TT
+	PUSHJ P,ZTYPE
+	POP P,TT
+	POP P,T
+	JUMPGE TT,ANALX		;return if host is up
+	PUSHJ P,CRLF		;CRLF between down message and down reason
+ANALC1:	SYSCAL NETHST,[T ? MOVEM T]	;get information about why host down
+	 .LOSE %LSSYS
+	MOVE B,T
+	TRZ T,777760		;RH gets just reason down
+	TLNE T,2000		;skip if down
+	 SETO T,	  
+	MOVE TT,DEDTAB(T)	;get asciz string describing situation
+	PUSHJ P,ZTYPE
+IFE $$UPTM,JRST ANALX
+IFN $$UPTM,JRST ANALTM
+
+IFN $$UPTM,[
+
+;OPTIONALLY, SAY WHEN THE IMP THINKS THE HOST WILL BE BACK UP.
+ANALTM:	ANDI B,177760		; get time back
+	JUMPE B,ANALX		; flush if nothing
+	CAIN B,177740		; -2 means unknown future time
+	 JRST ANALX		; There isn't anything useful to say about this.
+	MOVEI TT,[ASCIZ /  Host is expected back up /]
+	PUSHJ P,ZTYPE
+	CAIN B,177760			; -1 means more than a week
+	 JRST [	MOVEI TT,[ASCIZ /over a week from now./]
+		JRST SPEAK]
+	LDB T,[150300,,B]		; get day of week
+	LDB TT,[100500,,B]		; get hours time
+	SUBI TT,5			; EST/GMT offset
+	PUSH P,B
+	.RYEAR B,			; get time info
+	TLNE B,100000			; daylight losing time?
+	 AOSL TT			; yes, go ahead an hour
+	  JUMPGE TT,NODAY		; easy way out
+	ADDI TT,24.			; move up a day
+	SOSGE T				; and days back
+	 MOVEI T,6			; back to Sunday
+NODAY:	MOVE B,TT			; Save real hours
+	MOVE TT,DOWTAB(T)		; Get string describing day of week.
+	PUSHJ P,ZTYPE
+	MOVEI TT,[ASCIZ / at /]
+	PUSHJ P,ZTYPE
+	MOVE T,B			; get hours time
+	PUSHJ P,2DTYPE
+	MOVEI T,":
+	PUSHJ P,PUTCHR
+	POP P,B				; Restore original time
+	LDB T,[040400,,B]		; get minutes/5
+	IMULI T,5.			; make into real minutes
+	PUSHJ P,2DTYPE
+	MOVEI TT,[ASCIZ/ EST./]
+	.RYEAR T,
+	TLNE T,100000
+	 MOVEI TT,[ASCIZ/ EDT./]
+	PUSHJ P,ZTYPE
+	JRST ANALX
+
+;TYPE NUMBER IN T AS TWO DECIMAL DIGITS.
+2DTYPE:	IDIVI T,10.			; split high and low order
+	ADDI T,"0			; ASCIIify
+	ADDI TT,"0			; ASCIIify
+	PUSH P,TT
+	PUSHJ P,PUTCHR
+	POP P,T
+	JRST PUTCHR
+
+DOWTAB:	[ASCIZ/on Monday/]
+	[ASCIZ/on Tuesday/]
+	[ASCIZ/on Wednesday/]
+	[ASCIZ/on Thursday/]
+	[ASCIZ/on Friday/]
+	[ASCIZ/on Saturday/]
+	[ASCIZ/on Sunday/]
+	[ASCIZ/on April Fool's day/]
+
+] ;END IFN $$UPTM
+];$$ARPA
+
+IFN $$CHAOS,[
+;Analyze on chaos channel, still open
+
+ANLCHA:	MOVE TT,WHYINT		;Connection state
+	CAIE TT,%CSLOS
+	 CAIN TT,%CSCLS
+	  JRST ANLCH1
+	CAIE TT,%CSINC
+	 JRST ANLCH0		;Still open
+	JSP TT,SPEAK
+	ASCIZ /Connection broken -- foreign host not communicating./
+
+ANLCH0:	PUSH P,CHSTTB(TT)
+	MOVEI TT,[ASCIZ/Timed-out while connection /]
+	PUSHJ P,ZTYPE
+	POP P,TT
+	JRST SPEAK
+
+CHSTTB:	[ASCIZ/closed/]
+	[ASCIZ/listening/]
+	[ASCIZ/has received RFC/]
+	[ASCIZ/has sent RFC/]
+	[ASCIZ/open/]
+	[ASCIZ/lost/]
+	[ASCIZ/broken/]
+
+ANLCH1:	PUSH P,CHSTTB(TT)
+	MOVEI TT,[ASCIZ/Connection /]
+	PUSHJ P,ZTYPE
+	POP P,TT
+	PUSHJ P,ZTYPE
+	MOVEI TT,[ASCIZ/ -- /]
+	PUSHJ P,ZTYPE
+	HLRZ TT,WHYINT+1	;get number of input packets
+ANLCH2:	SOJL TT,ANALX		;scan input looking for CLS, LOS
+	HLRZ T,WHYINT+3		;Pick up input channel number
+	SYSCAL PKTIOT,[T ? MOVEI PKTBUF]
+	 .LOSE %LSFIL
+	LDB T,[$CPKOP+PKTBUF]
+	CAIE T,%COCLS
+	 CAIN T,%COLOS
+	  SKIPA B,[440800,,PKTBUF+%CPKDT]
+	   JRST ANLCH2
+	LDB C,[$CPKNB+PKTBUF]
+ANLCH3:	SOJL C,ANALX
+	ILDB T,B
+	PUSHJ P,PUTCHR
+	JRST ANLCH3
+];$$CHAOS
+
+IFN $$ARPA,[
+
+; Tables
+
+;Close Reasons
+
+	[ASCIZ/Illegal close-reason code??/]
+CLSTAB:	OFFSET -.
+%NCNTO::[ASCIZ/Connection never opened??/]
+%NCUSR::[ASCIZ/Connection legitimately closed??/]
+%NCFRN::[ASCIZ/Connection closed by foreign host./]
+%NCRST::[ASCIZ/Host reset./]
+%NCDED::400000,,[ASCIZ/Host died./]
+%NCINC::400000,,[ASCIZ/Incomplete transmission./]
+%NCBYT::[ASCIZ/Byte size mismatch??/]
+%NCNCP::[ASCIZ/Local Network Control Program reset./]
+%NCRFS::[ASCIZ/Request for Connection refused by foreign host./]
+LCLSTB::OFFSET 0
+
+;Host Dead Reasons
+
+	[ASCIZ/Illegal host-dead code??/]
+DEDTAB:	[ASCIZ/  Network lossage./]  ;0 probably no host-dead-reason returned
+	[ASCIZ/  Destination Host dead./]	;1 WOULDN'T SAY WHY
+	[ASCIZ/  Foreign Network Control Program not in operation./]
+	[ASCIZ/  Destination Host or IMP does not exist./]
+	[ASCIZ/  Destination Host is initializing its NCP software./]
+	[ASCIZ/  Destination Host down for scheduled maintenance./]
+	[ASCIZ/  Destination Host down for scheduled hardware work./]
+	[ASCIZ/  Destination Host down for scheduled software work./]
+	[ASCIZ/  Destination Host is in emergency restart./]
+	[ASCIZ/  Destination Host down due to power failure./]
+	[ASCIZ/  Destination Host is stopped at a breakpoint./]
+	[ASCIZ/  Destination Host down due to hardware failure./]
+	[ASCIZ/  Destination Host is not scheduled to be up./]
+	[ASCIZ/  (Undefined host-down code 13.)/]
+	[ASCIZ/  (Undefined host-down code 14.)/]
+	[ASCIZ/  Destination Host is coming up now./]
+
+];$$ARPA
+];END IFN $$ANALYZE
+
+.END NETWRK

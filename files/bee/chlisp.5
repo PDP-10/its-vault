@@ -1,0 +1,195 @@
+;;; This is the chaos-net handling package for lisp.
+;;; This will allow a user to do PKIOT's on an chaos net connection.
+;;; The special variable CHAOS-CONNECTION-IN and CHAOS-CONNECTION-OUT
+;;; are the file arrays so that the GC doesn't mung us. They must be
+;;; sequential, and we can't win with CHAOSO unless they are.
+;;; CHAOS-IN-CHANNEL is the channel number of the input side
+;;; CHAOS-OUT-CHANNEL is for the output side 
+
+(DECLARE (SPECIAL CHAOS-CONNECTION-IN CHAOS-CONNECTION-OUT
+		  CHAOS-IN-CHANNEL CHAOS-OUT-CHANNEL
+		  PK-IN-BUFFER PK-OUT-BUFFER))
+
+;;; Creates the file arrays to make the channels not garbage collected
+(LAP CHAOS-INIT SUBR)
+(ARGS CHAOS-INIT (NIL . 0))
+	(MOVE TT (% (SIXBIT CHAOS)))
+	(PUSHJ P ALFILE)	;get file object into A
+	 (JRST 0 CHAOS-FAIL)	;failed
+	(HRRM A (SPECIAL CHAOS-CONNECTION-IN))
+	(ADDI F IN0)		;convert file
+	(HRRM F (SPECIAL CHAOS-IN-CHANNEL))
+	(MOVE TT (% (SIXBIT CHAOS)))
+	(PUSHJ P,ALFILE)
+	 (JRST 0 CHAOS-FAIL)
+	(HRRM A (SPECIAL CHAOS-CONNECTION-OUT))
+	(MOVE TT F)
+	(ADDI F IN0)
+	(HRRM F (SPECIAL CHAOS-OUT-CHANNEL))
+	(MOVEI A TRUTH)
+	(POPJ P)
+CHAOS-FAIL
+	(SETZM 0 (SPECIAL CHAOS-CONNECTION-OUT))
+	(SETZM 0 (SPECIAL CHAOS-CONNECTION-IN))
+	(SETZM 0 (SPECIAL CHAOS-OUT-CHANNEL))
+	(SETZM 0 (SPECIAL CHAOS-IN-CHANNEL))
+	(POP P A)
+	(SETZ A)
+	(POPJ P)
+
+;;; First argument is the array to PKTIOT, second is the channel
+;;; it is the user's responsibility to make sure that the array doesn't move...
+;;; Thus it is usually passed one of the buffers created by ALLOCATE-BUFFERS
+(ENTRY PKTIOT SUBR)
+(ARGS PKTIOT (NIL . 2))
+	(MOVE T PKTIOT-ERROR-LOCATION)
+	(MOVEM T IOCINS)
+	(MOVE TT 0 B)
+	(HRRZ T 1 A)
+PKTIOT-LOC
+	(*CALL 0 PKTIOT-CALL)
+	 (*LOSE 1000)
+	(SETZM 0 IOCINS)
+	(POPJ P)
+PKTIOT-CALL
+	(SETZ)
+	(SIXBIT PKTIOT)
+	(MOVE 0 TT)
+	(SETZ 0 T)
+PKTIOT-ERROR-LOCATION
+	(PUSHJ P PKTIOT-LOSE)
+
+;;; Ioc error interrupt routine for the PKTIOT
+PKTIOT-LOSE
+	(HRRI R PKTIOT-LOSE-1)
+	(HRLI R PKTIOT-ERROR-CODE)
+	(TLO R 400000)
+	(AOS 0 0 P)
+	(POPJ P)
+PKTIOT-ERROR-CODE
+	(0)
+;;; This is called at non interrupt level. Error code in PKTIOT-ERROR-CODE
+PKTIOT-LOSE-1
+	(SETZM 0 INHIBIT)
+	(PUSHJ P CHECKI)
+	(SETZ A)
+	(MOVEI B 'PKTIOT-ERROR)
+	(JRST 0 THROW1)
+
+;;; Allocate the PK-IN-BUFFER PK-OUT-BUFFER
+(ENTRY ALLOCATE-BUFFERS SUBR)
+	(JSP T SACONS)
+	(PUSH P A)
+	(JSP T SACONS)
+	(MOVEI TT 1)
+	(PUSHJ P GETCOR)
+	(SKIPN 0 TT)
+	 (JRST 0 ALLOCATE-LOST)
+	(HRR T TT)
+	(HRLI T ARRAY-HEADER)
+	(BLT T 4 TT)
+	(HRLI T 100007)
+	(HRLI TT 200)
+	(MOVEM T 1 A)
+	(MOVEM TT 0 A)
+	(MOVEM A -2 T)
+	(HRRM T 0 TT)
+	(HRRM A (SPECIAL PK-IN-BUFFER)) 
+	(MOVEI TT 200 T)
+	(POP P A)
+	(HRR T TT)
+	(HRLI T ARRAY-HEADER)
+	(BLT T 4 TT)
+	(HRLI T 100007)
+	(HRLI TT 200)
+	(MOVEM T 1 A)
+	(MOVEM TT 0 A)
+	(MOVEM A -2 T)
+	(HRRM T 0 TT)
+	(HRRM A (SPECIAL PK-OUT-BUFFER)) 
+	(POPJ P)
+ALLOCATE-LOST
+	(POP P A)
+	(SETZ A)
+	(POPJ P)
+ARRAY-HEADER
+	(0 0 0 -200)
+	(PUSHJ P CFIX1)
+	(JSP T 1DIMF)
+	(0)
+	(200)
+	
+;;; Open the chaos net channel. Arguments are:
+;;; (OPEN-HOST <destination host> <netblk-time> <contact-name> <window-size>)
+;;; Uses PK-OUT-BUFFER for the buffer
+;;; The contact name is a list of fixnums, which are considered to be bytes
+;;; that are the contact name and jcl
+(ENTRY OPEN-HOST SUBR)
+(ARGS OPEN-HOST (NIL . 4))
+	(MOVE TT @ (SPECIAL CHAOS-IN-CHANNEL))
+	(MOVE T @ (SPECIAL CHAOS-OUT-CHANNEL))
+	(*CALL 0 CHAOS-OPEN)
+	 (*LOSE 1000)
+	(MOVE T 0 A)
+	(LSH T 20.)
+	(MOVE TT (SPECIAL PK-OUT-BUFFER))
+	(HRRZ TT 1 TT)
+	(MOVEM T 1 TT)
+	(SETZM T 2 TT)
+	(MOVE T 0 AR1)
+	(LSH T 4)
+	(MOVEM T 3 TT)
+	(MOVEI T 1)		;RFC
+	(LSH T 28.)
+	(MOVEM T 0 TT)
+	(MOVEI AR1 IN0)		;This is the count of numbers in the packet
+	(HRLI T 441000)
+	(HRRI T 4 TT)		;get byte pointer to the start of the data packet
+CHAR-LOOP
+	(HLR A 0 C)
+	(MOVE A 0 A)
+	(IDPB A T)
+	(HRR C 0 C)
+	(AOS 0 AR1)
+	(JUMPN C CHAR-LOOP)
+	(MOVE T AR1)		;number of characters
+	(SUBI T IN0)
+	(LSH T 4)
+	(IORM T 0 TT)		;set in the length of the packet
+	(MOVE A (SPECIAL PK-OUT-BUFFER))
+	(PUSH P B)
+	(MOVE B (SPECIAL CHAOS-OUT-CHANNEL))
+	(CALL 2 'PKTIOT)
+	(POP P B)
+	(MOVE T @ (SPECIAL CHAOS-IN-CHANNEL))
+	(MOVE TT 0 B)
+	(*CALL 0 NETBLK-WAIT)
+	 (*LOSE 1000)
+	(ADDI TT IN0)
+	(MOVE A TT)
+	(POPJ P)
+CHAOS-FAIL
+	(MOVE T (SPECIAL CHAOS-IN-CHANNEL))
+	(*CALL 0 CHAOS-CLOSE)
+	(MOVE T (SPECIAL CHAOS-IN-CHANNEL))
+	(*CALL 0 CHAOS-CLOSE)
+	(SETZ A)
+	(POPJ P)
+CHAOS-OPEN
+	(SETZ)
+	(SIXBIT CHAOSO)
+	(MOVE 0 TT)		;INPUT CHANNEL
+	(MOVE 0 T)
+	(SETZ 0 0 AR1)
+NETBLK-WAIT
+	(SETZ)
+	(SIXBIT NETBLK)
+	(MOVE 0 T)
+	(MOVEI 0 3)
+	(MOVE 0 TT)
+	(SETZM 0 TT)
+CHAOS-CLOSE
+	(SETZ)
+	(SIXBIT CLOSE)
+	(SETZ 0 T)
+NIL 

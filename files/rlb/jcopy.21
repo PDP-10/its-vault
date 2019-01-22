@@ -1,0 +1,128 @@
+;-*-MIDAS-*-
+title jcopy Job Copying
+a=1
+b=2
+c=3
+d=4
+e=5
+t=10
+p=17
+
+jobc==0
+
+pagsiz==2000
+paglog==.tz pagsiz
+hipage=<<1,,>/pagsiz>-1
+
+call=pushj p,
+ret=popj p,
+jcall==jrst
+
+define syscal name,args
+	.call [setz ? sixbit |name| ? args ((setz))]
+termin
+
+
+runp:	0		;non0 if we've been run
+debug:	0		;non0 if being debugged
+
+fnbuf::
+dev:		sixbit |USR|
+fn1::uname:	0
+fn2::jname:	0
+sname:		0
+
+lpdl==20
+pdl:	block lpdl
+ljcl==10
+jclbuf:	block ljcl+1
+
+go:	movei p,pdl
+	call luser		;loser? Kill if so.
+	call jclhak
+	syscal OPEN,[[<10+.bii>,,jobc] ? dev ? uname ? jname ? sname]
+	  .lose %lssys
+	call chanhak
+	jrst corhak
+
+jclhak:	.suset [.runame,,uname]
+	setzm jname
+	move a,[jclbuf,,jclbuf+1]
+	blt a,jclbuf+ljcl-1
+	setom (a)
+	.break 12,[..rjcl,,jclbuf]
+	move d,[440700,,jclbuf]
+	movei b,fnbuf
+	jcall rfn"rfn
+
+luser:	.suset [.rxuname,,a]
+	syscal open,[[.bii,,jobc] ? [sixbit |DSK|] ? [sixbit |.FILE.|]
+			 [sixbit |(DIR)|] ? a]
+	  jrst luser1
+	.close jobc,
+	ret
+luser1:	skipe debug
+	  .lose %lsfil
+	.value [asciz |:Done
+|]
+	jrst [.logout 1,]
+
+chanhak:	
+	setz a,
+chanlp:	cain a,jobc	? ife jobc-17,.error jobc must be <17
+	  aoja a,chanlp
+	syscal rfname,[1000,,jobc ? a
+			2000,,c ? 2000,,fn1 ? 2000,,fn2 ? 2000,,sname
+			2000,,b]
+	  .lose %lssys
+	jumpe c,chann		;nothing open?
+	trne b,1		;open for output? skip if not
+	  jrst [camn c,[sixbit |DSK|]
+		  jrst chann	;don't open up dsk files!
+		jrst .+1]	;but do it for TTY etc. (loses for MLDEV...)
+	syscal open,[4000,,b ? a ? c ? fn1 ? fn2 ? sname]
+	  .lose %lsfil
+chann:	caige a,17
+	  aoja a,chanlp
+	ret
+
+corhak:	movei t,1
+corlp:	syscal cortyp,[1000,,jobc ? t ? 2000,,a ? 2000,,b ? 2000,,c ? 2000,,d]
+	  .lose %lssys
+	jumpe a,corlpx		;not accessable?
+	tlnn a,%cbwrt		;skip if writeable page
+	  jrst nowrt
+	move a,t
+	syscal corblk,[1000,,%cbndr+%cbndw+%cbprv ? 1000,,%jself ? a
+			1000,,%jsnew]
+	  .lose %lssys
+	lsh a,paglog		;address in this job
+	.access jobc,a
+	hrli a,-pagsiz
+	.iot jobc,a		;copy the page
+	jrst corlpx
+nowrt:	syscal corblk,[a ? 1000,,%jself ? t ? 1000,,jobc ? t]
+	  .lose %lssys
+corlpx:	caige t,hipage
+	  aoja t,corlp
+	move a,[-<pagsiz-20>,,20]	;don't hack acs
+	.access jobc,[20]
+	move b,[	.iot jobc,a]
+	move c,[	.value d]
+	move d,[ascii |:Don|]
+	move e,[asciz |e
+|]
+	jrst b
+
+rfn"$$rfn==1
+.insrt SYSENG;RFN
+
+rsixtp:	skipn a
+	  aos (p)
+	ret
+
+consta
+variab
+ifg .-2000,.error more than 1 page of lossage??
+
+end go

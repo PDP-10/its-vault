@@ -1,0 +1,179 @@
+;-*-MIDAS-*-
+
+TITLE LISP CHAOS NETWORK SUPPORT PACKAGE
+
+;;; TODO: (1) comment and bit-macro-ify %CHAOS-ALLOCATE-BUFFERS
+;;;       (2) %CHAOS-CLOSE-CHANNELS
+;;;       (3) generalization (?) return a dotted pair of channels
+;;;           and pass them as args to various routines.  (don't need it now)
+;;;           similarly with allocation of buffers.
+;;;       (4) utility routine for stringifying contents of the packet buffer
+
+
+;;; This is the low-level chaos-net handling package for LISP.
+;;; It will allow a user to do PKTIOT's on an chaos net connection.
+;;; The special variable CHAOS-CONNECTION-IN and CHAOS-CONNECTION-OUT
+;;; are the file arrays so that the GC doesn't mung us. They must be
+;;; sequential, and we can't win with CHAOSO unless they are.
+
+IF1, .INSRT SYSTEM;CHSDEF >
+IF1, .INSRT SYS:.FASL DEFS
+.FASL
+
+;;; Creates the file arrays to make the channels not garbage collected
+.ENTRY %CHAOS-OPEN-CHANNELS SUBR 0000
+	MOVE TT,[SIXBIT /CHAOS/]	;get a file array on the CHAOS device
+	PUSHJ P,ALFILE		;allocate a channel
+	 JRST CHFAIL
+	HRRM A,.SPECIAL CHAOS-CONNECTION-IN
+	PUSH P,A		;save it
+	MOVE TT,[SIXBIT /CHAOS/]	;get another for output
+	PUSHJ P,ALFILE
+	 JRST CHFAIL
+	HRRM A,.SPECIAL CHAOS-CONNECTION-OUT
+	MOVE B,A		;save it
+	POP P,A			;get back A
+	HRRZ T,TTSAR(A)		;data pointer to the output file array
+	HRRZ TT,TTSAR(B)	;data pointer to the input file array
+	.CALL [	SETZ
+		SIXBIT /CHAOSO/
+		MOVE F.CHAN(T)	;input channel number
+		MOVE F.CHAN(TT)	;output channel number
+		SETZI 0]	;default receive window size
+	 .LOSE 1000
+	MOVEI A,.ATOM T		;return T
+	POPJ P,
+
+CHFAIL:	SETZM .SPECIAL CHAOS-CONNECTION-OUT
+	SETZM .SPECIAL CHAOS-CONNECTION-IN
+	SETZ A
+	POPJ P,
+
+;;; First argument is the array to PKTIOT, second is the file array.
+;;; it is the user's responsibility to make sure that the array doesn't move...
+;;; Thus it is usually passed one of the buffers created by ALLOCATE-BUFFERS
+;;; If an IOC error occurs, a THROW will be done to PKTIOT-ERROR.
+
+.ENTRY %CHAOS-PKTIOT SUBR 0002
+	MOVE T,[PUSHJ P,IOTLOS]	;set up the IOC error handling mechanism
+	MOVEM T,IOCINS
+	HRRZ T,TTSAR(A)		;get pointer to array data
+	HRRZ TT,TTSAR(B)	;ditto
+PKIOTC:	.CALL [	SETZ
+		SIXBIT /PKTIOT/
+		MOVE F.CHAN(TT)
+		SETZ T]
+	 .LOSE 1000
+	SETZM IOCINS
+	POPJ P,
+
+;;; Ioc error interrupt routine for the PKTIOT
+IOTLOS:	HRRI R,PKTLS1		;process the error here
+	HRLI R,PKTERR		;store error code here
+	TLO R,400000
+	AOS (P)
+	POPJ P,
+PKTERR:	0
+
+;;; This is called at non interrupt level. Error code in PKTIOT-ERROR-CODE
+PKTLS1:	UNLOCKI
+	MOVEI A,.ATOM PKTIOT-ERROR
+	SETZ B
+	CALL 2,.FUNCTION *THROW
+	POPJ P,
+
+
+;;; Allocate the CHAOS-PKT-IN-BUFFER  and CHAOS-PKT-OUT-BUFFER
+
+.ENTRY %CHAOS-ALLOCATE-BUFFERS SUBR 0000
+	JSP T,SACONS
+	PUSH P,A
+	JSP T,SACONS
+	MOVEI TT,1
+	PUSHJ P,GETCOR
+	SKIPN TT
+	 JRST ALLLOS
+	HRR T,TT
+	HRLI T,AHEAD
+	BLT T,4(TT)
+	HRLI T,100007
+	HRLI TT,200
+	MOVEM T,TTSAR(A)
+	MOVEM TT,(A)
+	MOVEM A,-2(T)
+	HRRM T,(TT)
+	HRRM A,.SPECIAL CHAOS-PKT-IN-BUFFER
+	MOVEI TT,200(T)
+	POP P,A
+	HRR T,TT
+	HRLI T,AHEAD
+	BLT T,4(TT)
+	HRLI T,100007
+	HRLI T,200
+	MOVEM T,TTSAR(A)
+	MOVEM TT,(A)
+	MOVEM A,-2(T)
+	HRRM T,(TT)
+	HRRM A,.SPECIAL CHAOS-PKT-OUT-BUFFER
+	MOVEI A,.ATOM T
+	POPJ P,
+
+ALLLOS:	POP P,A
+	SETZ A
+	POPJ P,
+
+AHEAD:	-200,,0
+	PUSHJ P,CFIX1
+	JSP T,1DIMF
+	0
+	200
+
+;;; might as well do this at load time!
+.SXEVAL (%CHAOS-ALLOCATE-BUFFERS)
+	
+;;; Open the chaos net channel. Arguments are:
+;;; (%REQUEST-CONNECTION <destination host> <netblk-time> <contact-name> <win-size>)
+;;; Uses CHAOS-PKT-OUT-BUFFER for the buffer
+;;; The contact name is a list of fixnums, which are considered to be bytes
+;;; that are the contact name and jcl
+
+.ENTRY %CHAOS-REQUEST-CONNECTION SUBR 0004
+	PUSH P,[FIX1]		;make it NCALLable
+	MOVE TT,.SPECIAL CHAOS-PKT-OUT-BUFFER	;pointer to pk buffer ttsar
+	HRRZ TT,TTSAR(TT)		;pointer to actual data area
+	MOVEI T,%CORFC		;set the packet opcode to RFC
+	DPB T,[$CPKOP (TT)]
+	MOVE T,(A)		;get destination host number arg
+	DPB T,[$CPKDA (TT)]	;deposit it
+	SETZ T,			;zero various packet fields:
+	DPB T,[$CPKDI (TT)]	;destination index
+	MOVE T,(AR1)		;get window size
+	DPB T,[$CPKAN (TT)]	;put it in the ack number field
+	;loop for copying contact name, jcl
+	SETZ T,
+	MOVE D,[441000,,%CPKDT(TT)]	;8-bit bytes, place to put data bytes
+CNAMLP:	HLR A,(C)		;get the car of the list
+	MOVE R,(A)		;get the number
+	IDPB R,D		;put it away
+	HRR C,(C)		;CDR the list
+	AOS T			;increment
+	JUMPN C,CNAMLP		;loop if we didn't CDR off the end of the list
+	DPB T,[$CPKNB (TT)]	;and deposit it
+	PUSH P,B
+	MOVE A,.SPECIAL CHAOS-PKT-OUT-BUFFER	;get args for PKTIOT
+	MOVE B,.SPECIAL CHAOS-CONNECTION-OUT
+	CALL 2,.FUNCTION PKTIOT	;do it
+	POP P,B
+	MOVE T,.SPECIAL CHAOS-CONNECTION-IN	;get pointer to file array data
+	HRRZ T,TTSAR(T)
+	MOVE TT,(B)		;time-out time
+	.CALL [	SETZ
+		SIXBIT /NETBLK/
+		MOVE F.CHAN(T)	;CHAOS input channel
+		MOVEI %CSRFS	;RFC-SENT state
+		MOVE TT		;time-out time
+		SETZM TT]	;new state returned here
+	 .LOSE 1000
+	POPJ P,			;TT gets converted at FIX1 if needed
+
+FASEND

@@ -1,0 +1,1799 @@
+.TITLE NETWRK			;MIT-XX Network -11 -*-MIDAS-*-
+.GLOBL DDT
+
+CHAOSP==1			;Has CHAOSNET interface
+LCSNTP==1			;No LCSNET interface
+
+.MACRO PUSH X
+.IRP Y,<X>
+	MOV Y,-(SP)
+.ENDM
+.ENDM
+
+.MACRO POP X
+.IRP Y,<X>
+	MOV (SP)+,Y
+.ENDM
+.ENDM
+
+.MACRO CALL X
+	JSR PC,X
+.ENDM
+
+.MACRO RET
+	RTS PC
+.ENDM
+
+PS==177776			;Why isn't this defined?
+
+.MACRO MASK LEVEL
+	PUSH PS
+	MOV #<LEVEL>_5,PS
+.ENDM
+
+.MACRO UNMASK
+	POP PS
+.ENDM
+
+.MACRO .IREPT N,BOD
+.REPT N
+BOD
+.ENDR
+.ENDM
+
+;;;Format of internal buffer header
+BUFNXT==0			;Link to next
+BUFSRC==2			;Source of this buffer
+ BUFFIN==377			;From internals
+ BUFF10==0			;From the -10
+ BUFF11==1			;From the -11
+ BUFFCH==2			;From the CHAOSNET
+ BUFFLN==3			;From the LNI
+BUFSDV==3			;Source device for -10
+BUFDST==4			;Destination for this buffer (e.g. cable address)
+BUFDTA==6			;Buffer address (later in the buffer)
+BUFDAT==10+4			;Start of data portion
+
+;;;Format of data portion
+BUFBCT==-4			;Byte (word) count of data portion
+BUFTYP==-2			;Type
+ BUFI11==-1			;Internal in -11
+ BUFPKT==0			;Packet data
+ BUFRQS==1			;Request status
+ BUFHST==2			;Here's status
+ BUFACK==3			;Packet disposed of
+BUFDEV==-1			;"Device", i.e. network
+ DTPCHA==0			;CHAOSNET
+ DTPMUP==1			;MUPPET
+ DTPINT==2			;INTERNET
+ DTPPUP==3			;PUP (=MPPETH)
+
+MSGLEN==512.			;Length of a message
+MUPHDR==30			;Header needed for a MUPPET
+LNIHDR==16			;Header needed for sending to LCSNET
+MAXHDR==MUPHDR+LNIHDR		;Maximum length of header to append on
+BUFLEN==BUFDAT+MSGLEN+MAXHDR	;Size of a buffer
+
+.SBTTL Low core
+
+LOC0:	.BLKB 100-<.-LOC0>
+	CLKINT			;Clock interrupt
+	6_5
+
+	.BLKB 200-<.-LOC0>
+	JMP DDT			;What prom thinks is start address
+
+.IF NE,CHAOSP
+CHINT0==270			;Address of chaosnet interrupt vector
+	.BLKB CHINT0-<.-LOC0>
+	CHAINT			;Chaosnet interrupt
+	6_5			;Priority 6
+.ENDC	;CHAOSP
+
+.IF NE,LCSNTP
+LNIIN0==400			;Address of LNI interrupt vector
+	.BLKB LNIIN0-<.-LOC0>
+	LNIINT			;LCSNET interrupt
+	6_5			;Priority 6
+.ENDC	;LCSNTP
+
+DTINT1==770			;Address of DTE #1 interrupt vector
+	.BLKB DTINT1-<.-LOC0>
+	DTEINT			;DTE interrupt
+	6_5			;Priority 6
+
+	.BLKB 1000-<.-LOC0>	;Rest of program starts at 1000
+
+.SBTTL Main program
+
+;;; Initialize things
+$START::MOV #40000,R0		;Init free list
+	MOV #FRELST,R1
+	MOV #25.,R2		;Make 25 of them
+10$:	MOV R0,@R1
+	MOV R0,R1
+	ADD #BUFLEN,R0
+	SOB R2,10$
+	CLR @R1			;Mark the end of the list
+
+	MOV DTECSR,R0
+	MOV #INT11C,(R0)	;Clear -11 doorbell
+20$:	BIT #TO11DB,(R0)	;Got doorbell?
+	BEQ 20$			;No, wait for it
+	CALL DTEINI		;Yes, can now read data
+	BCS 40$
+	BIS #MCBINI,STSTT	;In initialization phase
+	CALL SNDSTT		;Tell -10 that
+	BIC #MCBINI,STSTT	;No longer in initialization
+	MOV #INT11C!TO10DB,@DTECSR	;Ring doorbell
+
+	MOV #100,@#CLKCSR	;Enable clock interrupts
+.IF NE,CHAOSP
+	MOV CHAMYN,MYCHAD	;Get my address from interface
+	MOV CHAMYN,CHAADR
+	MOVB #5,CHAADR+1	;Form his address on the DTE subnet
+	BIS #CHSREN,CHACSR	;Turn on chaos receiver interrupts
+.ENDC	;CHAOSP
+.IF NE,LCSNTP
+	CALL LNIINI
+.ENDC	;LCSNTP **
+
+30$:	WAIT			;Just let things happen
+	BR 30$
+
+40$:	BPT
+
+;;; Allocate a new buffer, source in R3, returned in R1
+GETBUF::MOV FRELST,R1		;Get head of free list
+	BEQ 10$
+	MOV @R1,FRELST		;Unlink it
+	MOV R1,R2
+	CLR (R2)+		;Clear link
+	MOV R3,(R2)+		;Save source
+	ADD #LNIHDR+BUFDAT-BUFDST,R2	;Point to start of data
+	MOV R2,BUFDTA(R1)
+10$:	RET
+
+;;; Free a buffer after sending complete, address in R1
+FREBUF::PUSH <@R1>		;Save forward link
+	CLR (R1)		;Clear it
+	TSTB BUFSRC(R1)		;Really a buffer?
+	BMI 10$			;Nope
+	MOV FRELST,@R1		;Return to free list
+	MOV R1,FRELST
+10$:	TSTB BUFSRC(R1)		;Came from the -10?
+	BNE 30$			;No, no ack needed
+	MOV BUFSRC(R1),R3	;Get device in high byte
+	BIS #BUFF11,R3		;Mark new source as internal
+	CALL GETBUF		;Allocate a buffer
+	CLR BUFBCT(R2)		;No data bytes
+	MOVB BUFSDV(R1),BUFDEV(R2)
+	MOVB #BUFACK,BUFTYP(R2)
+	CALL TOTENQ		;Queue it to the -10
+20$:	POP R1			;Return old forward link
+	RET
+30$:	MOV TO11ND,R4		;Didn't have buffers before?
+	BEQ 20$
+	CALL GETT11		;Yes, can start a tranfer now
+	BR 20$
+
+.SBTTL DTE pseudo-subnet to -10
+
+;;; DTE definitions
+DTE0==174400			;Address of first DTE
+DTE1==DTE0+40			;Address of the DTE to use
+
+;; DTE protocol word offsets
+;PIDENT=0			;Processor identification word
+;CHNPNT=1			;Pointer to comm area of next processor (circ list)
+;CYCLS=2			;Clock cps count
+;TOD=3				;Time of day
+;DATE=4				;Date
+PSWW1=5				;Processor status word1 (keep alive)
+;PSWW2=6			;Processor status word2
+;PSWW3=7			;Processor status word3
+;PSWW4=10			;Processor status word4
+;PSWW5=11			;Processor status word5
+;PSWW6=12			;Processor status word6
+;PSWW7=13			;Processor status word7
+;PSWW10=14			;Processor status word10
+;PSWW11=15			;Processor status word11
+;PSWW12=16			;Processor status word12
+;PSWW13=17			;Processor status word13
+FORPRO=20			;For processor identificaton word
+PROPNT=21			;Pointer to comm area of the processor assoc with this block
+STATUS=22			;Communication status word
+QSIZE=23			;Queue size word
+;CTY0CW=24			;CTY #0 command word
+;CTY0RW=25			;CTY #0 response word
+;CTY1CW=26			;CTY #1 command word
+;CTY1RW=27			;CTY #1 response word
+;MISCW=30			;Miscellaneous command word for non-queue protocol
+;MISRW=31			;Miscellaneous response word
+;UNASG1=32			;Unassigned word1
+;UNASG2=33			;Unassigned word2
+;UNASG3=34			;Unassigned word3
+;UNASG4=35			;Unassigned word4
+;UNASG5=36			;Unassigned word5
+;UNASG6=37			;Unassigned word6
+
+;; DTE protocol status definitions
+TOIT=1				;In process of processing queue
+TOIP=2				;To him indirect in progress
+TOBM=4				;To him word mode requested
+MCBINI=2			;Init bit for MCB protocol
+LOAD11=4			;Load eleven
+KLPWRF=10			;KL is powerfailing
+
+;; DTE registers
+DLYCNT=0			;Delay counter
+;BUSA17=100000			;Unibus address bit 17
+;BUSA16=040000			;Unibus address bit 16
+;DLYMSK=037777			;Delay counter
+DEXWD3=2			;Deposit/examine word 3
+DEXWD2=4			;word 2
+DEXWD1=6			;word 1
+TENAD1=10			;-10 memory address 1
+;PHYS=100000			;Physical address
+;XUPT=040000			;Via UPT
+;EXVIRT=020000			;Exec virtual address
+;USEVIR=060000			;User virtual address
+DEP=010000			;Deposit
+;PRTOFF=004000			;Protection off
+;XEPT=0				;Via EPT
+TENAD2=12			;address 2
+TO10BC=14			;To -10 byte count
+TO11BC=16			;To -11 byte count
+ TO11IB=100000			;Interrupt both -10 and -11 when done
+;ZSTOP=040000			;Stop on null byte
+ TO11BM=020000			;To -11 byte mode
+ TO11CM=007777			;Byte count
+TO10AD=20			;To -10 address
+TO11AD=22			;To -11 address
+TO10DT=24			;To -10 data word
+TO11DT=26			;To -11 data word
+DIAG1=30			;Diagnostic control register 1
+;DS00=100000			;Diagnostic status (W)
+;DS01=040000
+;DS02=020000
+;DS03=010000
+;DS04=004000
+;DS05=002000
+;DS06=001000
+;DFUNC=000200			;Doing diagnostic function (W)
+;D1011=000040			;Interface diagnostic mode (W)
+;PULSE=000020			;Single pulse 10/11 clock (W)
+;DIKL10=000010			;KL10 diagnostic mode (W)
+;DSEND=000004			;Send the EBUS during diagnostic fcn (W)
+;DCSRT=000001			;Diagnostic command start (W)
+;ERRSTP=004000			;EBOX stopped by error
+;KLRUN=002000			;KL is running (R)
+;HALTLP=001000			;KL in halt loop (R)
+;DEX=000400			;Deposit/examine in progress (R)
+;TO10=000200			;Doing to -10 transfer (R)
+;TO11=000100			;Doing to -11 transfer (R)
+;VECO4=000020			;Vector interrupt address bit 4 (R)
+;VECO3=000010			;bit 3 (R)
+;VECO2=000004			;bit 2 (R) 
+DIAG2=32			;register 2
+;EDONES=040000			;Set EBUS done (W)
+;DRESET=000100			;DTE20 reset (W)
+STAT=34				;Control status register
+ TO10DN=100000			;To -10 transfer done (R/W)
+ DON10C=040000			;Clear to -10 done (W)
+ TO10ER=020000			;To -10 transfer error (R/W)
+ ERR10C=010000			;Clear to -10 error (W)
+;RAMIS0=010000			;Data out of ram is all 0 (R)
+ TO11DB=004000			;To -11 doorbell (R/W)
+ INT11C=002000			;Clear to -11 doorbell (W)
+;DXWRD1=002000			;Deposit/examine word one (R)
+;PERCLR=001000			;Clear -11 MPE (W)
+;D11MPE=001000			;-11 MPE (R)
+ TO10DB=000400			;To -10 doorbell (R/W)
+ TO11DN=000200			;To -11 transfer done (R/W)
+ DON11C=000100			;Clear to -11 transfer done (W)
+;EBSEL=000100			;E buffer select (R)
+ INTRON=000040			;DTE interrupt on (W)
+;NULSTP=000040			;Null stop (R)
+;EBUSPC=000020			;Clear EBUS parity error (W)
+;BPARER=000020			;EBUS parity error
+ INTROF=000010			;DTE interrupt off (W)
+;RSMODE=000010			;Restricted mode (R)
+;EBUSPS=000004			;Set EBUS parity error (W)
+ DEXDON=000004			;Deposit/examinne done (R)
+ TO11ER=000002			;To -11 transfer error (R/W)
+ ERR11C=000001			;Clear to -11 error (W)
+ INTSON=000001			;Interrupts on (R)
+DIAG3=36			;register 3
+;SCD=000040			;Shift parerr data (W)
+;CDD=000020			;Clear DUPE and DURE error flags (W)
+;WEP=000010			;Write even (bad) parity (W)
+;CNUPE=000002			;Clear NUPE (W)
+ TO10BM=000001			;To -10 byte mode (W)
+;SWSLFT=100000			;Swap select left (R)
+;CAB08=040000			;Captured unibus address bit 8 (R)
+;DUPE=000020			;DATO unibus parity error (R)
+;DURE=000004			;DATO unibus receiver error (R)
+;NUPE=000002			;NPR unibus parity error (R)
+;UPECD=037000			;Unibus parity error, captured data (R)
+
+;;; DTE interrupt routine
+DTEINT::PUSH <R0,R1,R2,R3,R4,R5>
+
+INTLPS:	MOV DTEADR,R0		;Point to our DTE
+	BIT #TO10DN!TO10ER,@DTECSR	;Done to -10 or error?
+	BNE TOTNDN		;Yes, handle that
+	BITB #TO11DN!TO11ER,@DTECSR	;Done to -11 or error?
+	BNE TOELDN		;Yes, handle that
+	BIT #TO11DB,@DTECSR	;No tranfers, check for doorbell
+	BNE DBLRNG		;Doorbell rang
+
+INTRET:	POP <R5,R4,R3,R2,R1,R0>
+	RTI
+
+;;; To -10 done interrupt
+TOTNDN::BMI 10$			;Was it an error?
+	BPT			;Yes, handle that cleverly
+10$:	MOV #DON10C,@DTECSR	;Clear done flags
+	MOV TENLST,R1		;Get top of queue
+	CALL FREBUF		;Free it
+	MOV R1,TENLST		;New end of queue
+	BEQ INTLPS		;None, return
+	CALL TOTNSQ		;Start next to -10 queue
+	BR INTLPS		;Back to check on other things
+
+;;; To -11 done interrupt
+TOELDN::BMI 10$
+	BPT			;Error
+10$:	MOV #DON11C,@DTECSR	;Clear done flags
+	MOV TO11BF,R1		;Get buffer used
+	MOV BUFDTA(R1),R2	;Point to data portion
+	MOVB BUFTYP(R2),R3	;Get message type
+	BNE 20$			;Is it a packet?
+	INC NPKTNR		;Yes, one more packet from the -10
+20$:	MOVB BUFDEV(R2),R4	;Get device type
+	MOVB R4,BUFSDV(R1)	;Save device
+	ASL R3			;Make word index
+	ASL R4
+	ADD NETTBL(R4),R3	;Point to device table
+	CALL @(R3)		;Call device routine
+	BR INTLPS
+
+;;; Network dispatch for messages from the -10,
+;;; points to type dispatches
+NETTBL:	CHATBL			;0 CHAOSNET
+	MUPTBL			;1 MUPPET
+	INTTBL			;2 Internet
+	PUPTBL			;3 PUP
+.IREPT 2,ILLNET			;Just in case
+
+ILLNET:	.IREPT 4,ILLMSG		;For undefined network
+
+ILLMSG::BPT
+
+;;; Doorbell interrupt
+DBLRNG::CLR TENAD1(R0)		;Prepare to read his status
+	MOV #STATUS-FORPRO,R2
+	ADD DTEHSM,R2
+	MOV R2,TENAD2(R0)
+	CALL WFED
+	BCS 20$
+	MOV DEXWD1(R0),STATI
+	MOV DEXWD2(R0),STATI+2
+	MOV DEXWD3(R0),STATI+4
+	TST STATI		;Valid examine?
+	BNE DBLSTS
+20$:	BPT
+
+DBLSTS:	BIT #16,STATI		;-10 crashed or something?
+	BEQ 10$
+	BPT
+10$:	CMPB STATI+4,TO10QC	;Count the same as last time?
+	BNE 20$			;No, something to do then
+	BIS #TOIT,STSTT+2	;Else just send our status
+	CALL SNDSTT
+	MOV #INT11C!TO10DB,@DTECSR
+	JMP INTLPS		;And process some more interrupts
+20$:	BIS #TOIT,STSTT+2
+	INCB TO10QC		;Increment count
+	CMPB STATI+4,TO10QC	;Same now?
+	BEQ 30$
+	BPT			;No, something messed up
+30$:	CALL SNDSTT		;Send our status
+	MOV #INT11C,@DTECSR
+	MOV #QSIZE-FORPRO,R2
+	ADD DTEHSM,R2
+	CLR TENAD1(R0)
+	MOV R2,TENAD2(R0)
+	CALL WFED
+	BCS 40$
+	MOV DEXWD3(R0),R4	;Get queue size
+	CMP DEXWD2(R0),R4	;Sent all in one piece?
+	BEQ 50$			;Yes, all ok
+40$:	BPT
+50$:	CALL GETT11		;Start to -11 transfer
+	JMP INTLPS
+
+;; Start a transfer to the -11 if there is a buffer, else setup to try
+;; when one is freed.  Byte count needed in R4
+GETT11:	CLR R3			;From the -10
+	CALL GETBUF		;Get a buffer from the free pool
+	BEQ 20$			;None left, -10 run wild
+	MOV R1,TO11BF		;Save address
+	CLR TO11ND		;No longer need anything
+	ADD #MUPHDR,R2		;Reserve room for additional headers
+	MOV R2,BUFDTA(R1)	;Save it
+	SUB #-BUFBCT,R2		;-10 stores starting at  byte count
+	MOV R2,TO11AD(R0)	;-10 starts storing with byte count
+	ASR R4			;Make count of words
+	NEG R4			;Make count negative
+	BIC #^C<7777+TO11IB>,R4
+	MOV R4,TO11BC(R0)	;Start transfer
+10$:	RET
+
+20$:	MOV R4,TO11ND		;Flag that we need some later
+	BR 10$
+
+;;; Send status to -10
+SNDSTT::MOV #DEP,TENAD1(R0)
+	MOV STSTT,DEXWD1(R0)
+	MOV STSTT+2,DEXWD2(R0)
+	MOV STSTT+4,DEXWD3(R0)
+	MOV #STATUS-FORPRO,R2
+	ADD DTEMYD,R2
+	MOV R2,TENAD2(R0)	;Start transfer
+	BR WFED
+
+;;; Do deposit/examine from -10
+;;; R0 has DTE pointer, R1 high order address, R2 low order address
+;;; R3 pointer to block to move into
+SWFED::	PUSH R3			;Save this just in case
+	BIT #DEP,R1		;Deposit?
+	BNE 10$
+	MOV R1,TENAD1(R0)	;Transfer from -10
+	MOV R2,TENAD2(R0)
+	CALL WFED		;Wait for deposit/examine
+	BCS 20$			;Failed
+	MOV DEXWD3(R0),(R3)+	;Store what was transferred
+	MOV DEXWD2(R0),(R3)+
+	MOV DEXWD1(R0),(R3)+
+	BR 20$			;And return
+
+10$:	MOV (R3)+,DEXWD3(R0)	;Transfer to -10
+	MOV (R3)+,DEXWD2(R0)
+	MOV (R3)+,DEXWD1(R0)
+	MOV R1,TENAD1(R0)
+	MOV R2,TENAD2(R0)
+	CALL WFED
+
+20$:	POP R3			;Restore start of block
+	RET
+
+;;; Wait for a deposit/examine to finish
+;;; R0 has address of DTE CC-C set if error
+WFED::	MOV #3000,DEXST		;Nominal timeout
+10$:	BIT #DEXDON,STAT(R0)
+	BNE 20$			;Done, return
+	DEC DEXST
+	BNE 10$			;Keep waiting
+	SEC
+20$:	RET			;Return
+
+;;; Initialize DTE protocol communication regions
+DTEINI::MOV DTECSR,R0		;Point to DTE we'll use
+	MOV #INT11C,(R0)	;Clear -11 doorbell
+5$:	BIT #TO11DB,(R0)	;Got doorbell?
+	BEQ 5$			;No, wait for it
+	MOV #DON10C!INT11C!DON11C,(R0) ;Clear it
+	MOV #DTE1,R0		;Now just point to DTE
+	CLR R1			;Find the processor number
+	CLR R2
+	MOV #DEXTM3,R3		;Some temporary space
+	CALL SWFED		;Do examine
+	BCS 10$			;Error, return
+	MOV @R3,R4		;Find offset to my R/W area
+	MOVB @#DEXTM2+1,R2	;Get processor number
+	BIC #177760,R2		;Clear junk
+	MOV R2,PRMEMN		;Save it
+	INC R2
+	MOV R2,COMBSE		;Save base of communications area
+	ADD R4,R2		;Offset to deposit area
+	MOV R2,DEPOF		;Save that too
+	CALL SWFED		;Wait for transfer
+10$:	BCS 45$
+	MOV @#DEXTM2,R5
+	BIC #177770,R5
+	SUB #2,R5
+	PUSH <R2,R5>
+15$:	ADD #FORPRO,2(SP)	;Look at communications area
+	MOV 2(SP),R2
+	CALL SWFED		;Wait for it
+	BCS 45$
+	MOV @R3,R4
+	MOV #PROTBL,R5
+	BIC #177770,R4
+	BEQ 25$
+20$:	ADD #5*2,R5
+	SOB R4,20$
+25$:	MOV @#DEXTM2,R4		;Number of 8 word blocks
+	BIC #177770,R4
+	SUB R4,@SP		;Update count
+	CLR @R5			;Say no DTE at first
+	MOV @#DEXTM1,R4		;Get DTE number
+	BIT #4,R4
+	BEQ 30$			;Not there, forget it
+	SWAB R4			;Multiply by 40
+	ROR R4
+	ROR R4
+	ROR R4
+	BIC #177637,R4
+	ADD #DTE0,R4
+	MOV R4,@R5		;Save address of DTE
+	MOV #37777,@R4		;Set delay counter
+	MOV #INTRON,STAT(R4)	;Enable interrupts
+30$:	MOV R2,EMYN(R5)		;Save address to examine in
+	MOV R2,DMYN(R5)		;And deposit in ...
+	SUB DEPOF,DMYN(R5)	;is less offset
+	ADD #PROPNT-FORPRO,R2	;Read pointer to his comm area
+	CALL SWFED
+	BCS 45$
+	MOV @R3,R2
+	ADD COMBSE,R2
+	MOV R2,EHSG(R5)		;Save it
+	ADD #FORPRO,R2
+35$:	CALL SWFED
+	BCS 45$
+	CMPB PRMEMN,@R3		;Same processor number?
+	BEQ 40$			;Yes, found my entry
+	MOV @#DEXTM2,R4
+	BIC #177770,R4
+	ASL R4
+	ASL R4
+	ASL R4
+	ADD R4,R2		;Read next block
+	BR 35$
+
+40$:	MOV R2,EHSM(R5)		;Save it
+	MOV @SP,R5
+	BGT 15$			;Go do more if any
+	CLC			;Say success
+45$:	MOV (SP)+,(SP)+		;Flush garbage from stack
+	RET			;Return
+
+;;; CHAOSNET packet for the -10, maybe unpack it, then queue it there
+TENSBN::TSTB MP.VER(R2)		;Is this a MUPPET?
+	BEQ 30$			;No, goes to -10 directly
+	MOVB MP.PTC(R2),R3	;Get the protocol type
+	CMP R3,#MPPETH		;PUP? (MPPETH=DTPPUP)
+	BEQ 10$			;Yes
+	CMP R3,#MPPINT		;Or internet
+	BNE 20$			;Else queue the whole MUPPET
+	MOV #DTPINT,R3		;Internet packet
+10$:	MOV BUFBCT(R2),R4	;Get length
+	SUB #MP.DAT/2,R4	;Subtract MUPPET header
+	ADD #MP.DAT,R2		;Increment data pointer
+	MOV R2,BUFDTA(R1)	;Update pointer
+	MOV R4,BUFBCT(R2)	;Store byte count again
+	SWAB R3			;Type in R3
+	MOV R3,BUFTYP(R2)	;Save type
+	BR 50$
+	
+20$:	MOV #DTPMUP*400,BUFTYP(R2)	;This is a MUPPET
+	BR 40$
+
+30$:	CLR BUFTYP(R2)		;This is a CHAOSNET packet
+40$:	MOV BUFBCT(R2),R4	;Get word count
+	CALL CHASWB		;Maybe swab the data portion
+50$:				;Fall through to queue a packet
+
+;;; Queue an actual packet to the -10, address in R1
+TENPKT::INC NPKTNS		;One more packet sent to -10
+
+;;; Queue something to the -10, address in R1
+TOTENQ::MOV TENLST,R2		;Get head of queue
+	BEQ 50$			;None, start this one right away
+10$:	MOV R2,R3
+	MOV @R2,R2
+	BNE 10$			;Find the end of the list
+	MOV R1,@R3		;Link new thing in
+	RET
+50$:	MOV R1,TENLST		;Fall thru to start this transfer
+
+;;; Start sending to the -10, address in R1
+TOTNSQ::MOV DTEADR,R0		;Point to appropriate DTE
+	INCB STSTT+5		;One more in queue
+	MOV BUFDTA(R1),R2	;Get data pointer
+	MOV BUFBCT(R2),R4	;Get size
+	ASL R4			;And make it a byte count
+	ADD #-BUFBCT,R4		;Count for size and type
+	SUB #-BUFBCT,R2		;Point to it also
+	MOV R2,TO10AD(R0)	;Setup address
+	MOV #2,DEXWD1(R0)	;Word mode transfer
+	MOV R4,DEXWD2(R0)
+	MOV R4,DEXWD3(R0)	;Store byte count
+	MOV #DEP,TENAD1(R0)
+	MOV #QSIZE-FORPRO,R2
+	ADD DTEMYD,R2
+	MOV R2,TENAD2(R0)
+	CALL WFED
+	CALL SNDSTT
+	CLR DIAG3(R0)		;Ensure transfers will be word mode
+	MOV #TO10DB,@DTECSR	;Ring up the -10
+10$:	RET
+
+;;; Internet packet for the -10
+INTTEN::MOV #DTPINT,BUFTYP(R2)	;Type is internet
+	BR TENPKT
+
+;;; DTE storage
+
+FRELST::.WORD 0			;Buffer free list
+
+TENLST:	.WORD 0			;To -10 queue
+TO11BF:	.WORD 0			;Current to -11 buffer
+TO11ND:	.WORD 0			;Byte count needed for transfer and no buffers
+KPALIV:	.BLKW 3			;Keep alive counter
+KPALCN:	.WORD 5.*30.		;Time till keep alive increment
+DEXST:	.WORD 0			;Timeout for waiting for DTE
+DEXTM3:	.WORD 0			;Temporary storage for DTE setup
+DEXTM2:	.WORD 0
+DEXTM1:	.WORD 0
+DTECSR:	DTE1+STAT		;CSR for the main DTE
+STATI:	.BLKW 3			;-10 status
+STSTT:	.WORD 1,0,0		;-11 status
+TO10QC:	.WORD 0			;Count of transfers
+COMBSE:	.WORD 0			;Base of communications area
+PRMEMN:	.WORD 0			;Processor number
+DEPOF:	.WORD 0			;Offset for deposit
+PROTBL::.BLKW 16.*5		;5 Words per processor, max 16 processors
+ DTENM==0			;Address of DTE
+ EMYN==2			;Address to communiate (examine)
+ DMYN==4			;(deposit)
+ EHSG==6			;Address for general
+ EHSM==10			;Address for specific
+DTEADR=PROTBL			;Addresses we want for our main DTE
+DTEMYE=PROTBL+EMYN
+DTEMYD=PROTBL+DMYN
+DTEHSG=PROTBL+EHSG
+DTEHSM=PROTBL+EHSM
+TNSBSB==.			;This is the data on the -10 subnet
+NPKTNR:	.WORD 0			;Packets received from -10
+NPKTNS:	.WORD 0			;Packets sent to the -10
+TNSBSS==.-TNSBSB
+
+.SBTTL Muppet handling
+
+;These definitions are for "MUPPETS" (M.I.T. universal packets) version 1
+
+MDTMAX==480.			;Maximum number of data BYTES
+MPNHDR==12.			;Number of header words
+
+MP.VER==0			;Version
+MP.PTC==1			;Protocol number
+ MPPMNT==1			; Protocol 1 is network maintenance
+ MPPCHA==2			; Protocol 2 is chaosnet
+ MPPETH==3			; Protocol 3 is ethernet
+ MPPINT==4			; Protocol 4 is internet
+MP.FWC==2			;Forwarding count
+MP.OP==3			;Protocol use (typically opcode)
+ .MORRQ==1			; Request for routing-information
+ .MORUT==2			; Routing-information
+ .MOSRQ==3			; Request for status
+ .MOSTS==4			; Status
+ .MOPRQ==5			; Request to get/set pulsar
+ .MOPST==6			; Pulsar status
+ .MOMSG==7			; Message to all network users
+MP.DHS==4			;Destination host
+MP.DPT==6			; "   "   "  port
+MP.SHS==10			;Source host
+MP.SPT==12			;Source port
+MP.PKN==14			;The packet number
+MP.PKL==16			;Number of data bytes (total)
+MP.FRL==20			;Number of data bytes in fragment
+MP.FRP==22			;Number of data bytes preceding fragment
+MP.MSC==24			;Protocol use B, typically acknowledge #
+MP.CKS==26			;Checksum (not used, set to -1)
+MP.DAT==30			;The start of the data
+
+MUPTBL:	CHADAT
+	.IREPT 3,ILLMSG
+
+.IF EQ,CHAOSP
+CHALCL:
+CHASBN:	BPT
+.ENDC	;CHAOSP
+
+.SBTTL Internet handling
+
+IN.TYP==0			;Type  of service
+IN.IHL==1			;Length of header
+ INIHLM==017
+IN.VER==1			;Internet version number
+ INVERM==360
+IN.LEN==2			;Length of whole datagram
+IN.IDX==4			;Index
+IN.FOF==6			;Fragment offset
+ INFOFM==037777
+IN.FLG==7			;Flags
+ INFLGM==340
+IN.PTC==10			;Protocol
+IN.TTL==11			;Time to live
+IN.CKS==12			;Header checksum
+IN.SHH==14			;Source address high
+IN.SHL==16			;Source address low
+IN.DHH==20			;Destination address high
+IN.DHL==22			;Destination address low
+IN.OPT==24			;Beginning of options
+
+NW.CHS==7			;CHAOSNET number
+NW.LCS==22			;LCSNET number
+
+PT.CHS==20			;CHAOSNET ptcl number
+
+INTTBL:	INTDAT			;Internet packet
+	.IREPT 3,ILLMSG
+
+;;; Internet packet from the -10
+INTDAT::MOVB IN.DHH+1(R2),R3	;Get network it is addressed to
+	CMP R3,#NW.CHS		;CHAOSNET?
+	BEQ INTPKT
+	CMP R3,#NW.LCS		;Or LCSNET
+	BEQ INTPKT
+	BPT			;Neither, should do something clever
+
+;;; Handle internet packet from someplace
+INTPKT::MOVB IN.DHL+1(R2),R3	;Get destination subnet
+INTPK0:	MOV IN.LEN(R2),R4	;Length of packet
+	INC R4
+	ASR R4
+	MOV R4,BUFBCT(R2)	;Store length
+	ASL R3
+	JMP @INTSBN(R3)		;Call right internet routing routine
+
+;;; Internet packet through the CHAOSNET, wrap in a MUPPET
+INTCHA::MOV R2,R5		;Save a pointer to packet portion
+	CMPB IN.PTC(R5),#PT.CHS	;Packet contains CHAOSNET ptcl?
+	BEQ 20$			;Yes, can send that directly
+	MOV IN.LEN(R5),R4	;Byte count
+	CLR -(R2)		;Checksum
+	CLR -(R2)		;Acknowlege
+	CLR -(R2)		;No fragmentation
+	CLR -(R2)		;" "
+	MOV R4,-(R2)		;Data length
+	CLR -(R2)		;Packet number
+	CLR -(R2)		;Source port
+	MOV IN.SHL(R5),-(R2)	;Source host
+	CLR -(R2)		;Destination port
+	MOV IN.DHL(R5),-(R2)	;Destination host
+	CLR -(R2)		;Forward count, opcode 0
+	MOV #MPPINT*400+1,-(R2)	;Ptcl 4, version 1
+	MOV R2,BUFDTA(R1)	;Now points to MUPPET header
+	JMP CHADAT		;Now have MUPPET
+
+20$:	MOVB IN.IHL(R5),R4	;Get length of internet header
+	.IREPT 4,<ASL R4>	;Convert to bytes
+	ADD R4,R2		;Point to this packet
+	MOV R2,BUFDTA(R1)
+	JMP CHADAT
+
+.SBTTL PUP handling
+
+PU.LEN==0			;Length of whole PUP
+PU.TYP==2			;PUP type
+PU.TCB==3			;Transmit control byte
+PU.IDH==4			;PUP ID high
+PU.IDL==6			;PUP ID low
+PU.DHS==10			;Destination host
+PU.DSH==12			;Destination socket high
+PU.DSL==14			;Destination socket low
+PU.SHS==16			;Source host
+PU.SSH==20			;Source socket high
+PU.SSL==22			;Source socket low
+
+PUPTBL:	PUPDAT			;A PUP
+	.IREPT 3,ILLMSG
+
+PUPDAT::MOV R2,R5		;Save a pointer to pup data
+	CLR -(R2)		;Checksum
+	CLR -(R2)		;Acknowlege
+	CLR -(R2)		;No fragmentation
+	CLR -(R2)		;" "
+	MOV PU.LEN(R5),-(R2)	;Data length
+	MOV PU.IDL(R5),-(R2)	;Packet numbers
+	MOV PU.SSL(R5),-(R2)	;Source port
+	MOV PU.SHS(R5),-(R2)	;Source host
+	MOV PU.DSL(R5),-(R2)	;Destination port
+	MOV PU.DHS(R5),-(R2)	;Destination host
+	CLR -(R2)		;Forward count, opcode 0
+	MOV #MPPETH*400+1,-(R2)	;Ptcl 3, version 1
+	MOV R2,BUFDTA(R1)	;Now points to MUPPET header
+	JMP CHADAT		;And we have a MUPPET
+
+;; Send PUP routing information to the -10
+PUPMXH==15.-1-1			;Maximum number of hops in ptcl, less 1 for 10
+PPXRUT:	.WORD 30.*60.		;Every 30 seconds
+PPORUT::PUSH <R0,R1,R2,R3,R4,R5>
+	MOV #30.*60.,PPXRUT
+	MOV #DTPPUP*400+BUFI11,R3	;Get an internal buffer
+	CALL GETBUF
+	BEQ 50$			;None free, forget it
+	MOV R2,R3		;Copy of data address
+	TST (R3)+		;Fill in byte count later
+	MOV #201,(R3)+		;Type 201 = i am a gateway
+	CLR (R3)+		;Pup ID
+	CLR (R3)+		;...
+	MOV #5*400,(R3)+	;Destination host (broadcast over DTE subnet)
+	CLR (R3)+		;Destination socket
+	MOV #2,(R3)+		;...
+	MOV #2401,(R3)+		;Source host (fake address on subnet 5)
+	CLR (R3)+		;Source socket
+	MOV #2,(R3)+		;...
+	MOV #SBNMAX-1,R4
+	MOV #SBNCNT,R5
+10$:	TST SBNRUT(R5)		;Routed directly?
+	BNE 60$			;Yes
+	MOV SBNCST(R5),R0	;Get cost
+	CMP R0,#1000		;Unreachable?
+	BLO 20$			;No
+	MOV #377,R0		;Yes, use maximum count then
+	BR 30$
+20$:	CMP R0,#PUPMXH		;More than maximum number of hops?
+	BLOS 30$		;No
+	MOV #PUPMXH,R0		;Yes, use that then
+30$:	MOVB SBNHST+1(R5),(R3)+	;Gateway subnet
+	MOVB R4,(R3)+		;Target subnet
+	MOVB R0,(R3)+		;Hop-count
+	MOVB SBNHST(R5),(R3)+	;Gateway host
+40$:	TST -(R5)
+	SOB R4,10$
+	MOV #-1,(R3)+		;Not checksummed
+	SUB R2,R3		;Get byte count
+	MOV R3,PU.LEN(R2)	;Store in pup
+	MOV R3,BUFBCT(R2)	;And in internal buffer
+	MOV #1400,BUFTYP(R2)	;This is a PUP
+	CALL TOTENQ		;Queue packet to the -10
+50$:	JMP INTRET		;And return
+
+60$:	MOVB #5,(R3)+		;From us
+	MOVB R4,(R3)+		;Target net
+	CLRB (R3)+		;Connected directly
+	MOVB #1,(R3)+		;Us again
+	BR 40$
+
+.IF NE,CHAOSP
+
+.SBTTL Chaosnet
+
+;Hardware registers
+CHAEXP=164140			;External addr of chaos net interface
+CHACSR=CHAEXP			;Command status register
+ CHSRDN=100000			;Receive done
+ CHSERR=040000			;Crc error
+ CHSRST=020000			;I/O reset
+ CHSTCL=000400			;Clear transmitter
+ CHSTDN=000200			;Transmit done
+ CHSTAB=000100			;Transmit aborted
+ CHSTEN=000040			;Transmit interrupt enable
+ CHSREN=000020			;Receive interrupt enable
+ CHSRCL=000010			;Clear receiver
+ CHSSPY=000004			;Receive-all
+ CHSLUP=000002			;Loop-back
+ CHSBSY=000001			;Transmit busy
+CHAMYN=CHAEXP+2			;Host number for this interface
+CHAWBF=CHAEXP+2			;Write buffer
+CHARBF=CHAEXP+4			;Read buffer
+CHARBC=CHAEXP+6			;Receive bit count
+CHAXMT=CHAEXP+12		;Initiate transmission
+
+PKMAX=256.			;Maximum length of packet in words
+DATMAX=488.			;Maximum number of data bytes
+PKNHDR=10			;Number of header words
+PK.OP=1				;Opcode field
+PK.NBT=2			;Word of number of bytes
+ PKTNBT==170000
+PK.FC=2				;Also for forward count
+ PKTFC==7777
+PK.DHS=4			;Destination host
+PK.DIX=6			;Destination index
+PK.SHS=10			;Source host
+PK.SIX=12			;Source index
+PK.PKN=14			;Packet number
+PK.AKN=16			;Ack number
+PK.DAT=20			;Start of actual data
+
+;Packet opcodes
+.CORFC=1			;Request for connect
+.COOPN=2			;Open
+.COCLS=3			;Close
+.COFWD=4			;Forward
+.COANS=5			;Answer
+.COSNS=6			;Sense status
+.COSTS=7			;Report status
+.CORUT=10			;Routing info
+.COLOS=11			;You are losing
+.COLSN=12			;Listen (never used)
+.COMNT=13			;Maintenance
+.COMAX=14			;Maximum opcode+1
+.CODAT=200			;First data opcode
+
+CHATBL:	CHADAT			;Chaosnet data
+	CHARQS			;Chaosnet request for status
+	.IREPT 2,ILLMSG
+
+;;; Chaos packet from the -10
+CHADAT::CALL CHIHDR		;Process header
+
+;;; Here with packet size all set up, figure out where it goes
+CHAPKT::MOVB MP.DHS+1(R2),R3	;Get destination subnet
+	ASL R3
+	MOV SBNRUT(R3),R4	;Get correct routing method
+	BEQ CHASBN		;Foreign chaosnet subnet
+	JMP @R4			;Call it
+
+;;; Here for a packet addressed to a local chaosnet subnet,
+;;; see if it for the -11 itself
+CHALCL::CMP PK.DHS(R2),MYCHAD	;Matches my address?
+	BNE 10$
+	JMP CHAFME		;Yes, packet for me then
+
+;;; Here is a packet for a local subnet
+10$:	MOV PK.DHS(R2),BUFDST(R1)	;Address to correct host
+	BR CHAQUE		;Queue to chaos interface
+
+;;; Here is a packet for a foriegn CHAOSNET subnet
+CHASBN::MOV SBNHST(R3),BUFDST(R1)	;Address to appropriate host
+
+;;; Here to queue a packet to the CHAOSNET interface
+;;; Address of buffer in R1
+CHAQUE::MOV CHALST,R2		;Get head of queue
+	BEQ 30$			;None, start this one right away
+10$:	MOV R2,R3
+	MOV @R2,R2
+	BNE 10$			;Find the end of the list
+	MOV R1,@R3		;Link new thing in
+20$:	RET
+30$:	MOV R1,CHALST
+
+;;; Start a packet on the way to the aether
+CHASND::MOV BUFDTA(R1),R2	;Point to actual data
+	MOV R1,CHOBFP		;Save pointer in case cable jammed
+	MOV BUFBCT(R2),R4	;Get word count
+	CMP R4,#PKMAX		;Within limit?
+	BHI 20$			;No, flush it
+	TSTB BUFSRC(R1)		;Did this come from the -10?
+	BNE 10$			;No, dont swab it
+	CALL CHASWB		;Swab the data portion maybe
+10$:	INC NPKSOU		;One more packet output
+	INC CHOSTS		;Transmission in progress
+	CALL CHAXM0		;Try to send it out
+20$:	RET
+
+;;Initiate transmission
+CHAXM0::MOV CHOBFP,R1		;Get pointer to packet
+	MOV BUFDTA(R1),R2	;Get data pointer
+	MOV BUFBCT(R2),R4	;Get word count
+	MOV #CHAWBF,R3		;Write data register
+	CALL MOVR23		;Copy data into hardware
+	MOV BUFDST(R1),(R3)	;Cable destination
+	TST CHAXMT		;Prod transmitter
+	BIS #CHSTEN,CHACSR	;Enable transmit done interrupts
+	RET
+
+;;; Process the header of a CHAOSNET packet
+;;; Returns with V set is packet should be flushed
+CHIHDR::TSTB MP.VER(R2)		;Did it turn out to be a MUPPET?
+	BEQ 20$
+	MOV #MPNHDR,CHIHDL	;Set header length
+	INCB MP.FWC(R2)		;Increment forwarding count
+	BMI 50$			;200, discard
+	MOV MP.FRL(R2),R4	;Get data byte count this MUPPET
+	BNE 10$
+	MOV MP.PKL(R2),R4	;In different place if not fragmented
+10$:	CMP R4,#MDTMAX
+	BR 30$			;Enter common code again
+
+20$:	MOV #PKNHDR,CHIHDL	;Set header length
+	ADD #PKTFC+1,PK.FC(R2)	;Increment fwd count
+	BIT #-PKTFC-1,PK.FC(R2)
+	BEQ 50$			;Flush if forwarding loop
+	MOV PK.NBT(R2),R4	;Get byte count
+	BIC #PKTNBT,R4
+	CMP R4,#DATMAX
+30$:	BHI 50$
+	INC R4
+	ASR R4			;Make word count
+	ADD CHIHDL,R4		;Include header
+	MOV R4,BUFBCT(R2)	;Save count for later
+40$:	RET
+50$:	SEV
+	BR 40$
+
+;;; SWAB the data portion of the packet
+;;; Packet in R2, number of data words in R4
+CHASWB::TST R4
+	BLE 30$
+	TSTB MP.VER(R2)
+	BEQ 10$			;CHAOSNET packet
+	CMPB MP.VER(R2),MPPCHA	;CHAOSNET muppet?
+	BNE 30$			;No, return
+	MOV #MP.DAT,CHIHDL
+	MOVB MP.OP(R2),R3
+	BR 20$
+
+10$:	MOV #PK.DAT,CHIHDL
+	MOVB PK.OP(R2),R3	;Get the opcode
+20$:	BPL 40$			;Control opcode
+	BIT #100,R3		;Does this want to be swabbed?
+	BEQ 50$			;Yes, go do so
+30$:	RET			;No, return
+
+40$:	TSTB CHABIN(R3)
+	BNE 30$			;Binary, dont swab it
+50$:	ADD CHIHDL,R2		;Point to data portion of packet
+60$:	SWAB (R2)+
+	SOB R4,60$
+	RET
+
+;;Byte table indexed by opcode, non-zero if binary
+;;Binary operations are 2 (.COOPN), 7 (.COSTS), 10 (.CORUT)
+CHABIN:	.BYTE 0,0,2,0,0,0,0,7,10,0,0,0
+	.EVEN
+
+;;Fast block move
+;;These can move at most 256. words
+
+;MOV (R3),(R2)+
+;SOB R4,.-2
+MOVR32:	SUB #256.,R4		;GET -#WDS LESS THAN MAXIMUM
+	ADD R4,R4		;CONVERT TO BYTES
+	SUB R4,PC		;JUMP INTO MOVE TABLE
+.REPT 256.
+	MOV (R3),(R2)+
+.ENDR
+	RET
+
+;MOV (R2)+,(R3)
+;SOB R4,.-2
+MOVR23:	SUB #256.,R4		;GET -#WDS LESS THAN MAXIMUM
+	ADD R4,R4		;CONVERT TO BYTES
+	SUB R4,PC		;JUMP INTO MOVE TABLE
+.REPT 256.
+	MOV (R2)+,(R3)
+.ENDR
+	RET
+
+;;; CHAOSNET device interrupt
+
+CHAINT::PUSH <R0,R1,R2,R3,R4,R5>
+	MOV CHACSR,R1		;Read status register
+	BPL CHAIN1		;Branch if not receive done
+	BIT #CHSERR,R1		;CRC error?
+	BNE CHICRC		;Yes, go handle that
+	MOV #BUFFCH,R3		;From the CHAOSNET
+	CALL GETBUF		;Get a free buffer
+	BEQ CHIFL2		;None, forget it for now
+	MOV #CHARBF,R3		;Point to receive data register
+	INC NPKSIN		;One more packet in from interface
+	MOV CHARBC,R4		;Bit count -1
+	SUB #47.,R4		;Add 1, then subtract 3*16. for hardware words
+.IREPT 4,<ASR R4>		;Convert to number of words
+	CMP R4,#PKMAX
+	BHI CHIFLS		;This can only happen if hardware broken
+	CALL MOVR32		;Copy in the whole packet
+	MOV BUFDTA(R1),R2	;Point back to data
+	CALL CHIHDR		;Process header
+	BVS CHIFLS		;Software count too long
+	CMP (R3),(R3)
+	TST (R3)		;Flush 3 hardware leader words
+	BIT #CHSERR,CHACSR	;Was there an error reading it out?
+	BNE CHIGBG		;Yes, flush it
+	CMP CHARBC,#7777	;Was packet correct length?
+	BNE CHIBBC		;No good
+
+	CALL CHARCV		;Message received successfully
+	BR CHIFL1		;Go clear receiver and check on output
+
+;;Packet received with crc error at start
+CHICRC:	INC NPKSER
+	BR CHIFL1
+
+;;Packet read out as gubbish
+CHIGBG:	INC NPKSRE
+	BR CHIFL0
+
+;;Bad bit-count
+CHIBBC:	INC NPKSBB
+	BR CHIFL0
+
+;;Here to ignore an input packet
+CHIFLS:	INC NPKSIG
+;;Here when we aren't going to queue a packet
+CHIFL0:	MOV FRELST,@R1		;Return to free list
+	MOV R1,FRELST
+;;Here when all done with packet
+CHIFL1:	MOVB CHACSR+1,R4	;Get lost count
+	ASR R4
+	BIC #-20,R4		;Bits 9-12
+	ADD R4,NPKSLS
+	BIS #CHSRCL,CHACSR	;Clear receiver for another message
+CHIFL2:	BIC #CHSREN,CHACSR	;Clear recv int enable
+
+;;Now check on the output side of things
+CHAIN1:	TSTB CHACSR		;Transmit done?
+	BPL CHAINZ		;Nope, dont worry about it
+	MOV CHOSTS,R1		;Was there output in progress?
+	BNE 20$			;Yes, go check on how it went
+	TST CHXRUT		;Time to send routing packet?
+	BGT 10$			;No, not yet
+	CALL CHORUT		;Yes, send it
+	BR CHITEN		;But don't arm xmit interrupt
+
+10$:	TST CHPLSP		;Pulsar feature enabled?
+	BEQ CHITEN		;No, forget it
+	CMP CHPLSR,CHPLSP	;Time for a pulse?
+	BNE CHITEN		;No, just turn off interrupt
+	MOV #CHAWBF,R3		;Write data register
+	MOV #52525,(R3)		;Alternating one'S
+	CLR (R3)		;Followed by all zeros
+	MOV #-1,(R3)		;To host -1
+	TST CHAXMT		;Send it
+	BR CHITEN		;But still clear transmit interrupt enable
+
+20$:	CMP R1,#2		;Transmit abort delay completed?
+	BNE 30$
+	MOV #-1,CHOSTS		;Yes, try to transmit it again
+	CALL CHAXM0
+	BR CHAINZ
+
+30$:	BIT #CHSTAB,CHACSR	;Transmit aborted?
+	BEQ CHITDN		;No
+	INC NPKSAB		;One more aborted
+	INC CHOSTS
+	BNE CHITEN		;If this is the first time, delay for a while
+
+CHITDN::CLR CHOSTS		;Clear transmit in progress flag
+	MOV CHALST,R1		;Get head of transmit list
+	BEQ CHITEN
+	CALL FREBUF		;Free it
+	MOV R1,CHALST		;New head of the queue
+	BEQ CHITEN
+	CALL CHASND		;Start some more packets transmitting
+CHITEN::BIC #CHSTEN,CHACSR	;Clear transmit interrupt enable
+CHAINZ:	JMP INTRET		;Restore regs and return from interrupt
+
+;;Packet received correctly, queue it to somewhere
+CHARCV::TSTB MP.VER(R2)		;MUPPET?
+	BEQ 10$			;No, CHAOSNET packet
+	CMPB MP.PTC(R2),#MPPMNT	;Maintenance packet?
+	BNE 40$			;No, regular
+	BR 30$			;** JUST FLUSH FOR NOW **
+
+10$:	TST PK.DHS(R2)		;Broadcast packet?
+	BNE 40$			;No
+	PUSH R1
+	CMPB PK.OP(R2),#.CORUT	;Yes, routing packet?
+	BNE 20$			;No, ignore it then
+	CALL CHARUT		;Yes, handle it specially
+20$:	POP R1
+30$:	MOV FRELST,@R1		;Return to free list
+	MOV R1,FRELST
+	BR 50$			;And prepare for another
+
+40$:	CALL CHAPKT		;Here is a packet, queue it
+50$:	BIS #CHSREN,CHACSR	;Turn on receive interrupts too
+	RET
+
+;;Routing packet
+CHARUT::MOV BUFBCT(R2),R4	;Get number of data words
+	SUB #PKNHDR,R4		;Subtract off header
+	ASR R4			;Make number of 2 word pairs
+	MOV PK.SHS(R2),R5	;Host address this came from
+	ADD #PK.DAT,R2		;Point to start of packet's data
+10$:	MOV (R2)+,R3		;Get subnet being talked about
+	CMP #SBNMAX,R3		;One we know about?
+	BLE 20$			;No, forget it
+	ASL R3			;Make word index
+	TST SBNRUT(R3)		;Foreign CHAOSNET subnet?
+	BNE 20$			;No, do not change it then
+	CMP (R2),SBNCST(R3)	;Compare costs
+	BHI 20$			;New one no better
+	MOV (R2),SBNCST(R3)	;Save best cost
+	MOV R5,SBNHST(R3)	;And host address this came from as best
+20$:	TST (R2)+
+	SOB R4,10$
+	RET
+
+;;; Packet addressed to the -11 itself
+CHAFME::MOV R1,CHIBUF		;Save packet address
+	TSTB MP.VERS(R2)	;A MUPPET?
+	BNE 10$
+	CMPB PK.OP(R2),#.CORFC	;RFC?
+	BNE 10$			;No, just flush it
+	CALL SERVE		;Else try to handle it here
+	BEQ 10$			;Nothing special
+	MOV ANSBUF,R1		;Address of the ANS
+	MOV BUFDTA(R1),R2	;And actual data
+	CALL CHADAT		;Queue it to cable
+10$:	MOV CHIBUF,R1		;Get back buffer
+	CALL FREBUF		;Free the packet
+	RET
+
+;;RFC, see if something -11 should handle
+SERVE::	MOV CHIBUF,R1
+	MOV #SRVTBL,R3		;Address of server table
+10$:	MOV (R3)+,R4		;Address of contact name for that server
+	BEQ 30$			;Exit if table exhausted, 'EQ' in cond code
+	MOV BUFDTA(R1),R2
+	ADD #PK.DAT,R2		;Address of contact name in this RFC
+20$:	TSTB (R4)		;End of string?
+	BEQ 40$			;Yup, run this server
+	CMPB (R2)+,(R4)+	;Do string compare
+	BEQ 20$			;Matches
+	TST (R3)+		;Doesn't match, try next
+	BR 10$
+
+30$:	RET
+
+40$:	JMP @(R3)		;Call server, it can return EQ or NE
+
+SRVTBL:	.WORD 10$,STSSRV	;STATUS - return host name and meters
+	.WORD 20$,PLSSRV	;PULSAR - set and get pulsar rate
+	.WORD 0			;End of table
+10$:	.ASCIZ /STATUS/
+20$:	.ASCIZ /PULSAR/
+	.EVEN
+
+;;STATUS, send name and meters
+STSSRV::MOV #32.+CHSSBS+4+TNSBSS+4+LNSBSS+4,R4	;32 bytes for name, plus meter info
+	CALL GETANS		;Allocate a packet to send as an ANS
+	MOV #MYNAME,R3		;Get pointer to our name
+	MOV #MYNAML,R4		;And size of it
+10$:	MOVB (R3)+,(R2)+	;Stick in next byte
+	SOB R4,10$
+	MOV #32.-MYNAML,R4
+20$:	MOVB #200,(R2)+		;Pad with 200's
+	SOB R4,20$
+	MOVB MYCHAD+1,(R2)+	;Next comes our subnet number
+	CLRB (R2)+
+	MOV #CHSSBS/2,R4
+	MOV R4,(R2)+		;Then size of rest of info
+	MOV #CHSSBL,R3		;Meter block
+30$:	MOV (R3)+,(R2)+
+	SOB R4,30$
+	MOV #5,(R2)+		;Next comes data on -10 queue
+	MOV #TNSBSS/2,R4
+	MOV R4,(R2)+
+	MOV #TNSBSB,R3
+40$:	MOV (R3)+,(R2)+
+	SOB R4,40$
+	MOV #10,(R2)+		;Next comes data on LNI queue
+	MOV #LNSBSS/2,R4
+	MOV R4,(R2)+
+	MOV #LNSBSB,R3
+50$:	MOV (R3)+,(R2)+
+	SOB R4,50$
+	CLZ			;Set 'NE' cond code
+	RET
+
+;;PULSAR
+PLSSRV::MOV CHIBUF,R1
+	MOV BUFDTA(R1),R2
+	MOVB PK.NBT(R2),R4	;Get byte count, should be small
+	CMP R4,#8.		;6 for pulsar, 1 for space, 1 for character
+	BLO 10$			;Not given an argument, just read status
+	MOVB PK.DAT+7(R2),R3	;Yes, get the argument
+	SUB #'0,R3		;Convert to octal
+	MOV R3,CHPLSP		;Change pulsar status
+10$:	MOV #1,R4		;Just one byte
+	CALL GETANS
+	MOV CHPLSP,R3		;Return pulsar status
+	ADD #'0,R3		;In ASCII
+	MOVB R3,(R2)
+	RET			;Note 'NE' set
+
+;;Get a packet for an ANS, number of bytes needed in R4
+;;Returns with R2 pointing to data portion of packet
+GETANS::MOV CHIBUF,R1
+	MOV BUFDTA(R1),R5	;Save source pointer
+	MOV #BUFF11,R3
+	CALL GETBUF		;Get a buffer
+	BNE 10$
+	BPT			;Could not get one, die
+10$:	MOV R1,ANSBUF		;Save where the ANS is
+	MOV #.COANS*400,(R2)+	;Opcode
+	MOV R4,(R2)+		;Byte count
+	MOV PK.SHS(R5),(R2)+	;Destination host
+	MOV PK.SIX(R5),(R2)+	;Destination index
+	MOV MYCHAD,(R2)+	;Source host
+	CLR (R2)+		;Source index
+	CLR (R2)+		;Packet number
+	CLR (R2)+		;Ack number
+	RET
+
+;;; Broadcast a packet full of routing information
+CHORUT::MOV #CHAWBF,R3		;Write buffer
+	MOV #.CORUT*400,(R3)	;Opcode
+	MOV #SBNCNT,R1		;Count subnets which we know anything about
+	CLR R2
+10$:	CMP SBNCST(R1),#1000
+	BHIS 20$
+	ADD #4,R2		;This one will generate 2 words
+20$:	SUB #2,R1
+	BPL 10$
+	MOV R2,(R3)		;Byte count
+	CLR (R3)		;Destination
+	CLR (R3)		;...
+	MOV (R3),(R3)		;Source = me
+	CLR (R3)		;Source index
+	CLR (R3)		;Packet number
+	CLR (R3)		;ACK number
+	MOV #SBNCNT,R1		;Go through subnet tables
+	MOVB 1(R3),R4		;Get subnet this is going out on
+	ASL R4
+	MOV SBNCST(R4),R4	;Get cost of getting to us from guy who receives this
+30$:	CMP SBNCST(R1),#1000	;Was this one included in byte count?
+	BHIS 40$		;No, don't put it in packet
+	MOV R1,R2		;First word is subnet number
+	ASR R2
+	MOV R2,(R3)
+	MOV SBNCST(R1),R2	;Second word is cost
+	ADD R4,R2		;Which must include cost of getting to us
+	MOV R2,(R3)
+40$:	SUB #2,R1		;Next subnet
+	BPL 30$
+	CLR (R3)		;Broadcast this packet
+	TST CHAXMT		;Transmit it
+	MOV #15.*60.,CHXRUT	;Not needed for a while now
+	RET
+
+;;Request for our status from the -10
+CHARQS::MOV #CHASBL,R1		;Internal block
+	TST (R1)		;Is it in use?
+	BEQ 10$			;No, ok to send then
+	RET
+
+10$:	MOV CHACSR,CHASDS	;Read device status for it
+	JMP TOTENQ		;Queue it to -10
+
+;;Time to age routing table cost
+CHACLK::MOV #4*60.,CHRTIM
+	PUSH <R1,R2>
+	CLR R1
+	MOV #SBNMAX,R2		;Number of subnets we can know about
+10$:	TST SBNRUT(R1)		;Routing though network?
+	BNE 20$			;No, don't age
+	CMP #1000,SBNCST(R1)	;Don't wrap around
+	BHIS 20$
+	INC SBNCST(R1)		;Age this one
+20$:	TST (R1)+
+	SOB R2,10$
+30$:	POP <R2,R1>
+	RET
+
+;;Common variables
+CHALST:	.WORD 0			;Transmit queue
+MYCHAD:	.WORD 0			;My address on the network
+CHIBUF:	.WORD 0			;Current input buffer
+CHIHDL:	.WORD 0			;Length of current header
+ANSBUF:	.WORD 0			;Pointer to an ANS to RFC
+CHOBFP:	.WORD 0			;Packet address
+CHOSTS:	.WORD 0			;Status of output 0=none 1=starting 2=failed,delay -1=2nd time
+
+CHASBL:	.WORD 0			;Status block to send to -10
+	.WORD BUFFIN		;Internal, stay off free list
+	.WORD 0			;Destination
+	.WORD CHASDS		;Pointer to data portion
+	.WORD CHASBS/2		;Size
+	.WORD BUFHST		;Type is not a buffer
+CHASDS:	.WORD 0			;Device status
+CHAADR:	.WORD 0			;His address on the network
+CHSSBL==.			;Status RFC info block
+NPKSIN:	.WORD 0			;Number of packets in from interface
+NPKSOU:	.WORD 0			;Number of packets output to interface
+NPKSAB:	.WORD 0			;Number of transmissions aborted
+NPKSLS:	.WORD 0			;Number lost to busy interface
+NPKSER:	.WORD 0			;Number with CRC errors at first
+NPKSRE:	.WORD 0			;Number read out with CRC errors
+NPKSBB:	.WORD 0			;Number with bad bit-count
+NPKSIG:	.WORD 0			;Number of packets ignored for misc reasons
+CHSSBS==.-CHSSBL		;Length of status RFC block
+CHASBS==.-CHASBL		;Length of to -10 status block
+
+;;Pulsar variables
+CHPLSP:	.WORD 3			;Rate at which to tweak cable
+CHPLSR:	.WORD 0			;Cable pulsar count
+
+CHRTIM:	.WORD 4*60.
+
+CHXRUT:	.WORD 15.*60.		;Count for transmitting routing info
+
+.ENDC	;CHAOSP
+
+.SBTTL Routing tables
+;;; All tables indexed by subnet number
+
+;; Routing methods
+SBNRUT:	0			;0
+	CHALCL			;1 9th floor
+	0			;2
+	0			;3
+	0			;4
+	TENSBN			;5 XX
+	0			;6
+	0			;7
+	LCSLCL			;10 LCSNET
+SBNMAX==<.-SBNRUT>/2		;Number of subnets we know about
+SBNCNT==2*<SBNMAX-1>		;Count for routing
+
+;; Host numbers
+SBNHST::.WORD 0			;0 someone who should know if out of range
+	.WORD 0			;1 9th floor cable
+	.WORD 426		;2 9th floor ethernet
+	.WORD 440		;3 MC IO-11 subnet
+	.WORD 426		;4 AI CHAOS-11 subnet
+	.WORD 603		;5 XX NETWORK-11 subnet
+	.WORD 0			;6
+	.WORD 0			;7
+	.WORD 603		;10 LCSNET
+
+;; Costs
+SBNCST::.WORD 1000		;0
+	.WORD 11.		;1 9th floor
+	.WORD 1000		;2
+	.WORD 1000		;3
+	.WORD 1000		;4
+	.WORD 10.		;5 XX
+	.WORD 1000		;6
+	.WORD 1000		;7
+	.WORD 11.		;LCSNET
+
+;; Routing for internet packets
+INTSBN:	INTTEN			;0
+	INTCHA			;1
+	INTCHA			;2
+	INTCHA			;3
+	INTCHA			;4
+	INTTEN			;5
+	INTCHA			;6
+	INTCHA			;7
+	INTLCS			;10
+
+MYNAME:	.ASCII /XX-NETWORK-11/
+MYNAML==.-MYNAME
+	.EVEN
+
+.IF NE,LCSNTP
+
+.SBTTL LCS NET
+
+LNIADR==164200			;LNI CSR address
+;;; Unibus register offsets
+LNICSR=0			;Command register
+LNIRSR=2			;Status register
+LNIOAL=10			;Output addr reg
+LNIOAH=12			;Output addr reg
+LNIIAL=14			;Input addr reg
+LNIIAH=16			;Output addr reg
+LNIOBC=20			;Output byte count reg
+LNIIBC=22			;Input byte count reg
+
+;;; CSR bits
+
+LNSROK=100000			;Ring ok
+LNSOFI=40000			;Output fifo input ready
+LNSOFO=20000			;Output ready
+LNSIFI=10000			;Input fifo input ready
+LNSIFO=4000			;Output ready
+LNSCOF=2000			;Clear output fifo
+LNSDEN=1000			;Enable dma
+LNSDIE=400			;DMA done interrupt
+LNSCNT=200			;Clear NT
+LNSRST=140			;Read and reset
+LNSRNT=100			;Remove from NT
+LNSANT=40			;Add to NT
+LNSFTK=20			;Force token output
+LNSOIE=10			;Output done interrupt
+LNSOEN=4			;Output enable
+LNSIIE=2			;Input done interrupt
+LNSIEN=1			;Enable input
+
+;;; RSR bits
+
+LNSOFE=100000			;Output format err
+LNSBMA=40000			;Bad match/accept
+LNSCNM=20000			;CRC no match
+LSNCRC=10000			;Rcvd O/P CRC bad
+LNSOUR=4000			;Output underrun
+LNSMER=2000			;Message err
+LNSIFE=1000			;Input format err
+LNSICB=400			;Input CRC bad
+LNSIOR=200			;Input overrun
+LNSNTB=100			;Name table busy
+LNSNTE=40			;NT err
+LNSRRF=20			;RR find
+LNSACC=10			;Accept
+LNSMCH=4			;Match
+LNSOPC=2			;Output complete
+LNSIPC=1			;Input complete
+
+LNIIER=LNSIFE!LNSICB!LNSIOR	;Input and output errors
+LNIOER=LNSOFE!LNSBMA!LNSCNM!LSNCRC!LNSOUR
+
+;;; Hardware header format
+LNBDPM==-16			;Destination mask
+LNBDPN==-12			;Destination process
+ LNBPTC==-12			;Protocol
+  LNPINT==1			;INTERNET
+  LNPCHA==2			;CHAOSNET
+  LNPMUP==3			;MUPPET
+ LNBSNT==-11			;Subnet number
+ LNBRSV==-10			;Reserved
+ LNBHST==-7			;Host number
+LNBOPN==-6			;Originating process
+LNBLEN==-2			;Length
+LNHLEN==16			;Length of header
+
+;;; Initialize the interface
+LNIINI::MOV #LNIADR,R0
+	MOV #LNSCOF,LNICSR(R0)	;Clear out output fifo and name table
+	MOV #LNSCNT,LNICSR(R0)
+	CLR LNIIAH(R0)
+	CLR LNIOAH(R0)
+
+	MOV #LNINM,LNIOAL(R0)	;Load my name into FIFO
+	MOV #LNINL,LNIOBC(R0)
+	MOV #LNSDEN,LNICSR(R0)	;Start DMA
+	MOV #LNINDT,R1		;Time for it take place
+10$:	TST LNIOBC(R0)		;Done yet?
+	BEQ 20$
+	SOB R1,10$
+	BPT			;Did not finish in time
+
+20$:	MOV #LNSANT,LNICSR(R0)	;Stick FIFO into name table
+	MOV #LNINTT,R1
+30$:	BIT #LNSNTB,LNIRSR(R0)	;Loaded yet?
+	BEQ 40$
+	SOB R1,30$
+	BPT			;Did not finish in time
+
+40$:	BIT #LNSNTE,LNIRSR(R0)	;Made it ok?
+	BEQ 50$
+	BPT			;No, failed
+
+50$:	MOV #LNSDEN,LNICSR(R0)	;Enable DMA again
+	BIT #LNSROK,LNICSR(R0)	;Ring up?
+	BNE LNISIP		;Yes, setup an input buffer
+	MOV #LNITM,LNIOAL(R0)	;Load token message into FIFO
+	MOV #LNITML,LNIOBC(R0)
+	MOV #LNITDT,R1
+60$:	TST LNIOBC(R0)
+	BEQ 70$
+	SOB R1,60$
+	BPT
+
+70$:	MOV #LNSFTK!LNSIIE,LNICSR(R0)	;Output, forcing token
+	MOV #LNITTT,R1
+80$:	BIT #LNSOPC,LNIRSR(R0)	;Output complete?
+	BNE 90$
+	SOB R1,80$
+	BPT
+
+90$:	BIT #LNSROK,LNICSR(R0)	;Token appeared?
+	BNE LNISIP		;Yes, can start input then
+	BPT
+
+;;; Setup an input buffer for the LNI now, since there is
+;;; no packet buffer.  Address of CSR in R0.
+LNISIP::BIC #LNIIAC,LNISTS	;No input in progress
+	MOV #BUFFLN,R3
+	CALL GETBUF		;Get a free buffer
+	BEQ LNISIR		;Could not get one
+	MOV R1,LNIIBF		;Save address
+LNISI1:	CLR LNIIBC(R0)
+	SUB #LNIHDR,R2		;Account for LCSNET header
+	MOV R2,LNIIAL(R0)
+	MOV #MSGLEN,LNIIBC(R0)
+	BIS #LNSIEN!LNSIIE,LNICSR(R0)	;Start input, enable interrupt
+	BIS #LNIIAC,LNISTS
+LNISIR:	RET
+
+;;; Device interrupt
+LNIINT::PUSH <R0,R1,R2,R3,R4,R5>
+	MOV #LNIADR,R0
+	TST LNISTS		;Input active?
+	BPL LNIIN1		;PL if not
+	BIT #LNSIPC,LNIRSR(R0)	;Did it complete?
+	BEQ LNIIN1
+
+LNIIFT=200			;Time for I/P FIFO to empty after interrupt (!)
+	MOV #LNIIFT,R1		;Must wait
+10$:	BIT #LNSIFO,LNICSR(R0)
+	BEQ 20$
+	TST LNIIBC(R0)
+	BEQ 20$
+	SOB R1,10$
+	BPT
+
+20$:	BIC #LNIIAC,LNISTS	;Input operation complete
+	MOV LNIIBF,R1		;Get buffer used
+	MOV BUFDTA(R1),R2
+	BIT #LNSIFO,LNICSR(R0)
+	BNE 30$
+	BIT #LNIIER,LNIRSR(R0)	;Any errors?
+	BEQ 40$
+
+30$:	INC LNIIEC		;One more error
+	CALL LNISI1		;Restart input, same buffer
+	BR LNIIN1		;Check output
+
+40$:	CALL LNIRCV		;Packet received
+	TST LNISTS		;Make sure we have a new input buffer
+	BMI LNIIN1		;Yes, must have reused failing one
+	CALL LNISIP		;Else start one going
+
+;;; Check on output
+LNIIN1::TSTB LNISTS		;Output active?
+	BPL 30$			;No, return
+	BIT #LNSOPC,LNIRSR(R0)	;Output complete?
+	BEQ 30$
+	BIT #LNSOUR,LNIRSR(R0)
+	BEQ 10$
+	BPT
+
+10$:	BIT #LNIOER,LNIRSR(R0)	;Output errors?
+	BEQ 20$			;No
+	INC LNIOEC		;One more output error
+20$:	BIC #LNIOAC,LNISTS	;Clear output active
+	MOV LNILST,R1		;Get head of queue
+	BEQ 30$
+	CALL FREBUF		;Free it
+	MOV R1,LNILST		;Get head of remaining queue
+	BEQ 30$
+	CALL LNIXMT		;Start some more packets transmitting
+30$:	JMP INTRET
+
+;;; Packet received ok, process it
+LNIRCV::MOVB LNBPTC(R2),R3	;Get protocol type
+	CMP R3,#301		;Outgoing?
+	BEQ INOUGO		;Yes, always send to -10 then
+	ASL R3
+	JMP @LNIPTC(R3)		;Process that way
+
+LNIPTC:	10$			;0 Illegal
+	INTPKT			;1 Internet
+	LNICHA			;2 CHAOSNET
+	LNICHA			;3 MUPPET
+	.IREPT 3,10$
+10$:	BPT
+
+;; CHAOSNET packet or MUPPET from the LCSNET
+LNICHA::CALL CHIHDR		;Process header
+	BVS 10$			;Bad, flush it
+	JMP CHARCV		;Queue to someplace and return
+
+10$:	JMP LNISI1		;No good, reuse input buffer
+
+;; Outgoing internet packet, send to -10 to forward to arpanet
+INOUGO::CLR R3			;Route specially though subnet 0
+	JMP INTPK0
+
+;;; Send an internet packet to the LCSNET
+INTLCS::MOV IN.DHL(R2),BUFDST(R1)	;Address to correct host
+	MOV #LNPINT,R3
+	BR LNIPKT
+
+;;; CHAOSNET packet for the LCSNET
+LCSLCL::MOV PK.DHS(R2),BUFDST(R1)	;Address to correct host
+	MOV #LNPMUP,R3		;Source type is MUPPET
+	TSTB MP.VER(R2)		;Unless it isn't
+	BNE LNIPKT
+	MOV #LNPCHA,R3		;Because it's a CHAOSNET packet
+
+;;; Queue a packet to the LCS net, pointer in R1, size now correct
+LNIPKT::MOVB R3,BUFSDV(R1)	;Source device is protocol
+	INC NPKLNO		;One more packet out
+
+LNIQUE::MOV LNILST,R2		;Get head of queue
+	BEQ 20$			;Empty, transmit immediately
+10$:	MOV R2,R3		;Find end of queue
+	MOV @R2,R3
+	BNE 10$
+	MOV R1,@R3		;Link in new packet
+	RET
+20$:	MOV R1,LNILST		;Make it the top of the list
+
+;;; Start a packet on its way to the ring, address of packet in R1
+;;; size assumed correct by now
+LNIXMT::MOV #LNIADR,R0		;Point to CSR
+	CLR LNIOBC(R0)
+	MOV BUFDTA(R1),R2
+	MOV BUFBCT(R2),R4	;Length field
+	ASL R4
+	MOV R4,-(R2)		;Length
+	CLR -(R2)		;Originating process
+	CLR -(R2)		;...
+	MOVB BUFDST(R1),-(R2)	;Host
+	CLRB -(R2)
+	MOVB BUFDST+1(R1),-(R2)	;Subnet
+	MOVB BUFSDV(R1),-(R2)	;Protocol
+	CLR -(R2)		;Destination mask
+	CLR -(R2)		;...
+	MOV R2,LNIOAL(R0)
+	ADD #LNHLEN,R4		;Include header into network
+	MOV R4,LNIOBC(R0)
+	BIS #LNSOIE!LNSOEN,LNICSR(R0)
+	BIS #LNIOAC,LNISTS	;Say output active
+	RET
+
+LNILST:	.WORD 0			;Output queue
+LNISTS:	.WORD 0
+ LNIIAC==100000			;Input active
+ LNIOAC==000200			;Output active
+LNIIBF:	.WORD 0			;Input buffer
+LNSBSB==.
+NPKLNI:	.WORD 0			;Number of packets input
+NPKLNO:	.WORD 0			;Number of packets output
+LNIOEC:	.WORD 0			;Output error count
+	.WORD 0,0,0,0		;Lost count, CRC1, CRC2, BBC
+LNIIEC:	.WORD 0			;Input error count
+LNSBSS==.-LNSBSB
+
+;; Name table
+LNINM::	.BYTE 0,7,0,377		;Prepared to forward all chaosnet packets
+	.BYTE 2,0,0,0
+	.BYTE 0,7,0,377		;Likewise all MUPPETS
+	.BYTE 3,0,0,0
+	.BYTE 0,0,0,0		;All internet packets addressed to me
+	.BYTE 1,10,0,203
+	.BYTE 0,0,0,377		;All outgoing packets
+	.BYTE 301,0,0,0
+LNINL==.-LNINM			;Length of name table
+LNINDT==LNINL*2			;Time for DMA of that to complete
+LNINTT==LNINL*20		;Time to add to name table
+
+;; Token message
+LNITM:	.WORD 0,0,0,0,0,0,2,72727
+LNITML=.-LNITM			;Length of token message
+LNITDT=LNITML*2			;Time for DMA
+LNITTT=1000			;Time to send it
+.ENDC	;LCSNTP
+
+.SBTTL Clock interrupt
+
+CLKCSR==177546			;Clock register
+
+CLKINT::DEC KPALCN		;Count for keep alive
+	BGT 10$			;Still waiting
+	MOV #5.*60.,KPALCN
+	INCB KPALIV		;Increment keep alive counter
+	PUSH <R0,R1,R2,R3>	;Save registers
+	MOV #DTE1,R0
+	MOV #DEP,R1
+	MOV #PSWW1-FORPRO,R2
+	ADD DTEMYD,R2
+	MOV #KPALIV,R3
+	CALL SWFED		;And send it over
+	POP <R3,R2,R1,R0>	;Restore registers
+10$:
+.IF NE,CHAOSP
+	TST CHOSTS		;Is there output in progress?
+	BNE 20$			;Yes, go turn on transmit interrupt
+	DEC CHXRUT		;Maybe time for a routing packet
+	BLE 20$
+	DEC CHPLSR		;Else see if time to hack cable
+	BGT 30$			;If count exhausted,
+	MOV CHPLSP,CHPLSR	;Reset counter
+20$:	BIS #CHSTEN,CHACSR	;Turn on transmit interrupt enable
+30$:	DEC CHRTIM		;Time to age routing table?
+	BGT 40$
+	CALL CHACLK
+.ENDC	;CHAOSP
+
+40$:	DEC PPXRUT		;Time for pup routing table?
+	BGT 50$			;No
+;	JMP PPORUT		;Yes, send it to -10 too (note JMP)
+
+50$:	RTI
+
+.END $START
+ 

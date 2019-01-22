@@ -1,0 +1,252 @@
+;defs for .CALL code bits
+CIMM==1000,,0	;immediate arg
+CRET==2000,,0	;value returned
+CERR==3000,,0	;error code returned
+CTL== 4000,,0	;control bits at loc
+CTLI==5000,,0	;control bits, immediate
+
+DEFINE SYSCAL A,B
+	.CALL [SETZ ? SIXBIT/A/ ? B ((SETZ))]
+TERMIN
+
+IFNDEF PJRST,PJRST==JRST	;jrst to a popj'ing routine
+
+DEFINE PUSHAE AC,LIST
+IRP LOC,,[LIST]
+PUSH AC,LOC
+TERMIN
+TERMIN
+
+DEFINE POPAE AC,LIST
+IRP LOC,,[LIST]
+POP AC,LOC
+TERMIN
+TERMIN
+
+DEFINE ASCNT STR
+.LENGTH STR,,[ASCIZ STR]!TERMIN
+
+DEFINE ASCSTR STR
+.LENGTH STR
+440700,,[ASCIZ STR]!TERMIN
+
+	;couple of hairy macros which turn SBLOCK into repository
+	;of text, added to by ADDBLK, which will be inserted wherever
+	;SBLOCK is finally invoked (at end of program, in general)
+	; Used by STRNAM.
+
+DEFINE SBLOCK ARG
+ARG
+TERMIN
+
+DEFINE ADDBLK NEW
+SBLOCK [DEFINE SBLOCK ARG
+ARG]NEW
+TERMIN
+TERMIN
+
+DEFINE STRNAM NAME	;macro using ADDBLK to add strings to string var table
+ADDBLK [NAME: 0 ? 0]
+TERMIN
+
+;-------------------------------------------------------------
+; Super duper macro to make output a breeze.  requires UUOS.
+DEFINE FWRITE ICH,LIST
+%F==0
+IRP ITEM,REST,[LIST]
+IFN %F,[%F==0 ? .STOP]
+IFNSQ [ITEM][OUTZ ICH,[ASCIZ ITEM] ? .STOP]
+IFDEF %%.!ITEM,[IRP ARG,,[REST] ? %%.!ITEM ICH,[ARG] ? .ISTOP ? TERMIN
+		%F==1 ? .STOP]
+OUTZ ICH,[ASCIZ ITEM]
+TERMIN
+TERMIN
+
+DEFINE MAKSTR LOC,LIST	;for making string in one fell swoop.
+BCONC
+FWRITE STRC,[LIST]
+ECONC LOC
+TERMIN
+
+DEFINE CONC LOC,LIST	;for concatenating stuff to existing string.
+BCONC LOC
+FWRITE STRC,[LIST]
+ECONC LOC
+TERMIN
+
+;------------------- FWRITE item routines ------------------
+; item is in form "%%.<item-name> <channel>,<argument>"
+
+
+DEFINE %%.TLS C,ARG	; "TLS" - text, list string.
+MOVE U4,-4(L)		;	takes arg as pointer to string qb, and
+MOVE U4,ARTAB(U4)	;	outputs its string.
+PUSH P,U4
+MOVE U4,ARG
+MOVE U4,LISTAR(U4)+1
+ADD U4,(P)
+OUTC C,U4
+POP P,U4
+TERMIN
+DEFINE %%.TAS C,ARG	; TAS- obsolete name for TLS.
+%%.TLS C,ARG
+TERMIN
+
+DEFINE %%.TA C,ARG	; "TA" - text, area.  outputs whole area
+MOVE U4,ARG
+PUSH P,WARTAB(U4)
+MOVE U4,ARTAB(U4)
+HRLI U4,440700
+PUSH P,U4
+PTRDIF U4,-1(P)
+CAIGE U4,
+ SETZ U4,
+HRLZ U4,U4
+HRRI U4,(P)
+OUTPC C,U4
+SUB P,[2,,2]
+TERMIN
+
+DEFINE %%.TS C,ARG	; "TS" - text, string.  outputs string var.
+OUTS C,ARG
+TERMIN
+
+DEFINE %%.OCT C,ARG	; "OCT" - octal value of word
+OUN8 C,ARG
+TERMIN
+
+DEFINE %%.DEC C,ARG	; "DEC" - decimal value of word
+OUN10 C,ARG
+TERMIN
+
+DEFINE %%.N9 C,ARG	; "N9" - decimal value, but without decimal pt.
+OUN9 C,ARG
+TERMIN
+
+DEFINE %%.NFL C,ARG	; "NFL" - floating decimal value
+OUNFLT C,ARG
+TERMIN
+
+DEFINE %%.TI C,ARG	; "TI" - outputs arg as char
+OUTI C,ARG
+TERMIN
+
+DEFINE %%.TZ C,ARG	; "TZ" - outputs asciz string at arg
+OUTZ C,ARG
+TERMIN
+
+DEFINE %%.TZ$ C,ARG	; "TZ$" - outputs asciz string addressed by rh of word at arg
+HRRZ U4,ARG
+OUTZ C,(U4)
+TERMIN
+
+DEFINE %%.TC C,ARG	; "TC" - outputs ascnt string at arg
+OUTC C,ARG
+TERMIN
+
+DEFINE %%.TPZ C,ARG	; "TPZ" - c(arg) is byte ptr to asciz string
+OUTPZ C,ARG
+TERMIN
+
+DEFINE %%.TPC C,ARG	; "TPC" - c(arg) is <char cnt>,,<addr of byte ptr to string>
+OUTPC C,ARG
+TERMIN
+
+DEFINE %%.LH C,ARG	; "LH" - outputs lh of c(arg) in octal
+HLRZ U4,ARG
+OUNRH C,U4
+TERMIN
+
+DEFINE %%.RH C,ARG	; "RH" - outputs rh of c(arg) in octal
+OUNRH C,ARG
+TERMIN
+
+DEFINE %%.H C,ARG	; "H" - outputs c(arg) in halfwd format (lh,,rh)
+HLRZ U4,ARG
+OUNRH C,U4
+OUTZ C,[ASCIZ /,,/]
+OUNRH C,ARG
+TERMIN
+
+DEFINE %%.RHV C,ARG	; "RHV" - rh(arg) as octal number, not bit pattern
+HRRE U4,ARG
+OUN8 C,U4
+TERMIN
+
+DEFINE %%.LHV C,ARG	; "LHV" - lh(arg) as octal number
+HLRE U4,ARG
+OUN8 C,U4
+TERMIN
+
+DEFINE %%.HV C,ARG	; "HV" - lhv,,rhv
+HLRE U4,ARG
+OUN8 C,U4
+OUTZ C,[ASCIZ /,,/]
+HRRE U4,ARG
+OUN8 C,U4
+TERMIN
+
+DEFINE %%.6F C,ARG	; "6F" - outputs c(arg) as sixbit without trailing blanks
+OUT6F C,ARG
+TERMIN
+
+DEFINE %%.6W C,ARG	; "6W" - outputs all of c(arg) as sixbit
+OUT6W C,ARG
+TERMIN
+
+DEFINE %%.WA C,ARG	; "WA" - converts internal time into "mm/dd/yy hh:mm:ss"
+PUSH P,A
+MOVE A,ARG
+PUSHJ P,TIM7XP
+OUTPZ C,A
+POP P,A
+TERMIN
+
+DEFINE %%.WB C,ARG	; "WB" - converts internal time into "dd mmm yy hh:mm-zon"
+PUSH P,A
+MOVE A,ARG
+PUSHJ P,TIMEXP
+OUTPZ C,A
+POP P,A
+TERMIN
+
+DEFINE %%.WC C,ARG	; "WC" - converts internal time into am/pm value
+PUSH P,A		; "hh:mm <am/pm> <3 char day of wk if not today>"
+MOVE A,ARG
+PUSHJ P,TIMLZY
+OUTPZ C,A
+POP P,A
+TERMIN
+
+DEFINE %%.WAI C,ARG	; "WAI" - like wa but ignores arg, uses current time/date
+PUSH P,A
+PUSHJ P,TIMGET
+PUSHJ P,TIM7XP
+OUTPZ C,A
+POP P,A
+TERMIN
+
+DEFINE %%.WBI C,ARG	; "WBI" - like wb but etc.
+PUSH P,A
+PUSHJ P,TIMGET
+PUSHJ P,TIMEXP
+OUTPZ C,A
+POP P,A
+TERMIN
+
+DEFINE %%.WCI C,ARG	; "WCI" - like wc but etc.
+PUSH P,A
+PUSHJ P,TIMGET
+PUSHJ P,TIMLZY
+OUTPZ C,A
+POP P,A
+TERMIN
+
+DEFINE %%.HST C,ARG	; "HST" - takes host # from arg and outputs name or #
+SKIPN U4,ARG
+ MOVE U4,OWNHST
+SKIPL HSTDOC(U4)
+ PUSHJ P,[OUN8 C,U4 ? JRST POPJ1]	;if no string exists, use #.
+OUTZ C,@HSTDOC(U4)
+TERMIN
+
