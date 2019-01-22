@@ -1,0 +1,1463 @@
+
+
+DSK:TITLE NIMED
+.INSRT COM:IMDEFS >
+
+;IMLAC interruptable screen editor and display
+
+IASV=102					;saves acc during interrupt
+ILSV=103					;saves link(in bit 0) during interrupt
+IMSK=104					;bits that are 1 correspond to active interrups
+
+TOP=6400				;top of page
+LEFT=600				;left margin
+
+REPT=2000				;these are fixed by the keyboard
+CTRL=1000
+SHIFT=400
+
+ATO=40000				;this bit set in KDIS table indicates that auto-repeat
+					;   is allowed.
+
+LOC 0
+	BLOCK 	1			;start of interrupt handler
+	DAC	IASV
+	RAR	1
+	DAC	ILSV
+	LAC	[I JMP 20]
+	RDI
+	DAC	.+1
+	BLOCK	1			;indirect jump to proper interrupt routint goes here
+	
+LOC 100
+RESTRT:	JMP	RINIT			;start here to preserve screen contents
+START:	JMP	INIT				;start here to initialize everything
+
+LOC 105
+CTR1:	0
+CTR2:	0
+	LOC 27				;table of interrupt routines
+	ISPUR
+	ISPUR
+	REFR				;go refresh the display
+	ISPUR
+	KBDI				;read something from the keyboard
+	ISPUR				;tty input ready
+	ISPUR				;tty output done
+	ISPUR
+	ISPUR
+	LOC 107
+ISPUR:	JMP	EXINT		;!ERROR!-here if non-active interrupt occurs
+
+CT1=3					;100 ms for keyboard repeat
+CT2=24./CT1				;1/2 sec
+
+REFR:	LAC	[LSTART+3]			;start of display list
+	DLA
+	DON
+	SCF
+RCLK:	NOP				;put jmp here when mouse reading is called for
+CT1CK:	ISZ	CTR1
+	JMP	.+2
+	JMP	CT1BRK			;100 ms break
+EXINT:	LAC	ILSV			;restore the link
+	RAL	1
+	LAC	IASV			;restore the accumulator
+	ION
+	I JMP	0			;exit interrupt level
+
+CT1BRK:	NOP				;here on 100 ms break
+	LWC	CT1			;reset counter for next break
+	DAC	CTR1
+CT2CK:	ISZ	CTR2
+	JMP	EXINT
+CT2BRK:	NOP				;here on two second break
+	JMP	KBATO
+
+KBRPT:	CAL				;here if repeat key was legally held down
+	KRC
+	AND	[3717]
+	SAM	KISV6'			;will not be equal if repeat key or function key was
+	JMP	KRPCLR			;     legally held down
+	LWC	CT1
+	DAC	CTR1			;reset 100 ms counter
+	LAC	[JMP KBRT1]		;set dispatch point to do repeat
+	DAC	IDLE1
+	JMP	CT1BRK+1			
+
+KRPCLR:	LAC	[NOP]			;here if repeat is done
+	DAC	CT1BRK
+	JMP	CT1BRK+1
+
+KBATO:	LAC	[NOP]			;here if auto-repeat was set 
+	DAC	CT2BRK			;clear it
+	CAL
+	KRC
+	AND	[3717]			;see if same key(s) are being held down 
+	SAM	KISV6
+	JMP	EXINT			;no-forget it 
+	LAC	[JMP KBRPT]		;yes-set repeat as if REPT key was held down
+	DAC	CT1BRK
+	JMP	EXINT
+	
+
+TABPTR:	TITAB				;points to current tty table
+
+MCHK:	LAC	GTOP
+IDLE:	NOP
+IDLE1:	RSF
+	JMP	MCHK
+	CAL
+	DAC	DELM'
+	RRC				;read tty
+	AND	[177]
+	ISZ	AXSW'			;is -1 if last character was ^A
+	JMP	.+2			;last was not
+	I JMP	[AXTI]			;last was
+	DAC	AXSW			;prevent switch from wrapping around
+
+TIKBD:	ADD	TABPTR			;enter here with translated keyboard character 
+	DAC	TISV1'
+	I LAC	TISV1
+TIAIN:	ASN
+TINULL:	JMP	IDLE			;ignore  zero entries 
+	ASP
+	JMP	TISUB
+	IOR	[DJMS]
+	DAC INSRTE
+TIINC:	LAW 40
+	I ADD LPTR
+	AND [7777]
+	I DAC LPTR
+	LAW 40
+	I ADD CPTR
+	AND [7777]
+	IOR [DLXA]
+	I DAC CPTR
+TIINS:	JMS	PUT			;put in display list
+	JMP	IDLE
+TISUB:	DAC	TISV2'
+	I JMS	TISV2			;go execute subroutine
+	JMP IDLE			;some subroutines skip return
+	JMP IDLE
+;Keyboard Routines
+
+KBRT:	LAW	RSF
+	DAC	IDLE1
+	JMS	SKTTY
+	JMP	.+2
+	JMP	KBAR
+	XAM	DELM
+	ASZ
+	JMP	.+3
+	LAC	[DNOP]
+	JMS	INSERT
+KBAR:	I LAC	[KISV]
+	DAC	KSV'			;save what was read in
+	AND	[1777]
+	I DAC	[KTEND]			;mask off repeat-save at end of table
+	XOR	KSV
+	DAC	KRSV'			;will be non-zero iff repeat was set
+	ASN
+	JMP	KPST
+
+;This sets repeat when REPT key was held down. Rate is determined by  CT1. Repeat will stop
+;     when any of the keys held down is released.
+
+KRPST:	LAW	3717			
+	AND	KSV			;get rid of shift converted bits
+	DAC	KISV6
+	LAC	[JMP KBRPT]		;causes repeats at first clock break
+	DAC	CT1BRK
+
+;This does look-up in KTAB(which see).
+
+KPST:	LAC	[KTAB-1]
+	DAC	17
+	I LAC	[KTEND]
+	I SAM	17
+	JMP	.-1			;if key is not in table loop is escaped from because 
+					;   last entry in table is called KTEND.
+
+	LAW	KDIS-KTAB-1		;find corresponding entry in dispatch table
+	ADD	17
+	DAC	17
+	I LAC	17
+KZRCK:	ASN	
+	JMP	IDLE			;ignore key-strike if entry is zero
+	XAM	KRSV
+	ASZ				;non-zero if repeat has been set
+	JMP	KPGO
+	LAC	[ATO]
+	AND	KRSV
+	ASN				;non-zero if auto-repeat is allowed
+	JMP	KPGO
+
+KATST:	LAW	3717			;this section sets auto-repeat
+	AND	KSV			;     if same keys are being held down after
+	DAC	KISV6			;     second clock break then repeat is set
+	LWC	CT2
+	DAC	CTR2
+	LAC	[JMP KBATO]
+	DAC	CT2BRK
+
+KPGO:	LAC	KRSV
+	ASM				;negative means dispatch table entry pointed to
+	JMP .+4
+	I JMS	KRSV			;   some code to be executed-otherwise contains 
+	JMP IDLE					;some subr's skip return
+	JMP IDLE
+	AND	[177]					;   ascii character to be transmitted. 
+KUSW:	JMP	KLOSW			;switch for changing to upper case
+KLOSW:	JMP	KXMIT			;switch for LOCAL mode
+KXMIT:	TSF
+	JMP	IDLE			;don't wait if not ready-probably switch bounce
+	TPC
+	JMP	IDLE
+KUC:	JMS	KSMCK			;here when upper case lock is on
+	JMP	KUCNEW			;KSMCK skip returns if acc was a-z
+	ADD	[133]			;make upper case
+	JMP	KLOSW			;return
+KUCNEW:	LAW	40			;go see if was A-Z
+	XOR	KRSV
+	JMS	KSMCK
+	JMP	KUCOLD			;was not
+	ADD	[173]			;was-make it lower case
+	JMP	KLOSW
+KUCOLD:	LAC	KRSV			;get unmangled ascii code and return
+	JMP	KLOSW
+DEBUG:	0
+	IOF
+	I JMP	[16000]			;go to debugger(too bad if not there
+
+ULFLIP:	0
+	LAW	KLOSW#KUC		;this section flips upper case switch
+	XOR	KUSW
+	DAC	KUSW
+	JMP	IDLE
+
+KSMCK:	BLOCK	1			;this subroutine skip returns if acc was a-z
+	SUB	[141]			;   otherwise normal return 
+	ASP
+	I JMP	KSMCK
+	SUB	[32]
+	ASM
+	I JMP	KSMCK
+	ISZ	KSMCK
+	I JMP	KSMCK
+
+TLFLIP:	0
+	LAW	KXMIT#TIKBD		;this section flips remote-local switch 
+	XOR	KLOSW
+	DAC	KLOSW
+	LAC [DNOP#<DJMP MLCL>
+	I XOR [JLCL]
+	I DAC [JLCL]
+	JMP	IDLE
+KNOT:	0
+	LAW	CTRL+SHIFT		;here if last key(s) struck were not in KTAB 
+	I AND	[KTEND]			;dispatch on CTRL and SHIFT bits
+	SAR	3
+	SAR	3
+	SAR	2
+	ADD	[I JMP KNOBLE]
+	DAC	.+1
+	0
+
+BSNOT:	LAW	177			;last was nothing extra or just SHIFT
+	I AND	[KTEND]			;use character as typed
+	DAC	KRSV
+	JMP	KUSW
+CNOT:	LAC	[NOP+CREP]
+	DAC	KRSV
+	LAW	177			;last was CTRL only
+	I AND	[KTEND]			
+	JMS	KSMCK			;see if was a-z
+	JMP	IDLE			;was not-ignore
+	ADD	[33]			;was-convert to ^A-^Z
+	DAC	KSV2'
+	JMP	KXMIT
+KNOBLE:	BSNOT				;dispatch table when key(s) not in KTAB-blank
+	BSNOT				;SHIFT
+	CNOT				;CTRL
+	IDLE				;CTRL-SHIFT
+KBRT1:	LAW	RSF			;here when repeating
+	DAC	IDLE1
+	LAC	KRSV
+	ASN
+	JMP	IDLE
+	JMP	KPGO+1
+SKTTY:	0
+	LAC	KLOSW
+	SAM	[JMP TIKBD]	
+	ISZ	SKTTY
+	I JMP	SKTTY
+CREP:	0
+	LAC	KSV2
+	JMP	KXMIT
+
+ERINIT:	0			;contains last fatal error location
+INIT:	IOF
+	LAC	[NOP]
+	DAC	RCLK
+	DAC	CT1BRK
+	DAC	CT2BRK
+	DAC	DELM
+	DAC	IDLE
+	LWC	CT1
+	DAC	CTR1
+	LWC	CT2
+	DAC	CTR2
+	LAC	[LSTART+3]
+	DAC	DSTART				;DISPLAY SETUP
+	LAW 1
+	DAC SFO
+	JMS INITIA
+RINIT:	I JMP [RIN2]
+
+SRFLIP:	0
+	LAC [NOP]
+	DAC CT1BRK
+	I JMS [CLRSC]
+	LAW SCROLL
+	XOR REWRITE
+	DAC REWRITE
+	ASN
+	JMP .+3
+	I JMS [CLRSC]
+	I JMP SRFLIP
+	LAC CARIT
+	JMS INSERT
+	LAC [DJMS D012
+	JMS INSERT
+	LAC CACUR
+	DAC CURCUR
+	I JMP SRFLIP
+
+;	CHARACTER ROUTINES
+
+SPACE:	0
+	LAC	[DIXM]
+	JMP	TIINC-1
+
+BKSPCE:	0
+	LWC	40
+	I ADD	CPTR
+	I DAC	CPTR
+	LWC 40
+	I ADD LPTR
+	I DAC LPTR
+	LAC	[DDXM]
+	DAC INSRTE
+	JMS PUT
+	I JMP BKSPCE
+
+LIFD:	0
+	LWC 100
+	I ADD LTM
+	I DAC LTM
+	LAW SCROLL
+	SAM REWRITE
+	JMP RESE
+	LAW 0
+	DAC BSWITCH
+	LAC CACUR2
+	DAC SAVE7'
+	JMS SAVE
+	I JMS [RTAR]
+	JMP OLDF1
+	I LAC [ARSV]
+	SAM [DJMS D012
+	JMP .+4
+	LAC SAVE7
+	DAC CACUR2
+	JMP SC1
+	LAC CACUR2
+	SAM SAVE7
+	JMP OLDFASH
+SC1:	JMS RESTORE
+	LAC [DJMS D012
+	JMS INSERT
+	LAW 1
+	ADD LHI
+	SAM CACUR2
+	JMP .+2
+	JMP CIH
+	LWC 1
+	ADD CACUR2
+	JMS LASTAD
+	LAC CADR
+	DAC SAVE7'
+	JMP CIH1
+CIH:	LAW 11
+	ADD CPTR
+	DAC SAVE7
+CIH1:	LAW 0
+	JMS VERT
+	JMS SAVE
+	LAW ALPHA'-1
+HEEER:	DAC CURCUR
+	JMS SETUP
+	LAC CACUR
+	DAC R13
+
+	DAC FU
+	LAW 1
+	I DAC FU
+	JMS RESTORE
+RETA:	JMS RETURN
+	JMP SUBSC1+2
+	SAM [DJMS D012
+	JMP .+2
+JP:	JMP SUBCAL
+	I DAC R13
+	LAW ADDR-CARNUM
+	ADD LPTR
+	DAC FUU'
+	I LAC FUU
+	SAM CURCUR
+	JMP .+4
+COKEA:	JMP .+3
+	JMS SUB1
+	JMP SUBSC1+2
+	I ISZ FU
+	I LAC FU
+	SAM BLOLEN
+	JMP RETA
+	JMS SAVE
+	LAC R13
+	DAC CURCUR
+	JMP HEEER
+SUBCAL:	I DAC R13
+	I ISZ FU
+	LAC [JMP SUBSC1
+	DAC JP
+	LAC [LAW 13]
+	DAC COKEA
+	LAC R13
+	DAC SAVE8'
+	JMS SAVE
+	JMS NEWLINE
+	JMP .+2
+	JMP FUUP
+	LAW 1
+	ADD CACUR
+	DAC TMP
+	I LAC TMP
+	I DAC SAVE7
+	LAC SAVE8
+	DAC R13
+	LAC TMP
+	JMS JMPMK
+	I DAC R13
+	LAC CACUR
+	DAC fU
+	DAC R13
+	I LAC R13
+	DAC JUMMP'
+	LAW 13
+	JMS SUB1
+	JMS RESTORE
+	JMP RETA
+SUBSC1:	I ISZ FU
+	I DAC R13
+	LAC JUMMP
+	I DAC R13
+	LAC [JMP SUBCAL
+	DAC JP
+	LAC [JMP COKEA+3]
+	DAC COKEA
+	LWC 1
+	ADD CACUR2
+	DAC LAST
+	JMS GARBAGE
+	LAW ADDR-CARNUM-1
+	ADD LPTR
+	DAC SAVE6'
+	LAC ALPHA
+	I DAC SAVE7
+	JMS SUBTR
+	I DAC SAVE6
+	LAW 0
+	JMS VERT
+	LAC HIC
+	ADD LEFT1
+	I DAC LPTR
+	I JMP LIFD
+OLDFASH:JMS RESTORE
+	LAC SAVE7
+	DAC CACUR2 
+OLDF1:	LAC [DJMS D012
+	DAC INSRTE
+	JMS PUT
+JUHU:	I  LAC CPTR
+	AND [7777]
+	ADD HIC
+	I DAC LPTR
+HUUJ:	LAW 0
+	DAC HIC
+	I JMP LIFD
+RESE:	I LAC CURCUR
+	SAM CARIT
+	JMP .+3
+	JMS LFAR
+	JMS DELETE
+	LAW 0
+	DAC LSWITCH
+	LAW 1
+	DAC BSWITCH'
+	JMS NEWLINE
+	LAW 0
+	DAC NN
+	DAC BSWITCH
+	JMS VERT
+	LAC MOST		;compensates for MOST being incremented when in REWRITE and
+	SAM CACUR2		; CACUR2<MOST
+	SUB [1]
+	DAC MOST
+	JMP HUUJ
+FUUP:	LAC [JMP SUBCAL
+	DAC JP
+	LAC [JMP COKEA+3
+	DAC COKEA
+	I JMP LIFD
+VERT:	0
+	ADD CACUR2
+	DAC NSEC
+	SUB HEIGHT
+	SUB [1]
+	ASM
+	JMP SKPRET
+	ADD HEIGHT
+	SUB LHI
+	ASP
+	JMP SKPRET
+	LAW ADDR-1
+	ADD NSEC
+	DAC FU
+	I LAC FU
+	ASZ
+	JMP .+2
+	JMP SKPRET
+	SUB [1]
+	DAC CACUR
+	DAC CURCUR
+	LAW 0
+	DAC NN
+	JMS PUTUP
+	LAW 1
+	ADD LHI
+	SUB NSEC
+	SAL 3
+	SAL 3
+	I ADD LTM
+	I DAC LTM
+POO1:	LAC NSEC
+	DAC CACUR2
+	ADD [CARNUM-1]
+	DAC LPTR
+	I JMP VERT
+SKPRET:	ISZ VERT
+	I JMP VERT
+
+
+
+
+CART:	0
+	I LAC CPTR
+	AND [7777]
+	I SUB LPTR
+	CIA 
+	DAC HIC 
+	LAC LEFT1
+	I DAC LPTR
+	IOR [010000]
+	I DAC CPTR
+	LAC CARIT
+	DAC INSRTE
+	JMS PUT
+	I JMP CART
+
+KCART:	0
+	JMS SKTTY
+	JMP .+3
+	LAW 15
+	JMP KXMIT
+	JMS CARLIF		;inserts C.R. and L.F.
+	I JMP KCART
+
+CARLIF:	0
+	JMS CART
+	JMS LIFD
+	I JMP CARLIF
+
+LFAR:	0
+	LAC CPTR
+	DAC SAVE7
+	LAW SAVE8
+	DAC CPTR
+	LAC CURCUR
+	DAC SAVE9'
+	LAW 0
+	JMS VERT
+	LAC CURCUR
+	SAM SAVE9
+	JMP USU
+	LWC 1
+	ADD CACUR2
+	SAM LHI
+	JMP .+2
+	JMP GETOUT+2
+	LWC 1
+	JMS VERT
+USU:	JMS SAVE
+	JMS RETURN
+	HLT
+	I DAC [ARSV]
+	SAM [DJMS D012
+	JMP .+2
+	JMP GETOUT
+	LAC CURCUR
+	SAM SAVE9
+	JMP .+2
+	JMP GETOUT
+	JMS RESTORE
+	I JMS [RTAR]
+	HLT
+	JMP USU
+GETOUT: JMS RESTORE
+	ISZ LFAR
+	LAC SAVE7
+	DAC CPTR
+	LAC SAVE8
+	I DAC CPTR
+	I JMP LFAR
+ADCP:	0
+	I ADD CPTR
+	I DAC CPTR
+	I JMP ADCP
+	.INSRT DSK:LMR; COMBO >
+	VARIABLES
+	CONSTANTS
+	BLOCK 10
+;KEYBOARD TABLES
+	LOC 4020
+;First table contains keys exactly as read in.
+
+KTAB:	
+KTAB1:	237				;regular entries
+	231
+	202
+	212
+	204
+	205
+	206
+	210
+	377
+CTRL	230
+	217
+	232
+	234
+	216
+	235
+CTRL	236
+	215
+	230
+	236
+	211
+KTAB2:	SHIFT	212
+	SHIFT	260
+	SHIFT	236
+	SHIFT	217
+	SHIFT	377
+	SHIFT	214
+	SHIFT	216
+	SHIFT	215
+	SHIFT	230
+	SHIFT	232
+	SHIFT	234
+	SHIFT	235
+KTAB3:	CTRL	237
+	CTRL	260
+	CTRL	266
+	CTRL	267
+	CTRL	270
+	CTRL	271
+	CTRL	255
+	CTRL	273
+	CTRL	254
+	CTRL	256
+	CTRL	257
+	CTRL	272
+	CTRL	261
+	CTRL	262
+	CTRL	263
+KTAB4:	CTRL+SHIFT	240
+	CTRL+SHIFT	314
+	CTRL+SHIFT	315
+	CTRL+SHIFT	316
+	CTRL+SHIFT	317
+	CTRL+SHIFT	320
+	CTRL+SHIFT	233
+	CTRL+SHIFT	211
+	CTRL+SHIFT	301
+	CTRL+SHIFT	302
+	CTRL+SHIFT	303
+	CTRL+SHIFT	304
+	CTRL+SHIFT	305
+	CTRL+SHIFT	306
+	CTRL+SHIFT 	377
+
+KTEND:	0					;this is where input gets put
+
+
+;This is the dispatch table for the previous look-up table
+
+KDIS:	
+KDIS1:	ATO	11
+	NOP+ULFLIP
+	NOP+LXMIT
+	ATO	12
+	NOP+ATO+DNAR
+	NOP+ATO+RTAR
+	NOP+ATO+UPAR
+	NOP+ATO+ LFAR
+	NOP+ATO+DELT1
+	NOP+CLRSC
+	NOP+HOMED
+	0
+	0
+	NOP+PXMIT
+	0
+	NOP+SRFLIP
+	NOP+KCART
+	0
+	0
+	0
+KDIS2:	ATO	12
+	ATO	10
+	NOP+SFORM
+	NOP+HOME
+	NOP+ATO+LDEL
+	NOP+TLFLIP
+	NOP+SPXMIT
+	NOP+KCART
+	NOP+CLRCN
+	0
+	0
+	0
+KDIS3:	NOP+ATO+LDEL
+	ATO	174
+	ATO	176
+	ATO	140
+	ATO	173
+	ATO	175
+	ATO	137
+	ATO	100
+	ATO	133
+	ATO	135
+	ATO	134
+	ATO	136
+	NOP	S1
+	NOP	S2
+	NOP	S3
+KDIS4:	ATO	10
+	ATO	34
+	ATO	35
+	ATO	36
+	ATO	37
+	ATO	200
+	NOP+DEBUG	
+	NOP+BTSTR
+	133
+	134
+	135
+	136
+	137
+	100
+	NOP+CLRSC
+KDEND:	NOP+KNOT			;jump to knot if key(s) typed were not in table
+
+IFN <KTAB-KTEND>-<KDIS-KDEND> PRINTC /!ERROR! TWO KEYBOARD TABLES NOT THE SAME LENGTH
+/
+TITBLN=240
+TITAB:
+0
+NOP+ASET
+0
+0
+0
+0
+0
+
+LOC	TITAB+7
+NOP+DONG
+NOP+BKSPCE
+NOP+TAB
+NOP+LIFD
+NOP+DNAR
+0
+NOP+CART
+0
+NOP+LFAR
+0
+
+LOC TITAB+21
+0
+NOP+CLRSC
+NOP+CLRCN
+NOP+HOME
+0
+
+LOC TITAB+26
+NOP+STREW
+NOP+STSCR
+NOP+DELT
+NOP+RTAR
+NOP+UPAR
+0
+0
+0
+0
+0
+
+LOC	TITAB+40
+NOP+SPACE
+; starts here at ascii 41
+	RSLASH
+	RDASH
+	RHARDS
+	RSEMI
+	RCOLON
+	RCOMMA
+	RPERID
+	RAPOS
+	RQUOTE
+	RXC
+	RZHC
+	RBC
+	RBEC
+	RYUC
+	RYOC
+	R0
+	R1
+	R2
+	RZC
+	R4
+	R5
+	R6
+	R7
+	R8
+	R9
+	RXS
+	RZHS
+	RBS
+	RBES
+	RYUS
+	RYOS
+	0
+
+; here is ascii 101 
+	RFC
+	RIC
+	RSC
+	RVC
+	RUC
+	RAC
+	RPC
+	RARC
+	RSHC
+	ROC
+	RLC
+	RDC
+	RSOFTC
+	RTC
+	RSHCHC
+	RZC
+	RJC
+	RKC
+	RIHC
+	REC
+	RGC
+	RMC
+	RTSC
+	RCHC
+	RNC
+	RYAC
+	0
+	0
+	0
+	0
+	0
+	0
+
+; here is ascii 141
+	RFS
+	RIS
+	RSS
+	RVS
+	RUS
+	RAS
+	RPS
+	RRS
+	RSHS
+	ROS
+	RLS
+	RDS
+	RSOFTS
+	RTS
+	RSHCHS
+	RZS
+	RJS
+	RKS
+	RIHS
+	RES
+	RGS
+	RMS
+	RTSS
+	RCHS
+	RNS
+	RYAS
+	0
+	0
+	0
+	0
+	0
+
+TITEND:	0
+;Keyboard Interrupt Routine
+
+KBDI:	LAC	[NOP]				;clear repeat and auto-repeat
+	I DAC	[CT1BRK]
+	I DAC	[CT2BRK]
+	LAC	[DNOP]
+	DAC	JBEL
+	LAC	[KPITAB-1]
+	DAC	17				;set for table search
+	CAL
+	KRC
+	DAC	KISV
+	AND	[1777]				;ignore repeat here
+	DAC	KPIPUT
+
+KBLOOP:	I SAM	17
+	JMP	.-1				;this loop is always terminated because end of
+	LAC	[I JMP	KPIRTS-KPITAB]
+	ADD	17				;dispatch table follows 
+	AND	[173777]
+	DAC	.+1
+	0
+KBGO:	LAC	[JMP KBRT]
+	I DAC	[IDLE1]
+	I JMP	[EXINT]
+
+KPITAB:	CTRL+211					;key called TAB
+	211					;key called FORM
+	CTRL+347
+	CTRL+372
+KPIPUT:	0
+KPIRTS:	101					;restart
+	100					;start all over
+	KINBR
+	KINBR
+	KBGO	  				;usual place to go
+KISV:	0
+
+KINBR:	LAW	37				;send ^g and ^z at interrupt level
+	AND	KISV
+	TSF
+	JMP	.-1
+	TPC
+	I JMP	[EXINT]
+RIN2:	LAC [DNOP]
+	DAC JBEL
+	DAC JWT
+	DAC JLCL
+	I DAC [AXSW]
+	LAW RSF
+	I DAC [IDLE1]
+	LAC	[JMP KLOSW]
+	I DAC	[KUSW]
+	LAC	[JMP KXMIT]
+	I DAC	[KLOSW]
+	RCF
+	KCF
+	LAW KBD+REF
+	I DAC	[IMSK]
+	ARM
+	ION
+	I JMP	[IDLE]
+ASET:	0				;remember that last char was ^A
+	LWC	1
+	I DAC	[AXSW]
+	I JMP	ASET
+
+AXTI:	ADD	[AXTAB]			;here when last char was ^A
+	DAC	NSV1'
+	SUB	[AXTEN]			;see if this char is in aux table
+	ASM
+	I JMP	[IDLE]			;no-ignore
+	I LAC	NSV1
+	I JMP	[TIAIN]			;yes-get entry and treat as usual
+
+AXTAB:	0				;aux tty table-used when last char was ^A
+	NOP+BTSTR
+	NOP+STONE
+	NOP+SFORM
+	NOP+S1
+	NOP+S2
+	NOP+S3
+	NOP+STLOC
+	NOP+STTTY
+AXTEN:
+
+STONE:	0				;put console in one section mode
+	LAW		1
+	I SAM	[SFO]
+	JMP	.+2
+	I JMP	STONE
+	I JMS	[SFORM]
+	JMP	STONE+1
+STREW:	0					;set  overwrite mode
+	LAW	SCROLL
+	I DAC	[REWRITE]
+	I JMS	[SRFLIP]
+	I JMP	STREW
+
+STSCR:	0					;set scroll mode
+	I LAC	[REWRITE]
+	ASN
+	I JMS	[SRFLIP]
+	JMS	CLRSC
+	I JMP	STSCR
+
+STLOC:	0					;set local mode
+	I JMS	[SKTTY]
+	I JMP	STLOC
+	I JMS	[TLFLIP]
+	I JMP	STLOC
+
+
+STTTY:	0
+	I JMS	[SKTTY]
+	I JMS	[TLFLIP]
+	I JMP	STTTY
+RTAR:	0
+	I JMS [SAVE]
+	I JMS [RETURN]
+	JMP RKLU
+	ISZ RTAR
+	JMS EVAL
+	ASZ
+	JMP .+4
+	LAW 40
+RT1:	I JMS [ADCP]
+	I JMP RTAR
+	SAM [1]
+	JMP SAMM2
+	LAW 1
+	I JMS [VERT]
+	I JMP RTAR
+	LAC [RTAR]
+	I JMS [SUB1]
+	JMP RKLU
+SAMM2:	SAM [2]
+	JMP RT3
+	I LAC [LEFT1]
+	IOR [010000]
+R22:	DAC NSV2'
+	I LAC [CPTR]
+	DAC NSV1'
+	LAC NSV2
+	I DAC NSV1
+	I JMP RTAR
+RT3:	SAM [3]
+	JMP .+3
+	LWC 40
+	JMP RT1
+	SAM [4]
+	JMP R22				;not 0-4 means tab
+	I JMP RTAR
+RKLU:	I JMS [RESTORE]
+	I JMP RTAR
+
+DELT1:	0
+	I JMS [SKTTY]
+	JMP .+3
+DELTT:	LAW 177
+	I JMP [KXMIT]
+	I JMS [DELT]
+	I JMP DELT1
+	.INSRT DSK:LMR;WARN THINGY
+	.INSRT DSK:LMR;EVAL >
+	.INSRT DSK:SGP;IMCHAR >
+	.INSRT DSK:PDL;RUSSKI CHSRS
+GTOPPP:	0
+LOC	17713				;make program self starting
+	I JMP	17670
+LOC	17670
+	101
+101
+101
+101
+101
+101
+101
+	101
+	END
+
+B3:	CTRL	237
+	CTRL	260
+	CTRL	266
+	CTRL	267
+	CTRL	270
+	CTRL	271
+	CTRL	255
+	CTRL	273
+	CTRL	254
+	CTRL	256
+	CTRL	257
+	CTRL	272
+	CTRL	261
+	CTRL	262
+	CTRL	263
+KTAB4:	CTRL+SHIFT	240
+	CTRL+SHIFT	314
+	CTRL+SHIFT	315
+	CTRL+SHIFT	316
+	CTRL+SHIFT	317
+	CTRL+SHIFT	320
+	CTRL+SHIFT	233
+	CTRL+SHIFT	211
+	CTRL+SHIFT	301
+	CTRL+SHIFT	302
+	CTRL+SHIFT	303
+	CTRL+SHIFT	304
+	CTRL+SHIFT	305
+	CTRL+SHIFT	306
+	CTRL+SHIFT 	377
+
+KTEND:	0					;this is where input gets put
+
+
+;This is the dispatch table for the previous look-up table
+
+KDIS:	
+KDIS1:	ATO	11
+	NOP+ULFLIP
+	NOP+LXMIT
+	ATO	12
+	NOP+ATO+DNAR
+	NOP+ATO+RTAR
+	NOP+ATO+UPAR
+	NOP+ATO+ LFAR
+	NOP+ATO+DELT1
+	NOP+CLRSC
+	NOP+HOMED
+	0
+	0
+	NOP+PXMIT
+	0
+	NOP+SRFLIP
+	NOP+KCART
+	0
+	0
+	0
+KDIS2:	ATO	12
+	ATO	10
+	NOP+SFORM
+	NOP+HOME
+	NOP+ATO+LDEL
+	NOP+TLFLIP
+	NOP+SPXMIT
+	NOP+KCART
+	NOP+CLRCN
+	0
+	0
+	0
+KDIS3:	NOP+ATO+LDEL
+	ATO	174
+	ATO	176
+	ATO	140
+	ATO	173
+	ATO	175
+	ATO	137
+	ATO	100
+	ATO	133
+	ATO	135
+	ATO	134
+	ATO	136
+	NOP	S1
+	NOP	S2
+	NOP	S3
+KDIS4:	ATO	10
+	ATO	34
+	ATO	35
+	ATO	36
+	ATO	37
+	ATO	200
+	NOP+DEBUG	
+	NOP+BTSTR
+	133
+	134
+	135
+	136
+	137
+	100
+	NOP+CLRSC
+KDEND:	NOP+KNOT			;jump to knot if key(s) typed were not in table
+
+IFN <KTAB-KTEND>-<KDIS-KDEND> PRINTC /!ERROR! TWO KEYBOARD TABLES NOT THE SAME LENGTH
+/
+TITBLN=240
+TITAB:
+0
+NOP+ASET
+0
+0
+0
+0
+0
+
+LOC	TITAB+7
+NOP+DONG
+NOP+BKSPCE
+NOP+TAB
+NOP+LIFD
+NOP+DNAR
+0
+NOP+CART
+0
+NOP+LFAR
+0
+
+LOC TITAB+21
+0
+NOP+CLRSC
+NOP+CLRCN
+NOP+HOME
+0
+
+LOC TITAB+26
+NOP+STREW
+NOP+STSCR
+NOP+DELT
+NOP+RTAR
+NOP+UPAR
+0
+0
+0
+0
+0
+
+LOC	TITAB+40
+NOP+SPACE
+; starts here at ascii 41
+	RSLASH
+	RDASH
+	RHARDS
+	RSEMI
+	RCOLON
+	RCOMMA
+	RPERID
+	RAPOS
+	RQUOTE
+	RXC
+	RZHC
+	RBC
+	RBEC
+	RYUC
+	RYOC
+	R0
+	R1
+	R2
+	RZC
+	R4
+	R5
+	R6
+	R7
+	R8
+	R9
+	RXS
+	RZHS
+	RBS
+	RBES
+	RYUS
+	RYOS
+	0
+
+; here is ascii 101 
+	RFC
+	RIC
+	RSC
+	RVC
+	RUC
+	RAC
+	RPC
+	RARC
+	RSHC
+	ROC
+	RLC
+	RDC
+	RSOFTC
+	RTC
+	RSHCHC
+	RZC
+	RJC
+	RKC
+	RIHC
+	REC
+	RGC
+	RMC
+	RTSC
+	RCHC
+	RNC
+	RYAC
+	0
+	0
+	0
+	0
+	0
+	0
+
+; here is ascii 141
+	RFS
+	RIS
+	RSS
+	RVS
+	RUS
+	RAS
+	RPS
+	RRS
+	RSHS
+	ROS
+	RLS
+	RDS
+	RSOFTS
+	RTS
+	RSHCHS
+	RZS
+	RJS
+	RKS
+	RIHS
+	RES
+	RGS
+	RMS
+	RTSS
+	RCHS
+	RNS
+	RYAS
+	0
+	0
+	0
+	0
+	0
+
+TITEND:	0
+;Keyboard Interrupt Routine
+
+KBDI:	LAC	[NOP]				;clear repeat and auto-repeat
+	I DAC	[CT1BRK]
+	I DAC	[CT2BRK]
+	LAC	[DNOP]
+	DAC	JBEL
+	LAC	[KPITAB-1]
+	DAC	17				;set for table search
+	CAL
+	KRC
+	DAC	KISV
+	AND	[1777]				;ignore repeat here
+	DAC	KPIPUT
+
+KBLOOP:	I SAM	17
+	JMP	.-1				;this loop is always terminated because end of
+	LAC	[I JMP	KPIRTS-KPITAB]
+	ADD	17				;dispatch table follows 
+	AND	[173777]
+	DAC	.+1
+	0
+KBGO:	LAC	[JMP KBRT]
+	I DAC	[IDLE1]
+	I JMP	[EXINT]
+
+KPITAB:	CTRL+211					;key called TAB
+	211					;key called FORM
+	CTRL+347
+	CTRL+372
+KPIPUT:	0
+KPIRTS:	101					;restart
+	100					;start all over
+	KINBR
+	KINBR
+	KBGO	  				;usual place to go
+KISV:	0
+
+KINBR:	LAW	37				;send ^g and ^z at interrupt level
+	AND	KISV
+	TSF
+	JMP	.-1
+	TPC
+	I JMP	[EXINT]
+RIN2:	LAC [DNOP]
+	DAC JBEL
+	DAC JWT
+	DAC JLCL
+	I DAC [AXSW]
+	LAW RSF
+	I DAC [IDLE1]
+	LAC	[JMP KLOSW]
+	I DAC	[KUSW]
+	LAC	[JMP KXMIT]
+	I DAC	[KLOSW]
+	RCF
+	KCF
+	LAW KBD+REF
+	I DAC	[IMSK]
+	ARM
+	ION
+	I JMP	[IDLE]
+ASET:	0				;remember that last char was ^A
+	LWC	1
+	I DAC	[AXSW]
+	I JMP	ASET
+
+AXTI:	ADD	[AXTAB]			;here when last char was ^A
+	DAC	NSV1'
+	SUB	[AXTEN]			;see if this char is in aux table
+	ASM
+	I JMP	[IDLE]			;no-ignore
+	I LAC	NSV1
+	I JMP	[TIAIN]			;yes-get entry and treat as usual
+
+AXTAB:	0				;aux tty table-used when last char was ^A
+	NOP+BTSTR
+	NOP+STONE
+	NOP+SFORM
+	NOP+S1
+	NOP+S2
+	NOP+S3
+	NOP+STLOC
+	NOP+STTTY
+AXTEN:
+
+STONE:	0				;put console in one section mode
+	LAW		1
+	I SAM	[SFO]
+	JMP	.+2
+	I JMP	STONE
+	I JMS	[SFORM]
+	JMP	STONE+1
+STREW:	0					;set  overwrite mode
+	LAW	SCROLL
+	I DAC	[REWRITE]
+	I JMS	[SRFLIP]
+	I JMP	STREW
+
+STSCR:	0					;set scroll mode
+	I LAC	[REWRITE]
+	ASN
+	I JMS	[SRFLIP]
+	JMS	CLRSC
+	I JMP	STSCR
+
+STLOC:

@@ -1,0 +1,331 @@
+
+
+;;; GRIND HACKERY TO KEEP SLASHES ON MACRO CHARS
+
+;;* (SETQ BASE (SETQ IBASE 8.))
+
+;;* (SSTATUS SYNTAX /: 400500)
+
+;;* (SSTATUS SYNTAX /# 400500)
+
+;;* (SSTATUS SYNTAX /@ 400500)
+
+;;* (SSTATUS SYNTAX /" 400500)
+
+
+(SSTATUS MACRO /: '(LAMBDA NIL NIL) S)
+
+(SSTATUS MACRO
+	 /#
+	 '(LAMBDA NIL (VALRET 'TJP)
+		      ''BACK-TO-LISP))
+
+(SSTATUS MACRO
+	 /"
+	 '(LAMBDA NIL (LIST 'QUOTE (NUM_SYM (READ)))))
+
+(SSTATUS MACRO /@ '(LAMBDA NIL (LIST 'QUOTE (IMDDT))))
+
+
+
+;;* (SSTATUS SYNTAX /: 2)
+
+;;* (SSTATUS SYNTAX /# 2)
+
+;;* (SSTATUS SYNTAX /@ 2)
+
+;;* (SSTATUS SYNTAX /" 2)
+
+
+(DEFUN LAMBIND: MACRO (FORM) 
+       (DO ((L (CADR FORM) (CDDR L)) (A NIL) (V NIL))
+	   ((NULL L)
+	    (CONS (APPEND (LIST 'LAMBDA (REVERSE A))
+			  (CDDR FORM))
+		  (REVERSE V)))
+	   (SETQ A (CONS (CAR L) A) V (CONS (CADR L) V))))
+
+(DEFUN READARRAY: FEXPR (ARRNAME) 
+       (SETQ ARRNAME (CAR ARRNAME))
+       (*ARRAY ARRNAME T 100)
+       (DO ((L (READ) (READ)) (N&77))
+	   ((NULL L) ARRNAME)
+	   (SETQ N&77 (BOOLE 1 77 (CDR L)))
+	   (PUTPROP (CAR L) (CDR L) 'IMGET)
+	   (STORE (ARRNAME N&77) (CONS L (ARRNAME N&77)))))
+
+(DEFUN TAGHASH: (N) (MIN 470 (LSH (BOOLE 1 177770 N) -3)))
+
+(DEFUN MAKTAGTABLE: NIL 
+       (PRINT 'READING-TAG-TABLE)
+       (ARRAY TAG-TABLE T 471)
+       (ARRAY CHAR-CODES T 100)
+       (DO ((L (READ) (READ)) (N77) (N470))
+	   ((NULL L) 'TAG-TABLE)
+	   (SETQ N470 (TAGHASH (CDR L)) N77 (BOOLE 1 77 (CDR L)))
+	   (COND ((> (CDR L) 20000))
+		 ((MEMBER L (PROCESSOR-OPCODES N77)))
+		 ((MEMBER L (DISPLAY-OPCODES N77)))
+		 ((AND (> (CDR L) 177)
+		       (< (CDR L) 400)
+		       (MEMBER L (INC-MODE-CODES N77))))
+		 (T (STORE (TAG-TABLE N470) (CONS L (TAG-TABLE N470)))
+		    (PUTPROP (CAR L) (CDR L) 'IMGET)))))
+
+(DEFUN NUM_SYM: (FORM) 
+       (COND ((NUMBERP FORM) FORM)
+	     ((NOT (ATOM FORM))
+	      (OR (DO ((F FORM (CDR F)))
+		      ((NULL F) NIL)
+		      (COND ((GET (CAR F) 'DISHACK)
+			     (RETURN (DISHACK (CAR F)
+					      (DELQ (CAR F) FORM))))
+			    ((GET (CAR F) 'PROCHACK)
+			     (RETURN (PROCHACK (CAR F)
+					       (DELQ (CAR F)
+						     FORM))))))
+		  (APPLY (CAR FORM)
+			 (MAPCAR (FUNCTION NUM_SYM) (CDR FORM)))))
+	     ((GET FORM 'IMGET))
+	     (T (PRINC 'UNDEF-IMSYMBOL) (TERPRI) 0)))
+
+(DEFUN DISHACK: (SYM FORM) 
+       (LAMBIND (N (NUM_SYM FORM))
+		(BOOLE 7
+		       (LSH (BOOLE 1 10000 N) 3)
+		       (NUM_SYM SYM)
+		       (BOOLE 1 7777 N))))
+
+(DEFUN PROCHACK: (SYM FORM) 
+       (LAMBIND (N (NUM_SYM FORM))
+		(BOOLE 7 (NUM_SYM SYM) (BOOLE 1 3777 N))))
+
+(DEFUN INC: (LHALF RHALF) (+ (LSH LHALF 10) RHALF))
+
+(DEFUN TABLEGET: (N ARRNAM) 
+       (DO ((L (ARRNAM (BOOLE 1 77 N)) (CDR L)))
+	   ((NULL L) N)
+	   (COND ((= N (CDAR L)) (RETURN (CAAR L))))))
+
+(DEFUN TAGGET: (NARG) 
+       (DO ((N (TAGHASH NARG) (1- N)) (L) (TEMP))
+	   ((MINUSP N) NARG)
+	   (COND ((SETQ TEMP (TAGGET1 NARG (TAG-TABLE N)))
+		  (RETURN TEMP)))))
+
+(DEFUN TAGGET1: (NARG L) 
+       (DO ((L L (CDR L)) (NN))
+	   ((NULL L) NIL)
+	   (SETQ NN (CDAR L))
+	   (COND ((> NN NARG))
+		 ((= NN NARG) (RETURN (CAAR L)))
+		 (T (RETURN (LIST '+ (CAAR L) (- NARG NN)))))))
+
+(DEFUN INC_NUM: (N) 
+       (LIST 'INC
+	     (TABLEGET (BOOLE 1 377 (LSH N -10))
+		       'INC-MODE-CODES)
+	     (TABLEGET (BOOLE 1 377 N) 'INC-MODE-CODES)))
+
+(DEFUN DIS_NUM: (N) 
+       (LAMBIND (OP (BOOLE 1 70000 N)
+		    ADDR
+		    (BOOLE 7
+			   (LSH (BOOLE 1 100000 N) -3)
+			   (BOOLE 1 7777 N)))
+		(COND ((ZEROP OP) (DISOPR N))
+		      ((= OP 30000) (INC_NUM N))
+		      (T (LIST '+
+			       (TABLEGET OP 'DISPLAY-OPCODES)
+			       (TAGGET ADDR))))))
+
+(DEFUN DISOPR: (N) 
+       (SETQ N (TABLEGET N 'DISPLAY-OPCODES))
+		(COND ((NUMBERP N) (LIST '+ 'DOPR N))
+		      (T N)))
+
+(DEFUN PROC_NUM: (N) 
+       (LAMBIND
+	(OP (BOOLE 1 174000 N)
+	    ADDR
+	    (BOOLE 7 (BOOLE 1 3777 N) (BOOLE 1 174000 (GET '/. 'IMGET))))
+	(COND ((NOT (NUMBERP (SETQ N (TABLEGET N
+					       'PROCESSOR-OPCODES))))
+	       N)
+	      (T (LIST '+
+		       (TABLEGET OP 'PROCESSOR-OPCODES)
+		       (TAGGET ADDR))))))
+
+
+
+(MAKREADTABLE 'IMDDTREADTABLE)
+
+
+
+;;; HACKERY TO KEEP GRIND FROM SCREWING UP
+;;* (SETQ BASE (SETQ IBASE 8.))
+
+;;* (SSTATUS SYNTAX /! 400500)
+
+;;* (SSTATUS SYNTAX /: 400500)
+
+;;* (SSTATUS SYNTAX /@ 400500)
+
+
+(LAMBIND (READTABLE (GET 'IMDDTREADTABLE 'ARRAY))
+	 (SSTATUS MACRO /! '(LAMBDA NIL (EVAL (READ))))
+	 (SSTATUS MACRO /: NIL)
+	 (SSTATUS MACRO /@ NIL)
+	 (SSTATUS MACRO /; NIL)
+	 (SSTATUS SYNTAX /. 600002)
+	 (SSTATUS SYNTAX ^ 600002)
+	 (SSTATUS SYNTAX /; 600002)
+	 (SSTATUS SYNTAX = 600002)
+	 (SSTATUS SYNTAX /@ 600002)
+	 (SSTATUS SYNTAX 33 600002)
+	 (SSTATUS SYNTAX 15 600500)
+	 (SSTATUS SYNTAX 12 600500)
+	 (SSTATUS SYNTAX 57 600500)
+	 (MAKREADTABLE 'HBREAKTABLE))
+
+(LAMBIND (READTABLE (GET 'HBREAKTABLE 'ARRAY))
+	(SSTATUS SYNTAX 57 402500)
+	(SSTATUS SYNTAX 33 2))
+
+(SSTATUS MACRO /: '(LAMBDA NIL NIL) S)
+
+
+
+;;* (SSTATUS SYNTAX /! 2)
+
+;;* (SSTATUS SYNTAX /: 2)
+
+;;* (SSTATUS SYNTAX /@ 2)
+
+
+(DEFPROP /. 0 IMGET)
+(DEFPROP Q 0 IMGET)
+
+(SETQ TYOMODE (SETQ SEMITYOMODE 'PROC))
+
+(DEFUN IMDDT: NIL 
+       (PROG (READTABLE) 
+	     (SETQ READTABLE (GET 'IMDDTREADTABLE
+				  'ARRAY))
+	TAG1 (TERPRI)
+	     (TYO 100)
+	TAG2 (SETQ PK (TYIPEEK))
+	     (COND ((= PK 33) (HANDLALTMODE))
+		   ((= PK 57) (HANDLSLASH))
+		   ((= PK 11) (HANDLTAB))
+		   ((= PK 12) (HANDLLF))
+		   ((= PK 136) (HANDLUPAR))
+		   ((= PK 15) (HANDLCR))
+		   ((= PK 73) (HANDLSEMI))
+		   ((= PK 75) (HANDLEQL))
+		   ((= PK 40) (TYI) (GO TAG2))			       ; SPACE
+		   ((= PK 100) (TYI) (TERPRI) (RETURN 'BACK-TO-LISP))	       ; ATSIGN
+		   (T (PUTPROP 'Q
+			       (NUM_SYM (READ))
+			       'IMGET)
+		      (GO TAG2)))
+	     (GO TAG1)))
+
+(DEFUN HANDLCR: NIL (READCH) (CLOSER))
+
+(DEFUN HANDLLF: NIL 
+       (READCH)
+       (CLOSER)
+       (PUTPROP '/. (1+ (GET '/. 'IMGET)) 'IMGET)
+       (OPENER))
+
+(DEFUN HANDLUPAR: NIL 
+       (READCH)
+       (CLOSER)
+       (PUTPROP '/. (1- (GET '/. 'IMGET)) 'IMGET)
+       (OPENER))
+
+(DEFUN HANDLTAB: NIL (READCH) (PRINT 'TAB-NOT-IMPLEMENTED))
+(COMMENT 
+       (READCH)
+       (CLOSER)
+       (PUTPROP '/. (ADDRGET) 'IMGET)
+       (OPENER))
+
+(DEFUN HANDLSLASH: NIL 
+       (READCH)
+       (CLOSER)
+       (PUTPROP '/.
+		(GET 'Q 'IMGET)
+		'IMGET)
+       (OPENER))
+
+(DEFUN HANDLSEMI: NIL 
+       (READCH)
+       (LAMBIND (TYOMODE SEMITYOMODE) (TYPER)))
+
+(DEFUN HANDLEQL: NIL 
+       (READCH)
+       (LAMBIND (TYOMODE 'OCTAL) (TYPER)))
+
+(DEFUN TYPER: NIL 
+       (LAMBIND (N (GET 'Q 'IMGET))
+		(PRINT (COND ((EQ TYOMODE 'OCTAL) N)
+			     ((EQ TYOMODE 'INC) (INC_NUM N))
+			     ((EQ TYOMODE 'DIS) (DIS_NUM N))
+			     ((EQ TYOMODE 'PROC)
+			      (PROC_NUM N))))
+		(TYO 11)))
+
+(DEFUN HANDLALTMODE: NIL 
+       (READCH)
+       (LAMBIND (PK (ASCIIPEEK) PKN (TYI))
+		(COND ((EQ PK 'Q) (TYPER))
+		      ((EQ PK 'H) 
+		        (LAMBIND (READTABLE (GET 'HBREAKTABLE 'ARRAY))
+				 (IOC H)))
+		      ((EQ PK 'O)
+		       (LAMBIND (TYOMODE 'OCTAL) (TYPER)))
+		      ((EQ PK 'I)
+		       (LAMBIND (TYOMODE 'INC) (TYPER)))
+		      ((EQ PK 'D)
+		       (LAMBIND (TYOMODE 'DIS) (TYPER)))
+		      ((EQ PK 'P)
+		       (LAMBIND (TYOMODE 'PROC) (TYPER)))
+		      ((EQ PKN 33)
+		       (SETQ PK (ASCIIPEEK))
+		       (READCH)
+		       (COND ((EQ PK 'O)
+			      (SETQ TYOMODE 'OCTAL))
+			     ((EQ PK 'I)
+			      (SETQ TYOMODE 'INC))
+			     ((EQ PK 'D)
+			      (SETQ TYOMODE 'DIS))
+			     ((EQ PK 'P)
+			      (SETQ TYOMODE 'PROC))
+			     (T (PRINC '??) (TYI 11)))
+		       (SETQ SEMITYOMODE TYOMODE)
+		       (TYPER))
+		      (T (PRINC '??) (TYO 11)))))
+
+(DEFUN ASCIIPEEK: NIL 
+(LAMBIND (N (TYIPEEK))	(ASCII (COND ((> N 140) (- N 40)) (T N)))))
+
+(DEFUN OPENER: NIL 
+	(PUTPROP 'Q  (*IMGET (GET '/. 'IMGET)) 'IMGET) 
+	(TYPER))
+
+(DEFUN CLOSER: NIL (*IMPUT (GET '/. 'IMGET) (GET 'Q 'IMGET)))
+
+(DEFUN *IMGET: FEXPR (ADDR) 
+	     (TYOIM (APPEND '(37 102) (MAK3 (ISGET ADDR))))
+	     (BOOLE 7	     (LSH (BOOLE 1 77 (TYI)) 12.)
+			     (LSH (BOOLE 1 77 (TYI)) 6.)
+			     (BOOLE 1 77 (TYI))))
+(DEFUN MAK3: (N) 
+       (LIST (+ 100 (BOOLE 1 77 (LSH N -12.)))
+	     (+ 100 (BOOLE 1 77 (LSH N -6.)))
+	     (+ 100 (BOOLE 1 77 N))))
+
+(DEFUN *IMPUT: (X Y)NIL)
+
