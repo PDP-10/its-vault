@@ -1,0 +1,5275 @@
+	TITLE SSV4 26
+
+; written for pds-4 compatible imlacs, uses dms display addressing
+; modification.  includes tektronics graphics simulator.
+
+; 1/29/75 ssv 30 hacked for pds-4 compatibility
+
+%VERSIO==24.
+
+; assembly switches (non-zero implies feature exists)
+	DEBUG=0			; debug switch
+	CTRLS=1			; display control characters
+
+	PDS4=1
+	.ADDR.=1
+	MAXADR=37777
+	AIKBD=1 
+	.INSRT IMDEFS >
+	RPWAIT=7		; wait time for large xmit's
+	BRKLEN=8.		; timer for BREAK signal
+SUBTTL	SYMBOL DEFINITIONS
+
+; character and screen parameters
+	CSIZE=11.
+	LSIZE=20.		; characters are 8*12
+	LEFT=100		; leftmost character position
+	TOP=3660		; topmost character position
+	SCREEN=<3777/<LSIZE*2>>-1	; screen length
+
+; symbols used in constructing long vectors for special purposes
+	XGPVEC=60000		; XGP spacing vector
+	LSPVEC=24000		; indicates a interline spacing vector
+	SPCVEC=22000		; indicates a space vector
+	TABVEC=20000		; indicates a tab vector
+
+	; tabs and spaces are compactified separately into single vectors
+	; with the beam off.  The second word is always TABVEC or SPCVEC
+
+	DPCODE=74000		; mask for display op codes
+	YGXVEC=4000		; long vector bits for Y > X
+	NEGVEC=2000		; specifies a negative vector
+	DOTVEC=60000		; dotted vector bits
+	BEAMON=10000		; Beam on bit
+
+; page xmit protocol character definitions
+	PXSIZ=100		; interval between acknowledgement
+	PXIN=34			; begin page xmit, request ack
+	PXOUT=1			; end page xmit
+	PXQUT=2			; quote next character (in or out)
+	PXACKT=6		; imedit's ack character (TTY)
+	PXACKK=40		;    "      "      "     (KBD)
+
+; high display list address
+IFN DEBUG,	CRIKY=MAXADR-4000	; leave room for grade
+IFE DEBUG,	CRIKY=MAXADR
+
+; keyboard logic levels
+	REPT=2000
+	CTRL=1000
+	SHIFT=400
+
+IFN AIKBD,[	META=REPT
+		TOPC=100
+		SHFTLK=4000
+		IMKBD=200
+]
+
+SUBTTL LOW CORE
+
+; interrupt dispatcher
+
+	LOC 0
+	0			; return address for level 1 interrupts
+	JMP L1INTR		; level 1 interrupt handler
+	0			; return address for level 2 interrupts
+	JMP @.+1		; level 2 interrupt handler (dma interrupts)
+	L2INTR			; 
+INTWD1:	0			; level 1 interrupt word 1
+INTWD2:	0			; level 1 interrupt word 2
+L2INTW:	0			; level 2 interrupt word
+
+; locations 10 thru 17 are auto increment registers.
+; locations 24 thru 27 are auto decrement registers.
+; contants and variables of interest to programs that
+; might be overlaid on top of ssv, are in locations 30 -> 37
+
+	LOC 31
+IOSPD=30			; 30/ i/o transmission speed codes i,,o
+JMSTAB:	LISTR+40		; 31/ table of character djmss
+BUFEND:	CRIKY			; 32/ end of ssvs display buffer
+PDLB0:	PDL0			; 33/ beginning of pdl 0
+PDLB1:	PDL1			; 34/ beginning of pdl 1
+INTAR1:
+INTARM:	SYNC\KBD\TTYR		; 35/ level 1 first intr. armed word
+INTAR2:	0			; 36/ level 1 second intr. armed word
+L2INTA:	0			; 37/ level 2 interrupts armed word
+
+; program start up locations
+	LOC 100
+
+	JMP GO100		; continuation startup
+	JMP GO101		; erasing, reinitializing startup
+
+SUBTTL INTERRUPT HANDLERS
+
+; level 1 interrupt handler 
+
+L1INTR:	PUSH 0			; save ac
+	RAR 1			; save link
+	PUSH 0
+	RSF			; special hack here to allow high speed tty input
+	 JMP RDIWRD
+	LAC INTARM		; but only if interrupt enabled
+	AND [TTYR]
+	ASN
+	 JMP RDIWRD
+	CAL
+	RRC
+	JMP TTYINT
+RDIWRD:	CAL
+IFN PDS4,[
+	RI2
+	AND INTAR2
+	DAC INTWD2
+	CLA
+]
+	RDI
+	AND INTARM		; only consider armed interrupts
+	DAC INTWD1
+	RAL 1
+	LSZ
+	 JMP KBDINT
+	RAL 1
+;	LSZ
+;	 JMP TTYINT
+	RAL 1
+	LSZ
+	 JMP XMTINT
+	RAR 3
+	RAR 1
+	LSZ
+	 JMP DHLTIR
+	RAR 1
+	LSZ
+	 JMP SYNC40
+
+	LAC INTWD2		; not a word 1 interrupt, so maybe word 2?
+	RAL 1
+	LSZ
+	 JMP KBDINT
+
+	JMP INTXIT		; unknown interrupt
+
+; display halt interrupt routine
+
+DHLTIR:	LAC CNT40
+	SAD LAST40
+	 JMP DHOFF		; display has shrunk, turn this hack off.
+	DAC LAST40
+	JMS DSTART
+	JMP INTXIT
+DHOFF:	LAC SCALE
+	ADD [DVIC 7]
+	DAC @[DINTEN]
+	LAC INTARM
+	AND [MINUS1#DHLTI]
+	JMS ARMER
+	JMP INTXIT
+
+; here for refresh interrupt
+
+SYNC40:	ISZ CNT40		; running count
+	 NOP
+	SCF			; clear sync flag
+	DSN			; skip if display not running (i.e. halted)
+	 JMP SYNC1
+	JMS DSTART		; normal display refresh
+	LAC CNT40
+	DAC LAST40
+	JMP SYNC2
+SYNC1:	LAC INTARM
+	AND [DHLTI]
+	ASZ
+	 JMP SYNC2		; already free running   
+	LAC SCALE		; up the intensity and enter free running mode
+	ADD [DVIC 10]
+	DAC @[DINTEN]
+	LAC INTARM
+	IOR [DHLTI]
+	JMS ARMER
+
+; 40 cycle timer routine
+
+SYNC2:	JMS @[BRKCHK]
+	JMS @[DNGCHK]
+TAUTO:	ISZ TICKER		; tick bomb
+	 JMP GLV
+	CLA			; it exploded here
+TINF:	KRB			; get current keyboard
+	SAM SKCHAR		; see if key held down long enough
+	 JMP TINFX			; no
+	LWC 1
+	DAC TICKER
+	LAC INTARM		; check if ints armed, i.e. buffer not full
+	AND [KBD]
+	ASN
+	 JMP GLV
+	LAC SKCHAR
+	JMS KBDINS
+	 JMP GLV		; might skip return
+	JMP GLV
+TINFX:	LAC [KRB]
+	DAC TINF
+GLV:	JMP RESTRZ
+DUD:	ISZ TWITCH		; tick the twitchy
+	 JMP RESTRZ		; normal restore
+	LWC 12
+	DAC TWITCH		; reset the twitch ticker
+	LAC @[DCURT]		; twitch the twtichy
+	XOR [DJMP DFORM#DNOP,]
+	DAC @[DCURT]
+
+; here for various clock-related hackery
+
+RESTRZ:	JMS @[NUMZIT]		; display length of buffer left
+
+
+; interrupt exit routine - restore ac, link, and return
+
+INTXIT:	POP 0			; restore program control
+	RAL 1
+	POP 0
+	ION
+	JMP @0
+
+; interrupt armer
+
+ARMER:	0
+	IOF
+	DAC INTARM
+	AR1			; arm it
+	PUSH 0
+	RAL 1			; arm bit 0 of intwd2
+	CLA
+	RAR 1
+	CLL
+	DAC INTAR2
+	AR2
+	POP 0
+	JMP @ARMER
+
+; display restart routine.
+
+DSTART:	0
+	DOF
+	DCF
+	CLL			; make sure it doesn't set DCAM!!!
+	LAC [DORIG]	
+	DLN
+	JMP @DSTART
+
+; display turn off routine for stuff that wants to hack screen
+
+DISOFF:	0
+	IOF
+	DOF
+	LAC INTARM
+	AND [MINUS1#<DHLTI\SYNC>] ; turn off sync and display halt
+	JMS ARMER
+	ION			; but leave others on
+	JMP @DISOFF
+
+; display turn on routine
+
+DISON:	0
+	IOF
+	LAC INTARM
+	IOR [SYNC]
+	JMS ARMER
+	JMS DSTART
+	SCF
+	ION
+	JMP @DISON
+
+; keyboard interrupt handler
+
+KBDINT:	CAL
+	KRB
+	JMS INTKEY
+	JMS KBDINS
+KBDINX:	 KCF			; skip if buffer full
+	JMP INTXIT
+
+KBDINS:	0			; insert a character into kbd buffer
+	DAC SKCHAR
+	DAC @KIPTR
+	LAC KIPTR
+	SAD [KBDEND]
+	 LAC [KBDBUF-1]
+	IAC
+	DAC KIPTR
+	SAM KOPTR
+	 JMP @KBDINS
+	LAC KBDINS
+	SAD [KBDINX]
+	BEL
+	LAMP
+	LAC INTARM
+	AND [MINUS1#KBD]
+	JMS ARMER
+	ISZ KBDINS
+	JMP @KBDINS
+
+INTKEY:	0			; check for interrupt keys
+	PUSH 0
+	AND [3777]		; ignore shftlk
+	ASN			; must be a.i. kbd break key if 0
+	 JMP BQUIT
+	SAD [236]		; IMLAC kbd break key
+	 JMP BQUIT
+	SAD [3064]		; meta-ctrl back/next, A.I. kbd
+	 JMP KINFRP
+	SAD [234]		; Function key - 4, Imlac kbd
+	 JMP KINFRP
+	POP 0
+	JMP @INTKEY
+
+BQUIT:	LAW 100
+	DAC 0
+	POP 0
+	AND [META]
+	ASZ
+	 ISZ 0
+	LWC 1
+	DAC SKCHAR
+	JMP KBDINX
+
+KINFRP:	POP 0
+	LAC [LAC IRCHAR]
+	SAM TINF		; were we already in infinite repeat mode?
+	 JMP KINF1
+	LAC [KRB]		; just set it off then
+	DAC TINF
+	JMP KBDINX
+KINF1:	DAC TINF
+	LWC 20
+	DAC TICKER
+	LAC SKCHAR
+	DAC IRCHAR
+	JMP KBDINX
+
+; tty input interrupt routine
+
+TTYINT:	JMS ICHRCK
+	JMS TTYINS
+	JMP INTXIT
+
+TTYINS:	0
+	DAC @TIPTR
+	LAC TIPTR
+	SAD [TTYEND]
+	 LAC [TTYBUF-1]
+	IAC
+	DAC TIPTR
+	SAM TOPTR
+	 JMP @TTYINS
+	LAMP
+	LAC INTARM
+	AND [MINUS1#TTYR]
+	JMS ARMER
+	JMP @TTYINS
+
+ICHRCK:	0			; routine to process interrupt characters
+	PUSH 0
+	ISZ TTYALR
+	 JMP ICHRC1
+	LWC 20
+	DAC DONGC
+	JMP ICHRC2
+ICHRC1:	CLA
+	DAC TTYALR
+ICHRC2:	POP 0
+	JMP @ICHRCK
+
+; tty output  interrupt routine
+
+XMTINT:	JMS XMTGET
+	TPC
+	JMP INTXIT
+
+XMTGET:	0
+	LAC @XOPTR
+	AND [177]
+	DAC XCHAR'
+	LAC XOPTR
+	SAD [XMTEND]
+	 LAC [XMTBUF-1]
+	IAC
+	DAC XOPTR
+	SAM XIPTR
+	 JMP XMTGE1
+	LAC INTARM
+	AND [MINUS1#TTYX]
+	JMS ARMER
+XMTGE1:	LAC XCHAR
+	JMP @XMTGET
+
+
+; level 2 interrupt handler
+
+L2INTR:	ION
+	JMP @2		; no level 2 interrupts yet.
+
+SUBTTL INITIALIZATION
+
+; initialization routine, go here on 101 start
+
+INITA:	0			; subroutine init call point
+
+GO101:	JMS @[ZTTY]		; get in tty mode
+	JMS @[LCASE]		; get in upper case mode
+	JMS @[ATON]		; get in auto repeat mode
+	JMS @[ZHDRON]		; turn header on
+	JMS @[SETSPD]		; set i/o speed
+	JMS @[ZECHOR]
+	JMS @[NOSAIL]
+	JMS CLRS		; clears the screen
+	CLA
+	JMS @[SGTYPE]
+	LAW 2
+	DAC SCALE'
+	LAW SCREEN
+	DAC SCRSIZ'
+	LAC [DSTS 2,]
+	DAC @[DSCALE]
+	LAC [DVIC 11]
+	DAC @[DINTEN]
+	LAC [DJMS XFORM,]
+	DAC @[CTYPE]
+	JMP GOBOTH
+
+; continuation routine
+
+GO100:	JMS @[TXOFF]		; turn off transmit sign
+
+; enable display refresh interrupt
+
+GOBOTH:	IOF ? DOF ? DCF ? SCF ? RCF ? KCF ? CTB		; initialize flags
+	LWC 1 ? DAC SKCHAR' ? DAC TICKER'
+	LAC [PDLE0] ? DACS 0
+	LAC [PDLE1] ? DACS 1
+	LAC [KBDBUF] ? DAC KIPTR' ? DAC KOPTR'
+	LAC [TTYBUF] ? DAC TIPTR' ? DAC TOPTR'
+	LAC [XMTBUF] ? DAC XIPTR' ? DAC XOPTR'
+	CLA
+	DAC XMTSPD' ? DAC DNOPF ? DAC BRKCNT'
+	DAC TTYALR' ? DAC DONGC' ? DAC KRPCNT' ? DAC OKRPCT'
+	DAC @[XMSB] ? DAC @[XLSB] ? DAC @[YMSB] ? DAC @[YLSB]
+	DAC CNT40' ? DAC LAST40' ? DAC IRCHAR'
+	LAC [JMP L1INTR] ? DAC 1
+	LAC [JMP @.+1] ? DAC 3
+	LAC [L2INTR] ? DAC 4
+	LAC [KRB] ? DAC TINF
+	LWC 12 ? DAC TWITCH'
+	LAC [KBD\SYNC\TTYR]	; screen refresh int./keyboard int./tty input
+	JMS ARMER
+	ION
+
+; main loop
+LOOPY:	JMS KEYIN		; read keystroke
+TTYRED:	JMS TTYIN		; read tty character, clobbered by grfin
+	JMP LOOPY		; loop
+
+GRFLIT:	GRFIN
+
+SUBTTL CURSOR MOVING ROUTINES
+
+; move right one char; skip refusal before line feed
+RTARL:	0
+	LAC @TLTOP
+	SAM [1]
+	 SAD [DJMS DLF,]
+	  JMP RTARL1
+	JMS RTAR
+	 JMP @RTARL
+RTARL1:	ISZ RTARL
+	JMP @RTARL
+
+; move cursor one character (or graphics object) to the right
+; normal right arrow routine for single characters
+RTAR:	0
+	LAW 1			; inc. cursor pointer
+	ADD HDTOP
+	DAC TEMPNT'
+	LAW 1			; inc. after pointer
+	ADD TLTOP
+	DAC TEMP2'
+	LAC @TLTOP		; get character we are moving over
+	ASN			; end of dlist?
+	 JMP RFAIL		; yes
+	SAM [1]			; 1 is a scrolled off lf
+	 SAD [DJMS DLF,]	; line feed?
+	  JMP RLF
+	AND [DPCODE]
+	SAM [.DLV]
+	 JMP RTDO
+	LAC @TEMP2
+	SAM [SPCVEC]
+	 JMP RTNSP
+	LAC [DJMP CURSOR,]
+	DAC @TEMPNT
+	LAC [DJMS DSP,]
+	DAC @HDTOP
+	LAC TEMPNT
+	DAC HDTOP
+	JMS DELETE
+	JMP @RTAR
+RTNSP:	DAC @TEMPNT
+	ISZ TEMPNT
+	ISZ TEMP2
+	JMP RTDO
+; skip return
+RFAIL:	ISZ RTAR		; here if end of dlist or lf
+	JMP @RTAR		; error skip returns
+; found line feed, must hack scrolling
+RLF:	LAC LNPOS
+	SAM SCRSIZ
+	 JMP RTINC		; no, actually move character
+	LAW 1
+	JMS BOTON		; yes, do a rollup of the screen by 1 line
+	JMS TOPOFF		; this should never skip here
+RTINC:	JMS ILNPOS		; increment line position
+; actually move character
+RTDO:	LAC TEMP2
+	DAC @[GAPPNT]
+	LAC [DJMP CURSOR,]
+	DAC @TEMPNT		; move cursor
+	LAC @TLTOP		; get character
+	DAC @HDTOP		; put character
+	LAC TEMP2
+	DAC TLTOP		; increment pointers
+	LAC TEMPNT
+	DAC HDTOP
+	JMP @RTAR
+
+; move left one char; skip refusal at line feed
+LFARL:	0
+	LWC 1
+	ADD HDTOP
+	LIAC
+	SAD [DJMS DLF,]
+	 JMP .+3
+	JMS LFAR
+	 JMP @LFARL
+	ISZ LFARL
+	JMP @LFARL
+
+; move cursor one character (or graphics object) to the left
+; normal single character left arrow
+LFAR:	0
+	LWC 1
+	ADD HDTOP
+	DAC TEMPNT		; dec. hdtop
+	LWC 1
+	ADD TLTOP
+	DAC TEMP2		; dec. tltop
+	LAC @TEMPNT
+	ASN			; start of dlist?
+	 JMP LFAIL		; yes
+	SAD [DJMS DLF,]	; line-feed?
+	 JMP LFLF
+	LAC TEMPNT
+	DEA
+	LIAC
+	AND [DPCODE]
+	SAM [.DLV]
+	 JMP LFDO
+	LAC @TEMPNT
+	SAM [SPCVEC]
+	 JMP LFNSP
+	LWC CSIZE
+	JMS @[TABEXP]
+	LAC [DJMS DSP,]
+	DAC @TEMP2
+	JMP LFDO1
+LFNSP:	LAC @TEMPNT
+	DAC @TEMP2
+	DCM TEMP2
+	DCM TEMPNT
+	JMP LFDO
+; here on line-feed or end of screen
+LFAIL:	ISZ LFAR
+	 JMP @LFAR		; skip return
+; line feed
+LFLF:	LAC LNPOS
+	SAM [1]
+	 JMP LFINC		; no
+	LAW 1
+	JMS TOPON		; yes, roll down the screen by 1 line
+	JMS BOTOFF		; this should never skip here
+LFINC:	JMS DLNPOS		; decrement line position
+; here to move character
+LFDO:	LAC @TEMPNT		; pick up character
+	DAC @TEMP2		; move char down
+	LAC [DJMP CURSOR,]	; move cursor
+	DAC @TEMPNT		; new djms
+	LAC TEMPNT
+	DAC HDTOP		; update hdtop
+LFDO1:	LAC TEMP2
+	DAC TLTOP		; update tltop
+	DAC @[GAPPNT]
+	LAC @TLTOP		; return char we moved
+	JMP @LFAR
+
+; move cursor to start of previous line
+
+UPAR:	0
+	JMS LBEG		; to beginning of current line
+	JMS LFAR		; end of previous line
+	 JMS LBEG		; to its beginning
+	JMP @UPAR
+
+; move up a line and eol
+
+UPEOL:	0
+	JMS LBEG
+	JMS LFAR
+	 JMS LFAR	; not quite
+	 JMP @UPEOL
+	JMS @[ZDONG]
+	JMP @UPEOL
+
+; move cursor to start of current line
+
+LBEG:	0
+	JMS LFARL		; continue until bumped
+	 JMP .-1
+	JMP @LBEG
+
+; move cursor to end of current line (more or less)
+
+EOL:	0
+	LAC @TLTOP		; load current character
+	SAD [DJMS DCR,]		; found the end of the line
+	 JMP @EOL
+	JMS RTAR		; go further right in current line
+	 JMP EOL+1
+	JMP @EOL		; rtar fail = end of buffer, treat like a cr
+
+; move cursor to start of next line
+
+DNAR:	0
+	JMS RTARL
+	 JMP .-1			; continue
+	JMS RTAR		; and move right over linefeed
+	 JMP @DNAR
+	JMP @DNAR		; allow for idiocy of typist
+
+; move cursor down and to eol
+
+DNEOL:	0
+	JMS DNAR
+	JMS EOL
+	JMP @DNEOL
+
+; move cursor to end of dlist
+HOMEDN:	0
+	JMS DISOFF
+	JMS RTAR
+	JMP .-1			; right arrow forever
+	JMS DISON
+	JMP @HOMEDN
+
+; move cursor to start of dlist
+HOMEUP:	0
+	JMS DISOFF
+	JMS LFAR
+	JMP .-1			; left arrow forever
+	JMS DISON
+	JMP @HOMEUP
+
+; move cursor to top of screen
+SHOMEU:	0
+	LAW 1
+	DAC VPOS
+	DAC HPOS
+	JMS ABPOS
+	JMP @SHOMEU
+
+; move cursor to bottom of screen
+SHOMED:	0
+	LAC LNCNT
+	DAC VPOS
+	LAW 1
+	DAC HPOS
+	JMS ABPOS
+	JMS EOL
+	JMP @SHOMED
+
+SUBTTL CURSOR POSITIONING
+
+; absolute positioning routines
+
+TABPOS:	0			; abs position from TTY
+	JMS TGETW
+	DAC HPOS'		; horizontal position
+	JMS TGETW
+	DAC VPOS'		; vertical position
+	JMS ABPOS
+	JMP @TABPOS
+
+ABPOS:	0
+	LAC [DNOP]		; turn the cursor off
+	XAM @[CTYPE]
+	PUSH 0
+	LAC [DJMP TOPJMP,]	; turn off side cursor
+	DAC @[DARRO]
+	LAC LNPOS
+	SUB VPOS		; find delta horizontal + = up, - = down
+	ASN
+	 JMP GOAL2		; good already
+	ASP			; move up?
+	 JMP DOWNY		; no
+	CIA
+	DAC LOOPX		; set loop for move up
+UPM:	JMS UPAR
+	ISZ LOOPX
+	 JMP UPM
+	JMP GOAL3		; done moving up
+DOWNY:	DAC LOOPX
+DNM:	JMS @[DOWN]		; moves down
+	ISZ LOOPX
+	 JMP DNM
+	JMP GOAL3		; done moving down
+GOAL2:	JMS LBEG		; get to beginning of the line
+
+
+GOAL3:	LAW 1
+	SUB HPOS
+; for crhack, need 0 check
+;	ASN
+;	JMP ABSXIT		; there already !, normal exit
+	DAC LOOPX		; st loop for positioning
+	DAC QXINIT'		; for cr hack
+	CLA
+	DAC QXSAV'		; saved chrpos
+	DAC QXCNT'		; count of charpos
+FCHEK:	LAC @TLTOP
+	AND [MINUS1#1]
+	ASN			; hit the end?
+	 JMP QXPAS2		; yes!
+	LAC TLTOP
+	IAC
+	LIAC
+	SAM [TABVEC]
+	 JMP FCHEK1
+	ISZ QXCNT
+	LAC @TLTOP		; load first word of vector
+	AND [1777]		; get amount of vector in graphic units
+FCHKLP:	SUB [CSIZE]		; subtract off LOOPX spaces
+	ASP
+	 JMP [	JMS RTAR
+		JMP FCHEK]
+	ISZ LOOPX
+	 JMP FCHKLP
+	PUSH 0
+	LAC QXCNT
+	DAC QXSAV
+	POP 0
+	JMP FCHKLP
+FCHEK1:	LAC @TLTOP
+	SAD [DJMS DCR,]
+	 JMP QXCRHK		; yes!
+	SAM [DJMS DBS,]
+	 JMP FCHEK2
+	LWC 2
+	ADD LOOPX
+	DAC LOOPX
+FCHEK2:	JMS RTAR		; do it!
+	ISZ QXCNT		; can't be zero
+	ISZ LOOPX
+	 JMP FCHEK		; continue to move right
+	LAC QXCNT		; LOOPR=0, save chrpos
+	DAC QXSAV
+	JMP FCHEK		; continue to end of line
+
+QXCRHK:	LAC TLTOP
+	IAC
+	LIAC
+	SAD [DJMS DCR,]	; cretinous TECO '(CR)*CRLF', (*=KLEENE STAR)
+	 JMP QXPAS2		; two CR's deserve to lose
+	SAD [DJMS DLF,]	; cr followed by lf?
+	 JMP QXPAS2
+	AND [MINUS1#1]
+	ASZ
+	 JMP QXCRH2		; no, reset hpos
+QXPAS2:	CLA
+	SUB QXSAV
+	ASN			; never got to goal
+	 JMP SPACEI		; so add LOOPR spaces
+	DAC LOOPX
+	JMS LBEG
+	JMS RTAR
+	ISZ LOOPX
+	 JMP .-2
+	JMP ABSXIT
+
+SPACEI:	LAC QXINIT
+	ASN
+	 JMP [	JMS LBEG		; no goal found further out.
+		JMP ABSXIT]
+	LAC LOOPX		; already rtar'd to right point
+	ASM
+	 JMP ABSXIT
+	CLA
+SPACED:	ADD [CSIZE]
+	ISZ LOOPX
+	 JMP SPACED
+	PUSH 1
+	LAC [SPCVEC]
+	PUSH 0
+	POP 1
+	JMS @[TABVCT]
+	JMP ABSXIT		; done!
+
+QXCRH2:	JMS RTAR
+	ISZ QXCNT
+	LAC QXINIT
+	DAC LOOPX		; reset hpos, leave chr count alone
+	ASZ			; might be looking for 0??
+	 JMP FCHEK
+	LAC QXCNT
+	DAC QXSAV
+	JMP FCHEK
+
+ABSXIT:	LAC [DLXA LEFT,]
+	DAC @[DARRO]
+	POP 0
+	DAC @[CTYPE]
+	JMP @ABPOS
+
+SUBTTL INSERT/DELETE ROUTINES
+
+; insert a word into display list
+INSRTL:	0
+	DCM TLTOP
+	DAC @TLTOP		; put char in the list, gappnt will updated in RTAR
+	LAC TLTOP
+	DAC @[GAPPNT]
+	JMS @[TXOFF]		; turn off sign if any
+	JMS BUFCK		; check if buffer full
+	JMP @INSRTL
+
+INSERT:	0
+	PUSH 0
+	LAC MODEF
+	ASN
+	 JMS OVERPR		; overprint in tty mode
+	POP 0
+	JMS INSRTL
+	JMS RTAR		; now move over new character
+	JMP @INSERT
+
+OVERPR:	0
+	LAC GTYPE'
+	SAD [4]			; don't overprint while doing gt40 graphics
+	 JMP @OVERPR
+	POP 0
+	PUSH 0
+	SAD [DJMS DCR,]
+	 JMP @OVERPR
+	SAD [DJMS DLF,]
+	 JMP @OVERPR
+	LAC @TLTOP
+	SAD [DJMS DCR,]
+	 JMP @OVERPR
+	JMS DELETE
+	JMP @OVERPR
+
+; remove a word from display list
+
+DELETE:	0
+	PUSH 0
+	LAC @TLTOP		; get character
+	ASN
+	 JMP DELXIT		; exit for deleting end of list
+	SAM [DJMS DLF,]	; line feed?
+	 JMP DELNRM
+; deleting a line-feed
+	DCM LNCNT		; deleting a line feed
+	LAW 1
+	JMS BOTON		; bring bottom up
+	JMP DELNRM
+	JMS TOPON		; else pull top down
+	NOP
+
+DELNRM:	AND [DPCODE]
+	SAM [.DLV]
+	 JMP DELNR1
+	LAC TLTOP
+	IAC
+	LIAC
+	SAM [TABVEC]
+	 JMP DELNT
+	LAW 8*CSIZE
+	JMP DELPV
+DELNT:	SAM [SPCVEC]
+	 JMP DELNR2
+	LAW CSIZE
+DELPV:	DAC TEMP
+	LAC @TLTOP
+	AND [1777]
+	SUB TEMP'
+	ASM
+	 ASN
+	  JMP DELNR2
+	IOR [.DLV]
+	DAC @TLTOP
+	JMP DELXIT
+DELNR2:	ISZ TLTOP
+DELNR1:	ISZ TLTOP
+	LAC TLTOP
+	DAC @[GAPPNT]
+	JMS @[TXOFF]		; turn off sign
+DELXIT:	POP 0
+	JMP @DELETE
+
+; here to actually delete
+; delete character to right of cursor
+
+FDELT:	0
+	LAC MODEF		; console mode
+	ASN
+	 JMP .+3			; tty mode
+	JMS DELETE		; local or edit, remove char
+	JMP @FDELT
+; send 177
+	LAW 177
+	JMS XMIT1
+	JMP @FDELT
+
+; delete character to left of cursor
+
+BDELT:	0			; backspace (reverse) delete
+	PUSH 0
+	JMS LFAR		; edit mode does it in the imlac
+	JMS DELETE
+	POP 0
+	JMP @BDELT
+
+; delete to bottom of the screen
+
+DELSDN:	0
+	JMS DISOFF
+	LAC OFFLOW
+DELSD1:	SAD TLTOP
+	 JMP DELSDX
+	JMS DELETE
+	JMP DELSD1
+DELSDX:	JMS DISON
+	JMP @DELSDN
+
+; delete to top of screen
+
+DELSUP:	0
+	JMS DISOFF
+	LAC @[OFFHI]
+DELSU1:	SAD HDTOP
+	 JMS DELSUX
+	JMS BDELT
+	JMP DELSU1
+DELSUX:	JMS DISON
+	JMP @DELSUP
+
+; clears the current line
+
+LDELT:	0
+	JMS LBEG		; go to beginning
+	JMS DELRT		; delete to end
+	JMP @LDELT
+
+; deletes the current line (including cr-lf)
+
+LDELO:	0
+	JMS LDELT		; clear line
+	JMS DELETE		; kill cr
+	JMS DELETE		; kill lf at the end of it all
+	JMP @LDELO
+
+; delete to LBEG and then delete crlf
+
+LDELUP:	0
+	JMS DELLF
+	JMS BDELT
+	JMS BDELT
+	JMP @LDELUP
+
+; delete to EOL and then delete crlf
+
+LDELDN:	0
+	JMS DELRT
+	JMS DELETE
+	JMS DELETE
+	JMP @LDELDN
+
+; delete from the cursor to the beginning of the list
+
+DELUP:	0
+	JMS DISOFF
+	JMS LFAR		; deletes until left arrow skip fails
+	JMP .+2
+	JMP DELUPX
+	JMS DELETE
+	JMP DELUP+1
+DELUPX:	JMS DISON
+	JMP @DELUP
+
+; delete from cursor to the end of the list
+
+DELDN:	0
+	JMS DISOFF
+	LAC @TLTOP
+	ASN
+	 JMP DELDNX
+	JMS DELETE
+	JMP DELDN+1
+DELDNX:	JMS DISON
+	JMP @DELDN
+
+; delete left from cursor to beginning of the line
+
+DELLF:	0
+	JMS LFAR		; left
+	JMP .+2
+	JMP @DELLF		; beginning of screen
+	LAC @TLTOP
+	SAM [DJMS DLF,]	; line feed?
+	 JMP .+3
+	JMS RTAR		; right over line feed
+	JMP @DELLF		; and return
+; delete character moved left over
+	JMS DELETE
+	JMP DELLF+1
+
+; delete from cursor to end of line
+
+DELRT:	0
+DELB:	LAC @TLTOP
+	ASN
+	 JMP @DELRT		; protect against end of buffer cease
+	LAC TLTOP
+	IAC
+	LIAC
+	SAD [DJMS DLF,]
+	 JMP @DELRT		; if a line feed is 2 chars away, exit!
+; delete character moved right over
+	JMS DELETE
+	JMP DELB
+
+; clear the buffer
+
+CLRS:	0
+	JMS @[TXOFF]		; turn off transmit sign
+	CLA
+	DAC @[XGPOSU]
+	DAC @[BASLIN]
+	DAC ATRVEC'		; flag indicating transmission of ARDS vectors
+	DAC @[HIBEG-1]		; set the list boundary
+	DAC @BUFEND		; set the dhlt
+	LAW 1
+	DAC LNPOS'		; pointing at the first line
+	DAC LNCNT'		; set zero lines on screen
+	LAC [DJMP CURSOR,]
+	DAC @[HIBEG]		; set the inline cursor
+	LAC [.DLV\NEGVEC]	; DLV command, first word.
+	DAC @[DARROW]		; set the line position cursor
+	DAC @[DARROW+2]
+	DAC @[DHOROF]
+	DAC @[DVRTOF]
+	LAC BUFEND
+	DAC @[GAPPNT]
+	DAC OFFLOW'		; set the variable end pointer
+	DAC TLTOP'		; next character
+	LAC [HIBEG]
+	DAC HDTOP'		; previous character
+	DAC @[OFFHI]		; set the varible start-1 pointer
+	JMP @CLRS
+
+; clear screen routine
+
+SCLRS:	0
+	JMS SHOMEU
+	JMS DELSDN
+	JMP @SCLRS
+
+SUBTTL BUFFER CHECKER
+
+; buffer size checker
+BUFCK:	0
+	LWC 6
+	ADD TLTOP
+	SUB HDTOP
+	DAC TBUF'		; find free space in buffer
+	SAM [499.]		; ready to warn ?
+	 JMP ZROCK		; no warning needed
+; here to feep a warning
+	LAC MODEF		; but only in edit mode
+	ASZ
+	 BEL			; warn edit mode users
+
+; buffer full?
+ZROCK:	LAC TBUF
+	ASM
+	 JMP @BUFCK		; no
+	LAC MODEF		; time for the big cease!
+	ASZ
+	 BEL			; warn edit mode losers
+; search for N line feed
+XEROX:	LAC SCRSIZ
+	SAR 2
+	CIA
+	DAC LOOP		; set loop for 10 line search
+	LAC [HIBEG-1]
+	DAC 13			; set get pointer
+	DAC 14			; set put pointer
+	SUB HDTOP
+	DAC MLOOP'		;-(HDTOP - HIBEG + 1)
+SMULCH:	LAC @13			; moves register 10 through the character list
+	ISZ MLOOP		; ran out of characters?
+	 JMP SMUL1		; no
+; here there are less than N lines before gap
+	LAC SCRSIZ
+	SAR 2
+	CIA
+	ADD LNPOS
+	DEA
+	DAC LOOP
+	JMS DNAR		; move down some so there will be N at least
+	ISZ LOOP
+	 JMP .-2
+	JMP XEROX
+
+SMUL1:	SAM [DJMS DLF,]	; line feed?
+	 JMP SMULCH
+	ISZ LOOP		; line feed
+	 JMP SMULCH		; goes until N line feeds found
+
+; N line feeds found, make sure this will all be invisible (scrolled off)
+	LAC 13
+	SUB @[OFFHI]
+	ASP
+	 JMP ZRLOOP
+	LAC SCRSIZ
+	SAR 2
+	JMS BOTON		; roll up until end is invisible
+	JMS TOPOFF
+	JMP .+2
+	JMS BOTOFF
+; move before gap part of list up N lines worth
+ZRLOOP:	LAC @13			; gets
+	DAC @14			; puts
+	SAM [DJMP CURSOR,]	; done?
+	 JMP ZRLOOP		; character moving up loop
+	LAC @[OFFHI]		; update dlist starter jump
+	SUB 13
+	ADD 14
+	DAC @[OFFHI]		; reset twonk pointer
+	LAC HDTOP
+	SUB 13
+	ADD 14
+	DAC HDTOP		; reset hdtop
+	JMP @BUFCK
+
+SUBTTL ROLL SCROLL ROUTINES
+
+; scroll top up N lines
+
+TOPOFF:	0
+	PUSH 0
+	CIA
+	DAC LOOP
+	LAC @[OFFHI]
+	DAC OLDHI'
+TOPOF1:	LAC @[OFFHI]		; loop searches for line feeds
+	SAM HDTOP		; don't allow moving past cursor
+	 JMP TOPOF2
+	ISZ TOPOFF
+	JMP TOPOFX
+TOPOF2:	LAC @[@OFFHI]
+	ISZ @[OFFHI]
+	 SAM [DJMS DLF,]
+	  JMP TOPOF1
+	LAC @[OFFHI]
+	DAC OLDHI
+	DCM LNCNT
+	JMS DLNPOS
+	ISZ LOOP		; 10th line feed yet?
+	 JMP TOPOF1
+TOPOFX:	LAC OLDHI
+	DAC @[OFFHI]
+	POP 0
+	JMP @TOPOFF
+
+; undo a call to topoff (scroll N lines back onto top)
+
+TOPON:	0			; undoes what topup does
+	PUSH 0
+	CIA
+	DAC LOOP		; searches backward for 1/4 screen
+	DCM @[OFFHI]
+	LAC @[@OFFHI]
+	ASZ			; check limiting case first
+	 JMP TOPON1		; assumes it must be a LF
+	ISZ TOPON
+	JMP TOPONX		; skip returns if no more to peel down
+TOPON1:	ISZ LNCNT
+	 JMS ILNPOS
+TOPON2:	DCM @[OFFHI]
+	LAC @[@OFFHI]
+	ASN
+	 JMP TOPONX
+	SAM [DJMS DLF,]
+	 JMP TOPON2
+	ISZ LOOP
+	 JMP TOPON1
+TOPONX:	ISZ @[OFFHI]
+	 POP 0
+	JMP @TOPON
+
+; scroll enough lines off so that LNCNT = SCRSIZ
+
+BOTOFF:	0
+	PUSH 0
+	LAC OFFLOW
+	DAC OLDOFF'
+	JMP BOTOF3
+BOTOF1:	LAC OFFLOW
+	SAM TLTOP		; fefuse to go past cursor
+	 JMP BOTOF2
+	ISZ BOTOFF		; skip return to indicate the error
+	 JMP BOTOFX
+BOTOF2:	DCM OFFLOW
+	LAC @OFFLOW
+	SAM [DJMS DLF,]	; finds the line feeds
+	 JMP BOTOF1
+	DCM LNCNT
+	LAC OFFLOW
+	DAC OLDOFF
+BOTOF3:	LAC SCRSIZ
+	SUB LNCNT
+	ASP
+	 JMP BOTOF1
+BOTOFX:	LAC OLDOFF
+	DAC OFFLOW
+	LAC @OFFLOW
+	ASN
+	 JMP BOTOF4
+	LAW 1			; 1 marks a LF
+	DAC @OFFLOW		; put 000001 in list and kill display
+BOTOF4:	POP 0
+	JMP @BOTOFF		; false ending of the list (marked by 000000)
+
+; scroll N lines onto bottom of screen (undoes botoff)
+
+BOTON:	0
+	PUSH 0
+	IAC
+	CIA
+	DAC LOOP
+	LAC @OFFLOW
+	ASZ			; test for EOB
+	 JMP BOTON3
+	ISZ BOTON		; skip returns if no more to roll up into view
+	JMP BOTONX
+BOTON1:	ISZ LNCNT
+BOTON2:	ISZ OFFLOW
+	LAC @OFFLOW
+	ASN
+	 JMP BOTONX
+	SAD [DJMS DLF,]
+	 JMP BOTON4
+	SAM [1]
+	 JMP BOTON2
+BOTON3:	LAC [DJMS DLF,]
+	DAC @OFFLOW
+BOTON4:	ISZ LOOP
+	 JMP BOTON1
+	LAW 1
+	DAC @OFFLOW
+BOTONX:	POP 0
+	JMP @BOTON		; normal exit
+
+; increment line position counter, cursor
+ILNPOS:	0
+	LAW LSIZE
+	JMS INCARW
+	ISZ LNPOS		; fix counter
+	 LAC LNPOS		; load for returning it
+	JMP @ILNPOS
+
+; decrement line position counter, cursor
+DLNPOS:	0
+	LWC LSIZE
+	JMS INCARW
+	DCM LNPOS		; fix counter
+	JMP @DLNPOS
+
+INCARW:	0			; increment the position of the side arrow
+	SAR 1
+	ADD @[DARROW]
+	ASP
+	 JMP INCNEG
+	PUSH 0
+	AND [@DPCODE\NEGVEC]
+	SAD [.DLV\NEGVEC]
+	 JMP INCAR1
+	POP 0
+	SUB [.DLV\NEGVEC]
+	ASP
+	 JMP INCNEG
+	LAC [.DLV\NEGVEC\1777]		; max long vector
+	JMP .+4
+INCNEG:	LAC [.DLV\NEGVEC]		; 0 long vector
+	JMP .+2
+INCAR1:	POP 0
+	DAC @[DARROW]
+	DAC @[DARROW+2]
+	JMP @INCARW
+
+SUBTTL TRANSMIT ROUTINES
+
+; transmit with acknowledgement
+
+QXMIT:	0
+	PUSH 0
+	LAC LOOPX
+	SAM [-1]
+	 JMP QXMIT1
+	LAW PXIN
+	JMS XMIT1
+	JMS ACK
+QXMIT1:	LAC [1,,PXQUT]
+	JMS AXMIT
+	POP 0
+	JMP @QXMIT
+
+AXMIT:	0
+	JMS XMIT		; send character
+	SAD [15]		; cr?
+	 JMP AXMIT1		; acknowledge
+	ISZ LOOPX'		; sent too many?
+	 JMP @AXMIT		; no, return
+; here too many, ack
+	LAW PXIN		; send ack character
+	JMS XMIT1
+AXMIT1:	JMS ACK
+	JMP @AXMIT
+
+; here to wait for ack
+
+ACK:	0
+	LAW 2
+	JMS @[WAIT40]
+	LWC PXSIZ
+	DAC LOOPX
+ACKLP:	JMS TCHK
+	JMP ACKKEY
+	JMS TGET
+	SAM [PXACKT]
+	 JMP ACKLP
+	JMP @ACK
+ACKKEY:	JMS KEYCHK
+	JMP ACKLP
+	JMS KGETW
+	AND [177]
+	SAM [PXACKK]		; ack character?
+	 JMP ACKLP		; no
+	JMP @ACK		; yes, return
+
+; transmit a character
+
+XMIT:	0
+	PUSH 0
+	SWAP
+	AND [377]
+	ASN
+	 JMP [	POP 0
+		JMP @XMIT]
+	SAD [377]
+	 JMP XMITB
+	CIA
+	DAC XMTCNT'
+	POP 0
+	AND [377]
+	PUSH 0
+XMTLP:	LAC XMTSPD
+	JMS @[WAIT40]
+	JMS XMTCHK
+	 JMP .-1
+	POP 0
+	PUSH 0
+	JMS XMTINS
+	ISZ XMTCNT
+	 JMP XMTLP
+	POP 0
+XMITC:	JMP @XMIT		; changes for graphics xmit
+	JMP @XMIT
+
+XMITB:	POP 0			; transmit multiple characters from Graphics Buffer
+	AND [17]		; no more than 16 from the buffer
+	CIA
+	DAC XMTCNT
+	LAC [XMTGB-1]
+	DAC 10
+XMTBLP:	LAC XMTSPD
+	JMS @[WAIT40]
+	JMS XMTCHK
+	JMP .-1
+	LAC @10
+	JMS XMTINS
+	ISZ XMTCNT
+	 JMP XMTBLP
+	JMP XMITC
+
+XMIT1:	0			; XMIT one char
+	AND [377]
+	IOR [1,,0]
+	JMS XMIT
+	JMP @XMIT1
+
+; clear out graphics from main loop, transmitter
+
+XCLEAR:	0
+	LAC [JMS TTYIN]
+	DAC TTYRED		; fix up main loop
+	LAC [JMP @XMIT]
+	DAC XMITC		; fix up auto clear out hacker
+	JMP @XCLEAR
+
+; check transmit buffer to see if full.
+
+XMTCHK:	0
+	LAC INTARM
+	AND [TTYX]
+	ASN
+	 JMP XCHKSR		; if ints. off, must be empty
+	LAC XIPTR
+	SAM XOPTR		; ints.  on, so buffer must be full
+XCHKSR:	 ISZ XMTCHK
+	  JMP @XMTCHK
+
+; insert char into transmit buffer and make sure ints. are on.
+
+XMTINS:	0
+	DAC @XIPTR
+	LAC XIPTR
+	SAD [XMTEND]
+	 LAC [XMTBUF-1]
+	IAC
+	DAC XIPTR
+	IOF
+	LAC INTARM
+	AND [TTYX]
+	ASZ
+	 JMP XMTIN1		; ints. aready on
+	LAC INTARM
+	IOR [TTYX]
+	JMS ARMER
+XMTIN1:	ION
+	JMP @XMTINS
+
+; page transmit.  send SSV's buffer back to IMEDIT (for example)
+
+PXMIT:	0
+	LAC MODEF
+	ASM			; only allowed in edit mode!
+	 JMP @PXMIT		; return
+	JMS HOMEUP		; get to the top of the world
+	LAW PXIN		; start page transmit
+	JMS XMIT1
+; turn page transmit sign
+	LAC [DNOP]
+	DAC @[DXMIT]
+	LAC [DJMP DTXGO,]
+	DAC @[DTXDON]
+	LWC PXSIZ		; initialize ack counter
+	DAC LOOPX'
+; here to send a character
+PXNRM:	JMS CASCII		; get ascii value of next thing in dlist
+	AND [377,,0]
+	ASN
+	 JMP PXNEXT
+	SAD [377,,0]
+	 JMP PXMTGB		; go do transmit from the buffer
+	SAD [1,,0]		
+	 JMP PXNRM1
+	SWAP			; for repeats of same char
+	AND [177]
+	CIA
+	DAC PLOOP'
+	LAC TCHAR
+	AND [177]
+PXCHLP:	PUSH 0
+	IOR [1,,0]
+	JMS PXMIT1
+	POP 0
+	ISZ PLOOP
+	 JMP PXCHLP
+	JMP PXNEXT
+
+PXNRM1:	LAC TCHAR
+	JMS PXMIT1		; send just one char
+PXNEXT:	JMS RTAR		; keep user informed of progress
+	 JMP PXNRM		; loop
+	LAC [1,,PXOUT]		; done, tell IMEDIT and then leave
+	JMS AXMIT		; end of xmit char
+	LAC [DNOP]
+	DAC @[DTXDON]		; turn off sign
+	JMP @PXMIT
+
+PXMTGB:	LAC [XMTGB-1]		; xmit from graphics buffer.  assumes no multiple chars.
+	DAC 10
+PXMTLP:	LAC @10
+	ASN			; looks for zero word in buffer
+	 JMP PXNEXT
+	JMS PXMIT1
+	JMP PXMTLP
+
+;
+
+PXMIT1:	0			; check to see if it needs to be quoted
+	SAD [1,,PXIN]
+	 JMP PQUOTE		; yes
+	SAD [1,,PXOUT]
+	 JMP PQUOTE		; yes
+	SAD [1,,PXQUT]
+PQUOTE:	JMS QXMIT		; send quoter
+	JMS AXMIT		; send character
+	JMP @PXMIT1
+
+; page transmit with no ack, but automatic wait at EOL
+
+PXMITA:	0
+	JMS HOMEUP
+PXLP:	LAC @TLTOP
+	ASN
+	 JMP @PXMITA
+	JMS LXMIT
+	LAC XMTSPD
+	JMS @[WAIT40]
+	JMP PXLP
+
+; page transmit and clear buffer
+
+;PXMITC:	0
+;	JMS PXMIT
+;	JMS CLRS
+;	JMP @PXMITC
+
+; page transmit auto and clear buffer
+
+;PXMTAC:	0
+;	JMS PXMITA
+;	JMS CLRS
+;	JMP @PXMTAC
+
+; line transmit routine
+
+LXMIT:	0		; xmit current line
+LXMIT0:	LAC HDTOP	; first search back to LF, BBEG, or DNOP
+	DEA
+	LIAC
+	SAD [DNOP]
+	 JMP LPXM
+	JMS LFARL
+	JMP LXMIT0
+LPXM:	JMS CASCII
+	SAD [1,,15]
+	 JMP [	LAC @[ECHOM]
+		ASZ
+		 JMP LPXM2
+		LAW 15
+		JMP LPXMA]
+LPXMA:	JMS XMIT
+	SAM [1,,15]
+	 JMP LPXM0
+	LAC TLTOP
+	IAC
+	LIAC
+	SAD [DJMS DLF,]
+	 JMP LPXM1
+LPXM0:	JMS RTAR
+	JMP LPXM
+	LAC [1,,15]
+	JMP LPXM+1
+LPXM1:	JMS RTAR
+	JMS RTAR		; move over the CRLF
+	NOP
+	JMP @LXMIT
+LPXM2:	LAW 23			; ^s hack for tso.  assumes crlf will be echoed
+	JMS XMIT1
+	JMP @LXMIT
+
+SUBTTL DLIST TO ASCII CONVERSION ROUTINE
+
+; convert to ascii code
+CASCII:	0			; converts display list to ascii
+	CLA
+	DAC CHRCNT'
+	LAC @TLTOP
+	AND [DPCODE]
+	SAM [.DLV]
+	 JMP NOTVEC
+	LAC TLTOP
+	IAC
+	LIAC
+	SAM [TABVEC]		; must be a TAB
+	 JMP NOTTAB
+	ISZ CHRCNT
+	LAC @TLTOP
+	AND [1777]		; get length of this TAB
+CTABLP:	SUB [8*CSIZE]
+	ASM
+	 ASN
+	  JMP [	LAW 11
+		JMP CCHP1+1]
+	ISZ CHRCNT
+	 JMP CTABLP
+NOTTAB:	SAM [SPCVEC]
+	 JMP CLVEC		; only thing left is an ordinary vector
+	LAC @TLTOP
+	AND [1777]
+CSPCLP:	SUB [CSIZE]
+	ASM
+	 JMP [	ISZ CHRCNT
+		JMP CSPCLP]
+	LAW 40
+	JMP .+1
+
+CCHP1:	ISZ CHRCNT		; single character codes come thru here
+	PUSH 0
+	LAC ATRVEC
+	ASM
+	 JMP CCHP1A
+	LAC [XMTGB-1]
+	DAC 10
+	LAC [1,,34]			; exiting vector transmit mode
+	DAC @10
+	POP 0
+	SWAP
+	IOR CHRCNT
+	SWAP
+	DAC @10
+	CLA
+	DAC @10
+	LAW 377
+	DAC CHRCNT
+	PUSH 0
+CCHP1A:	CLA
+	DAC ATRVEC
+	POP 0
+CCHCNT:	AND [377]		; buffered graphics comes in here
+	SWAP
+	IOR CHRCNT
+	SWAP
+CASXIT:	DAC TCHAR
+	JMP @CASCII
+
+;
+NOTVEC:	LAC @TLTOP
+	SAM [1]
+	 JMP SPCHCE
+	LAW 12
+	JMP CCHP1
+SPCHCE:	SAD [DJMS DSORIG,]
+	 JMP CSETP	
+SPCH10:	SAM [DJMS DBS,]
+	 JMP SPCH11
+	LAW 10
+	JMP CCHP1
+SPCH11:	SAM [DJMS DTAB,]
+	 JMP SPCH12
+	LAW 11
+	JMP CCHP1
+SPCH12:	SAM [DJMS DLF,]
+	 JMP SPCH15
+	LAW 12
+	JMP CCHP1
+SPCH15:	SAM [DJMS DCR,]
+	 JMP NSPCH
+	LAW 15
+	JMP CCHP1
+NSPCH:	LAC [LISTR-1]
+	DAC 10			; pointer to table
+	LWC LISTN-LISTR+1
+	DAC LOOP		; limit search
+	LAC @TLTOP
+WHOPIE:	SAD @10			; compare
+	 JMP CMATCH
+	ISZ LOOP'		; check for limit!
+	 JMP WHOPIE
+	CLA			; not found, return 0 in both halves
+	JMP CASXIT
+CMATCH:	LAC 10
+	SUB [LISTR]
+	JMP CCHP1
+
+;
+CLVEC:	LAC GTYPE
+	SAM [1]
+	 JMP CASXIT		; do other modes someday
+	LAC @TLTOP
+	AND [37]
+	SAL 1
+	DAC CX1'		; 5 LSB's
+	LAC @TLTOP
+	AND [1740]
+	SAR 3
+	SAR 2
+	DAC CX2'		; 5 MSB's
+	LAC @TLTOP
+	AND [NEGVEC]		; test for negative bit
+	ASZ
+	 ISZ CX1
+	LAC TLTOP
+	IAC
+	DAC TEMPNT
+	LIAC
+	AND [37]
+	SAL 1
+	DAC CY1'
+	LAC @TEMPNT
+	AND [1740]
+	SAR 3
+	SAR 2
+	DAC CY2'
+	LAC @TEMPNT
+	AND [NEGVEC]
+	ASZ
+	 ISZ CY1
+	LAC @TEMPNT
+	AND [YGXVEC]
+	ASN
+	 JMP CLVEC1
+	LAC CX1
+	XAM CY1
+	DAC CX1
+	LAC CX2
+	XAM CY2
+	DAC CX2
+CLVEC1:	LAC @TEMPNT
+	AND [BEAMON]
+	ASZ
+	 JMP CLVEC2
+	LAW 40
+	IOR CX2
+	DAC CX2
+	LAC @TEMPNT
+	AND [DOTVEC]
+	ASN
+	 JMP CLVEC2
+	LAW 40
+	IOR CY2
+	DAC CY2
+
+;
+
+CLVEC2:	LAW 36
+
+GBPUT:	PUSH 0
+	LAC [XMTGB-1]
+	DAC 10
+	POP 0
+	IOR [1,,0]
+	ISZ ATRVEC
+	 DAC @10
+	SAM [1,,36]
+	 JMP GBPUT1
+	LWC 1
+	DAC ATRVEC
+GBPUT1:	LAC CX1
+	JMS GBP10
+	LAC CX2
+	JMS GBP10
+	LAC CY1
+	JMS GBP10
+	LAC CY2
+	JMS GBP10
+	CLA
+	DAC @10
+	LAW 377
+	DAC CHRCNT
+	JMP CCHCNT
+
+GBP10:	0
+	IOR [1,,100]
+	DAC @10
+	JMP @GBP10
+
+CSETP:	LAC GTYPE
+	SAM [1]
+	 JMP CASXIT		; do other modes someday
+	CLA
+	DAC ATRVEC
+	DAC CX1
+	DAC CX2
+	DAC CY1
+	DAC CY2
+	LAW 35
+	JMP GBPUT
+
+SUBTTL KEYBOARD INPUT ROUTINES
+; * keyboard input *
+
+KEYIN:	0			; keyboard input subroutine
+	LAC KRPCNT
+	ASM
+	 JMP KEYIN0
+	CIA
+	AND [37]
+	ASZ			; random pause at increments of 32.
+	 JMP KRPINC
+	LAC MODEF
+	ASZ
+	 JMP KRPINC		; do wait hack if in tty mode.
+	LAW RPWAIT
+	JMS @[WAIT40]
+KRPINC:	ISZ KRPCNT
+	 JMP KBDSEL
+KEYIN0:	JMS KEYCHK
+	JMP @KEYIN
+	JMS KGET
+KEYIN1:	JMP KCONV
+
+KGET:	0
+	CLL
+	LAC @KOPTR
+	AND [7777]
+	DAC KCHAR'
+	LAC KOPTR
+	SAD [KBDEND]
+	 LAC [KBDBUF-1]
+	IAC
+	DAC KOPTR
+	LAC INTARM
+	AND [KBD]
+	ASZ
+	 JMP KGET1
+	IOF
+	KCF
+	LAC INTARM
+	IOR [KBD]
+	JMS ARMER
+	ION
+KGET1:	LAC KCHAR
+	JMP @KGET
+
+KGETW:	0		;wait for kbd char, then get it
+	JMS KEYCHK
+	 JMP .-1
+	JMS KGET
+	AND [IMKBD]
+	ASZ
+	 JMP KGETW1
+	JMS AKCONV	; convert AIKBD to ascii
+	JMP @KGETW
+KGETW1:	LAC KCHAR
+	JMP @KGETW
+
+KEYCHK:	0		; see if anything pending in kbd buffer
+	LAC INTARM
+	AND [KBD]
+	ASN
+	 JMP KCHKSR	; if kbd ints. off, must be a char waiting
+	LAC KIPTR
+	SAM KOPTR
+KCHKSR:	 ISZ KEYCHK	; skip return if there is a char
+	JMP @KEYCHK	; kbd buffer empty, noskip return
+
+; keyboard character conversions
+
+KCONV:	LAC [DJMP DIOSPD,]		; turn off any transient signs
+	DAC @[DXMIT]
+
+KBDSEL:	LAC KCHAR		; See which kbd sent the char
+	AND [IMKBD]
+	ASN
+	 JMP AICHR
+
+; on IMLAC kbd, make RPT look like a CTRL key for the right side of kbd
+
+	LAC KCHAR
+	AND [REPT\SHIFT]	; handle rept key
+	SAD [REPT\SHIFT]
+	 JMS @[KRPT]		; check for numeric repeat
+	LAC KCHAR
+	AND [REPT]
+	SAR 1			; make it look like ctrl key
+	IOR KCHAR
+	DAC KCHAR
+
+; lookup key stroke
+
+CONVK:	LAC [KEYDIS-1]		; set up for tty mode lookup
+	DAC @[DINDEX]
+	LWC KEYSIZ
+	DAC @[DLOOP]
+	LAC KCHAR
+	AND [1777]		; can't dispatch on value of REPT!
+	JMS @[DISPCH]		; dispatch
+	 JMP DSPR		; go execute call to routine
+	 JMP XTR			; character conversion
+	JMS IKCONV		; no match found, do standard conversion
+	ASM
+	 JMP XTR
+	JMP @KEYIN
+
+; keyboard conversion for the IMLAC Cherry keyboard
+; characters range from 200 to 377 for ascii, all others are ignored
+
+IKCONV:	0
+	LAC KCHAR
+	AND [CTRL+300]		; check for control of alphanumeric
+	SAM [CTRL+300]
+	 JMP IKCON1			; not unconverted control
+	LAC KCHAR		; convert to control and dispose of it
+	AND [37]
+	JMP @IKCONV
+IKCON1:	LAC KCHAR		; else check normal ranges
+	AND [377]
+	SUB [240]
+	ASP
+	 JMP IKXIT
+	SUB [40]
+	ASM			; 240 - 277?
+	 JMP IKCON2			; nope, higher
+	AND [77]		; and it down
+	JMP @IKCONV			; dispose of it
+IKCON2:	SUB [1]			; in range 301 to 372?
+	ASP			; 300? (atsign)
+	 JMP IKXIT		; atsign handled elsewhere
+	SUB [72]
+	ASM			; alphabetic?
+	 JMP IKXIT		; no, others elsewhere, leave
+	ADD [373]		; restore real value
+	XOR @[CASEF]		; set the case properly
+	JMP @IKCONV
+IKXIT:	LAC KCHAR
+	CIA
+	JMP @IKCONV
+
+; keyboard conversion for A.I. keyboard
+
+AKCONV:	0
+	LAC KCHAR		; AI KBD CHAR
+	AND [77]		; GET KEY #
+	SAL 1		; MULTIPLY BY 2 AND ADD TABLE ADDRESS
+	ADD [AIKTAB]
+	DAC KCHARP'		; POINTER TO AIKTAB DISPATCH TABLE
+	LAC KCHAR
+	AND [TOPC]
+	ASZ
+	 ISZ KCHARP
+	LAC KCHAR
+	AND [SHIFT]
+	ASN
+	 JMP LHBYT
+	SBR
+	LAC @KCHARP
+	JMP @AKCONV
+LHBYT:	SBL
+	LAC @KCHARP
+	JMP @AKCONV
+
+AICHR:	JMS AKCONV
+	AND [377]
+	PUSH 0
+	SUB [200]
+	ASM
+	 JMP NASCII
+	LAC KCHAR
+	AND [CTRL]
+	ASN
+	 JMP @[CASEIT]
+CTLCHR:	POP 0
+	SAM [40]
+	 JMP CTL1
+	CLA		; ^space = NULL
+	JMP XTR
+CTL1:	PUSH 0
+	SUB [100]	; in alpha half?
+	ASP
+	 JMP POPXTR
+	POP 0
+	SAD [177]
+	 JMP XTR	; ^rubout = rubout
+	AND [37]
+	SAD [32]
+	 JMP QUOT37	; ^z
+CTL2:	SAM [37]	; and ^_ get quoted in tty mode
+	 JMP XTR
+QUOT37:	PUSH 0
+	LAC MODEF
+	ASZ
+	 JMP POPXTR
+	LAW 37
+	JMS XMIT1
+	POP 0
+	JMS XMIT1
+	JMP @KEYIN
+
+ITSQTC:	0
+	LAC KCHAR
+	AND [37]
+	JMP QUOT37
+
+ITS37:	0
+	LAW 37
+	JMP QUOT37
+
+;
+POPXTR:	POP 0
+	JMP XTR
+
+NASCII:	POP 0
+	AND [37]
+	PUSH 1
+	ADD [NATEND-AINASC]
+	ASM
+	 JMP [	POP 1			; ignore it if outside the table
+		JMP @KEYIN]
+	LAC KEYIN			; set up PDL for IMPER return
+	PUSH 0
+	POP 1
+	ADD [AINASC]
+	LIAC
+	JMP @[IMPER]		; POP returns directly thru KEYIN
+
+; here we have an ascii value. 
+;	tty mode: remote echo, just send it
+		; local echo, make local copy of non control characters
+;	edit mode: send only control characters (can be quoted by RPT or META)
+		 ; in local echo, CR causes line to be transmitted
+;	local mode; must use XMIT to get anything transmitted
+
+XTR:	AND [177]		; and down to 7 bits
+	DAC TEM1'		; and save it
+	LAC MODEF'		; pick up mode
+	ASZ			; skips only in tty mode
+	 JMP EDTLCL
+; tty mode, check for type of echoing
+	LAC @[ECHOM]		; check for local echo
+	ASN
+	 JMP TXMIT1		; remote echoing, just send it.
+	LAC TEM1
+	SAD [177]		; don't echo rubouts on the screen!
+	 JMP TXMIT1
+	SAD [11]		; echo CR, LF, BS and TAB but not others
+	 JMP [	JMS @[TABR]
+		JMP TXMIT1]
+	SAD [10]
+	 JMP [	LAC [DJMS DBS,]
+		JMS INSERT
+		JMP TXMIT1]
+	SAD [12]
+	 JMP [	JMS @[LNFD]
+		JMP TXMIT1]
+	SAD [15]
+	 JMP [	JMS @[CR]
+		JMP TXMIT1]
+	LAC TEM1
+	SUB [40]
+	ASM
+	 JMP [	LAC TEM1
+		ADD [LISTR]
+		LIAC
+		JMS INSERT
+		JMP TXMIT1]
+TXMIT1:	LAC TEM1
+	JMS XMIT1		; send it to the remote computer
+	JMP @KEYIN
+
+; here for edit mode -- mix of tty and local
+; some characters cause funniness -- is this one?
+
+EDTLCL:	LAC [KEYEDT-1]
+	DAC @[DINDEX]
+	LWC KEDTSZ
+	DAC @[DLOOP]
+	LAC TEM1
+	JMS @[DISPCH]
+	JMP DSPR
+	JMP LOCAL
+; repeat quotes control chars in edit mode
+	LAC MODEF'
+	ASM			; skip if edit mode
+	 JMP LOCAL		; nope, local mode
+	LAC KCHAR		; get character typed
+	AND [REPT\META]		; was repeat on?
+	ASZ
+	 JMP LOCAL		; repeat on, insert it for sure
+	LAC TEM1
+	SUB [40]
+	ASP			; 40 or above?
+	 JMP TXMIT1		; send control characters
+
+; here for local mode and character insertion in edit mode
+LOCAL:	JMS LCLINS
+	JMP @KEYIN
+
+LCLINS:	0
+	LAC DNOPF'
+	ASM
+	 JMP LOCAL1
+	CLA
+	DAC DNOPF
+	LAC [DNOP]
+	JMS INSERT
+LOCAL1:	LAC TEM1
+	ADD [LISTR]		; get address of display routine
+	LIAC
+	JMS INSERT		; insert it
+	JMP @LCLINS		; return
+
+; dispatch
+DSPR:	PUSH 1
+	LAC KEYIN
+	PUSH 0			; set up return for IMPER
+	POP 1
+	JMP @[IMPER]
+
+SUBTTL TTY INPUT ROUTINES
+
+; read a character from the tty and dispatch on result
+TTYIN:	0			; teletype subroutine
+	JMS TCHK		; see if there is a char pending
+	 JMP @TTYIN		; buffer empty so return
+TTYIN0:	JMS TGET
+TTYIN1:	JMS @[CVDISP]		; dispatch or insert
+	JMP @TTYIN
+
+TCHK:	0			; test if tty has chars.  skip if so.
+	LAC INTARM
+	AND [TTYR]
+	ASN
+	 JMP TCHKSR		; if tty ints off, must be a char
+	LAC TIPTR
+	SAM TOPTR
+TCHKSR:	 ISZ TCHK
+	JMP @TCHK
+
+; tty character readin routine
+TGET:	0
+	LAC @TOPTR
+	AND [177]
+	DAC TCHAR'
+	LAC TOPTR
+	SAD [TTYEND]
+	 LAC [TTYBUF-1]
+	IAC
+	DAC TOPTR
+	LAC INTARM
+	AND [TTYR]
+	ASZ			; if zero, then tty ints. turned off
+	 JMP TGET1
+	IOF			; interrupts should be off while hacking here
+	LAC INTARM
+	IOR [TTYR]
+	JMS ARMER
+	ION
+TGET1:	LAC TCHAR
+	JMP @TGET
+
+TGETW:	0			; wait for tty char
+	JMS TCHK
+	 JMP .-1
+	JMS TGET
+	JMP @TGETW
+
+SUBTTL END OF BLOCK 1 CODE
+
+; variables and constants
+
+	PAGECK END OF BLOCK 1 CODE = ,\.
+
+	VARIABLES
+	CONSTANTS
+
+	PAGECK END OF BLOCK 1 CONSTANTS AND VARIABLES = ,\.
+
+	LOC 4000		; space for random constants
+GAPPNT:	CRIKY			; this is a dcam table to address all memory
+OFFHI:	HIBEG
+
+DINDEX=4010
+
+; 10  general use
+; 11  general use
+; 15  used by GRFIN
+; 16  used by GRFIN
+; 17  used by NUMZIT
+
+	LOC 4030
+
+SUBTTL ASCII TO DLIST CONVERSION ROUTINE
+; insert ascii into display list (converting first)
+CVDISP:	0			; converts ascii to display list
+	LAC @[GTYPE]
+	SAM [3]
+	 JMP CVDIS1
+	LAC @[TCHAR]
+	SAD [14]
+	 JMP [	JMS @[CLRS]	; xgp mode ^L
+		JMP @CVDISP]
+	LAC [TTYDIS-1]
+	DAC DINDEX
+	LWC XGPSIZ
+	DAC DLOOP
+	JMP BSTART
+
+CVDIS1:	ISZ QUTFLG'		; worry about whether char quoted
+	 JMP .+2
+	  JMP CTABLE
+	LAC @[TCHAR]
+	SAM [PXQUT]		; quote character?
+	 JMP CVDIS2
+	LWC 1			; set up flag
+	DAC QUTFLG
+	JMP @CVDISP		; return
+
+; set up for table look-up
+CVDIS2:	LAC @[MODEF]
+	ASZ			; tty mode?
+	 JMP CVEDIT		; no
+; tty mode dispatch
+	LAC [TTYDIS-1]
+	DAC DINDEX
+	LWC TTYSIZ
+	DAC DLOOP
+	JMP BSTART
+; edit mode dispatch
+CVEDIT:	LAC [EDTDIS-1]
+	DAC DINDEX
+	LWC EDTSIZ
+	DAC DLOOP
+
+; start loop
+BSTART:	LAC @[TCHAR]
+; table look-up loop
+	JMS DISPCH
+	 JMP TDSPR
+	 JMP GOOLIN
+
+; no match
+CTABLE:	ADD [LISTR]		; get subroutine corresponding to ascii value
+	LIAC
+
+GOOLIN:	DCM @[DNOPF]		; normal insert
+	JMS @[INSERT]
+	JMP @CVDISP
+
+TDSPR:	PUSH 1			; here for match
+	LAC CVDISP
+	PUSH 0			; set up POP return for IMPER
+	POP 1
+	JMP IMPER
+
+SUBTTL DISPATCHING ROUTINES
+
+; dispatcher
+;   r0 - match, subroutine
+;   r1 - match, non-subroutine
+;   r2 - no match found
+
+DISPCH:	0
+; comparison loop
+DISCMP:	SAD @DINDEX			; match?
+	 JMP DISMAT		; match!
+	ISZ DINDEX			; skip second word of entry
+	ISZ DLOOP'		; all of it?
+	 JMP DISCMP		; no, loop
+
+; failed -- no matches
+	ISZ DISPCH
+	 JMP DISXIT
+
+; won -- return second word of table entry
+DISMAT:	LAC @DINDEX
+	ASM
+DISXIT:	 ISZ DISPCH
+	JMP @DISPCH
+
+; * keyboard and tty character dispatch routine *
+
+IMPER:	AND [MAXADR]		; subroutine dispatch subroutine
+	DAC IMP'
+	JMS @IMP
+	NOP
+	PUSH 1
+	POP 0			; return address pushed on PDL 0
+	DEA			; decrement to use POPA
+	PUSH 0
+	POP 1
+	POPA 0
+
+; control-A dispatcher
+
+ASETR:	0
+	JMS @[TGETW]		; get argument
+	ADD [AXTAB]
+	SUB [AXEND]		; check table limit
+	ASM			; skips if o.k.
+	 JMP @ASETR
+	ADD [AXEND]
+	LIAC			; load address of selected routine
+	ASN			; is a routine assigned ?
+	 JMP @ASETR		; forget it if a zero entry
+	AND [MAXADR]		; MAKE SURE INDIRECT BIT NOT ON.
+	DAC DSPLOC'		; store it
+	JMS @DSPLOC		; i jms to it
+	JMP @ASETR
+
+SUBTTL KEYBOARD REPEAT
+;
+KRPT:	0
+	LAC @[TAUTO]		; see if auto rpt mode is on
+	SAD [ISZ TICKER]
+	 JMP KRPTON
+	LAC @[KCHAR]		; if AIKBD, convert TOP to SHIFT
+	AND [IMKBD]
+	ASZ
+	 JMP KRPT0
+	LAC @[KCHAR]
+	XOR [TOPC]		; AI:  TOP is on
+	IOR [SHIFT]
+	DAC @[KCHAR]
+	JMP @[AICHR]
+KRPT0:	JMP @KRPT		; just return for IMLAC kbd
+
+KRPTON:	LAC @[KCHAR]
+	AND [IMKBD]
+	ASN
+	 JMP KRPTAI
+KRPIM:	LAC @[KCHAR]
+	AND [377]
+	SAD [260]
+	 LAW 240		; accept ^s0 = ^shift space
+	SUB [240]
+	ASP
+	 JMP KRPIMX
+	SUB [10.]
+	ASM
+	 JMP KRPIMX
+	ADD [10.]		; any ^shift digit or space.
+	JMP KRPT3
+
+KRPTAI:	LAC @[KCHAR]
+	AND [77]
+	SAL 1
+	ADD [AIKTAB]
+	LIAC
+	SWAP
+	AND [177]		; get plain char
+	SAD [40]
+	 LAW 60
+	SUB [60]
+
+KRPT3:	AND [17]
+	PUSH 0
+	LAC @[KRPCNT]
+	CIA			; +ify
+	SAL 3			; multiply by 10, and add next digit
+	SUB @[KRPCNT]
+	SUB @[KRPCNT]
+	DAC @[KRPCNT]
+	POP 0
+	ADD @[KRPCNT]
+	CIA
+	DAC @[KRPCNT]
+	JMS @[KEYCHK]		; snarf a char
+	 JMP .-1
+	JMS @[KGET]
+	AND [IMKBD]
+	ASN
+	 JMP KRPAI2
+	LAC @[KCHAR]
+	AND [REPT\SHIFT]
+	SAD [REPT\SHIFT]
+	 JMP KRPIM
+KRPIMX:	LAC KRPT
+	DEA
+	PUSH 0
+	LAC @[KCHAR]
+	JMP KRPTX
+KRPAI2:	JMS @[AKCONV]
+	AND [377]
+	SAD [222]
+	 JMP KRPTAI
+KRPAIX:	PUSH 1
+	LAC [AICHR]		; return to AICHR from AKCONV
+	PUSH 0
+	POP 1
+KRPTX:	PUSH 0
+	LAC @[KRPCNT]
+	ASP
+	 JMP KRPT5
+	LAC @[OKRPCT]		; no new count made: use last count
+	DAC @[KRPCNT]
+	JMP .+2
+KRPT5:	 DAC @[OKRPCT]
+	POP 0
+	POPA 0
+
+SUBTTL OTHER KEYBOARD FUNCTIONS
+
+KBS:	0
+	LAW 10
+	JMP @[XTR]
+
+KVT:	0
+	JMS CSDISP
+	SHOMEU
+	SHOMED
+	HOMEUP
+	HOMEDN
+	JMP @KVT
+
+KLINE:	0
+	JMS CSDISP
+	LNFD
+	DOWN
+	LDELT
+	LDELO
+	JMP @KLINE
+
+KCR:	0
+	JMS CSDISP
+	CR
+	JAB
+	JAB
+	JAB
+	JMP @KCR
+
+KBRK:	0
+	LWC BRKLEN
+	DAC @[BRKCNT]
+	JMP @KBRK
+
+NONAS1:	0
+	JMS ZDONG
+	JMP @NONAS1
+
+KDEL:	0
+	JMS CSDISP
+	UPAR
+	UPEOL
+	DELSUP
+	DELUP
+	JMP @KDEL
+	
+KCIRM:	0
+	JMS CSDISP
+	LFAR
+	LBEG
+	DELLF
+	LDELUP
+	JMP @KCIRM
+
+KGRAD:	0
+	JMS CSDISP
+	DNAR
+	DNEOL
+	DELSDN
+	DELDN
+	JMP @KGRAD
+
+KCIRP:	0
+	JMS CSDISP
+	RTAR
+	EOL
+	DELRT
+	LDELDN
+	JMP @KCIRP
+
+;
+KBACK:	0
+	LAC @[MODEF]
+	ASZ
+	 JMP KBACK1
+	LAC ECHOM
+	ASZ
+	 JMP KBACK1
+	LAW 37			; if TTY mode and Remote echo, must be I.T.S.
+	JMP @[XTR]
+KBACK1:	JMS CSDISP
+	PXMIT
+	PXMITA
+	PXMIT
+	PXMITA
+	PXMITC
+	PXMTAC
+	JMP @KBACK
+
+KNEXT:	0
+	LAC @[MODEF]
+	ASZ
+	 JMP KNEXT1
+	LAC ECHOM
+	ASZ
+	 JMP KNEXT1
+	LAW 37
+	JMP @[XTR]
+KNEXT1:	JMS @[LXMIT]
+	JMP @KNEXT
+
+KFORM:	0
+	LAC @[KCHAR]
+	AND [TOPC]
+	ASZ
+	 JMP .+3
+	LAW 14
+	JMP @[XTR]
+	JMS @[CLRS]
+	JMP @KFORM
+
+CSDISP:	0				; dispatch on CTRL and SHIFT
+	LAC @[KCHAR]
+	AND [SHIFT\CTRL]
+	SWAP
+	ADD CSDISP
+	LIAC
+	DAC CSJMS'
+	JMS @CSJMS
+	JMP .+2
+	JMS ZDONG
+	LAW 4
+	ADD CSDISP
+	DAC CSDISP
+	JMP @CSDISP
+
+SUBTTL FORMAT EFFECT CHARACTERS
+
+; move cursor to start of next line (creating new line if needed)
+
+DOWN:	0
+	JMS @[RTARL]
+	JMP .-1			; rtar skip returns one before line feed
+	JMS @[RTAR]		; jump over last line feed
+	JMP @DOWN		; exit here if no cr-lf pair is needed
+; here to insert a new cr-lf pair (new line)
+	LAC @[HDTOP]
+	DEA
+	LIAC
+	SAD [DJMS DCR,]
+	 JMP DOWN1
+	LAC [DJMS DCR,]
+	JMS @[INSERT]		; add carrige return
+DOWN1:	JMS LNFD		; add line feed
+	JMP @DOWN
+
+; insert a blank line to the right of the cursor
+
+JAB:	0
+	LAC @[MODEF]
+	ASZ
+	 JMP .+3
+	LAW 15
+	JMP @[XTR]
+	LAC [DJMS DCR,]
+	JMS @[INSERT]
+	JMS LNFD
+	JMS @[UPAR]
+	JMP @JAB
+
+; insert a line feed
+
+LNFD:	0			; line feed routine
+	LAC [DJMS DLF,]
+	JMS @[INSERT]		; put in dlist
+	ISZ @[LNCNT]		; increment line count
+	 LAC @[SCRSIZ]
+	SUB @[LNCNT]		; too much on screen yet?
+	ASM
+	 JMP @LNFD		; no, go away!
+	LAC @[@TLTOP]		; are we at the end of the buffer?
+	ASZ
+	 JMP LNFD1		; no, just scroll one line
+	LAC @[SCRSIZ]		; yes, scroll 1/4 of the screen
+	SAR 2
+	LAW 10.			; JUST FOR NOW!!!
+	JMP .+2
+LNFD1:	LAW 1
+	PUSH 0
+	LAC @[LNPOS]		; load line position
+	SAL 1
+	SUB @[SCRSIZ]
+	ASP
+	 JMP DOWNR
+	POP 0
+	JMS @[TOPOFF]		; lncnt >= n, roll up top on lnfd insertions
+	JMP @LNFD
+DOWNR:	POP 0
+	JMS @[BOTOFF]		; lncnt < n, roll down bottom on lnfd insert
+	JMP @LNFD
+
+; insert a carriage return
+
+CR:	0
+	LAC @[HDTOP]
+	DEA
+	LIAC
+	SAD [DJMS DCR,]	; try to avoid redundant CR's
+	 JMP @CR
+	LAC [DJMS DCR,]
+	JMS @[INSERT]
+	JMP @CR
+
+KEDCR:	0
+	JMS CR
+	LAC @[MODEF]
+	ASM
+	 JMP @KEDCR
+	LAC @[ECHOM]
+	ASZ
+	 JMP [	JMS @[LXMIT]		; if edit mode and local echo, do LXMIT
+		JMP @KEDCR]
+	JMS LNFD
+	JMP @KEDCR
+
+; insert a backspace
+
+BS:	0
+	LAC [DJMS DBS,]
+	JMS @[INSERT]
+	JMP @BS
+
+NULL0:	0
+	LAC @[GTYPE]
+	SAD [3]
+	 JMP @NULL0
+	LAC [DJMS D000,]
+	JMS @[INSERT]
+	JMP @NULL0
+
+; routine to insert "right" tab
+
+TABR:	0
+	CLA
+	DAC TABDIS'		; clear displacement
+	LAC @[HDTOP]
+	DAC TABPNT'		; get pointer
+SBACK:	DCM TABPNT
+	LAC @TABPNT		; load character in backward search
+	ASN			; found a zero - done!
+	 JMP COOLY
+	SAD [DJMS DCR,]
+	 JMP COOLY		; found a cr - done!
+	SAD [DJMS DLF,]
+	 JMP SBACK		; found a lf - continue
+	SAD [DJMS DBS,]
+	 JMP [	DCM TABDIS	; BS, decrement char pos count
+		JMP SBACK]
+	SAD [SPCVEC]
+	 JMP .+3
+	SAM [TABVEC]		; must be a tab
+	 JMP [	ISZ TABDIS	; all else - add one to character count
+		JMP SBACK]
+	DCM TABPNT
+	LAC @TABPNT		; get first word of vector
+	AND [1777]
+TABLP:	SUB [CSIZE]		; loop to find number of spaces in this tab
+	ASM
+	 JMP [	ISZ TABDIS
+		JMP TABLP]
+	JMP SBACK
+
+COOLY:	LAC TABDIS		; load displacement
+	SAR 3			; integer divide by 8
+	SAL 3			; multiply by 8
+	SUB TABDIS
+	ADD [8.]
+	CIA
+	DAC TABCNT'
+	CLA
+TABLP2:	ADD [CSIZE]
+	ISZ TABCNT
+	 JMP TABLP2
+	DAC TABLEN'
+	LAC @[HDTOP]		; check for previous tab to expand
+	DEA
+	LIAC			; check for prceeding tab
+	SAM [TABVEC]		; could only be a tab in text mode
+	 JMP NEWTAB
+	LAC TABLEN
+	JMS TABEXP		; go expand the tab
+	JMP @TABR
+NEWTAB:	LAC [TABVEC]
+	PUSH 0
+	LAC TABLEN
+	JMS TABVCT
+	JMP @TABR
+
+
+; TAB expansion routine
+
+TABEXP:	0
+	DAC TABLEN
+	LAC @[HDTOP]		; get tab length from existing vector
+	SUB [2]
+	DAC TABPNT
+	LIAC
+	AND [1777]
+	ADD TABLEN		; total tab length
+	ASM
+	 ASN
+	  JMP [	DCM @[HDTOP]	; TAB expanded to 0 so flush it.
+		DCM @[HDTOP]
+		LAC [DJMP CURSOR,]
+		DAC @[@HDTOP]
+		JMP @TABEXP]
+	PUSH 1			; check if expanded too far
+	SUB [2000]		; must be > 0 to get here
+	ASP
+	 JMP TABEX1		; not > 1777, so ok
+	IAC			; get amount over 1777
+	AND [1777]		; don't allow any > 3777
+	DAC TABP1
+	LAC [TABVEC]		; insert a new tab vector
+	PUSH 0
+	LAC TABP1
+	JMS TABVCT
+	POP 1
+	SUB TABP1
+	AND [1777]
+	JMP .+2
+TABEX1:	POP 1
+	IOR [.DLV]
+	DAC @TABPNT
+	JMP @TABEXP
+
+; compactifying space routine
+
+SPACE:	0
+	LAC @[HDTOP]
+	DEA			; look at previous character
+	LIAC
+	ASN
+	 JMP SPACE2
+	SAM [DJMS DSP,]	; if it was a space
+	 JMP SPACE1
+	JMS @[BDELT]		; then delete it
+	LAC [SPCVEC]
+	PUSH 0
+	LAW 2*CSIZE
+	JMS TABVCT
+	JMP @SPACE
+SPACE1:	SAM [SPCVEC]		; if it was a tab, just expand it
+	 JMP SPACE2
+	LAW CSIZE
+	JMS TABEXP
+	JMP @SPACE
+SPACE2:	LAC [DJMS DSP,]	; otherwise just insert space
+	JMS @[INSERT]
+	JMP @SPACE
+
+;
+
+TABVCT:	0			; set up a tab or space vector
+	ASN
+	 JMP [	POP 0		; forget it if length 0
+		JMP @TABVCT]
+	PUSH 1
+	ASP			; get abs. value
+	 CIA
+	SUB [2000]		; see if bigger than max = 1777
+	ASP
+	 JMP TABVC1		; no, go do vector once
+	POP 0			; need two vectors
+	PUSH 0			; push vector type for extra call to TABGEN
+	PUSH 0
+	POP 1
+	PUSH 0			; save it for a moment
+	SAR 1			; divide by 2
+	PUSH 1			; push so we do this amount at TABVC1
+	DAC TABP1'
+	POP 0			; get total and sub amount done at TABVC1
+	SUB TABP1
+	JMS TABGEN		; do first part
+TABVC1:	POP 1
+	JMS TABGEN
+	JMP @TABVCT
+
+TABGEN:	0
+	ASM
+	 JMP TABGE1
+	CIA
+	AND [1777]
+	IOR [.DLV\NEGVEC]
+	JMP TABGE2
+TABGE1:	AND [1777]		; takes second arg on PDL 0
+	IOR [.DLV]
+TABGE2:	DAC LONG1
+	POP 0
+	DAC LONG2
+	JMS GRFINS
+	JMP @TABGEN
+
+SUBTTL FLAG FLAPPERS
+
+; magic flag flappers
+
+; toggle MODEF between TTY and EDIT
+ZMODE:	0
+	LAC @[MODEF]
+	TAC
+	JMP REDIT
+	JMP RLOCAL
+	JMS ZEDIT		; was in tty mode, rotate to edit mode
+	JMP @ZMODE
+RLOCAL:	JMS ZTTY		; was in local, rotate to tty mode
+	JMP @ZMODE
+REDIT:	JMS ZLOCAL		; was in edit mode, rotate to local mode
+	JMP @ZMODE
+
+; toggle MODEF between EDIT and LOCAL
+ZMODE1:	0
+	JMS ZLOCAL
+	ASP
+	 JMP @ZMODE1
+	JMS ZEDIT
+	JMP @ZMODE1
+
+; set MODEF to TTY
+ZTTY:	0
+	LAC [DNOP]
+	DAC @[DTTY]		; set the display
+	CLA
+	XAM @[MODEF]		; clear the flag and return old value
+	JMP @ZTTY
+
+; set MODEF to EDIT
+ZEDIT:	0
+	LAC [DJMP DEDIT,]
+	DAC @[DTTY]		; reset the display
+	LWC 1
+	XAM @[MODEF]		; set flag to -1 and return old value
+	JMP @ZEDIT
+
+; set MODEF to LOCAL
+ZLOCAL:	0
+	LAC [DJMP DLOCAL,]
+	DAC @[DTTY]		; fix the display
+	LAW 1
+	XAM @[MODEF]		; set flag to 1 and return old value
+	JMP @ZLOCAL
+
+; feeeeepppppp!!!!!
+ZDONG:	0
+	BEL
+	JMP @ZDONG
+
+RLOADM:	0
+	IOF			; save weird bugs
+	JMP @[60]
+
+TSCALE:	0
+	JMS @[TGETW]
+	JMS RDSCAL
+	JMS @[INSERT]
+	JMP @TSCALE
+
+GSCALE:	0
+	JMS @[TGETW]
+	JMS RDSCAL
+	DAC @[DSCALE]
+	JMP @GSCALE
+
+KSCALE:	0
+	JMS @[KGETW]
+	JMS RDSCAL
+	JMS @[INSERT]
+	JMP @KSCALE
+	
+ZSCALE:	0
+	LAC @[KCHAR]
+	AND [SHIFT]
+	ASN
+	 JMP ZSCAL1
+	LAC ZSCALE
+	DAC KSCALE
+	JMP KSCALE+1
+ZSCAL1:	JMS @[KGETW]
+	JMS RDSCAL
+	DAC @[DSCALE]
+	JMP @ZSCALE
+
+RDSCAL:	0
+	PUSH 0
+	AND [7]
+	ASN
+	 LAW 1
+	DAC @[SCALE]
+	ADD [SCRTAB]
+	LIAC
+	DAC @[SCRSIZ]
+	LAC @[SCALE]
+	ADD [DVIC 7]
+	DAC @[DINTEN]
+	LAC @[INTARM]
+	AND [DHLTI]
+	ASZ
+	 ISZ @[DINTEN]
+	 LAC @[SCALE]
+	AND [3]
+	IOR [4004]
+	DAC STEMP'
+	POP 0
+	AND [4]
+	SWAP
+	IOR STEMP
+	JMP @RDSCAL
+
+; toggle I-beam cursor as winner
+ZIBEAM:	0
+	LAC @[CTYPE]
+	SAM [DJMS DCURT,]
+	 JMP ZIBEA1
+	LAC [DJMS XFORM,]
+	JMP ZIBXIT
+ZIBEA1:	SAM [DJMS DBCURS,]
+	 JMP ZIBEA2
+	LAC [DJMS DCURT,]
+	JMP ZIBXIT
+ZIBEA2:	LAC [DJMS DBCURS,]
+ZIBXIT:	DAC @[CTYPE]
+	JMP @ZIBEAM
+
+; toggle cursor twitchery
+ZTTGLE:	0
+	LAC @[GLV]
+	XOR [DUD#RESTRZ]
+	DAC @[GLV]
+	LAC CASEF		; make sure case ends up right
+	ASN
+	 JMP TTGLEL
+	LAC [DJMP DFORM,]
+	JMP .+2
+TTGLEL:	LAC [DNOP]
+	DAC @[DCURT]
+	JMP @ZTTGLE
+
+; insert TECO cursor in buffer
+TECURS:	0
+	LAC [DJMS XFORM,]
+	JMS @[INSERT]
+	JMP @TECURS
+
+EDITLN:	0
+	LAC @[DEDLIN]
+	XOR [DNOP#<DJMS LINE70,>]
+	DAC @[DEDLIN]
+	JMP @EDITLN
+
+; toggle CASEF
+ZCASE:	0
+	JMS UCASE
+	ASN			; skips on upper case
+	 JMP @ZCASE
+	JMS LCASE		; set lower case
+	JMP @ZCASE
+
+; set CASEF to UC
+UCASE:	0
+	LAC [DNOP]
+	DAC @[DUCF]
+	LAC [DJMP DFORM,]
+	DAC @[DCURT]
+	LAW 40			; sets upper case here
+	XAM CASEF'		; and return old setting of casef
+	JMP @UCASE
+
+; set CASEF to LC
+LCASE:	0
+	LAC [DJMP DAUTF,]
+	DAC @[DUCF]
+	LAC [DNOP]
+	DAC @[DCURT]
+	CLA
+	XAM CASEF		;  return old setting of casef in ac
+	JMP @LCASE
+
+; toggle TAUTO (auto repeat)
+ZAUTO:	0
+	JMS ATON		; set it on
+	ASP			; skips if it was on
+	 JMP @ZAUTO
+	JMS ATOFF		; turn it off
+	JMP @ZAUTO
+
+; set TAUTO to ON
+ATON:	0
+	LAC [DNOP]
+	DAC @[DAUTF]
+	LAC [ISZ TICKER]
+	 XAM @[TAUTO]		; return old value of flag in ac
+	JMP @ATON
+
+; set TAUTO to OFF
+ATOFF:	0
+	LAC [DJMP DXMIT,]
+	DAC @[DAUTF]
+	LAC [NOP]
+	XAM @[TAUTO]		; return old value of flag in ac
+	JMP @ATOFF
+
+TXOFF:	0
+	LAC [DJMP DIOSPD,]
+	DAC @[DXMIT]
+	JMP @TXOFF
+
+ZSAIL:	0			; toggle sail character set mode
+	LAC SDISP
+	XOR [SCNT#[0]]
+	JMS SSAIL
+	JMP @ZSAIL
+
+NOSAIL:	0			; set sail character set off
+	LAC [[0]]
+	JMS SSAIL
+	JMP @NOSAIL
+
+SAIL:	0			; turn sail character set on
+	LAC [SCNT]
+	JMS SSAIL
+	JMP @SAIL
+
+SDISP:	SCNT
+
+SSAIL:	0			; munge the character definitions one way or the other
+	DAC SDISP
+	SAM [SCNT]
+	 JMP [	LAC [DJMP DFREE,]
+		DAC @[DSAIL]
+		JMP SSAIL1]
+	LAC [DNOP]
+	DAC @[DSAIL]
+SSAIL1:	LAW 1
+	DAC SCNT'
+SSLP:	ADD [LISTR]		; get and compute address of next character
+	LIAC
+	AND [7777]
+	IOR [10000]		; assume char defs. are in second 4k of memory
+	DAC SAPUT'
+	LAC @SDISP		; get sail DJMP or DNOP
+	DEA
+	ADD [SAILCH]
+	LIAC
+	DAC @SAPUT		; stuff it away
+	ISZ SCNT
+	LAC SCNT
+	SAM [40]
+	 JMP SSLP
+	JMP @SSAIL
+
+METAQ:	0
+	JMS @[KEYCHK]
+	JMP .-1
+	JMS @[KGET]
+	IOR [META]
+	DAC @[KCHAR]
+	JMP @[KEYIN1]
+
+XQUOTE:	0			; quote for xgp mode
+	LAC @[GTYPE]
+	SAM [3]
+	 JMP [	LAC [DJMS D140,]
+		JMS @[INSERT]
+		JMP @XQUOTE]
+	JMS @[TGETW]
+	ASN
+	 JMP @XQUOTE
+	SAM [140]
+	 XOR [100]
+	DAC @[TCHAR]
+	LAC @[CVDISP]		; allow CVDISP to be called recursively
+	PUSH 0
+	JMS @[CVDISP]
+	POP 0
+	DAC @[CVDISP]
+	JMP @XQUOTE
+
+;
+IFN DEBUG,[
+DEBUGM:	0		; jump to GRADE (debug mode only)
+	IOF
+	JMP @.+1
+	34000
+]
+ZSCRN:	0		; screen toggle (not implemented)
+	JMP @ZSCRN
+
+ZOUTSP:	0		; set transmit (send) speed
+	JMS @[KGETW]
+	SUB [60]
+	SBR
+	DAC @[IOSPD]
+	JMS @[SETSPD]
+	JMP @ZOUTSP
+
+ZINSP:	0		; set receive speed
+	JMS @[KGETW]
+	SUB [60]
+	SBL
+	DAC @[IOSPD]
+	JMS @[SETSPD]
+	JMP @ZINSP
+
+ZJMP:	0		; kbd jmp specification routine
+	JMS @[KGETW]
+	AND [7]
+	ADD [JMPTAB]
+	LIAC
+	DAC JMPLOC'
+	IOF
+	JMP @JMPLOC
+
+TGTYPE:	0
+	JMS @[TGETW]
+	JMS SGTYPE
+	JMP @TGTYPE
+
+ZGTYPE:	0
+	JMS @[KGETW]
+	JMS SGTYPE
+	JMP @ZGTYPE
+
+SGTYPE:	0
+	AND [7]
+	DAC @[GTYPE]	; tek = 0, ards = 1, lisp = 2, xgp = 3, gt40 = 4
+	SUB [1]
+	TAC
+	JMP SGTY1
+	JMP SGTY2
+	LAC [DTXT [A]]
+SDGTY:	DAC @[DGTYPE]
+	JMP @SGTYPE
+SGTY1:	LAC [DTXT [T]]
+	JMP SDGTY
+SGTY2:	SAD [1]
+	 JMP [	LAC [DTXT [L]]
+		JMP SDGTY]
+	SAD [2]
+	JMP [	LAC [DTXT [X]]
+		JMP SDGTY]
+	LAC [DTXT [G]]
+	JMP SDGTY
+
+ZHDR:	0
+	LAC @[DHDR]
+	XOR [DJMP DHEND#DNOP,]
+	DAC @[DHDR]
+	JMP @ZHDR
+
+ZHDRON:	0
+	LAC [DNOP]
+	DAC @[DHDR]
+	JMP @ZHDRON
+
+ZBLINK:	0
+	LAC @[CURSOR]
+	XOR [1]
+	DAC @[CURSOR]
+	JMP @ZBLINK
+
+ZDNOP:	0
+	LAC [DNOP]
+	JMS @[INSERT]
+	JMP @ZDNOP
+
+ZTYALR:	0
+	LWC 1
+	XOR @[TTYALR]
+	DAC @[TTYALR]
+	JMP @ZTYALR
+
+ZDLEND:	0
+	JMS @[KGETW]
+	AND [3]
+	ADD [2]
+	SWAP
+	SAL 3
+	SAL 1
+	DEA
+	DAC @[BUFEND]
+	JMS @[CLRS]
+	JMP @ZDLEND
+
+ZECHOM:	0
+	LAC ECHOM'
+	ASZ
+	 JMP ZECHO1
+	ISZ ECHOM
+	LAC [DTXT [L]]
+ZECHOX:	DAC @[DECHOM]
+	JMP @ZECHOM
+ZECHO1:	CLA
+	DAC ECHOM
+	LAC [DTXT [R]]
+	JMP ZECHOX
+
+ZECHOR:	0
+	LAW 1
+	DAC ECHOM
+	JMS ZECHOM
+	JMP @ZECHOR
+
+SUBTTL TEKTRONICS SIMULATION ESCAPE CODES
+;
+TESC:	0			; handle tektronics escape codes
+	LAC @[GTYPE]
+	ASZ			; 0 = TEK graphics mode
+	 JMP T033
+	JMS @[TGETW]
+	SUB [5]			; ^E ?
+	ASN
+	 JMP TKINQ
+	LAC @[TCHAR]
+	SUB [32]		; ^Z ?
+	ASN
+	 JMP TKGIN
+	LAC @[TCHAR]
+	SUB [14]		; ^L ?
+	ASN
+	 JMP TKCLR
+T033:	LAC @[CVDISP]
+	DAC JSAVE'
+	LAC [DJMS D033,]
+	JMS @[INSERT]
+	LAC @[TCHAR]
+	JMS @[CVDISP]
+	LAC JSAVE
+	DAC @[CVDISP]
+	JMP @TESC
+	
+TKCLR:	JMS @[CLRS]
+	JMP @TESC
+
+TKINQ:	LAW 40			; Send status byte (always 40)
+	JMS ZTKINQ
+	JMP @TESC
+
+ZTKINQ:	0
+	JMS @[XMIT1]
+	LAC ECHOM
+	ASN
+	 JMS @[TGETW]
+	JMS XMTPOS		; send cursor graphic coords.
+	LAW 15			; Send CR to terminate
+	JMS @[XMIT1]
+	JMP @ZTKINQ
+
+TKGIN:	JMS ZGXHR
+	JMP @TESC
+
+ZGXHR:	0
+	LAC [DJMS DXHAIR,]
+	DAC @[CTYPE]
+	JMP @ZGXHR
+
+ZGINQ:	0
+	JMS @[KGETW]
+	AND [177]
+	JMS ZTKINQ
+	LAC [DJMS XFORM,]
+	DAC @[CTYPE]
+	JMP @ZGINQ
+
+;
+XMTPOS:	0
+	JMS GETPOS
+	JMS XMTCD
+	JMS XMTCD
+	JMP @XMTPOS
+
+GETPOS:	0			; get cursor coords.  returns args X,Y on PDL 1
+	IOF
+	LAC @[INTARM]
+	AND [DHLTI\SYNC]
+	PUSH 0			; save interrupt arm status
+	XOR @[INTARM]
+	JMS @[ARMER]		; turn off DHLT interrupt
+	LAW DHLT
+	XAM @[CURSOR]
+	PUSH 0			; save cursor
+	DOF
+	LAC [DORIG]
+	DLA
+	DON
+	DSN
+	 JMP .-1
+	RDAY
+	PUSH 1
+	RDAX
+	PUSH 1
+	POP 0			; restore cursor
+	DAC @[CURSOR]
+	POP 0			; restore interrupts
+	IOR @[INTARM]
+	JMS @[ARMER]
+	ION
+	JMP @GETPOS
+
+XMTCD:	0
+	POP 1
+	SAR 1			; extra shift for factor of 2 scale
+	PUSH 1
+	SAR 3
+	SAR 2
+	AND [37]
+	IOR [40]
+	JMS @[XMIT1]
+	JMS @[TGETW]
+	POP 1
+	AND [37]
+	IOR [40]
+	JMS @[XMIT1]
+	JMS @[TGETW]
+	JMP @XMTCD
+
+; tell me about yourself....
+
+INQUIR:	0
+	LAW %VERSIO+40
+	JMS @[XMIT1]
+	LAW 0
+	JMS @[XMIT1]
+	JMP @INQUIR
+
+SUBTTL GRAPHICS INPUT FOR ARDS MODE
+
+; convert two chars into number, sign-bit, and dot-bit
+GRFIN:	0
+	JMS @[TGETW]		; read character
+	DAC GCHAR'
+	AND [177740]
+	ASN			; control character?
+	 JMP GRFIN1		; yes, end of graphics
+; not control character, buffer it
+	LAC GCHAR		; get character
+	DAC @15
+	ISZ GRF			; advance count
+	 JMP @GRFIN		; return if not ran out
+; count ran out
+	LAC [GRF]
+	DAC 15			; reset input pointer
+	DAC 16			; set output pointer
+	LAC GRFSAV'		; reset input counter
+	DAC GRF
+XDISP:	0			; dispatch
+	JMP @GRFIN		; return
+; control character, game is up
+GRFIN1:	JMS @[XCLEAR]		; clear out graphics
+	LAC GCHAR
+	JMP @[TTYIN1]		; regular tty input
+
+; graphics input buffer
+GRF:	REPEAT 6,0
+
+; set up for graphics readin
+XSET:	0
+	DAC GRF			; count
+	DAC GRFSAV
+	LAC [GRF]		; pointer into input buffer
+	DAC 15
+	LAC [JMS @GRFLIT]	; read graphics
+	DAC @[TTYRED]		; in main loop
+	LAC [JMS XCLEAR]	; clear graphics if char sent
+	DAC @[XMITC]
+	JMP @XSET
+
+; process two ards graphics codes
+GETARD:	0
+; get and process n1
+	LAC @16			; get a character between 100 and 177
+	AND [77]		; ignore all but 6 bits
+	RAR 1			; shift sign bit into link
+	DAC POS'		; save 5 most sig bits
+; sign bit?
+	CLA			; zero if link not set
+	LSZ			; link zero?
+	 LWC 1			; minus one if is
+	DAC SIGN'		; save in sign
+; get and process n2
+	LAC @16
+	DAC POS1'		; save it
+; dots bit?
+	AND [40]
+	ASZ			; if dots bit not on, skip
+	 LWC 1			; -1 if one, so isz will skip
+	DAC DOTS'		; save it
+; do pos=<pos|<pos1_5>>
+	LAC POS1'
+	AND [37]
+	SAL 3
+	SAL 2
+	IOR POS'
+	AND [1777]
+	DAC POS			; save in pos and return in ac
+	JMP @GETARD
+
+; get number into co-ordinate format
+SETDL:	0
+	LAC POS
+	ISZ SIGN
+	 JMP SETDL1
+; if pos negative
+	CIA
+; if pos positive
+SETDL1:	ADD [1777]
+	DAC POS
+	JMP @SETDL
+
+; leave graphix mode -- ascii 34
+; ignore cretinous 34's
+
+JMSNOP:	0
+	JMP @JMSNOP
+
+SUBTTL ARDS GRAPHICS
+
+; set point -- from ascii 35
+
+SETPNT:	0
+	LAC [JMS SETEND]	; set up for when count runs out
+	DAC XDISP
+	LWC 4
+	JMS XSET		; read four characters
+	JMP @SETPNT
+
+; here whenever set point count runs out
+
+SETEND:	0
+	LAC [DJMS DSORIG,]	; initialize location for set point
+	JMS @[INSERT]
+	JMS LNGEND		; then pretend its a vector
+	JMP @SETEND
+
+; short vectors.  used mainly on MULTICS graphics
+
+SHTVCT:	0
+	LAC @[GTYPE]
+	ASN
+	 JMP @SHTVCT		; 37 is a NOP in TEK graphics mode
+	LAC [JMS SHTEND]
+	DAC XDISP
+	LWC 2
+	JMS XSET
+	JMP @SHTVCT
+
+SHTEND:	0
+	CLL
+	LAC @16
+	AND [77]
+	RAR 1
+	DAC XPOS
+	CLA
+	LSZ
+	 LAW NEGVEC
+	DAC XSIGN
+	CLL
+	LAC @16
+	AND [77]
+	RAR 1
+	DAC YPOS
+	CLA
+	LSZ
+	 LAW NEGVEC
+	DAC YSIGN
+	LAC [BEAMON]
+	DAC LONG2
+	JMS VCTDO
+	JMP @SHTEND
+
+; long vector -- from ascii 36
+; create:	dlv x,y
+
+LNGVCT:	0
+	LAC [JMS LNGEND]	; set up end jump
+	DAC XDISP
+	LWC 4
+	JMS XSET		; read four characters
+	JMP @LNGVCT
+
+; here whenever long vector count runs out
+LNGEND:	0
+; x
+	JMS GETARD		; two chars
+	AND [1777]
+	DAC XPOS		; x relative
+; check dots bit
+	CLA
+	ISZ DOTS'		; if dots=-1, invisible
+	 LAC [BEAMON]		; invisible?
+	DAC LONG2
+; check sign bit
+	LAW NEGVEC
+	ISZ SIGN'		; if sign=-1, then negative
+	 CLA
+	DAC XSIGN'
+
+; y
+	JMS GETARD
+	AND [1777]
+	DAC YPOS
+; check dots bit
+	LAC [20000]		; dotted?
+	ISZ DOTS'		; if dots=-1, dotted
+	 CLA			; not dotted
+	IOR LONG2
+	DAC LONG2
+; sign bit
+	LAW NEGVEC
+	ISZ SIGN'
+	 CLA
+	DAC YSIGN'
+	JMS VCTDO
+	JMP @LNGEND
+
+SUBTTL GENERAL IMLAC LONG VECTOR CREATOR
+
+; hack difference and bit for which is greater
+VCTDO:	0
+	LAC YPOS		; y
+	SUB XPOS		; minus x
+ ;check whether y or x greater
+	ASZ			; nothing if x=y
+	 ASP			; skip if y>x, must hack
+	 JMP LNGPUT		; x>y is the normal case, super win
+
+; exchange x and y -- greater in first word always
+; here y was greater than x, must switch them
+	LAC XPOS
+	XAM YPOS
+	DAC XPOS
+	LAC XSIGN
+	XAM YSIGN
+	DAC XSIGN
+	LAC [YGXVEC]		; indicate y was greater
+	IOR LONG2
+	DAC LONG2
+; now set up in source buffer for GRFINS
+LNGPUT:	LAC XPOS
+	IOR XSIGN
+	IOR [.DLV]		; DLV op code
+	DAC LONG1
+	LAC YPOS
+	IOR LONG2
+	IOR YSIGN
+	DAC LONG2
+	ASZ
+	 JMP LNGPU1
+	LAC [LAC]		; turn on dot bits, so it isn't 0
+	DAC LONG2
+LNGPU1:	JMS GRFINS
+	JMP @VCTDO
+
+; here to insert three word grafix object w.o. display glitchery
+GRFINS:	0
+	LAC @[HDTOP]
+	DAC 10
+; insert second word
+	LAC LONG2
+	DAC @10
+; insert cursor
+	LAC [DJMP CURSOR,]
+	DAC @10
+; insert first word
+	LAC LONG1
+	DAC @[@HDTOP]
+	LAW 2
+	ADD @[HDTOP]
+	DAC @[HDTOP]
+	JMS @[BUFCK]
+	CLA
+	DAC LONG1
+	DAC LONG2
+	JMP @GRFINS
+
+; long vector insertion buffer
+LONG1:	0
+LONG2:	0
+
+SUBTTL TEKTRONICS GRAPHICS
+
+; Tektronics 4010 type graphics
+
+TEKGR:	0			; tektronics graphics routine
+	LAC @[GTYPE]		; =1 is tektronics mode, =-1 in ARDS
+	ASN
+	 JMP TEKGR0
+	LAC TEKGR
+	DAC SETPNT
+	JMP SETPNT+1
+
+TEKGR0:	LAC [DNOP]
+	XAM @[CTYPE]
+	DAC CSAVE'
+	LAW 1000
+	DAC XLAST'
+	DAC YLAST'
+	LAC [DJMS DSORIG,]
+	JMS @[INSERT]
+TEKGR1:	CLA
+	DAC LONG2
+	JMS GETTEK
+	JMS VCTDO
+
+TEKLP:	JMS GETTEK		; stay in this mode until we get a ctrl char
+	LAC [BEAMON]
+	DAC LONG2
+	JMS VCTDO
+	JMP TEKLP
+
+GETTEK:	0
+	JMS GETB
+	JMP HIGHY
+	JMP LOWY
+LOWX:	DAC XLSB
+	CLA
+	DAC XSIGN'
+	DAC YSIGN'
+	LAC XMSB'
+	SAL 3
+	SAL 2
+	IOR XLSB'
+	XAM XLAST
+	SUB XLAST
+	CIA
+	DAC XPOS'
+	ASM
+	 JMP GETTE1
+	CIA
+	DAC XPOS
+	LAW NEGVEC
+	DAC XSIGN
+GETTE1:	LAC YMSB'
+	SAL 3
+	SAL 2
+	IOR YLSB'
+	XAM YLAST
+	SUB YLAST
+	CIA
+	DAC YPOS'
+	ASM
+	 JMP @GETTEK
+	CIA
+	DAC YPOS
+	LAW NEGVEC
+	DAC YSIGN
+	JMP @GETTEK
+
+;
+GETB:	0
+	JMS @[TGETW]
+	PUSH 1
+	AND [37]
+	PUSH 0
+	POP 1
+	AND [140]
+	ASN
+	 JMP GEXIT
+	SAR 3
+	SAR 2
+	SUB [2]
+	TAC
+	JMP .+4
+	JMP .+2
+	ISZ GETB
+	 ISZ GETB
+	 POP 0
+	JMP @GETB
+
+GEXIT:	POP 0
+	DAC XITCHR'
+	SAD [37]			; ^_ exits graph mode
+	 JMP TEKXIT
+	SAD [35]			; ^] re-enters graph mode immediately
+	 JMP TEKGR1
+	SAD [15]			; CR exits and does CR
+	 JMP GEXIT0
+	SAD [13]			; vertical tab doesn't effect graphics
+	 JMP [	LAC [DJMS DVT,]
+		JMS @[INSERT]
+		LAC YLAST
+		ADD [LSIZE]
+		DAC YLAST
+		JMP GETB+1]
+	SAD [12]			; just LF and return with no effect
+	 JMP [	LAC [DJMS DLF,]
+		JMS @[INSERT]
+		LAC YLAST
+		SUB [LSIZE]
+		DAC YLAST
+		JMP GETB+1]
+	SAM [33]
+	 JMP GEXIT1
+GEXIT0:	LAC [TTYIN1]			; exit and reprocess the char
+	DAC TEKGR
+	JMP TEKXIT
+GEXIT1:	SAD [7]				; just dong and continue
+	 JMS ZDONG
+	JMP GETB+1			; otherwise ignore control chars
+TEKXIT:	PUSH 0
+	LAC CSAVE			; restore cursor
+	DAC @[CTYPE]
+	POP 0
+	JMP @TEKGR
+
+HIGHY:	DAC YMSB
+	JMS GETB
+	JMP HIGHX
+	JMP LOWY
+	JMP LOWX
+
+LOWY:	DAC YLSB
+	JMS GETB
+	JMP HIGHX
+	JMP LOWY
+	JMP LOWX
+
+HIGHX:	DAC XMSB
+	JMS GETB
+	JMP HIGHX
+	JMP LOWY
+	JMP LOWX
+
+SUBTTL XGP SIMULATOR
+
+; XGP commands
+XGPCMD:	0
+	LAC @[GTYPE]
+	SAM [3]
+	 JMP @XGPCMD			; rubout ignored except in xgp mode
+	JMS XGPGET			; get next character
+	SAD [1]				; XGP Escape code 1
+	 JMP XGPE1
+	SAD [2]				; XGP Escape code 2
+	 JMP XGPE2
+	SAD [3]				; XGP Escape code 3
+	 JMP XGPE3
+	SAD [4]				; XGP Escape code 4
+	 JMP XGPE4
+	ADD [LISTR]
+	LIAC
+	JMS @[INSERT]
+	JMP @XGPCMD
+
+XGPE1:	JMS XGPGET			; get next char for code 1 dispatch
+	SUB [40]
+	ASP
+	 JMP FNTCHG
+	SAD [37]
+	 JMP XGP77
+	ADD [XGPDIS]			; get dispatch destination, if not font chg.
+	SUB [XGPEND]
+	ASM
+	 JMP @XGPCMD			; ignore illegal commands
+	ADD [XGPEND]
+	LIAC
+	DEA
+	PUSH 1
+	LAC XGPCMD
+	DEA
+	PUSH 0				; set up POPA return
+	POPA 1				; jump to the routine
+
+FNTCHG:	LAC BASLIN
+	JMS VRTVEC
+	CLA
+	DAC BASLIN
+	JMP @XGPCMD
+
+XGPDIS:	XGP40				; column select (absolute raster tab)
+	XGP41				; underscore n raster units
+	XGP42				; line space
+	XGP43				; baseline adjust
+	XGP44				; print page number
+	XGP45				; accept page heading text
+	XGP46				; start underline
+	XGP47				; stop underline
+	XGP50				; inter character spacing
+	XGP51				; multiple width underline
+	XGP52				; relative baseline adjust
+
+XGPEND:
+
+; 
+
+XGPE2:	JMS XGPG1B			; variable relative raster spacing
+	PUSH 1
+	LAC [XGPVEC]			; insert a space type vector
+	PUSH 0
+	POP 1
+	JMS TABVCT
+	JMP @XGPCMD
+
+XGPE3:	JMS XGPG2B				; absolute raster line positioning
+	LAC [DJMS TOPLIN,]
+	JMS @[INSERT]
+	CLA
+	DAC BASLIN'
+	DAC XGPOSU'
+	LAC XGPTMP
+	JMS VRTVEC
+	JMP @XGPCMD
+
+XGPE4:					; graphics vector specification
+	JMP @XGPCMD
+
+VRTVEC:	0				; space down vertically
+	PUSH 1
+	LAC [LSPVEC]			; set up vector type
+	PUSH 0
+	POP 1
+	CIA
+	JMS TABVCT
+	JMP @VRTVEC
+
+XGPGET:	0
+	JMS @[TGETW]
+	SAM [140]			; see if quote char
+	 JMP @XGPGET
+	JMS @[TGETW]
+	SAM [140]
+	 XOR [100]
+	JMP @XGPGET
+
+XGPG2B:	0
+	JMS XGPGET
+	SWAP
+	SAR 1
+	DAC XGPTMP'
+	JMS XGPGET
+	IOR XGPTMP
+	DAC XGPTMP
+	JMP @XGPG2B
+
+XGPG1B:	0
+	JMS XGPGET
+	SWAP				; extend sign
+	RAL 1
+	SAR 3
+	SAR 3
+	SAR 3
+	JMP @XGPG1B
+
+;
+
+XGP40:	JMS XGPG2B			; 2 byte absolute raster pos command
+	LAC [DJMS DCR,]		; first do CR plus any Horz offset
+	JMS @[INSERT]
+	LAC [XGPVEC]			; then do a tab vector
+	PUSH 0
+	LAC XGPTMP
+	JMS TABVCT
+	POPA 0
+
+XGP41:	JMS XGPG1B
+	ADD BASLIN
+	PUSH 0
+	JMS VRTVEC
+	JMS XGPG2B
+	LAC [XGPVEC]
+	PUSH 0
+	LAC [BEAMON]
+	PUSH 0
+	LAC XGPTMP
+	JMS TABVCT
+	LAC XGPTMP
+	CIA
+	JMS TABVCT
+	POP 0
+	CIA
+	JMS VRTVEC
+	POPA 0
+
+XGP42:	LAC [DJMS DCR,]
+	JMS @[INSERT]
+	JMS XGPGET
+	JMS VRTVEC
+	CLA
+	DAC BASLIN
+	DAC XGPOSU
+	POPA 0
+
+XGP43:	JMS XGPG1B
+	PUSH 0
+	SUB BASLIN
+	CIA
+	JMS VRTVEC
+	POP 0
+	DAC BASLIN
+	POPA 0
+
+
+XGP44:
+
+XGP45:
+
+XGP46:	JMS GETPOS
+	POP 1
+	DAC XGPOSU
+	LAC @[SCALE]
+	SAM [2]
+	 JMP XGP46A
+	LAC XGPOSU
+	SAR 1
+	DAC XGPOSU
+XGP46A:	POP 1			; throw away y
+	POPA 0
+
+XGP47:	JMS GETPOS
+	JMS XGPG1B
+XGP47X:	ADD BASLIN
+	PUSH 0
+	JMS VRTVEC		; go to proper baseline
+	LAC [XGPVEC]
+	PUSH 0			; part with beam on
+	LAC [BEAMON]
+	PUSH 0			; return with beam off
+	LAC @[SCALE]
+	SAM [2]
+	 JMP XGP47A
+	POP 1
+	SAR 1
+	JMP .+2
+XGP47A:	POP 1
+	SUB XGPOSU		; get difference
+	PUSH 1			; save it for return
+	CIA
+	JMS TABVCT
+	POP 1			; move back to original position
+	JMS TABVCT
+	POP 1			; flush Y coord. from GETPOS
+	POP 0			; restore baseline
+	CIA
+	JMS VRTVEC
+	POPA 0
+
+XGP50:	JMS XGPG1B
+	POPA 0
+
+XGP51:	JMS GETPOS
+	JMS XGPG1B
+	PUSH 0
+	JMS XGPG1B
+	POP 0
+	JMP XGP47X
+
+XGP52:	JMS XGPG1B
+	PUSH 0
+	CIA
+	JMS VRTVEC
+	POP 0
+	ADD BASLIN
+	DAC BASLIN
+	POPA 0
+
+XGP77:	LAW 0
+	JMS SGTYPE
+	JMP @XGPCMD
+
+SUBTTL GT40 GRAPHICS
+
+; GT40 BLOCK LOADING GRAPHICS (FOR DRAW PROG. AND LISP DISPLAY SLAVE)
+
+; display items are hacked as individual character "lines", i.e. not
+; display subroutined.  so to delete and item, one does a cursor pos.
+; (JMS ABPOS) and a delete right (JMS DELRT).  to create an item,
+; you cursor pos and clear the line, then just start inserting.
+; this scheme loses if display items have line feeds in them or
+; if there are more items then lines on the screen.
+
+GT40BL:	0
+	LAC @[GTYPE]
+	SAD [4]
+	 JMP GT40B1
+	JMS @[DELDN]
+	JMP @GT40BL
+
+GT40B1:	LAC @[LNPOS]
+	DAC GTOLNP'
+	JMS @[TGETW]		; get command char to dispatch on.
+	AND [17]		; look at only 4 bits
+	ADD [GTTAB]		; compute dispatch table entry address
+	SUB [GTLAST]		; test end of table
+	ASM
+	 JMP @GT40BL		; ignore unkown commands
+	ADD [GTLAST]
+	LIAC			; get address to dispatch to
+GTDSPR:	DAC GTDISP'
+	JMP @GTDISP		; go there.  return with JMP @GT40BL
+
+; gt40 display commands
+GTC0:	JMS GTGETW		; get next word for further decoding
+	AND [3]			; look at only 2 bits worth
+	DEA
+	ASN			; test for 1 or 2 (skip if 2)
+	 JMP GTC1		; same command as regular item load
+	SAM [1]
+	 JMP @GT40BL		; ignore unknown command
+GTC02:	JMS GTGCNT		; get count of items to be deleted
+	DEA
+	DAC GTCNT 
+GTDLP:	JMS GTDELI		; go delete an item
+	ISZ GTCNT
+	 JMP GTDLP
+GTEND:	JMS GTGETW		; gobble checksum word
+	LAC GTOLNP		; restore cursor position
+	DAC @[VPOS]
+	LAW 1
+	DAC @[HPOS]
+	JMS @[ABPOS]
+	JMS @[EOL]
+	JMP @GT40BL		; then exit
+
+GTC1:	LAW 0			; command to insert a display item
+	DAC GTMODE'		; initialize line type and graphics mode
+	DAC GTLTYP'
+	LAC @[CTYPE]		; turn off cursor
+	PUSH 0
+	LAC [DNOP]
+	DAC @[CTYPE]
+	JMS GTGCNT		; get count of words in block. return in GTCNT
+	JMS GTDELI		; position and clear item # line
+	LAC GTITEM
+	ASN
+	 JMP GTC1A
+	CIA
+	DAC GTCNT2'
+GTELP:	LAC [DJMS DLFX,]
+	JMS @[INSRTL]
+	ISZ GTCNT2
+	 JMP GTELP
+GTC1A:	LAC [DJMS TOPLIN,]	; reposition the cursor
+	JMS @[INSRTL]
+	LAC [DBLI 0]		; make sure blink and intensity are reasonable
+	JMS @[INSRTL]
+	LAC [DVIC 12]
+	JMS @[INSRTL]
+
+GTLOOP:	JMS GTINS		; go process one object in the block
+	ISZ GTCNT
+	 JMP GTLOOP
+	POP 0			; restore cursor
+	DAC @[CTYPE]
+	JMP GTEND		; done
+
+GTC2:	JMS GTDELI		; go delete an item
+	JMP GTEND
+
+; commands not yet coded are ignored.
+GTC3:
+GTC4:
+GTC5:
+GTC6:
+GTC7:
+GTC8:
+GTC9:
+GTC10:
+GTC11:	JMP @GT40BL
+
+; a few utility routines used by other commands
+
+;this routine should compute a byte-wise check sum for later use.
+GTGETW:	0			; get a word in gt40 format (6-4-6)
+	JMS @[TGETW]		; get low 6 bits
+	AND [77]
+	DAC GTWRD'
+	JMS @[TGETW]		; get middle 4 bits
+	AND [17]
+	SWAP
+	CLL
+	RAR 2
+	IOR GTWRD
+	DAC GTWRD
+	JMS @[TGETW]		; get high 6 bits
+	AND [77]
+	SWAP
+	CLL
+	RAL 2
+	IOR GTWRD
+	DAC GTWRD
+	JMP @GTGETW
+
+GTIPOS:	0			; position to line number = item number
+	IAC
+	DAC @[VPOS]
+	LAW 1
+	DAC @[HPOS]
+	JMS @[ABPOS]
+	JMP @GTIPOS
+
+GTDELI:	0
+	JMS GTGETW		; get item # to delete
+	DAC GTITEM'		; save it
+	JMS GTIPOS		; go to the item # line
+	JMS @[DELRT]
+	JMP @GTDELI
+
+BLKOVH==6			; block overhead bytes
+
+GTGCNT:	0			; compute number of words in this block
+	JMS GTGETW		; get block byte count
+	SUB [BLKOVH]		; misc extra words
+	IAC			; round off
+	SAR 1			; convert bytes to words
+	CIA			; negative count for looping
+	DAC GTCNT'		; block word count
+	JMP @GTGCNT
+
+; process words in a gt40 display block
+
+GTINS:	0			; process one object in the item
+	JMS GTGETW		; get a word
+	ASM			; skip on command words
+	 JMP GTDATA		; sign bit 0 must be data word, go decode
+	AND [040000]		; check for codes > 040000
+	ASZ			; if on, then its a jump,no-op,lsr a, or lsr b
+	 JMP @GTINS		; ignore all for now. (fix up for lisp display slave)
+				; lsr b used in the gt40 equiv. of point plot mode.
+	LAC GTWRD		; getting here, we assume a set graphic mode command
+	AND [034000]		; extract mode bits
+	SAR 3
+	SWAP
+	DAC GTMODE
+	LAC GTWRD		; see if line type enabled
+	AND [4]
+	ASN
+	 JMP GTINS1		; if not, ignore those bits
+	CLL
+	LAC GTWRD		; now extract line type bits (dotted, dashed, etc)
+	AND [3]
+	RAR 3			; position bits for imlac long vector command
+	RAR 1
+	DAC GTLTYP
+GTINS1:	LAC GTWRD
+	AND [002000]
+	ASN
+	 JMP GTINS2
+	LAC GTWRD		; extract intensity bits
+	AND [001600]
+	SAL 2			; scaled by 2 for pds-4
+	SWAP
+	IOR [DVIC]		; generate imlac display intensity command
+	JMS @[INSERT]		; insert it
+GTINS2:	LAC GTWRD		; check to see if blink bit enabled
+	AND [20]
+	ASN
+	 JMP GTINX
+	LAC GTWRD		; get blink bit
+	AND [10]
+	SAR 3
+	IOR [DBLI]		; generate blink mode command
+	JMS @[INSERT]		; insert it
+GTINX:	JMP @GTINS		; done
+
+; process a data word
+
+GTDATA:	LAC GTMODE		; to process data word, dispatch on mode
+	ADD [GTMTAB]
+	LIAC
+	DAC GTDISP
+	LAC GTWRD
+	JMP @GTDISP		; return with JMP @GTINS
+
+; routines to process gt40 display block data words
+
+GTCHD:	JMS GTCHI		; gt40 character mode command
+	LAC GTWRD
+	SWAP
+	JMS GTCHI
+	JMP @GTINS
+
+GTCHI:	0
+	AND [177]
+	ASN
+	 JMP @GTCHI		; ignore NULL's in this mode
+	SAD [17]
+	 JMP @GTCHI		; ignore ^O which is a gt40 randomness
+	ADD [LISTR]
+	LIAC
+	JMS @[INSERT]
+	JMP @GTCHI
+
+; gt40 short vector
+
+GTSVD:	JMS GTSWRD		; get short format word
+GTVEC:	CLA			; set beam on/off bit and line type
+	ISZ GTBRI'
+	 LAC [BEAMON]
+	IOR GTLTYP
+	DAC LONG2
+	JMS VCTDO		; go make a vector (long)
+	JMP @GTINS
+
+; gt40 long vector
+
+GTLVD:	JMS GTLWRD		; get long format words
+	JMP GTVEC		; make vector same as short vector
+
+; gt40 absolute position
+
+GTPDD:	JMS GTLWRD		; get long format words
+	LAC XPOS		; generate absolute position commands
+	SAL 1			; scale for pds-4
+	IOR [.DLXA]
+	JMS @[INSERT]
+	LAC YPOS
+	SAL 1
+	IOR [.DLYA]
+	JMS @[INSERT]
+GTPP:	LAC [DDSP]		; check if intensified dot
+	ISZ GTBRI
+	 JMS @[INSERT]
+	JMP @GTINS
+
+; gt40 relative position
+
+GTRPD:	JMS GTSWRD		; get short format word
+	CLA
+	DAC LONG2		; parameters set for a dark vector
+	JMS VCTDO		; go do it
+	JMP GTPP		; go hack intensity
+
+; gt40 point plot mode
+
+GTGPXD:				; these commands not yet implemented
+GTGPYD:	JMP @GTINS		; so they are ignored.
+
+; utilities for data word processing
+
+GTSWRD:	0			; get short word format data (single word)
+	LAC GTWRD		; get 6 bits of delta y
+	AND [77]
+	DAC YPOS
+	LAC GTWRD
+	AND [100]		; get sign bit
+	SAL 3			; position it for imlac format
+	SAL 1
+	DAC YSIGN
+	LAC GTWRD		; get 6 bits of delta x
+	RAL 1
+	SWAP
+	PUSH 0
+	AND [77]
+	DAC XPOS
+	POP 0
+	AND [100]		; get sign bit
+	SAL 3
+	SAL 1
+	DAC XSIGN
+	LWC 1			; set brightness flag for skipping
+	DAC GTBRI
+	LAC GTWRD
+	AND [040000]
+	ASN
+	 JMP @GTSWRD
+	LAW 0
+	DAC GTBRI
+	JMP @GTSWRD
+
+GTLWRD:	0			; get long format data (2 words)
+	LAC GTWRD
+	PUSH 0			; save first word for brightness bit
+	AND [1777]		; get mag. of delta x
+	DAC XPOS
+	LAC GTWRD
+	AND [020000]		; get and position sign bit
+	SAR 3
+	DAC XSIGN
+	JMS GTGETW		; get second word
+	AND [1777]		; get mag. of delta y
+	DAC YPOS
+	LAC GTWRD
+	AND [020000]		; get and position sign bit
+	SAR 3
+	DAC YSIGN
+	LWC 1			; compute brightness
+	DAC GTBRI
+	POP 0
+	AND [040000]
+	ASN
+	 JMP GTLWRX
+	LAW 0
+	DAC GTBRI
+GTLWRX:	ISZ GTCNT		; fix up word count for main loop
+	 JMP @GTLWRD
+	LWC 1
+	DAC GTCNT
+	JMP @GTLWRD
+
+SUBTTL END OF BLOCK 2 CODE
+;
+	PAGECK END OF BLOCK 2 CODE = ,\.
+
+	VARIABLES
+	CONSTANTS
+
+	PAGECK END OF BLOCK 2 CONSTANTS AND VARIABLES = ,\.
+
+	LOC 10000
+
+	LOC 10030
+
+SUBTTL SCREEN DISPLACEMENT
+;
+XOFDEL:	100
+
+XOFUP:	0
+	LAC XOFDEL
+	PUSH 0
+	LAC [DVRTOF]
+	JMS XOFINC	
+	JMP @XOFUP
+
+XOFDN:	0
+	LAC XOFDEL
+	CIA
+	PUSH 0
+	LAC [DVRTOF]
+	JMS XOFINC
+	JMP @XOFDN
+
+XOFLFT:	0
+	LAC XOFDEL
+	CIA
+	PUSH 0
+	LAC [DHOROF]
+	JMS XOFINC
+	JMP @XOFLFT
+
+XOFRT:	0
+	LAC XOFDEL
+	PUSH 0
+	LAC [DHOROF]
+	JMS XOFINC
+	JMP @XOFRT
+
+XOFINC:	0
+	PUSH 1
+	LIAC
+	AND [3777]
+	SUB [2000]
+	ASM
+	 JMP [	CIA
+		JMP XOFI1]
+	ADD [2000]
+XOFI1:	DAC XOFTMP'
+	POP 0
+	ADD XOFTMP
+	ASM
+	 JMP XOFI2
+	CIA
+	AND [1777]
+	IOR [.DLV\NEGVEC]
+	JMP XOFI3
+XOFI2:	AND [1777]
+	IOR [.DLV]
+XOFI3:	DAC XOFTMP
+	POP 1
+	XAM XOFTMP
+	DAC @XOFTMP
+	JMP @XOFINC
+
+SUBTTL TEKTRONICS HARDCOPY HACK
+
+; routine for zapping copies of the screen to the Tektronics
+
+ZCOPY:	0
+	PUSH 0			; save the AC
+	LAC [DJMP DCOPY,]
+	XAM @[DXMIT]		; put up copying sign
+	PUSH 0
+	LAC @[IOSPD]
+	PUSH 0
+	LAC [11,,11]		; temporarily set speed to 9600 baud
+	DAC @[IOSPD]
+	JMS SETSPD
+	LAC @[GTYPE]		; temporarily set graphics mode to TEK
+	PUSH 0
+	CLA
+	JMS @[SGTYPE]
+	JMS @[SHOMEU]		; go to top of screen
+ZCOPY1:	JMS @[KGETW]
+	AND [177]
+	SAM [40]		; get KBD char.  only <space> continues
+	 JMP ZCPYX
+	LWC 34.			; 4010 series screen height
+	DAC ZLOOP'
+	LAW 33			; clear the screen first
+	JMS @[XMIT1]
+	LAW 14
+	JMS @[XMIT1]
+	LAW 80.			; wait 1.5 secs for the clear
+	JMS @[WAIT40]
+ZCPYLP:	LAC @[@TLTOP]
+	ASN			; skip if at end of buffer
+	 JMP ZCPYW
+	JMS @[LXMIT]		; transmit a line
+	LAW 12
+	JMS @[XMIT1]		; transmit LF
+	ISZ ZLOOP
+	 JMP ZCPYLP
+ZCPYW:	LAW 33			; send out the hard copy command
+	JMS @[XMIT1]
+	LAW 27
+	JMS @[XMIT1]
+	LAW 400.
+	JMS @[WAIT40]		; wait > 8 secs for Hardcopy
+	LAC @[@TLTOP]
+	ASZ			; skip if at end of buffer
+	 JMP ZCOPY1		; otherwise loop back for more
+ZCPYX:	LAW 33			; do a final screen clear on the TEK
+	JMS @[XMIT1]
+	LAW 14
+	JMS @[XMIT1]
+	LAW 1
+	JMS @[WAIT40]
+	POP 0			; restore everything
+	JMS @[SGTYPE]
+	POP 0
+	DAC @[IOSPD]
+	JMS SETSPD
+	POP 0
+	DAC @[DXMIT]
+	POP 0
+	JMP @ZCOPY
+
+SUBTTL I/O SPEED PROGRAMMING
+;
+SETSPD:	0			; set Programmable Speed Asynchronous interface
+	LAC @[IOSPD]
+	SAM [1,,1]
+	 JMP SETSP1
+	LAC [140340]		; 8/11 format special for 110 baud
+	JMP .+2
+SETSP1:	LAC @[IOFMT]
+	LTF
+	LAC @[IOSPD]
+	AND [17]
+	PUSH 0
+	ADD [SPDTAB]
+	LIAC
+	LSS
+	POP 0
+	ADD [DSPTAB]
+	LIAC
+	DAC @[DOSP]
+	LAC @[IOSPD]
+	SWAP
+	AND [17]
+	PUSH 0
+	ADD [SPDTAB]
+	LIAC
+	LSR
+	POP 0
+	ADD [DSPTAB]
+	LIAC
+	DAC @[DINSP]
+	JMP @SETSPD
+
+ZXMTSP:	0			; set character transmission speed
+	JMS @[KGETW]
+	AND [77]
+	SUB [60]
+	ASP
+	 CLA
+	DAC @[XMTSPD]
+	JMP @ZXMTSP
+
+SUBTTL BUFFER SIZE DISPLAY COMPUTER
+
+; interrupt routine to display size of buffer space
+
+NUMZIT:	0
+	CLA			; in 5 decimal digits
+	DAC DFLAG'		; zero to kill leading zeros
+	LAC [DNUM1-1]
+	DAC 17			; output pointer in 17
+	LWC 5
+	DAC LOOPIN'		; set 5 decimal digits
+	LAC [SUBT]
+	DAC SUBPNT'		; set subtract pointer for base conversion
+	LWC 4
+	ADD @[TLTOP]
+	SUB @[HDTOP]
+	DAC TNUM'		; computes current buffer size
+
+GOZAP:	CLA
+	XAM TNUM		; load buffer size
+SUBR:	SUB @SUBPNT		; divide loop for base conversion
+	ASP
+	 JMP .+3
+	  ISZ TNUM		; increment digit count
+	  JMP SUBR
+	ADD @SUBPNT		; restore
+	XAM TNUM		; load digit, store dividend
+	ASZ			; is digit zero?
+	 JMP NONA		; no
+	SAM DFLAG		; suppress zeros?
+	 JMP NONA+1
+	LAC [DNOP]
+	DAC @17			; kill the digit!
+	JMP WHAMZ
+
+NONA:	ISZ DFLAG
+	 ADD [LZERO]		; get address of proper djmp
+	LIAC
+	DAC @17			; put it out in the display list
+WHAMZ:	ISZ SUBPNT		; advance subpointer
+	ISZ LOOPIN		; check for all five digits
+	 JMP GOZAP		; continue to continue
+	JMP @NUMZIT		; exit
+
+SUBT:	10000.			; table of powers of ten
+	1000.
+	100.
+	10.
+	1.
+
+SUBTTL RANDOM UTILITIES
+
+; routine to wait multiples of 40 cycle sync
+
+WAIT40:	0
+	CIA
+	DAC WLOOP'
+	ASM
+	 JMP @WAIT40
+WAIT41:	LAC @[CNT40]
+	SAD @[CNT40]
+	 JMP  .-1
+	ISZ WLOOP
+	 JMP WAIT41
+	JMP @WAIT40
+
+; routine for repeated DONG
+
+DNGCHK:	0
+	LAC @[DONGC]
+	ASM
+	 JMP @DNGCHK
+	ISZ @[DONGC]
+	 JMS @[ZDONG]
+	JMP @DNGCHK
+
+; routine to time out the break signal
+
+BRKCHK:	0
+	LAC @[BRKCNT]
+	ASM
+	 JMP @BRKCHK
+	STB
+	ISZ @[BRKCNT]		; check on break signal
+	 JMP @BRKCHK		; not 200 ms yet
+	LAMP
+	CTB			; clear it
+	JMP @BRKCHK
+
+;
+CASEIT:	POP 0
+	PUSH 0
+	AND [137]
+	SUB [101]
+	ASP
+	 JMP @[POPXTR]
+	POP 0
+	PUSH 0
+	AND [137]
+	SUB [133]
+	ASM
+	 JMP @[POPXTR]
+	POP 0
+	XOR @[CASEF]
+	PUSH 0
+	LAC @[KCHAR]
+	AND [SHFTLK]
+	ASN
+	 JMP @[POPXTR]
+	POP 0
+	XOR [40]
+	JMP @[XTR]
+
+SUBTTL MORE KEYBOARD RANDOMNESS
+;
+KHELP:	0
+	JMP @KHELP
+
+;RTSPC:	0
+;	JMP @RTSPC
+
+KESC:	0
+	LAC KESC
+	PUSH 0			; set up return for IMPER
+	JMS @[KGETW]
+	SUB [200]
+	ASP
+	 JMP KESC1
+	ADD [ESCSPT]
+	LIAC
+	JMP @[IMPER]
+KESC1:	ADD [200]
+	AND [37]
+	ADD [ESCTAB]
+	LIAC
+	JMP @[IMPER]
+
+KCALL:	0
+	LAW 32			; send control z
+	JMS @[XMIT1]
+	JMP @KCALL
+
+KCLEAR:	0
+	LAC ECHOM
+	ASZ
+	 JMP KCLEA1
+	LAC @[MODEF]
+	ASZ
+	 JMP KCLEA1
+	LAW 37
+	JMS @[XMIT1]
+	LAW 114
+	JMS @[XMIT1]		; send ^_L for I.T.S. screen clear
+	JMS @[TCHK]
+	JMP .-1
+	LAW 1
+	JMS @[WAIT40]
+	LAC [TTYBUF]		; flush the input buffer
+	DAC @[TIPTR]
+	DAC @[TOPTR]
+KCLEA1:	LAC @[KCHAR]
+	AND [CTRL\SHIFT]
+	SAM [CTRL\SHIFT]
+	 JMP KCLEA2
+	JMS @[CLRS]
+	JMP @KCLEAR
+KCLEA2:	JMS @[SCLRS]
+	JMP @KCLEAR
+
+SUBTTL END OF BLOCK 3 CODE
+;
+	PAGECK END OF BLOCK 3 CODE = ,\.
+
+	VARIABLES
+	CONSTANTS
+
+	PAGECK END OF BLOCK 3 CONSTANTS AND VARIABLES = ,\.
+
+SUBTTL DISPATCH TABLES
+
+; macro for dispatch tables
+	DEFINE DSP2 DISCOD,DISGO
+		DISCOD
+		DISGO
+	TERMIN
+
+; --- function keyboard ---
+
+; down arrow
+KEYDIS:	DSP2 204,@DNAR			; move down a line
+	DSP2 SHIFT+204,@DNEOL		; down and eol
+	DSP2 CTRL+204,@DELSDN		; delete down a line
+	DSP2 CTRL+SHIFT+204,@DELDN	; delete down to EOS
+; right arrow
+	DSP2 205,@RTAR			; move right a character
+	DSP2 SHIFT+205,@EOL		; move to end of line
+	DSP2 CTRL+205,@DELRT		; delete to end of line
+	DSP2 CTRL+SHIFT+205,@LDELDN	; delete complete line right
+; up arrow
+	DSP2 206,@UPAR			; move up a line
+	DSP2 SHIFT+206,@UPEOL		; move up and EOL
+	DSP2 CTRL+206,@DELSUP		; delete to beginning of line and up
+	DSP2 CTRL+SHIFT+206,@DELUP	; delete to top of screen
+; left arrow
+	DSP2 210,@LFAR			; left one character
+	DSP2 SHIFT+210,@LBEG		; move to beginning of line
+	DSP2 CTRL+210,@DELLF		;  delete to beginning of line
+	DSP2 CTRL+SHIFT+210,@LDELUP	; line clear
+; form
+	DSP2 214,014			;     = ^L
+	DSP2 SHIFT+214,@CLRS
+; del (key top might be TAB)
+	DSP2 377,011			; TAB
+; home
+	DSP2 217,@SHOMEU			;     = move to end of screen
+	DSP2 SHIFT+217,@SHOMED		; s   = move to top of screen
+	DSP2 CTRL+217,@HOMEUP		; move to bottom left of screen
+	DSP2 CTRL+SHIFT+217,@HOMEDN	; HOME and LBEG
+; page xmit
+	DSP2 216,@PXMIT			;     = page transmit
+	DSP2 216+SHIFT,@PXMITA		; non stop page transmit
+;	DSP2 216+CTRL,@PXMITC		; page transmit and clear buffer
+;	DSP2 216+CTRL+SHIFT,@PXMTAC	; non stop and clear buffer
+; xmit
+	DSP2 202,@KNEXT			; XMIT current line
+	DSP2 202+SHIFT,@KBACK		; PXMIT
+; "0"
+	DSP2 230,010			; BS
+; "2"
+	DSP2 232,@KCLEAR			; clear the whole buffer
+	DSP2 SHIFT+232,@SCLRS		; delete the screen
+; "4"
+	; auto repeat hacker.  see KBDINT routine
+; "5"
+	DSP2 235,@METAQ			; meta quote
+; "6" (key top might be BREAK)
+	DSP2 236,@KBRK
+	DSP2 CTRL+236,@INITA			; quit out of an xmit
+; "7"
+	DSP2 211,@KCALL
+
+; --- left keyboard ---
+
+; esc
+	DSP2 233,033			;     = ESC (ascii 33)
+	DSP2 233+CTRL,@KESC		;     = internal escape routines
+; cr
+	DSP2 215,015			;     = carriage return (ascii 15)
+	DSP2 SHIFT+215,@JAB		; s   = insert crlf at right
+; lf
+	DSP2 212,012			;     = line-feed (ascii 12)
+	DSP2 SHIFT+212,@DOWN		; s   = down a line or line-feed
+	DSP2 CTRL+212,@LDELT		; line clear
+	DSP2 CTRL+SHIFT+212,@LDELO	; line kill
+; tab (key top might be DEL)
+	DSP2 237,177			;     = rubout
+	DSP2 CTRL+237,@FDELT		;     = rubout or forward delete
+; break (key top might be 6)
+	DSP2 231,@ZCASE			; toggle case mode
+	DSP2 231+SHIFT,@ZAUTO		; toggle auto-repeat mode
+
+; space
+	DSP2 SHIFT+240,040		; s   = space
+	DSP2 CTRL+240,00			; c   = ^@
+
+; --- key translations ---
+
+	DSP2 CTRL+254,133		; c , = [
+	DSP2 CTRL+255,137		; c - = _
+	DSP2 CTRL+256,135		; c . = ]
+	DSP2 CTRL+257,134		; c / = \
+	DSP2 SHIFT+260,010		; s 0 = ^H (backspace)
+	DSP2 CTRL+260,174		; c 0 = | (vertical bar)
+	DSP2 CTRL+266,176		; c 6 = ~ (tilde)
+	DSP2 CTRL+267,140		; c 7 = ` (accent grave)
+	DSP2 CTRL+270,173		; c 8 = { (left curly bracket)
+	DSP2 CTRL+271,175		; c 9 = } (right curly bracket)
+	DSP2 CTRL+272,136		; c : = ^
+	DSP2 CTRL+273,100		; c ; = @
+	DSP2 CTRL+SHIFT+313,033		; c-s K = ESC
+	DSP2 CTRL+SHIFT+314,034		; c-s L = ^\
+	DSP2 CTRL+SHIFT+315,035		; c-s M = ^]
+	DSP2 CTRL+SHIFT+316,036		; c-s N = ^^
+	DSP2 CTRL+SHIFT+317,@ITS37	; c-s O = ^_, quoted in tty mode
+	DSP2 CTRL+SHIFT+320,000		; c-s P = ^@
+	DSP2 CTRL+372,@ITSQTC		; control Z quoted with ^_ in tty mode
+KEYSIZ=<.-KEYDIS>/2
+
+; * dispatch for teletype codes *
+
+KEYEDT:	DSP2 177,@BDELT		; edit mode tty table
+	DSP2 015,@KEDCR
+EDTDIS:
+TTYDIS:	DSP2 010,@BS 		; tty mode tty table
+	DSP2 011,@TABR
+	DSP2 012,@LNFD
+KEDTSZ=<.-KEYEDT>/2
+	DSP2 000,@NULL0
+	DSP2 015,@CR
+	DSP2 140,@XQUOTE		; quote for xgp mode
+	DSP2 177,@XGPCMD
+	DSP2 040,@SPACE		; compactify spaces and tabs in tty mode
+XGPSIZ=<.-TTYDIS>/2
+	DSP2 001,@ASETR
+	DSP2 007,@ZDONG
+	DSP2 013,@DOWN
+	DSP2 016,@TABPOS
+	DSP2 017,@LFAR
+	DSP2 020,@GT40BL
+	DSP2 021,@DELRT
+	DSP2 022,@CLRS
+	DSP2 023,@LDELT
+	DSP2 024,@HOMEUP
+	DSP2 025,@HOMEDN
+	DSP2 026,@JMSNOP
+	DSP2 027,@JMSNOP
+	DSP2 030,@DELETE
+	DSP2 031,@RTAR
+	DSP2 032,@JMSNOP
+	DSP2 033,@TESC		; ESCAPE mostly for tektronics mode hacks
+	DSP2 034,@JMSNOP
+	DSP2 035,@TEKGR		; if in ARDS mode, the this goes to SETPNT
+	DSP2 036,@LNGVCT
+	DSP2 037,@SHTVCT		; in ARDS, short vector, otherwise, NOP
+EDTSIZ=<.-EDTDIS>/2
+	DSP2 014,@CLRS
+TTYSIZ=<.-TTYDIS>/2
+
+; * table of control-A codes *
+
+AXTAB:	0
+	@RLOADM			; ^A -- jump to 60
+	@TECURS			; ^B -- insert teco cursor
+	@TSCALE			; ^C -- insert scale command
+	@GSCALE			; ^D -- change global scale
+	@HOMEUP			; ^E -- home up
+	0			; ^F
+	@ZEDIT			; ^G -- edit mode
+	@ZTTY			; ^H -- tty mode
+	@ZLOCAL			; ^I -- local mode
+	0			; ^J -- don't use.  I.T.S. screws it
+	@TGTYPE			; ^K -- set graphics type
+	0			; ^L
+	@INQUIR			; ^M -- get version # and type
+	@SAIL			; ^N -- set char set to sail
+AXEND:
+
+; ---- A.I. KEYBOARD DISPATCH ----
+
+;WHAT FOLLOWS IS THE GRAND CHARACTER CONVERSION TABLE
+
+;AN 9 BIT QUANTITY IS USED TO INDEX INTO THE XTAB
+;	0-5	KEYBOARD KEY NUMBER
+;	  6	SHIFT
+;	  7	SHIFT LOCK
+;	  8	TOP (6 AND 7 GUARANTEED TO BE ZERO)
+
+;IF THE BYTE PICKED IS NEGATIVE, YOU HAVE STRUCK A KEY THAT DOES NOT
+;HAVE AN ASCII CODE.  THESE CODES ARE ASSIGNED AS FOLLOWS:
+
+IFN AIKBD,[
+AINASC:	NONAS1	;	 200	ILLEGAL
+	KBRK	;	201	BREAK
+	KESC	;	202	ESCAPE
+	KCALL	;	203	CALL
+	KCLEAR	;	204	CLEAR
+	KDEL	;	205	CAP DELTA
+	KCIRM	;	206	CIRCLE MINUS
+	KGRAD	;	207	DEL
+	KCIRP	;	210	CIRCLE PLUS
+	KBACK	;	211	BACK
+	KNEXT	;	212	NEXT
+	KHELP	;	213	HELP
+	KFORM	;	214	FORM
+	KBS	;	215	BACK SPACE
+	KVT	;	216	VERTICAL TAB
+	KCR	;	217	CRLF AND BS
+	KLINE	;	220	LF OR DNAR
+	FDELT	;	221	FORWARD DELETE
+	KRPT	;	222	KBD REPEAT
+
+NATEND==<-AINASC>-1	;MAXIMUM # NON-ASCII CHARACTERS
+
+; META CURRENTLY TREATED LIKE CNTRL
+DEFINE KBDKEY A,C,SC,TC
+	<377&C>,,<377&SC>
+	<377&TC>,,<377&TC>
+TERMIN
+
+;
+AIKTAB:
+KBDKEY	0,	201,	201,	201	;BREAK
+KBDKEY	1,	202,	202,	202	;ESCAPE
+KBDKEY	2,	"1,	"!,	222
+KBDKEY	3,	"2,	"",	222
+KBDKEY	4,	"3,	"#,	222
+KBDKEY	5,	"4,	"$,	222
+KBDKEY	6,	"5,	"%,	222
+KBDKEY	7,	"6,	"&,	222
+KBDKEY	10,	"7,	"',	222
+KBDKEY	11,	"8,	"(,	222
+KBDKEY	12,	"9,	"),	222
+KBDKEY	13,	"0,	"_,	222
+KBDKEY	14,	"-,	"=,	"=
+KBDKEY	15,	"@,	"`,	"`
+KBDKEY	16,	"^,	"~,	"~
+KBDKEY	17,	215,	215,	215	;BACK SPACE
+KBDKEY	20,	203,	203,	203	;CALL
+KBDKEY	21,	204,	204,	204	;CLEAR
+KBDKEY	22,	11,	11,	11	;TAB
+KBDKEY	23,	33,	33,	33	;ALT-MODE
+KBDKEY	24,	"q,	"Q,	4,	;and
+KBDKEY	25,	"w,	"W,	37	;or
+KBDKEY	26,	"e,	"E,	22	;intersection
+KBDKEY	27,	"r,	"R,	23	;union
+KBDKEY	30,	"t,	"T,	20	;subset
+KBDKEY	31,	"y,	"Y,	21	;superset
+KBDKEY	32,	"u,	"U,	5	;not
+KBDKEY	33,	"i,	"I,	26	;xor
+KBDKEY	34,	"o,	"O,	1	;down arrow
+KBDKEY	35,	"p,	"P,	13	;up arrow
+KBDKEY	36,	"[,	"{,	"{
+KBDKEY	37,	"],	"},	"}
+KBDKEY	40,	"\,	"|,	"|
+KBDKEY	41,	"/,	16,	16	;infinity
+KBDKEY	42,	206,	206,	205	;circle minus, cap delta
+KBDKEY	43,	210,	210,	207	;circle plus, cap del
+KBDKEY	44,	214,	214,	214	;form
+KBDKEY	45,	13,	13,	216	;vertical tab
+KBDKEY	46,	177,	177,	221	;rubout
+KBDKEY	47,	"a,	"A,	34	;.leq.
+KBDKEY	50,	"s,	"S,	35	;.geq
+KBDKEY	51,	"d,	"D,	36	;equivalence
+KBDKEY	52,	"f,	"F,	17	;delta (partial derivative)
+KBDKEY	53,	"g,	"G,	32	;not equals
+KBDKEY	54,	"h,	"H,	213	;HELP!!!!!
+KBDKEY	55,	"j,	"J,	30	;back arrow
+KBDKEY	56,	"k,	"K,	31	;forward arrow
+KBDKEY	57,	"l,	"L,	27	;both ways arrow
+KBDKEY	60,	73,	"+,	"+	; ";"
+KBDKEY	61,	":,	"*,	"*
+KBDKEY	62,	15,	15,	217	;carriage return
+KBDKEY	63,	12,	12,	220	;line feed
+KBDKEY	64,	212,	212,	211	;next, back
+KBDKEY	65,	"z,	"Z,	2	;alpha
+KBDKEY	66,	"x,	"X,	3	;beta
+KBDKEY	67,	"c,	"C,	6	;epsilon
+KBDKEY	70,	"v,	"V,	10	;lambda
+KBDKEY	71,	"b,	"B,	7	;pi
+KBDKEY	72,	"n,	"N,	24	;for all
+KBDKEY	73,	"m,	"M,	25	;there exists
+KBDKEY	74,	54,	74,	74	; <
+KBDKEY	75,	".,	76,	76	; >
+KBDKEY	76,	"/,	"?,	"?	; ?
+KBDKEY	77,	40,	40,	222	;space
+]
+
+;
+ESCTAB:	KBRK		; @
+	ZAUTO		; A
+	ZBLINK		; B
+	ZCASE		; C
+	ZDONG		; D
+	ZEDIT		; E
+	ZSAIL		; F
+	ZGTYPE		; G
+	ZHDR		; H
+	ZIBEAM		; I
+	ZJMP		; J
+	ZDONG		; K
+	ZLOCAL		; L
+	ZMODE		; M
+	ZDONG		; N
+	ZTYALR		; O
+	ZDNOP		; P
+	ZCOPY		; Q
+	ZINSP		; R
+	ZSCRN		; S
+	ZTTGLE		; T
+	ZECHOM		; U
+	ZDONG		; V
+	ZDONG		; W
+	ZOUTSP		; X
+	ZTTY		; Y
+	ZSCALE		; Z
+	ZGINQ		; [
+	EDITLN		; \
+	ZDLEND		; ]
+	ZXMTSP		; ^
+	ZGXHR		; _
+
+; escape table for special keys
+ESCSPT:	ZDONG
+	KBRK
+	ZDONG
+	ZDONG		; CALL
+	ZDONG		; CLEAR
+	XOFUP
+	XOFLFT
+	XOFDN
+	XOFRT
+	ZDONG		; BACK
+	ZDONG		; NEXT
+	ZDONG		; HELP
+	ZDONG		; FORM
+	ZDONG		; BS
+	ZDONG		; VT
+	ZDONG		; CR
+	ZDONG		; LINE
+	ZDONG		; TOP RUBOUT
+	ZDONG		; TOP NUMBER
+	ZDONG		; INFINITY
+
+;
+SPDTAB:	177716		; 0 = 50KB
+	123471		; 1 = 110
+	137346		; 2 = 150
+	157563		; 3 = 300
+	167672		; 4 = 600
+	173735		; 5 = 1200
+	175224		; 6 = 1800
+	175757		; 7 = 2400
+	176770		; 8 = 4800
+	177374		; 9 = 9600
+	133440		; 10 = 134.5
+	177245		; 11 = 7200
+	177716		; 12 =
+	177716		; 13 =
+	177716		; 14 =
+	177716		; 15 =
+
+IOFMT:	040341		; transmission format code
+
+
+DSPTAB:	DJMS D50KB
+	DJMS D110B
+	DJMS D150B
+	DJMS D300B
+	DJMS D600B
+	DJMS D1200B
+	DJMS D1800B
+	DJMS D2400B
+	DJMS D4800B
+	DJMS D9600B
+	DJMS D134B
+	DJMS D7200B
+	DJMS D077
+	DJMS D077
+	DJMS D077
+	DJMS D077
+
+JMPTAB:	101
+	100
+	60
+	30000
+	30001
+	36000
+	100
+	100
+
+SCRTAB:	SCREEN*4
+	SCREEN*2
+	SCREEN
+	SCREEN*2/3
+	SCREEN/2
+	SCREEN*2/5
+	SCREEN/3
+	SCREEN*2/7
+
+; dispatch tables for GT40 graphics routines
+
+GTTAB:	GTC0			; load or delete (decoded by next char)
+	GTC1			; load a display item
+	GTC2			; delete a display item
+	GTC3			; reset (???)
+	GTC4			; turn on item
+	GTC5			; turn off item
+	GTC6			; copy item
+	GTC7			; move item
+	GTC8			; change mode of item
+	GTC9			; append to item
+	GTC10			; subroutinize item
+	GTC11			; unsubroutinize item
+GTLAST:
+
+GTMTAB:	GTCHD			; character mode data
+	GTSVD			; short vector data
+	GTLVD			; long vector data
+	GTPDD			; point data
+	GTGPXD			; graphplot x data (like imlac point plot mode)
+	GTGPYD			; graphplot y data
+	GTRPD			; relative point data
+	GTINX			; not used, ignore
+
+;
+LISTR:	DJMS D000, ? DJMS D001, ? DJMS D002, ? DJMS D003
+	DJMS D004, ? DJMS D005, ? DJMS D006, ? DJMS D007
+	DJMS D010, ? DJMS D011, ? DJMS D012, ? DJMS D013
+	DJMS D014, ? DJMS D015, ? DJMS D016, ? DJMS D017
+	DJMS D020, ? DJMS D021, ? DJMS D022, ? DJMS D023
+	DJMS D024, ? DJMS D025, ? DJMS D026, ? DJMS D027
+	DJMS D030, ? DJMS D031, ? DJMS D032, ? DJMS D033
+	DJMS D034, ? DJMS D035, ? DJMS D036, ? DJMS D037
+	DJMS D040, ? DJMS D041, ? DJMS D042, ? DJMS D043
+	DJMS D044, ? DJMS D045, ? DJMS D046, ? DJMS D047
+	DJMS D050, ? DJMS D051, ? DJMS D052, ? DJMS D053
+	DJMS D054, ? DJMS D055, ? DJMS D056, ? DJMS D057
+LZERO:	DJMS D060, ? DJMS D061, ? DJMS D062, ? DJMS D063
+	DJMS D064, ? DJMS D065, ? DJMS D066, ? DJMS D067
+	DJMS D070, ? DJMS D071, ? DJMS D072, ? DJMS D073
+	DJMS D074, ? DJMS D075, ? DJMS D076, ? DJMS D077
+	DJMS D100, ? DJMS D101, ? DJMS D102, ? DJMS D103
+	DJMS D104, ? DJMS D105, ? DJMS D106, ? DJMS D107
+	DJMS D110, ? DJMS D111, ? DJMS D112, ? DJMS D113
+	DJMS D114, ? DJMS D115, ? DJMS D116, ? DJMS D117
+	DJMS D120, ? DJMS D121, ? DJMS D122, ? DJMS D123
+	DJMS D124, ? DJMS D125, ? DJMS D126, ? DJMS D127
+	DJMS D130, ? DJMS D131, ? DJMS D132, ? DJMS D133
+	DJMS D134, ? DJMS D135, ? DJMS D136, ? DJMS D137
+	DJMS D140, ? DJMS D141, ? DJMS D142, ? DJMS D143
+	DJMS D144, ? DJMS D145, ? DJMS D146, ? DJMS D147
+	DJMS D150, ? DJMS D151, ? DJMS D152, ? DJMS D153
+	DJMS D154, ? DJMS D155, ? DJMS D156, ? DJMS D157
+	DJMS D160, ? DJMS D161, ? DJMS D162, ? DJMS D163
+	DJMS D164, ? DJMS D165, ? DJMS D166, ? DJMS D167
+	DJMS D170, ? DJMS D171, ? DJMS D172, ? DJMS D173
+	DJMS D174, ? DJMS D175,	? DJMS D176
+LISTN:	DJMS DBXCUR
+
+; sail characters
+
+	DNOP	; special hack word for toggling sail mode
+SAILCH:	DJMP S001, ? DJMP S002, ? DJMP S003
+	DJMP S004, ? DJMP S005, ? DJMP S006, ? DJMP S007
+	DJMP S010, ? DJMP S011, ? DJMP S012, ? DJMP S013
+	DJMP S014, ? DJMP S015, ? DJMP S016, ? DJMP S017
+	DJMP S020, ? DJMP S021, ? DJMP S022, ? DJMP S023
+	DJMP S024, ? DJMP S025, ? DJMP S026, ? DJMP S027
+	DJMP S030, ? DJMP S031, ? DJMP S032, ? DJMP S033
+	DJMP S034, ? DJMP S035, ? DJMP S036, ? DJMP S037
+
+SUBTTL BUFFERS AND PDLS
+
+KBDBUF:	BLOCK 17
+KBDEND:	0
+TTYBUF:	BLOCK 400
+TTYEND:	0
+XMTBUF:	BLOCK 100
+XMTEND:	0
+XMTGB:	BLOCK 20		; graphics transmit buffer
+
+PDL0:	BLOCK 40		; push down list space
+PDLE0:	0
+
+PDL1:	BLOCK 40
+PDLE1:	0
+
+	PAGECK END OF PUSH DOWN LISTS = ,\.
+	PAGECK END OF DISPATCH TABLES AND BUFFERS = ,\.
+
+	.INSRT IMLAC;ARCH4 CHARS
+
+	PAGECK END OF CHAR DEFS = ,\.
+
+SUBTTL DISPLAY LIST
+
+; Display list - header line first
+
+DORIG:	DADR			; display list origin
+	DSTS 2
+	DVIC 12
+DEDLIN:	DNOP
+	DGD
+DTKXHR:	DNOP
+	DGD
+; display header line
+
+DHDR:	DNOP
+	DLYA 3777
+	DJMS DLF
+	DLXA LEFT
+	INC E,D03
+	INC D02,T
+	DLV B,1776,0
+	INC E,D03
+	INC T,T
+	DLXA LEFT+4
+	DNAME
+	DJMS DSP
+DGTYPE:	DTXT [T]
+
+	DLXA 700
+DTTY:	DNOP
+	DTXT [TTY]
+	DJMP DMODE
+DLOCAL:	DTXT [LOCAL]
+	DJMP DMODE
+DEDIT:	DTXT [EDIT]
+DMODE:	DTXT [ MODE]
+
+	DLXA 1300
+DSAIL:	DJMP DFREE
+	DTXT [-SAIL-]
+
+DFREE:	DLXA 1700
+	DTXT [FREE=]
+DNUM1:	DNOP
+	DNOP
+	DNOP
+	DNOP
+	DNOP
+
+DUCF:	DJMP DAUTF
+	DLXA 2320
+	DTXT [-UC-]
+
+DAUTF:	DNOP
+	DLXA 2540
+	DTXT [-AUTO-]
+
+DXMIT:	DNOP
+	DLXA 2760
+	DTXT [-XMIT]
+DTXDON:	DNOP
+	DTXT [TED]
+DTXGO:	DTXT [-]
+
+DIOSPD:	DLXA 3300
+	DTXT [I/O=]
+DINSP:	DJMS D50KB
+	DJMS D057
+DOSP:	DJMS D50KB
+	DLXA 3750
+DECHOM:	DTXT [R]
+
+; side cursor.  gets toggled with header
+DARRO:	DLXA LEFT
+	DLYA TOP+<LSIZE*2>+4
+	DJMS DLF
+DARROW:	DLV D,0,-1
+	DLV D,0,-1
+REPEAT 2,[	DJMS DBS
+		DJMS DBS
+		DTXT [=>]
+]
+; end of header line
+
+DHEND:
+DSCALE:	DSTS 2
+DINTEN:	DVIC 11
+	DJMP TOPJMP		; go to top of display list
+
+; special routines for the header, etc.
+
+CURSOR:	DBLI 0			; set to dhlt or blink
+CTYPE:	DJMS DCURT
+	DBLI 0
+GAP:	DCAM GAPPNT		; jump back to other side of gap
+	0
+
+TOPLIN:	DJMS DCR		; go to top of screen
+	DLYA TOP+<LSIZE*2>+4
+	DJMS DLF
+DVRTOF:	DLV D,0,1		; vertical offset
+	DRJM
+
+LINE70:	DGD
+DMLPOS:	DLXA <LEFT+<70.*CSIZE*2>>
+	DLYA TOP
+	DGB
+	DLYA 0
+	DRJM
+
+DSORIG:	DLXA 2000		; screen center routine for Graphics
+	DLYA 2000
+	DJMS DHOROF
+	DJMP DVRTOF
+
+DCOPY:	DLXA 2760
+	DTXT [-COPYING-]
+	DJMP DIOSPD
+
+TOPJMP:	DJMS TOPLIN		; top of display list
+	DCAM GAPPNT
+	1,,0			; display dispatch point no. 1, OFFHI
+	0			; buffer zero to mark the beginning of it all
+
+	PAGECK START OF ACTIVE DLIST = ,\.
+
+HIBEG:	0			; start of active dlist
+	0
+
+	END GO101
+
