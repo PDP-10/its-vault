@@ -1,0 +1,93 @@
+Things that need to be cleaned up in the window system.  I've tried to
+limit this to major, incompatible, or thought-requiring changes rather
+than just bugs.  I have also tried to keep this to just pure window-system
+stuff, and leave out any problems with "application" programs such as
+the editor, the inspector, and the error-handler.
+
+1. :MOUSE-SELECT
+	There is code in LMWIN;MOUSE which believes that
+	(GET-HANDLER-FOR window ':MOUSE-SELECT) is how you
+	tell whether a window can be selected by pointing the
+	mouse at it and clicking.  This doesn't work because
+	ESSENTIAL-WINDOW has a :MOUSE-SELECT method (in
+	addition to SELECT-MIXIN).  The issue is further obfuscated
+	by PANE-MIXIN which forwards :MOUSE-SELECT to the superior
+	(thus you cannot use the mouse to switch panes; since this
+	works in the editor it must not be using PANE-MIXIN.
+	Wrong.  The editor's :MOUSE-BUTTONS does not use :MOUSE-SELECT
+	at all.)	
+	The forwarding of selection to the superior should work
+	differently somehow (see #3 below).
+
+2. :MOUSE-CLICK
+	Many of the :MOUSE-BUTTONS handlers should be changed to
+	be :MOUSE-CLICK handlers now.  One issue is that the default
+	:MOUSE-BUTTONS method (which sends the :MOUSE-CLICK message),
+	intercepts single-click-left in the case that the window is
+	not selected; I'm not sure of the correct way to control this.
+	KBD-MOUSE-BUTTONS-MIXIN should be renamed to KBD-MOUSE-CLICK-MIXIN.
+	ZWEI:LIST-MOUSE-BUTTONS-MIXIN should be renamed and installed.
+
+3. As we have been saying for a long time, selection does not interact
+	correctly with the hierarchy in general and frames specifically.
+	There are some patches in to fix it up somewhat, but a more sweeping
+	change is probably required.  Design needed.
+	Fixing this should also entail making esc O work for panes; when the
+	only exposed window is a frame with multiple selectable panes
+	(e.g. a zmail reply frame) typing esc O should select among its panes.
+
+4. The SYSTEM-WINDOW facility and the RESOURCE facility should be cleaned
+	up and combined.
+
+5. Some things remove temporary windows that are over a window in some
+	cases.  This should be systematized.  Moon and MMcM decided that
+	the right thing is probably to remove all the existing temporary
+	unlocks and replace them with a special variable which is bound to
+	T if the current operation is "due to user command"; at the lowest
+	level when it would go to wait for temporary locks, if that variable
+	is T it should deexpose the temporary windows and proceed instead.
+	"Due to user command" means due to a mouse click, a TERMINAL S or
+	TERMINAL O or SYSTEM command, or any screen editor or system menu command.
+	Should removing of the temporary windows remove them permanently
+	or remove them, do the operation, and put them back?
+
+6. The notion of "exposed" is confused and not well defined.  DLW has some
+	ideas about this.
+
+7. It would be nice if the indication of mouse sensitivity was more uniform
+	(currently some things inverse-video, some things box, and some
+	things flash).
+
+8. Some of the commands in the "other" system menu are obsolete.  Is there
+	any reason, anyway, to have two system menus rather than one
+	bigger menu?  Some of the commands in the system menu don't work
+	very well (especially Layouts) and should be flushed or fixed.
+
+9. We need a bigger who-line and an area in which the action of each of
+	the three mouse buttons (possibly modified by the keyboard control
+	keys) is documented.  This needs some design.  Random messages
+	might also come out in one or both of these areas.
+
+10. The default superior for window creation is often MOUSE-SHEET when it
+	should be DEFAULT-SCREEN.  This is even the default in the WINDOW-CREATE
+	function.  When it should be one and when it should be the other
+	should be thought out more.  For example, when you get sent a QSEND
+	message, if the mouse is on the color screen, the message comes out
+	there, which may or may not be the right thing.  (The user may or may
+	not be interacting with the mouse currently.)  If MOUSE-SHEET was
+	bound to some user window, it would come out there which would
+	probably be wrong.
+
+11. The use of the ABORT key needs to be redesigned.  You need to be able to
+	have both "restart the program" and "abort the current command".
+	That is, you need both synchronous (IO-BUFFER) and asynchronous
+	(:RESET) types of this character.
+
+12. Changing the configuration of a constraint frame takes too long.  One reason
+	is that due to deexposing there tend to be multiple refreshes in the
+	background.  This isn't easy to fix.
+
+13. The scheme for "process foo wants the tty" isn't very well developed.  It
+	would be nice if it magically did the right thing for non exposed
+	windows wanting to type out, especially supdups and telnets.
+	This needs some thought.

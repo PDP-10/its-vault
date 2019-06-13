@@ -1,0 +1,216 @@
+;;; -*- Mode: Text -*-       DLW 2/9/80
+
+This file contains quick and dirty documentation on how to do fast
+graphic output in the new window system.  It is necessarily incomplete
+and sketchy, but the high rate of requests for this information seems to
+demand some kind of attempt at a document, so here it is.
+
+This document assumes you are familiar with how flavors work.  You are
+not going to be able to make much sense of anything that follows if you
+don't understand basically what a flavor is, what a method is, and how
+flavors are combined to produce new flavors.  You don't have to
+understand more esoteric stuff (like different kinds of method
+combination and the like).  Documentation on flavors is at the
+presses, becoming A.I. Memo #602, and if you are in a hurry you can
+read AI: LMMAN; FLAVOR > online, or :DOVER AI: LMMAN; FLAVOR PRESS.
+
+This document also assumes very basic familiarity with using the window
+system.  Existing documentation can be read online in AI: DLW; WINDOC >
+or you can :DOVER AI: DLW; WINDOC PRESS.  You don't need to know most
+of the stuff in WINDOC to understand this, but it helps to know the
+very first principles.
+
+Drawing graphics on a window is usually done by sending messages to the
+window.  There are many messages that can be sent to draw useful things
+like lines, circles, splines, and so on.  These are documented in
+WINDOC.  However, there is a certain overhead in sending each message.
+If your application requires speed, you can go to some more trouble by
+writing your very own method to do graphics.  It is a good idea NOT to
+do this until you KNOW that using existing messages will not work; it is
+easier and less bug-prone to use the existing messages than to handle
+you own messages.
+
+For the remainder of this document, we will assume you have decided that
+using existing messages is too slow.  You must invent your own messages,
+and write your own methods to handle them.  At this point, you are
+EXTENDING the window system; you are adding new features to windows so
+that you can use these features yourself.
+
+To write a new method you must have a flavor to which to attach that
+method.  In this case, we want to add some graphics messages to existing
+kinds of windows.  So, what we want here is a mixin flavor.  You will
+define a new mixin flavor for your application.  You will add methods to
+this flavor to do the things you need to do.  Then, when you want to
+create an actual window to use, you will create a window of a new
+flavor; this new flavor will include, as one of its mixins, you new
+mixin.  For a simple case, you might use the following flavor definitions:
+
+(defflavor circus-mixin () ()
+   (:included-flavors tv:essential-window))	; This is explained later.
+
+(defmethod (circus-mixin :draw-clown) (size weight happy-p)
+ ...)
+
+(defmethod (circus-mixin :draw-tent) (height &optional (number-of-rings 3))
+ ...)
+
+(defflavor circus-window () (circus-mixin tv:window))
+
+Now you can instantiate windows of flavor circus-window, and they
+will support your new messages.
+
+Remember that message names must all be in the keyword package
+(this is currently an implementation restriction; we hope to fix
+it in the future).  Always preceed the names of messages with colons.
+
+There is already a flavor that is an example of this kind of mixin.  It
+is called tv:graphics-mixin, and it implements most of the messages
+named things like ":draw-xxx".  You can look at the code of this flavor
+for inspiration and further examples.  It lives in the file AI: LMWIN;
+STREAM >.  (Note that this file is in the TV package, and so a lot of
+"TV:" prefixes are not present.  You should use the prefixes (rather
+than putting your program into the TV package which would make your
+program vulnerable to surprise name-conflicts).)
+
+Now for the big question: how do you write such methods?  What goes
+into the body of the defmethod for such a method?  How do you do things?
+
+Well, inside the body of such a defmethod you will want to use more
+primitive graphics technology than sending messages to the window
+itself, since the whole point of this (as far as this document is
+concerned) is to get rid of the message-passing overhead.  Instead of
+sending messages, you can use various instance variables and various
+internal functions.  Most of the rest of this file documents these
+instance variables and internal functions.
+
+You should not use these functions from outside such methods.  The
+things we are about to describe should only be used inside methods
+that you are adding to windows.
+
+In order to get at the instance variables, you must use the
+:included-flavors option to defflavor.  See the documentation on flavors
+for details.  You want to include the flavor tv:essential-window.  This
+will allow your methods to access all of the instance variables of
+windows that you need to do graphics.
+
+You must always, without fail, do these things ONLY inside the body of a
+tv:prepare-sheet special form.  All use of instance variables and of
+internal functions must only happen inside a tv:prepare-sheet.  If you
+leave out this special form, your code may appear to work at first, but
+you will suffer the Ten Plagues of Weird Bugs in the future when you
+least expect it.  Furthermore, the internal drawing functions will
+detect that you are doing this and signal an error called "Turd Alert".
+Please don't forget to use tv:prepare-sheet.  (Sorry for the repetition,
+but some people have failed to heed this advice in the past, and have
+then come back to us with weird bugs that were hard for us to track
+down.)  You use it as follows:
+
+  (tv:prepare-sheet (self)
+     <form1>
+     <form2>
+     ...)
+
+Basically, what tv:prepare-sheet is about is making your window fit for
+output.  It turns off all blinkers that may be overlapping the window;
+this prevents you from clobbering flashing cursor blinkers, or the arrow
+that tracks the mouse, or any other blinker.  It also waits until the
+output hold flag is off, to make sure that it is OK to do output now.
+This flag might be on if the window is not exposed; tv:prepare-sheet
+prevents you from clobbering any other window.  tv:prepare-sheet also
+makes sure that no other process is in the middle of doing anything
+drastic to the window, such as reshaping it or outputting on it.  This
+prevents you from getting into confusion between concurrent processes.
+
+As part of protecting you from other processes, tv:prepare-sheet turns
+off sequence breaks during the evaluation of its body.  This means that
+no other processes get to run, and you can't Abort out of the execution
+of the body.  It is just as if there were a without-interrupts special
+form around the body.  This means that you should not do anything very
+time-consuming inside the body; you shouldn't spend a whole long time in
+there.  Don't wait for the user inside the body; don't loop for minutes
+and minutes inside the body, either.  If you want a continuously
+updating display, do the looping OUTSIDE the body of the method (sending
+the message periodically) instead of inside of it, so that there will be
+a chance for other processes to run.
+
+Now we can get into the instance variables and internal functions
+themselves.  Note well that many internal functions deal in terms of
+OUTSIDE coordinates; that is, the coordinate system that includes the
+borders and labels as part of the window.  The internal functions have
+to do this, since they themselves are used to draw the borders and
+labels!  Most of the time, what you are interested in is INSIDE
+coordinates, which are what the ":draw-xxx" messages use; these don't
+include the borders and labels.  Also, the primitives tend to not clip
+as nicely as the messages do; you may have to do your own clipping.
+
+tv:sheet-inside-left, tv:sheet-inside-top, tv:sheet-inside-right, and
+tv:sheet-inside-bottom are internal functions of no arguments that
+return the coordinates of the inside-left, etc., of the window.  If you
+want to do clipping, this is what you should clip to.  You should only
+draw graphics inside the rectangle defined by these four coordinates,
+namely, the inside of the window.
+
+tv:width and tv:height are instance variables that give the outside
+width and outside height of the window.  tv:sheet-inside-height and
+tv:sheet-inside-width are internal functions of no arguments that
+return the inside width and inside height of the window.
+
+tv:screen-array is an instance variable whose value is the array of bits
+that hold the contents of the window.  Usually this is an indirect array
+that points to part of the screen, although it may also point to the
+superior's bit-save array.  This is all explained in WINDOC in detail,
+but the basic idea is that these are the bits themselves, and you can go
+in and aref and aset them to whatever you want.  Rather than asking for
+the dimensions of this array using array-dimension-n or arraydims,
+though, you should use the internal functions above that tell you about
+the inside-left and so on.
+
+tv:char-aluf and tv:erase-aluf are instance variables that give the ALU
+functions that you should use to draw things and to erase things.
+Usually tv:char-aluf is tv:alu-seta, the ALU function which means to
+simply store into the array and not pay attention to what used to be
+there.  tv:erase-aluf is usually tv:alu-setz, which means to store
+zeroes.  However, they would be different if the window were in reverse
+video mode.  Reverse video mode is not a highly-used feature, but by
+using these variables you can make your extensions work correctly in
+reverse video mode, and so it is more flavorful to use them.  You may
+want to use other ALU functions sometimes, too; tv:alu-xor, which does
+exclusive ORing, is often very useful.
+
+Here is an example from the tv:graphics-mixin flavor.  I have changed it
+to add the "TV:" prefixes in the places where you would need them if you
+were to write this, outside the TV: package.
+
+(defmethod (graphics-mixin :draw-point) (x y &optional (alu tv:char-aluf) (value -1))
+  (tv:prepare-sheet (self)
+    (setq x (+ x (tv:sheet-inside-left)) y (+ y (tv:sheet-inside-top)))
+    (if (not (or (< x (tv:sheet-inside-left))
+		 ( x (tv:sheet-inside-right))
+		 (< y (tv:sheet-inside-top))
+		 ( y (tv:sheet-inside-bottom))))
+	(aset (boole alu value (aref tv:screen-array x y)) tv:screen-array x y))))
+
+This method takes its argments in inside coordinates, and so it first
+converts them to outside coordinates.  Then it compares them with the
+boundaries of the inside of the window, and does nothing if they are
+outside those boundaries.  This is how it does clipping.  Finally, if
+everything is OK, it reads out the current value of the point, combines
+it with the new value using the specified ALU function (which defaults
+to the char-aluf of the window), and stores it back into the array.
+
+(tv:%draw-line from-x from-y to-x to-y alu draw-end-point sheet) is the
+internal function to draw a line from point (from-x, from-y) to point
+(to-x, to-y).  alu is the ALU function to use when drawing the line.  If
+draw-end-point is T, the end-point of the line will be drawn; otherwise
+it will not.  You should always pass self as the last argument.  Outisde
+coordinates are used.
+
+(tv:%draw-triangle x1 y1 x2 y2 x3 y3 alu sheet) is the internal
+function to draw a filled-in triangle between three specified points.
+It is drawn with the specified ALU function, and the last argument
+should always be self.
+
+As with any other methods in the flavor system, the variable self will
+be bound to the instance itself when its methods are running.  You can
+use funcall-self to send messages to yourself to get various other
+information about the window.

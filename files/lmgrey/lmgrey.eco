@@ -1,0 +1,949 @@
+;;-*-mode:text -*-
+
+;;This is a backup copy - main copy is in AI:NGL;
+
+12/15/83	Status of Boards:
+
+	REV 0  retired
+
+	REV 1  retired
+
+	REV 2  retired
+
+	REV 3  There are 4 REV3 boards:
+
+		#4 Modified to be a 24-bit slave.
+
+		#5 Modified to be a 24-bit master.
+
+		#6 Modified to be a 24-bit slave.
+
+	      Boards #4,5 and 6 are set up as a 24-bit system on GAUSS(ROBOT-1)
+
+		#7	Not stuffed yet.
+
+	REV 4  The single original REV4 board has been retired.
+	       REV4 now means "REV 5 board, with REV 4 TPROM's and
+	       old style - MDS1020 based - video DAC's."  Systems with these
+	       boards require SRAM_REV4 code.
+
+		#8	ROBOT-2, with DCON REV0
+
+		#9	ROBOT-3, with DCON REV1
+
+		#10	ROBOT-4
+
+		#11     ALLMAN(3670)
+
+	REV 5  These are REV 5 boards ECO'ed up to 5.5, with new style
+	       - AM8151 based - video DAC's.  Systems with these boards
+	       require SRAM_REV5 code.  However, they should be downward
+	       compatible, i.e. old style DAC's will work in them, provided
+	       the SRAM_REV4 code is used.
+
+5/13/84		Status of XBUS Backpanels
+
+	REV 0	There is only one.  This was wrapped with by Data Con, and rev'ed to be
+		identical with REV 1. It was tested as an expansion unit off of the test
+		bed backplane, and worked fine(5/13/84). In addition to terminators(if any)
+		on the BUSINT board, there was a terminator in slot 32 of the test bed,
+		and a second terminator in the 9-pack.
+		 #1	Robot 3(16-bit color)
+			The PIXEL IN bits of slot 5(slave board)have been wired to ground
+			to simplify B/W frame grabbing into the master board.  These were
+			all done with yellow wire and are on paddles C and D.  If 16 bit
+			color frame grabbing is installed, they must of course be removed.
+
+;;;;	        **** ECO'S FOR REVS 0, 1, &2 are in file MC:NGL;LMGREY ECOLD ***
+
+
+;;;;			**** ECO LOG FOR LMGREY REV #3 ****
+
+
+Note #1	6/18/83 NGL	The following jumpers are necessary:
+
+	SIGNAL:			WIRE:			PURPOSE:
+
+	TIMDLYD0		A07-02 : A07-07		Clock frequency adjustment--jumper
+
+	RAM CAS DLYD		B07-08 : A11-07		CAS timing offset(20ns)--red wire
+
+	RAM RAS DLYD0		A14-02 : A10-07		RAS timing offset(20ns)--red wire
+
+	RAM RAS DLYD1		C06-06 : A10-11		Row/col select(50ns)--red wire
+
+	PLANE 0			D17-06 : D12-06		Jumper to ADR 13
+
+	PLANE 1			D17-07 : D12-04			"     14
+
+	PLANE 2			D17-17 : D12-02			"     15
+
+	VMEM EXP		F06-19 : F07-10		GND
+							(some rev3 boards have a PROM that
+							 defines this as -VMEM EXP. i.e. what-
+							 ever you've got is probably right.)
+	Wire in REV #(actually REV # minus one):
+						
+	BOARD ID 0		E24-11 : E24-10		GND
+
+	BOARD ID 1		E24-08 : E19-03		HI4
+
+	BOARD ID 2		E24-11 : E24-06		GND
+
+Note #2  Making a Rev 3 board a master.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						J03-05 : A06-18		SLAVE CLK
+
+						C08-06 : A06-13		BRANCH ZER0 L
+
+						A06-07 : J03-01		SLAVE BRANCH ZERO L
+
+						A06-03 : J03-03		SLAVE LD PROM ADR L
+
+						A06-17 : B02-02		LD PROM ADR L
+
+12/28/87 There is some confusion concerning which pin -MAE+50 comes out on.  On original
+	24-bit system it used pin CH1.  But that pin is used for CSYNC.INH on newer systems.
+	With new piggy-back DAC, we'll need that signal, so will move -MAE+50 to ED1. Original
+	master has CH1 and ED1 jumpered together, for now.
+
+Note #3 4/12/84 Making a Rev 3 board a slave.  This mod is not standard and causes the board
+		to derive its CLK, -BRANCH ZERO, and LD PROM ADR L signals from pins on
+		connector J03.	The, now, unused CLK TREF line is used to enable counting of 
+		SRAM ADR. This is necessary in order to get boards in synchrony, during
+		initialization. CLK TREF is connected to the count enable pin of SRAM ADR.
+		Counting can now be disabled by asserting CLK STEP in the mode register.
+		To see how this is used	refer to the DOWN-LOAD function.  Also, on slaves
+		ADR 04 and ADR 05 are switched in the (hardwired) address decoder.  This
+		allows the control blocks for a three board system to be contiguous. Finally
+		on both masters and slaves, ADR03 is brought into APROM decoder, to permit
+		selection between upper and lower slave.  Masters ignore it.
+
+		THERE ARE DIFFERENT PROM LOADS FOR MASTER AND SLAVE.
+
+		Use white wire for this change.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		B07-02 : B07-04(temp)					CLK
+		B07-02 : A06-16			B07-02 : J03-05		CLK(from master)
+						B07-02 : B07-04		(replace)
+
+
+		D06-04 : E09-08						-BRANCH ZERO
+		D06-04 : C08-06
+
+						D06-04 : J03-01		-BRANCH ZERO(master)
+						D06-04 : E09-08
+
+		B01-12 : B01-09						HI1
+		E02-03 : C02-12
+		B01-12 : C02-12
+						E02-03 : B01-09
+						B01-01 : B01-12
+
+						C02-12 : A06-02		CLK TREF
+
+		B02-04 : A01-07						TPROM 01
+
+		E17-15 : B01-11						LD PROM ADR L
+		B01-11 : B02-02
+
+						B02-04 : B01-11		SLAVE LD PROM ADR L
+						B01-11 : E17-15
+						B02-04 : J03-03
+
+		Swap ADR 04 and ADR 05 in CTL address decode:
+
+		E21-15 : D15-02						ADR 04
+		F20-09 : E21-15
+						F20-09 : D15-02
+
+		D14-17 : D13-06						ADR 05
+		D13-06 : C09-12			D14-17 : D13-06
+						E21-15 : F20-07		connect to 74S133
+
+						C09-12 : D13-08		ADR 04
+									connect to 74S32
+
+Checkout procedures:
+
+Changes:
+
+ECO #1 6/20/83 NGL	Remove PLANE CYC L from E27 -> E30 pin 11, & D09-12.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E27-11 : D19-09						PLANE CYC L
+
+						E27-11 : D20-01		HI4
+
+ECO #2 6/20/83	NGL	SELECT EVEN and SELECT ODD should eventually be gated with something
+		like (PIXEL CYC GRANTED + PLANE CYC GRANTED) to prevent random glitching
+		during unused PROC CYC's.  For now disconnect and tie high.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		F06-09 : C09-05						SELECT EVEN
+		F06-11 : F07-13						SELECT ODD
+
+**TEMPORARY**					C09-05 : C09-08		connect SELECT's
+
+						C09-05 : E05-01		tie high(HI2)
+
+ECO#3 6/20/83	NGL	GRANT RQ glitches on falling edge of SEND ACK, due to skew problem.
+			This is because SEND ACK goes away before MAP RQ.
+			Use a delayed version of SEND ACK at input gating(E16-06).
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E16-06 : F19-15						SEND ACK
+		E16-06 : E08-08
+						F19-15 : E08-08
+						E08-08 : A06-08
+
+						A06-11 : A06-12		SEND ACK DLYD1
+
+						A06-09 : E16-06		SEND ACK DLYD2
+
+						A06-19 : A06-01		GND(enable)
+
+ECO #4 6/20/83	NGL	In the case of PLANE mode reqests, SSET ACK sets up too late wrt
+			CLK ACK.  This is because -PLANE CYC is generated from CAS DLYD, via
+			a few more gates.  Thus it is too late, even tho CAS drops one cycle
+			before CLK ACK.  One solution, is to generate the -PLANE CYC clock
+			from CAS, as directly as possible, saving about 20ns.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		C12-02 : E17-12						-CAS BFR 4
+		E17-12 : E22-04
+						C12-02 : E22-04
+
+						A11-04 : E16-15		RAM CAS
+						E16-15 : E16-14
+
+						E16-16 : E17-12		-RAM CAS
+
+ECO #5 6/21/83	NGL	TV CLK inverted.  Free up inverter at B07-03(EXT CSYNC).  This can
+			equally well be buffered with an S244.  
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		B07-17 : CL1						EXT CSYNC L
+**************THIS WIRE BROKE OFF IN REMOVAL AND IS STILL IN THE BOARD(SN#20987)**************
+
+		B07-03 : A08-15						EXT CSYNC
+
+		E23-07 : E26-11						VIDEO CLK
+		F18-11 : F09-11
+		F18-11 : E23-07(careful)
+						F18-11 : E26-11		    "
+						F18-11 : F09-11
+						B02-16 : B07-17
+
+						B07-03 : E23-07		-VIDEO CLK
+
+						A06-17 : CL1		(twisted pair)
+									EXT CSYNC IN
+
+						A06-03 : A08-15		EXT CSYNC
+
+ECO #6 6/23/83	NGL	XBUS RD signal is wrong.  Board responding to all reads.  Gate with
+			(MAP ADR or CTL ADR).
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E17-08 : E08-03						XBUS RQ(rename MY RQ)
+		E22-08 : F19-05
+		F19-05 : E17-08
+					******	F19-05 : E08-03 ******	OMIT(see ECO #8)
+					******	E22-08 : F19-05 ******	     "
+
+						C09-14 : E17-08		MY RQ
+
+						C06-02 : C09-15		MAP RQ
+
+						C06-04 : C09-16		CTL RQ
+
+ECO #7 6/30/83	NGL	CBG(new signal)needed on backplane for DC restore circuit.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						B05-16 : A06-15		CBG L
+						A06-05 : EU1		CBG
+
+ECO #8 7/2/83	NGL	Skew problem, addressed in ECO #3, can be further reduced by using
+			-MY RQ rather than -XBUS RQ to clear SEND ACK.  This gives us 3 gate
+			delays of skew protection.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+	******	E22-08 : F19-05	(omit)******				XBUS RQ(red wire)
+	******	F19-05 : E08-03	(omit)******				(see note for ECO #6)
+
+						E22-08 : F19-05
+
+						E08-03 : C09-14		MY RQ
+
+
+ECO #9 7/2/83	NGL	THIS ECO HAS BEEN FLUSHED.  DO NOT INSTALL!
+			CSYNC should be gated with DISPLAY ENB before driving TV.
+			This, together with zeroing out color map prior to downloading
+			SRAM, protects TV from random cruft.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!DO NOT INSTALL THIS ECO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+		E24-15 : D06-15						CSYNC
+		D06-15 : D05-14
+
+						E13-16 : D05-14
+						E24-15 : E13-16
+	
+						E10-19 : E13-15		DISPLAY ENB
+
+						E13-14 : D06-15		CSYNC OUT
+
+
+ECO #10 7/19/83	NGL	A/D is getting wrong polarity of clock. Best thing to use is VIDEO CLK
+			delayed a little.  Create this from -VIDEO CLK(ECO #5).
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		F18-11 : F09-11						VIDEO CLK(red wire)
+		F18-11 : E26-11						 (   "    )
+						F09-11 : E26-11
+
+						F18-11 : E23-07		-VIDEO CLK
+
+;;all installed frame grabbers have ECO's 1-10
+
+ECO #11 11/29/83 NGL	Polarity of clock input to A/D has been changed, so ECO #10 can be
+		flushed.
+
+ECO #12 11/29/83 NGL    Color map writing doesn't work during FG mode.  -OE input to 
+		OBUB register(F09)-currently FG MODE L should be replaced by the same signal
+		or'ed with CTL WRITE(use spare S32 at D09-2).
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		F09-01 : E26-01						FG MODE L
+		F09-01 : E07-12
+						E07-12 : E26-01
+						E07-12 : D09-13
+
+						B04-01 : D09-12		CTL WRITE
+
+						D09-11 : F09-01		PIXEL BYPASS L(new)
+
+ECO #13 1/14/84	NGL     Clocking of PLANE CYC and associated counter is marginal.  Solution
+		is to use RAM CAS rather than RAM CAS L at input of SO8.  This makes for a
+		much simpler and more robust scheme.  During plane refs, the F109 is clocked
+		with 8 positive going, CAS generated, pulses.  The counter is clocked by
+		a negative going version(delayed slightly-but this is not relevant)of the
+		same 8 pulses.  PLANE CYC sets on the first rising pulse.  The counter is
+		incremented by the negative pulses.  The next to last one causes LAST RAM CYC,
+		which drives the -K input of the F109.  The following positive pulse toggles
+		off PLANE CYC.  The associated negative pulse will force load the counter to
+		the idle state(1000).
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E16-16 : E17-12						RAM CAS L(red wire)
+
+						E16-14 : E17-12		RAM CAS
+
+
+ECO #14 1/26/84 NGL     EXT CSYNC IN has wrong polarity.  SLAVES DON'T NEED THIS ECO.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+				MASTERS ONLY!
+
+		A06-03 : A08-15						EXT CSYNC(old name
+										-red wire)
+
+		A06-17 : CL1						EXT CSYNC IN (red wire
+										-twisted pr)
+
+
+						A05-14 : A05-15		EXT CSYNC L
+						A05-14 : CL1
+
+						A05-16 : A08-15		EXT CSYNC
+
+						A05-17 : A05-20		+5(power for chip)
+
+						Add 74S02 @ A05
+
+
+
+
+ECO #15 3/30/84 Remove 16B MODE from input to APROM. Re-define APROM input as -3600MD.
+		DELETE:				ADD:			SIGNAL NAME:
+
+		F06-18 : F07-12						16 B MODE
+
+						F06-18 : F07-01		pullup for 3600 MODE
+		ADD 1K RESISTOR F07@1
+
+ECO #16 2/15/84  Allows SCAN ENB to be controlled by bit 15 of mode register.  This
+	will eventually be changed when Rev 3 boards are updated to rev 4.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E11-19 : CH1						CURSOR
+
+						E11-19 : EP1		SCAN ENB
+
+ECO #17 3/2/86  Bring -3600 MD out to backplane, as in REV 5 boards.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						F06-18 : FJ1		-3600 MD
+
+
+ECO #18 4/11/84 Make mode register compatible with REV 4:
+
+	Decomission(ground)16B MODE(old).
+	Move HACKING SRAM to mode bit 6.
+	Flush CURSOR SYNC signal(going to CK1)and ground input to XDMUX.
+	Flush and ground INT ENB(mode bit 10). Reuse bit for 16B MODE(new).
+	Connect	16B MODE(new)(mode bit 10)to CK1.
+	Connect OVERLAY MAP ENB to CH1.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E10-16 : E20-01						16B MODE(old)
+		F07-12 : E10-16
+						E20-01 : F07-12
+						E20-19 : E20-10		(gnd)
+
+		E11-16 : E07-02						HACKING SRAM
+						E10-16 : E07-02
+
+						E11-16 : CH1		OVERLAY MAP ENB
+
+		E13-12 : E11-06						INT ENB
+						E13-12 : E13-10		(gnd)
+
+		E24-04 : CK1						CURSOR SYNC
+						E24-04 : E24-10		(gnd)
+
+						E11-06 : CK1		16B MODE(new)
+
+ECO #19 Bring ADR03 into APROM(instead of ADR00).  This will let us select between multiple
+	boards in CTL decode.  Remove ADR05 from the S32 section in decoder.  A jumper
+	will determine wheterh ADR05 is wired to the S32 (master) or S133 (slave).  ADR03
+	is used to select between low and hi slaves.  -3600 MD will be moved to pin 19 of
+	APROM. Pin 18 of APROM is redefined as -HI BOARD and brought out to pin ES1.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		F06-01 : D13-17						ADR 00
+
+		D15-04 : E21-16						ADR 03
+		E21-16 : F20-12			D15-04 : F20-12
+						F06-01 : D13-11
+
+						E21-16 : E21-17		XBUS RQ
+
+						F06-18 : ES1		-HI BOARD
+
+ECO #20  	Flushed
+
+ECO #21 3/2/85	ECO #9 was a mistake.  Remove it, freeing up an S08 section.
+		SLAVES DON'T NEED THIS ECO.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+				MASTERS ONLY!
+
+		E13-14 : D06-15						CSYNC OUT
+
+		E10-19 : E13-15						DISPLAY ENB
+
+		E24-15 : E13-16						CSYNC
+		E13-16 : D05-14
+						D06-15 : D05-14
+						E24-15 : D06-15
+
+ECO #22 3/2/85 Make ADR 00 = 1 a condition for CTL WRITE.  This will prevent glitching of
+	screen when writing MODE or VMB.  SLAVES DON'T NEED THIS ECO.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+				MASTERS ONLY!
+
+		D10-13 : C07-12						WRITE
+		C07-12 : C07-05
+						C07-12 : E13-15
+						D10-13 : C07-12
+
+						E13-16 : F20-18		ADR 00
+
+						E13-14 : C07-05		CTL WRITE ENB
+
+ECO #23 10/13/85 Allow DISPLAY ENB to force blanking when off.  Use rest of S02@A05 (ECO #14)
+	Make sure ECO #21 has been installed to un-do ECO #9.  This should be the case if
+	E10-19 does NOT have a red wire.  Flush -XDO SHIFT CLK and reuse TPROM output as
+	BLANK OVERIDE.
+
+	SLAVES DON'T NEED THIS ECO. (ECO #26 is the SLAVE version of this ECO).
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+	MASTERS ONLY! 
+
+		E22-05 : B03-19 (CAREFUL!!)				-XDO SHIFT CLK
+						E22-05 : E22-04
+
+
+		D06-13 : D05-17						BLANK
+						D05-17 : A05-08
+
+						A05-05 : A05-06		DISPLAY ENB
+						A05-06 : E10-19
+
+						A05-04 : A05-09		-DISPLAY ENB
+
+						A05-07 : A05-12		-BLANK OUT
+
+						A05-11 : B03-19		BLANK OVERIDE
+
+						A05-13 : D06-13		BLANK OUT
+
+ECO #24 4/23/86 Create new backplane signal, -MAE+50.  This is needed for COLOR DAC 24.
+		SLAVES DON'T NEED THIS ECO.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+				MASTERS ONLY!
+
+						C18-04 : D16-11		-CTL RQ+200
+
+						C18-05 : F22-15		CTL WRITE
+
+						C18-06 : C18-07		un-named
+						C18-07 : C18-08		
+
+						C18-09 : C18-12		   "
+
+						C18-15 : C18-16		-CTL RQ+50
+						D16-15 : C18-15
+
+						C18-13 : C18-14		CTL RQ+50
+
+		E11-16 : CH1						OVERLAY MAP ENB
+
+						C18-11 : CH1		-MAE+50
+
+						C18-17 : C18-20		+5
+
+		ADD COMPONENT:  74S37 @ C18
+
+ECO #25 5/9/86 Wire EXT CSYNC and RUN signals to jack pins near edge of board to facilitate
+	       probing them while adjusting external sync mode.
+	       SLAVES DON'T NEED THIS ECO.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						A08-15 : J01-25		EXT CSYNC
+
+						A08-09 : J01-24		RUN
+
+ECO #26 5/12/86 Flush -XDO SHIFT CLK on SLAVE's.
+
+		SLAVE's only.  MASTER'S DON'T NEED THIS ECO.
+
+		E22-05 : B03-19 (CAREFUL!!)				-XDO SHIFT CLK
+						E22-05 : E22-04
+
+
+
+12/4/87
+EVIDENT TIMING PROBLEM:
+Noticed some sparkling on screen after running
+	(ram-plane-adr-test t)
+	(ram-plane-data-test 0)
+The red (master) channel looks fine, but the green and blue (slave) channels have noticable
+DATA DEPENDENT jitter.  It appears to about Œ1 pixel in extent.  It happens more or less 
+uniformly up and down the screen concentrated at the same (horizontal) pattern areas. Perhaps
+there is clock skew between masters and slaves.
+
+1/16/84	Changes from Rev. 3 to Rev. 4:
+
+	1) Allow external processor to take non-granted PROC cycles.  Aside from putting the
+	   signal PROC CYC NOT GRANTED on the cables, RAM CAS the two delayed versions of
+	   RAM RAS are made available.  Actually, the DLY line taps, one before each of these
+	   outputs is used, providing isolation and allowing some time for buffering the
+	   signals on the other board.  An external WRITE signal is also necessry.  SLAVE CLK
+	   may be useful, in case it is convenient for the co-processor to have a little bit
+	   of logic which is synchronous with the FG clock.  A new signal, -EXT WRITE, must
+	   also be driven by the external processor.  This signal is pulled up.
+
+;	2) Gate PROC CYC GRANTED(new signal)with SELECT EVEN & SELECT ODD.--- FLUSHED!!
+
+	3) Extend FCN field to 6 bits.  TPROM sequences will generally be 8 ticks or less.
+	   However, it should be possible to have sequences up to 16 ticks long, due to 
+	   FCN 0 having been allocted to the F163(CYC 0-2). For sequences up to length 8,
+	   LD PROM ADR L causes the FCN 1-5 to be loaded into the 25S07, and for FCN 0 to be
+	   loaded into the MSB of the F163.  Bits 0-2 of the F163 are loaded with 0's. 
+	   Counting up to 7 can occur as in REV 3 boards, but if LD PROM ADR L does'nt occur
+	   on or before the 8th cycle the F163 continues to advance up to 15.  Hence pairs
+	   of the FCN blocks can be concatenated.  EOC will presumably be activated in the
+	   last cycle, causing VMA counting, etc.
+
+	   The extra SRAM bit can be scrounged by moving VSYNC to TPROM.  Since 16B MODE is
+	   being flushed(see below), TPROM outputs are less precious.
+	   up last TPROM output, this is an improvement since VSYNC cycles are very rare and
+	   the great number of new FCNS may be very useful.
+
+ 	   Note: if necessary, there are several TPROM outputs earmarked for future(if ever)
+	   functionality:  PIXEL CYC WE(fast plane cycles), PIXEL CYC RE(16-bit pixels),
+	   BUS WINDOW(16-bit pixels??)--can be replaced by PROC CYC, CLK ACK(16-bit pixels).
+	   These signals are currently being retained since they add potentially useful
+	   flexibility.
+
+	4) Invert sense of CAMERA CLK(for new A/D board)
+
+
+	5) OBUF register(one being loaded from PIXEL IN) -OE must be forced off during
+	   control writes.  See gate on OBUF print.
+
+	6) SBUF should be disabled(hi-Z)during non-granted PROC cycles.  Replace 
+	   -PIXEL CYC GRANTED L with the same logior'ed with PROC CYCLE NOT GRANTED.  The
+	   latter signal is gated by -FG MODE, since the IBUF is used as a holding register
+	   during PROC CYC's while frame grabbing.
+	   This leaves the IBUF bus in hi-Z state during non-granted cycles allowing an
+	   external processor to use it for writing the RAM's.
+
+	7) Flush 16-bit pixel stuff.  Some of the TPROM functions allocated for that mode are
+	   being retained, in the belief that they are reasonably useful.  In particular,
+	   the separation of BUS WINDOW from PROC CYC; the separation of CLK ACK from EOC;
+	   and  the PIXEL CYC RE function, for symmetery, if nothing else.
+
+	8) Flush signal, CURSOR SYNC.  Make BLANK readable instead(XBDATA).
+
+	9) Change VMEM EXP to -VMEM EXP(eliminates jumper for standard case)
+
+	10) Add selector(F241)for PLANE 0,1,2 to eliminate jumpers for most common cases. Bits
+	    18 and 19 also brought onto dip slot to  allow for jumperings.
+
+
+	11) Mode register changes:
+		16B MODE has been swapped with HACKING SRAM and re-defined.
+		It will be used in two board setups to condition the color map card for color
+		mapping vs. straight mapping.
+
+		HACKING SRAM moved to bit 06, previously 16B MODE
+		The reason for moving HACKING SRAM is to have
+		all signals driving off board on bits 08-15. That byte will be implemented
+		with a LS374(buffered outputs for driving off-board loads over the bplane.)
+		The only bits which really need to be cleared by POWER RESET are the clock
+		mode bits.
+		
+
+		INT ENB flushed and replaced by OVERLAY MAP ENB.   The idea of this
+		signal is to provide control of the way the(new)color map board interprets
+		16-bit data: 12-bit mapped color + 4-bit mapped overlay, or full 16-bit,
+		un-mapped color. The latter mode will probably still use at least the lower
+		map loaded with a straight map.
+
+		Bit 14 redefined as SCAN ENB.  This conditions A/D board to scan through
+		channels(see logic for A/D board).
+
+
+	12) VMA BASE register input bits(from XDI)re-allocated, to keep inputs to 374's on
+	    byte boundries.
+
+
+	13) Add 2K x 4 prom to create RAMADR 19-16(this has the alias of VMA 19-16).
+	    This chip only has to be stuffed if expansion memory is attached.
+
+	14) Change RAMADR counter used in plane mode to LS163, and run outputs to F244's.
+	    This is cleaner, faster, and leaves the counter bits active at all times.
+	    Byte writes in plane mode can be effected, using these bits and a prom.
+	    (There is no purpose in supporting byte writes in the current board.  The CMI
+	     interface will take care of this functionality for now.  Speed in byte writes
+	     shouldn't make much difference, as long as they are done properly.)
+
+	15) A marginality in clocking of counter has been found.  Replacing RAM CAS L
+	    with RAM CAS seems to be the right thing(and works).
+
+	    SUMMARY OF PLANE CYCLE flop sequence:
+		PLANE CYCLE CLK pulses only during plane references.
+
+		The counter increments   "     "     "       "
+
+		The counter clock has and additional 25ns delay, which can only help but
+		is probably completely unnecessary(it also saves inverting an earlier CAS).
+
+		The basic sequence consists of a series of eight PROC CAS cycles.
+		The leading edge of the first one sets PLANE CYCLE.  The trailing edge of the
+		1st and subsequent ones increment the counter.  The trailing edge of the
+		7th cycle causes LAST RAM CYCLE to be asserted.  As a result the leading
+		edge of the 8th cycle causes PLANE CYCLE to toggle off.  This event has
+		plenty of time to propogate thru to the -LOAD pin of the counter before
+		the trailing edge of the 8th cycle, which forces the counter to 1000.
+		There is also plenty of time for PLANE CYC to condition the input to the
+		SEND ACK flop, which is clocked by CLK ACK.
+
+		The only other function of the PLANE CYCLE flop is to prevent the shifting
+		part of intervening SNAP cycles from clobbering the input shifter(SBUF).
+		This is not affected by the change(see IBUF print).
+
+	15) -GRANTED going into the REF counter enable has been gated with a new signal called
+	    -EXT PRESENT, which in turn is pulled up.  This new signal should be jumpered to
+	    ground, in the event an external processor is connected. This prevents non-granted
+	    processor cycles from being turned into refresh cycles.
+
+	16) APROM has been changed to a 2K x 4, since only 4 outputs are now required, 16-bit
+	    pixels having been flushed.  The extra inuts are useful for expansion memory.
+
+
+;;;;			**** ECO LOG FOR LMGREY REV #4 ****
+
+
+NOTE #1 2/17/84	Board back from wire wrap.  Must generate new PROM loads for 2K x 4's and
+		for modified TPROM scheme.
+
+ECO #1	2/18/84	Polarity of SCAN ENB going to backplane is wrong.
+		Signal on bp should be active high, ie. no inverter necessary.  LS374 is the
+		driving circuit, so there is no loading problem.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E11-16 : F18-06						SCAN ENB
+
+		F18-14 : EP1						SCAN ENB L
+
+						E11-16 : EP1		SCAN ENB
+
+ECO #2  2/20/84 Polarity of EXT CSYNC IN is wrong.  A/D card provides an ACTIVE LOW signal.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		A06-17 : CL1						EXT CSYNC IN
+
+		A06-03 : A08-15						EXT CSYNC
+
+						B07-15 : CL1		EXT CSYNC L
+
+						B07-05 : A08-15		EXT CSYNC
+
+ECO #3 3/1/84	Swap SCAN ENB and 16B MODE in mode register. This makes rev3 and rev4 slightly
+		more compatible.  In fact the only difference which impacts code is that
+		HACKING SRAM and 16B MODE are swapped, to allow 16B mode to drive off-board.
+		Also, Keith doesn't have to change his code, which uses CURSOR on the rev3
+		board to contol the SCAN ENB bit.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E11-16 : EP1						SCAN ENB(red wire)
+
+		E11-19 : CH1						16B MODE
+						E11-19 : EP1
+
+						E11-19 : CH1		SCAN ENB
+
+ECO #4 3/2/84   Create new signal, SNAP CYC L, for scoping purposes.  This will be the AND-NOT
+		of SNAP and GRANTED, and will be a good trigger for scoping the setting up
+		of IBUF and SBUF before a PROC CYC.  SNAP CYC L is at C09-06.
+
+		
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						C09-05 : C06-05		SNAP L
+
+						C09-04 : C07-13		GRANTED L
+
+ECO #5 3/3/84  RAS DLYD0 and RAS DLYD1 are tied to CAS delay line.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		A14-02 : A14-17						RAM CAS 20
+		A11-07 : A14-08
+		A11-07 : B07-08			A10-07 : B07-08
+						A10-07 : A14-08
+
+						A11-07 : A14-11		RAM RAS 20
+
+		A11-11 : C10-13						RAM CAS 50
+		A11-11 : C06-06
+						A10-11 : C10-13		RAM RAS 50
+						A10-11 : C06-06
+
+ECO #6 3/13/84 Add another jumper bit going into APROM. This will be -3600 MD.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		F06-10 : F06-11						GND
+		F06-11 : F06-18
+						F06-10 : F06-11
+
+						F06-18 : E06-10		-3600 MD
+
+		ADD 1K @ E06@1
+
+ECO #7 5/5/84	Derive EOC L from LD PROM ADR L (via LD FCN REG L). This makes it easier to
+		synchronize two boards, as LD PROM ADR L on the slave can be derived from the
+		master's signal.  LD PROM ADR L will be a one wire run.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		B02-04 : A01-07						TPROM 01
+
+						B02-04 : C05-03		LD FCN REG L
+
+ECO #8 11/29/84 Use BLANK rather than CSYNC for the "write-synced" feature.  This frees up
+		bit 6 of the status mux.  Use this for a misc input from backplane(ER1). This
+		may be useful for various hacks.  
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+		E24-15 : D06-15						CSYNC
+
+		E24-04 : D06-13						BLANK
+						E24-15 : D06-13
+
+						E24-04 : ER1		MISC IN
+
+ECO #9 11/29/84 Bring EXT CSYNC and RUN out to probeable pins.
+
+						A08-15 : J3-01		EXT CSYNC
+
+						A08-09 : J3-02		RUN
+
+
+;;;;			**** ECO LOG FOR LMGREY REV #5 ****
+
+
+Note #1 11/12/84 Jumpers for (functional) Rev 4:
+	Wire in REV #(actually REV # minus one):
+						
+	BOARD ID 0		E24-11 : E24-08		HI4
+
+	BOARD ID 1		E24-11 : E30-11		HI4
+
+	BOARD ID 2		E24-10 : E24-06		GND
+
+Note #2 5/24/86 Jumpers for (functional) Rev 5 - Supports new style DAC (AM8151 based):
+						
+	BOARD ID 0		E24-11 : E24-08		GND
+
+	BOARD ID 1		E24-11 : E24-10		GND
+
+	BOARD ID 2		E30-11 : E24-06		HI4
+
+	MAKE SURE REV 5 TPROM'S ARE IN.
+
+Note #3 3/09/87 IN ORDER TO RUN SRAM_REV5, REV5 BOARDS MUST HAVE REV5 (OR  REV6) TPROM'S.
+		THESE PROM'S WILL ALSO SUPPORT SRAM_REV4, BUT NOT VICE VERSA.
+
+Note #4 1/18/85 Maybe we should add another stage of buffering to OBUF.  This would allow us
+		to define an overlay plane during framegrabbing, by OR'ing in PIXEL.OUT.0
+		This bit will be read out of the RAM's during FG mode, if the mask bit is on.
+		A special function will be required to draw cursors, due to the address
+		shuffle in FG mode.  Also, it can only write the RAM's during VSYNC time.
+		But this shouldn't be a major problem for drawing simple cursors.
+
+Note #5 5/24/86 In order to implement VDRIVE and HDRIVE, the following could be done:
+	1. Move VMAD CRY 07 on INVERT to spare S240 on TGEN0, freeing up for HDRIVE.
+	2. Move CSYNC and BLANK into TPROM, flushing BLANK OVERIDE and VSYNC.
+	   Note that BLANK is better off there, and CSYNC can be implemented using
+	   three TPROM sequences analogous to PROC, REF and REFS.  HDRIVE and VDRIVE 
+	   can now be controlled directly by SRAM.
+	3. COMPLETELY re-write SRAM code.
+	4. Change pixel clock to 12.5284 (3.5 x Fsc), allowing for creating (externally)
+	   a synchronous color sub-carrier.  Since we'd have to re-write SRAM, might as
+	   well use a more convenient frequency.
+	The hardware changes are trivial, but the new SRAM code will be a lot of work.
+
+ECO #1 11/12/84	Bring -3600MD out to backplane, so that we don't have to worry about special
+		jumpers on the board to switch between CADR & 3600.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						F06-18 : FJ1		-3600MD
+
+
+ECO #2 11/29/84 Use BLANK rather than CSYNC for the "write-synced" feature.  This frees up
+		bit 6 of the status mux.  Use this for a misc input from backplane(ER1). This
+		may be useful for various hacks.  
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+	ccw	E24-15 : D06-15						CSYNC
+
+	ccw	E24-04 : E15-06						BLANK
+						E24-15 : E15-06
+
+						E24-04 : ER1		MISC IN
+					DON'T ROUTE WIRE BETWEEN E23-15 & E23-16
+
+ECO #3 1/16/85 Wire EXT CSYNC and RUN signals to jack pins near edge of board to facilitate
+	       probing them while adjusting external sync mode.
+
+		DELETE:				ADD:			SIGNAL NAME:
+
+						A08-15 : J01-25		EXT CSYNC
+
+						A08-09 : J01-24		RUN
+
+ECO #4 3/2/85 Make ADR 00 = 1 a condition for CTL WRITE.  This will prevent glitching of
+	screen when writing MODE or VMB.  The condition can be modified to include ADR 02 = 1
+	(to allow EXT WRITE's)by using a spare OR gate, but will be left in the simpler form
+	for now.
+
+		DELETE:				ADD:			SIGNAL NAME:
+	
+	ccw	D10-13 : E13-15						WRITE
+	cw	C07-05 : D10-13
+						E13-12 : D10-13
+						E13-12 : E13-15
+
+						E13-13 : D13-17		ADR 00
+					DON'T ROUTE WIRE BETWEEN E13-15 & E13-16
+
+						E13-11 : C07-05		CTL WRITE ENB
+
+ECO #5 4/08/87  Shift ctl bit 0 for SBUF gets clobbered by -PLANE CYC during plane mode
+		reads while frame grabbing.  Gate with WRITE.
+
+		DELETE:				ADD:			SIGNAL NAME:
+	
+	cw	D19-08 : E18-05						-PLANE CYC
+	ccw	E18-05 : D08-12  ****DIFFICULT TO REMOVE****
+						D19-08 : D08-12
+						D08-12 : C09-12		-PLANE CYC
+
+						C19-06 : C09-13		WRITE L
+
+						C09-11 : E18-05		-BLOCK RELOAD
+
+ECO #6 5/24/86 	Create -MWE+100, used for clocking AM8151 input register during color map
+		write cycle.  MUST INSTALL REV5 TPROM FOR AM8151 BOARDS
+TO WORK. 
+
+		DELETE:				ADD:			SIGNAL NAME:
+	
+						E23-15 : E23-16		CTL+100 L
+						E23-16 : C18-07
+
+						E23-14 : F07-13		CTL RQ+100
+
+						F07-14 : B04-01		CTL WRITE
+
+						C18-09 : F07-12		CTL RQ+200 L
+
+						F07-11 : ED1		-MWE+100
+
+		INSTALL REV5 OR (BETTER YET) REV6 TPROM.
+
+

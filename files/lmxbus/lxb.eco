@@ -1,0 +1,796 @@
+;;;-*-mode:text; base:10.; Nofill: Yes; -*-
+
+;LXB assignment log:
+
+;	PN	SN	REV-MAN	REV-FCN	ECO	DOM       HOST		COMMENTS
+;	47.	1	0	0	0	3-1-84	  retired
+;	47.	2	1	0	0	6-1-84	  retired
+
+;	47.	3	2	3	0	9-29-84	  
+;	47.	4	3	3	0	2-13-86	  RIEMANN **	no XBUS
+
+;NOTE:	DSP boards don't win with LXB Rev3 or earlier.  Prefetching gets ahead of itself.
+;	The symptom is DSP:RAM-ADR-TEST failing by getting N+1 rather than N back for loc N.
+
+;	47.	5	4	4	2	6-1-86	  TAYLOR	STAND ALONE SU
+;	47.	6	4	5	9	6-20-86	  CHAPIN
+;	47.	7	4	5	9	6-21-86   Problem (see below)
+;	47.	8	4	5	9	9-5-86    GAUSS
+;	47.	9	5	5	6	11-29-86
+;	47.    10.	5	5	6	3-10-87	  GAYE		STAND ALONE SU
+;	47.    11.	5	5	6	3-30-87	  HUREWICZ
+;	47.    12.	5	5	6	3-30-87	  HILBERT
+
+;	47.    13.	5	5	6	11-5-87	  MACH		STAND ALONE SU
+;	47.    14.	5	5	6		  
+;	47.    15.	5	5	6		  
+;	47.    16.	5	5	6		  
+
+
+;	*- These systems can't be queried for XBUS configuration as they lack
+;	    support for NXM's.   They will be retired ASAP.
+;	**- This board has been hacked to act as a PPORT, with strobes.  XBUS
+;	    functionality has been flushed.
+
+;Temporary board swaps:
+;	4/3/87		 SN 9 is out
+
+; Board Notes:
+; 4/2/87 	SN 1 is slated for retirement, soon.
+; 4/3/87	SN 3 has compatible UNET, but hasn't been corrected for
+;		extra STROBE lines, and INTR pinout. It could be moved to GAUSS
+;		when SN 1 goes.
+; 		SN 4 has been eco'ed so as to function as a PPORT only
+;		SN 5-12 are working and functionally identical.  They all have
+;		        the same CSM PROM's (REV5), includingl "Branch" PROM.
+;			They also have correct ID PROMS.
+
+; Bug Log:
+; 4/2/87	SN 11 wasn't letting POWER.RESET thru to XBUS.  This cleared up 
+;		after replacing DIP's on both end's of run, and run itself.
+; 4/2/87	This may not be a real bug, but there seems to be a lot of noise on
+;		LB.POWER.RESET.  Its on the same DIP as LB.CLOCK.A L and .B L
+;		and seems to be picking up edges.  Its worst at load end of run.
+;		This phenomenon is present on both REV4 and REV5 boards.  Using
+;		different IC types helped a little with 74F240's being best and
+;		74FCT240's worst.
+; 4/2/87	SN 7 exhibited flakey behavior wrt ID PROM.  For a while it was
+;		reading back (fairly consistent) garbage, e.g. PN = 16843055
+;		May be mechanical or thermal, but doesn't seem to effect main
+;		operation of board.
+
+;ECO LOG FOR REV2
+
+***** LXB REV2 is "retired" *****
+
+12/11/84 Notes DataCon wirelist:
+	The outputs of the 10125's have been terminated manually, so as to have
+	terminator at end of run. These wires are lines MIT01171  and MIT01172.
+
+	The ground screw-up at F01 has been manually corrected.  Line MIT00054
+	use to read:
+GNDF01-10         F  01 018           F  01 010      1                MIT00054
+
+12/17/84 Problems with DataCon wirelist:
+	-XBUS.INTR.1 (line 1061) should go to J 02 005.
+
+	The group of LBUS.SLOT signals near the end of the file were placed on
+	level 1 instead of level 2 as should have been the case.
+
+	All "  H" suffixes must be flushed.  These cause bogus name conflicts.
+
+	There were a bunch of conflicts due to a quirk in SUDS.  Occasionally,
+	for very mysterious reasons, SUDS uses a generated signal name
+	(e.g. %%A04-08) rather	than the explicit name in the drawings.
+	For example, ASSERT.LB.WAIT got changed	to %%D13-09, even though it was
+	never referred to as -ASSERT.LB.WAIT L.  This is a problem in general,
+	especially if you try to manually add wires to the wire list and fail
+	to use the generated name.  This will cause name conflict errors in the
+	DataCon wrap preprocessor will complain about name conflicts. This
+	happened on the	following:
+		%%A03-17	-XBUS.INIT
+		%%A04-08	-XBUS.ISOLATE
+		%%A04-17	-XBUS.POWER.RESET
+		%%D17-09	-UNET.ADR.RDY
+		%%D17-08	-UNET.DATA.RDY
+		%%D07-07	LB.FIRST.HALF
+	The next two had the same problem, though it was masked out by another
+	error(above):
+		%%A04-11	-XBUS.INTR.0
+		%%A04-09	-XBUS.INTR.1
+	IN THE FUTURE, when manually adding wires, be sure the signal name you
+	are using actually appears in the SUDS generated wirelist. AVOIDING
+	" L" suffixes would seemingly solve the problem, but this shouldn't be
+	necessary if care is used in manual adds.  No doubt, this phenomon
+	would be equally confusing to a PC house. Probably the best thing to do
+	is to correct all the bogus "%%" names, since these seem to indicate a
+	bug in the SUDS wire lister.  Also, it appears that the "%%" names
+	appear at the same alphanumeric place in the wirelist as their
+	synonyms.  These names are quite different in nature from "%" names,
+	which are legitimate generated names, for runs with no explicit signal
+	names in the drawings.   Also, the problem doesn't seem to be related
+	to the -FOO  FOO L convention.
+
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+
+;ECO LOG FOR REV3
+
+***** LXB REV3 is "semi-retired": use for PPORT only *****
+
+2/13/86	REV3 was essentially REV2 with "improvements" for master/slave mode.
+	There were also some minor clean up done, all noted in pencil on REV2
+	schematics.
+
+2/13/86 ECO #1	Add strobe in/strobe out feature.  If space permitted it
+	would be better to have both strobes driven by 26S10's, making them
+	bi-dir.	This would allow simple direct communication between hosts.
+	The current fix supports talking to DR11-C type interfaces.  An S240
+	section is re-allocated, in order to simplify a future ECO.  In the
+	process, LB.RESET is replaced with RESET for the XBUS init'ing.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+	D04-18 : A03-15				LB.RESET	Flush
+
+	E10-07 : F08-16				-LB.RESET	remove
+	F08-16 : D04-02						free S240
+			E10-07 : F08-16				replace
+
+			A03-15 : E03-11		RESET
+
+			D05-13 : E04-16		NET.ADR.0	
+			D05-07 : J04-19		-STROBE.OUT
+
+	F11-02 : E11-01				TEST.POINT	
+
+			J04-20 : D04-02		-STROBE.IN	Must rcv,
+			D04-02 : A10-07				terminate,
+
+			D04-18 : D09-13		STROBE.IN	& sync.
+
+			F11-02 : D09-12		STROBE.IN.SYNCED
+
+2/18/86 ECO #2	Disconnect LBUS.SLOT lines from backplane.  LBUS addresses for
+	LXB's will be jumpered directly on the board.  The same slot numbers
+	can now be used for all processors.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+	JA-C32 : F07-08				LBUS.SLOT.0
+
+	JA-C31 : F07-11				LBUS.SLOT.1
+
+	JA-A32 : F07-13				LBUS.SLOT.2
+
+	JA-A31 : F07-15				LBUS.SLOT.3
+
+	JA-A30 : F07-17				LBUS.SLOT.4
+
+	Now, wire in the appropriate slot number.
+
+2/13/86 ECO #2A - RENUMBER!
+	Allow co-processor board to take XBUS cycles. 
+	1. define XBUS.ISOLATE.IN at B03-05, the 26S10 input.  This
+	   currently NC but is driven high by LOCAL or XBUS sources.
+	   What was previously XBUS.ISOLATE will be just a one wire
+	   run from LOCAL reg to 26S10 input pin.  Rest of XBUS.ISOLATE 
+	   run is connected to new signal, XBUS.ISOLATE.IN.  The new
+	   signal must also shut off XBUS data drivers on LXBUS.
+	2. Define a new XBUS signal, XBUS.BLOCK.RQ L.  This is used by
+	   the co-processor to squelch CSM bus requests, allowing it
+	   to generate one or more XBUS cycles of its own, in response.
+	   When it has finished interpreting the original XBUS cycle,
+	   still pending in the CSM, it can finally return ACK, along
+	   with data in the case of a CSM read cycle.  The co-processor
+	   should de-assert ISOLATE prior to returning ACK,  so that the
+	   XBUS is ready for another cycle.  Note that XBUS.BLOCK  stops
+	   CSM from driving RQ and driving or RECEIVING ACK.
+	   XBUS.ISOLATE.IN only stops it from DRIVING address/data.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+	A04-08 : J02-01				-XBUS.ISOLATE	remove
+	B03-04 : A04-08
+
+	B03-06 : A05-01				XBUS.ISOLATE
+	E04-02 : B03-06
+
+	A04-16 : J02-03				-XBUS.INIT	remove
+	A03-17 : A04-16
+
+	D04-13 : D05-06				XBUS.WR
+	E02-02 : D04-13
+	D05-06 : A03-13
+
+	A04-15 : J02-07				-XBUS.WR	remove
+	A03-11 : A04-15
+			A08-16 : A04-15
+			A04-15 : J02-07				replace
+
+			D05-06 : A08-04		XBUS.WR		S240
+			E02-02 : D05-06
+
+			B03-04 : A04-16		-XBUS.INIT
+			A04-16 : J02-03				replace
+
+			E04-02 : A03-13		XBUS.ISOLATE
+
+			E09-15 : A03-12		XBUS.ISOLATE.IN
+			A03-12 : A05-01
+
+			A03-11 : A04-08		-XBUS.ISOLATE
+			A04-08 : J02-01				replace
+
+	A03-15 : E03-11				RESET		RED wire
+			B03-06 : E03-11
+
+	A03-03 : A03-14				GND
+	A03-14 : A03-10
+			A03-03 : A03-10
+
+			A03-14 : A03-16		XBUS.BLOCK.RQ
+
+			A03-17 : A04-07		-XBUS.BLOCK.RQ	terminator
+			A04-07 : J02-30
+
+	D05-12 : D04-05				XDRIVE
+	C07-07 : C07-17						remove
+	D04-05 : C07-07
+			D05-12 : C07-07				L2 to L1
+			C07-07 : C07-17
+
+	D04-15 : D05-08				-XDRIVE		remove
+	D04-07 : D04-15
+			D04-15 : D05-08				replace
+	D12-01 : B13-14						split run
+
+			E09-14 : B13-14		XDATA.OFF
+
+	B05-11 : B06-11				XBUS.RQ		remove
+	A03-05 : B05-11
+	D07-11 : D07-07
+			A03-05 : D07-07
+
+			A03-06 : B05-11		SEND.RQ		
+			B05-11 : B06-11				replace
+
+	D08-11 : D07-13				RQ.ACK L
+			D08-11 : E05-12
+
+			E05-11 : D07-13		no name
+
+			A03-16 : E05-13		XBUS.BLOCK.RQ
+
+2/17/86 ECO #3  Expand LBUS address space to 4MB(two full slots).  AR.19 will
+	be directly controlled by LBUS.ADR.19. This is the LSB of the slot
+	address.  It can be received thru the F244 @ F11, by moving 
+	-LB.WRITE, etc. to D04, using two S240's instead.  This even
+	turns out to be a shorter run for -LB.WRITE!  -XADR<21-20>,
+	will now be controlled by a new signal, CTL.ADR.  The latter
+	is a latched version of CTL.REF.  It can be clocked by CLK.WAR.
+	This requires adding the CLK.WAR uop to every CSM instruction 
+	containing CLK.RAR, so that the full XBUS address is set up.
+	Gratuitous clocking of WAR should be harmless, since its contents
+	are undefined during read cycles.  Only one of the three CSM PROM's
+	should be affected!    Finally, cause -CTL.REF to be asserted only
+	for the upper slot (LB.ADR.19 = 1), allowing the entire lower slot
+	to be "mapped"
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+
+	JB-C25 : F11-11				-LBUS.WRITE	Move this.
+
+	F11-09 : D06-16				-LB.WRITE		
+	
+			JB-C25 : D04-13		-LBUS.WRITE
+
+			D04-07 : D04-15		LB.WRITE	Use two
+
+			D04-05 : D06-16		-LB.WRITE	inverters.
+
+
+	E06-11 : D06-08				-CTL.REF	wire to F109
+	D06-08 : D05-02						and free up
+			C05-15 : C05-16				section of
+			E06-11 : D06-08				74S240
+			D06-08 : C05-15
+
+	D09-15 : D05-18				CTL.REF		flush this
+
+			C05-13 : C05-17		HI1
+			C05-17 : B04-03
+
+			C05-14 : E02-12		CLK.WAR
+
+	A08-08 : A08-11				ADR.19
+
+			A08-11 : C05-11		CTL.ADR
+
+	JA-A20 : F07-09				LBUS.ADR.19
+			JA-A20 : F11-11
+
+			F07-08 : F07-09		GND
+			F07-09 : F07-10
+
+			F11-09 : D09-15		LB.ADR.19
+
+	E06-04 : E06-05				LB.ADR.18
+
+			D09-15 : E06-05		LB.ADR.19
+
+
+2/17/86 ECO #4  Convert board into up-to-date PPORT, with strobes.
+		TRASH OTHER FUNCTIONALITY IN PROCESS.
+		
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+	All nets connected to C06:
+
+	E03-06 : C06-04				ACK
+	C06-04 : B04-08
+			E03-06 : B04-08				Re-connect ACK.  Board still
+								must give "ACK's" during boot
+								scan.
+
+	E10-05 : D07-16				ACK.DLYD.20
+	D07-16 : C06-15
+
+	E09-12 : C06-07				ACK.DLYD.40
+
+	B08-07 : C06-13				ACK.DLYD.0
+	C06-13 : E05-15
+
+	Free up inverter section at D05:
+
+	D05-09 : F09-19				LBUS.ISOLATE
+			F09-10 : F09-19				Ground enable
+
+	D05-11 : E08-16				-LBUS.ISOLATE
+	C05-01 : D05-11
+			C05-01 : E08-16
+
+	Wire in register for STB out, inverting drivers for latter; wire STB in lines
+	directly to sync'ing register inputs.
+			D13-13 : C06-03		-RESET
+
+			E02-05 : C06-11		CLK.UREG
+
+			F10-04 : C06-07		LB.DATA.18
+
+			F10-05 : C06-06		LB.DATA.19
+
+			C06-08 : D05-13		-STROBE.OUT.0
+
+			C06-05 : D05-11		-STROBE.OUT.1
+
+			D05-07 : J03-19		STROBE.OUT.0
+
+			D05-09 : J04-20		STROBE.OUT.1
+
+			D05-18 : D05-20		+5
+
+			ADD COMPONENT: 74LS175 @ C06
+
+			J03-20 : D06-05		STROBE.IN.0
+			D06-05 : A10-07
+
+			J04-19 : D06-06		STROBE.IN.1
+			D06-06 : A10-08
+
+	F11-02 : E11-01				TEST.POINT
+
+	F11-04 : D09-07				INTR.1
+
+			D06-04 : F11-04 	STROBE.IN.SYNCED.0
+
+			D06-07 : F11-02		STROBE.IN.SYNCED.1
+
+;ECO LOG FOR REV4
+
+2/28/86 Notes DataCon wirelist:
+	The ground screw-up at F01 has been manually corrected.  Line MIT00047
+	use to read:
+ GNDF01-10         F  01 018           F  01 010      1                MIT00047
+
+2/28/86 Problems with DataCon wirelist:
+
+	Modifications To LXB AUG file:
+
+	1. "  H" --> "   " to avoid bogus name conflicts.
+
+	There were a bunch of conflicts due to an artifact of SUDS.  Occasionally,
+	for  mysterious reasons, SUDS uses a generated signal name
+	(e.g. %%A04-08) rather	than the explicit name in the drawings.
+	For example, ASSERT.LB.WAIT got changed	to %%D13-09, even though it was
+	never referred to as -ASSERT.LB.WAIT L.  This is a problem in general,
+	especially if you try to manually add wires to the wire list and fail
+	to use the generated name.  This will cause name conflict errors in the
+	DataCon wrap preprocessor will complain about name conflicts.  It may be
+	that SUDS is eliminating  names beyond a certain length, though "-UNET.MASTER"
+	is longer than "-XBUS.INIT" and didn't get changed.
+
+	The following substitutions were made(new name shown below %% symbol):
+ %%D17-09          E  17 017           D  17 009      1                MIT00761
+ -UNET.ADR.RDY
+ %%D17-08          E  17 011           D  17 008      1                MIT00765
+ -UNET.DATA.RDY
+ %%A04-16          B  03 004           A  04 016      1                MIT00844
+ -XBUS.INIT
+ %%A04-17          B  03 009           A  04 017      1                MIT00859
+ -XBUS.POWER.RESET
+ %%A04-11          B  03 017           A  04 011      1                MIT00846
+ -XBUS.INTR.0
+ %%A04-09          B  03 011           A  04 009      1                MIT00848
+ -XBUS.INTR.1
+ %%A03-11          A  04 008           A  03 011      1                MIT00850
+ -XBUS.ISOLATE
+ %%A03-17          A  04 007           A  03 017      1                MIT00843
+ -XBUS.BLOCK.RQ
+
+	IN THE FUTURE, when manually adding wires, be sure the signal name you
+	are using actually appears in the SUDS generated wirelist. AVOIDING
+	long name, at least for signals which get manual additions should fix
+	problem.  Also, it appears that the "%%" names	appear at the same
+	alphanumeric place in the wirelist as their synonyms.  These names
+	are quite different in nature from "%" names, which are generated
+	names, for runs with no explicit signal	names in the drawings.
+
+6/1/86	Note #1 Jumper in LBUS slot # (20 octal).  This will cause the board
+		to occupy slots 20-23.
+	Add: F09-13 : F10-10
+	     F09-15 : F10-10
+
+6/1/86	ECO #1  ADR.20 should have been bought to A08-08
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+     cw	D06-13 : A08-08						CTL.ADR
+    ccw	A08-08 : A08-06
+			D06-13 : A08-06
+
+			B05-08 : A08-08				ADR.20
+
+6/2/86	ECO #2  XBUS address register is being disabled during writes (a remnant of
+		WAR functionality).
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+     cw	E11-12 : E09-13				XDRIVE
+    ccw	D06-07 : D06-17
+    ccw	E09-13 : D06-07
+			E11-12 : E09-13
+
+			D06-07 : D06-10		GND
+			D06-07 : D06-17
+
+9/10/86 ECO #3 -XBUS.RQ is allowing inadequate setup time for address lines. This could
+	cause problems with LMGREY which has partial PROM decode.  Put 50ns delay line
+	in SET.XBUS.RQ path.  Note that this only delays the asserting of RQ.  Clearing of
+	RQ and consequently of SEND.ACK is as before.  There should still be around 100ns
+	of slop in getting next LMGREY cycle.
+
+    cw	D02-02 : F06-14				SET.XBUS.RQ
+			D02-02 : C06-04
+
+			C06-11 : F06-14		SET.XBUS.RQ+50
+
+			C06-17 : C06-20		+5
+
+		ADD COMPONENT: DL50 @ C06	
+
+9/10/86 ECO #4 Three LBUS signal runs are excessively long.  Use twisted pair.
+
+    cw	JBC-17 : F11-02				-LBUS.POWER.RESET
+			JBC-17 : F11-02
+			JBB-GND: E11-10		ground
+
+    cw	JBC-24 : F11-06				-LBUS.REQUEST
+			JBC-24 : F11-06
+			F03-10 : F11-10		ground
+
+    cw	JBC-28 : F11-04				-LBUS.RESET
+			JBC-28 : F11-04
+			F02-10 : E12-10		ground
+
+9/11/86 ECO #5   Also, move INTR lines, preparatory of ECO 6.  Moving these affects XBUS
+		 software (unlike strobe stuff in 3) and must go in all boards.
+
+    cw	F07-10 : F07-11				GND		De-commit F07-08 from GND
+    cw	F07-08 : F07-10						to make room for INTR.0
+			F07-10 : F07-11
+
+    cw	F07-06 : D09-09				INTR.0
+
+    ccw	F07-04 : D09-07				INTR.1
+
+			D09-09 : F07-08		INTR.0
+
+			D09-07 : F07-06		INTR.1
+
+
+9/18/86 ECO #6  Loading of DO is not guaranteed during fast WRITE loop case, should 
+		ACK and BOARD.REF.PENDING set in same clock period. For then, async
+		clearing of XRQ causes XACK to clear, strobing DO. However, LBUS data
+		may still be settling during this period.  In fact, we seem to be winning-
+		barely.  Better to delay BOARD.REF.PENDING one cycle - causing cases in
+		question to branch back to IDLE loop.  READ cycles should not be so delayed,
+		and must be picked off in hardware.  Another necessary change was to cause
+		the PROM output of CLR.LBUS.WAIT to be used for clearing ASSERT.LB.WAIT.
+		The registered version can be used to gate the inputs to BOARD.REF.PENDING.
+		This can result in the situation where CLR.LBUS.WAIT (now mis-named - should
+		be called CLR.BOARD.REF.PENDING) and LB.REQUEST are asserted in the same
+		clock cycle (back-to-back requests). In this case the REQUEST prevails keeping
+		BOARD.REF.PENDING on steadily, but that works fine, since the CSM code can
+		never test BRP til its had at least one cycle to clear, in the absense of
+		another REQUEST.  Note that the PROM output goes directly into the J pin
+		of a flip flop, hence no extra delay.  The registered output goes thru 
+		several gates, but it has plenty of time.
+
+    cw	E03-18 : C05-12				-BOARD.REF.PENDING
+
+    ccw	E09-12 : E10-05				ACK    free up LS32 section
+	E11-12 : E09-13	      RED WIRE!		XDRIVE
+    cw	E09-11 : D07-12				ACK.ENABLE
+
+			C05-12 : E09-12		ASSERT.LB.WAIT L
+
+    cw	C05-16 : D02-15				CLR.LBUS.WAIT
+			D02-15 : E09-13		CLR.BRP (new name)
+
+			C05-16 : D02-14		SMD.10 (alias CLR.LBUS.WAIT)
+
+			D04-19 : E03-18		-BOARD.REF.PENDING
+
+	Free up F32 being used as delay for FIRST.HALF. Should replace later.
+    cw	F01-06 : E05-16				LB.FIRST.HALF
+    ccw	E05-15 : E05-16
+
+    cw	E08-04 : E05-14				LB.FIRST.HALF.DLYD
+
+			F01-06 : E08-04		LB.FIRST.HALF
+
+			E09-11 : E10-15		BOARD.RQ.LATCHED L
+
+			E05-14 : E10-16		BOARD.READ.RQ L
+
+			E10-14 : D04-18		ASSERT.BRP L
+
+			E05-06 : E05-16		BOARD.RQ L (formerly SET.LBUS.WAIT L)
+
+			F03-15 : E05-15		LB.WRITE
+
+
+
+9/11/86 ECO #7  Add 2nd strobe in line.  This greatly simplifies communication with
+		VAX's by providing separate strobes for messages going in each direction.
+		Also, STROBE.IN and STROBE.OUT lines share the same driver, allowing them
+		to be either inverted or non-inverted.  The latter case (S244) in conjunction
+		with use of LS534 for upper byte register, makes entire bus active HIGH.
+
+		Note that this ECO is optional, and doesn't affect UNET or data portion of
+		GPIO.  However, it should probably be installed whenever GPIO is to be used.
+
+		NB: a couple of signals of form "+FOO" are created here.  These are "cable"
+		versions of the signal "FOO" and logically, but not electrically equivalent.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+
+    cw	F07-02 : D09-04				STROBE.IN.SYNCED
+
+    ccw	E11-18 : D09-05				STROBE.IN
+
+    cw	J04-18 : E11-07				+STROBE.OUT.0
+
+    cw	J04-19 : E11-09				+STROBE.OUT.1
+
+    cw	E11-13 : D13-09				STROBE.OUT.0
+
+    ccw	E11-11 : D13-12				STROBE.OUT.1
+
+    cw	J04-20 : E11-02				-STROBE.IN (becomes +STROBE.IN.1)
+    cw	E11-02 : A10-07
+			D11-02 : A10-07
+			J04-19 : D11-02
+
+			D11-04 : A10-08		+STROBE.IN.0 (new)
+			J03-20 : D11-04
+
+			J03-19 : D11-12		+STROBE.OUT.0
+
+			J04-20 : D11-14		+STROBE.OUT.1
+
+			D11-08 : D13-09		STROBE.OUT.0
+
+			D11-06 : D13-12		STROBE.OUT.1
+
+			D11-16 : D05-06		STROBE.IN.0
+
+			D11-18 : D05-05		STROBE.IN.1
+
+			D05-07 : F07-04		STB.IN.SYNCED.0
+
+			D05-04 : F07-02		STB.IN.SYNCED.1
+
+			D11-01 : D11-10		GND
+
+		ADD COMPONENT 74S240 @ D11
+
+1/5/87	ECO #8	Create a separate bit in LOCAL for XBUS.INIT vs. XBUS.POWER.RESET.  Setting
+		this bit will cause all XBUS devices to remove themselves from the bus if
+		not already so removed.  Devices can also "soft clear" themselves if that is
+		meaningful.  Boards like the XBUS DSP can be cleared by this signal without
+		clobbering LMGREY SRAM.  "Hard clear" can be forced by XBUS.POWER.RESET.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+    cw 	C04-09 : C02-01				RESET		Temporarily
+    ccw	C02-01 : B03-06
+			C04-09 : C02-01				Replace
+
+			E04-16 : B03-06		XBUS.INIT
+
+3/08/87 ECO #9  RAR is presently incremented by the trailing edge of XBUS.ACK.  This, in
+		turn, is essentially the same as the trailing edge of XBUS.RQ, delayed by
+		around 100ns, but is dependent on slave response, not to mention many 
+		cascades of logic and xcvrs.  It is safer and more correct to use the
+		trailing edge of XBUS.RQ delayed by about 60ns.  This, in conjunction with
+		the 50ns delay on SET.XBUS.RQ provides safe margins on address/data setup
+		and hold.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+    ccw	D08-12 : C04-12				XBUS.ACK
+    cw	C04-12 : A03-08
+			D08-12 : A03-08
+
+			A03-06 : D12-04		SEND.RQ
+
+			D12-13 : C04-12		SEND.RQ+60	New signal
+
+			D12-17 : D12-20		+5
+
+	ADD COMPONENT: TD100 @ D12
+
+;ECO LOG FOR REV5
+
+10/14/86 Notes DataCon wirelist:
+	The ground screw-up at F01 has been manually corrected.  Line MIT00064
+	use to read:
+ GNDF01-10         F  01 018           F  01 010      1                MIT00064
+
+10/14/86 Problems with DataCon wirelist:
+
+	Modifications To LXB AUG file:
+
+	1. "  H" --> "   " to avoid bogus name conflicts. (11/07/86 - This correction
+	was NOT made prior to sending tape to DataCon.  They are making the fix, however.)
+
+	There were a bunch of conflicts due to an artifact of SUDS.  Occasionally,
+	for  mysterious reasons, SUDS uses a generated signal name
+	(e.g. %%A04-08) rather	than the explicit name in the drawings.
+	For example, ASSERT.LB.WAIT got changed	to %%C05-11, even though it was
+	never referred to as -ASSERT.LB.WAIT L.  This is only a problem if you try
+	to manually add wires to one of these nets and fail to use the generated name,
+	or change it to the schematic name.  This will cause name conflict errors and
+	the DataCon wrap preprocessor will complain about name conflicts.  It may be
+	that SUDS is eliminating  names beyond a certain length, though "-UNET.MASTER"
+	is longer than "-XBUS.INIT" and didn't get changed.
+
+	The following substitutions were made(new name shown below %% symbol):
+ %%D17-09          E  17 017           D  17 009      1                MIT00780
+ -UNET.ADR.RDY
+ %%D17-08          E  17 011           D  17 008      1                MIT00784
+ -UNET.DATA.RDY
+ %%A03-17          A  04 007           A  03 017      1                MIT00862
+ -XBUS.BLOCK.RQ
+ %%A04-16          B  03 004           A  04 016      1                MIT00863
+ -XBUS.INIT
+ %%A04-11          B  03 017           A  04 011      1                MIT00865
+ -XBUS.INTR.0
+ %%A04-09          B  03 011           A  04 009      1                MIT00867
+ -XBUS.INTR.1
+ %%A03-11          A  04 008           A  03 011      1                MIT00869
+ -XBUS.ISOLATE
+ %%A04-17          B  03 009           A  04 017      1                MIT00878
+ -XBUS.POWER.RESET
+
+	IN THE FUTURE, when manually adding wires, be sure the signal name you
+	are using actually appears in the SUDS generated wirelist. AVOIDING
+	long name, at least for signals which get manual additions should fix
+	problem.  Also, it appears that the "%%" names	appear at the same
+	alphanumeric place in the wirelist as their synonyms.  These names
+	are quite different in nature from "%" names, which are generated
+	names, for runs with no explicit signal	names in the drawings.
+
+10/14/86 Note #1 Jumper in LBUS slot # (20 octal).  This will cause the board
+		to occupy slots 20-23.
+	Add: F09-13 : F10-10
+	     F09-15 : F10-10
+
+7/2/87	Note #2 The DSP UNET has an additional output strobe, DSP.MOD. This was provided
+	for supporting Linear Array cameras.  There it causes a 16-bit input bus to be
+	turned off, permitting data to be sent the other way, from the  DSP.  This 
+	functionality has been supported on SLXB, and could easily be done here (there's
+	a spare bit in the LXUNET strobe register, and extra F244 drivers on LXADR).
+	However	until its utility for LXB (or SLXB) has become apparent, deployment will
+	be deferred.
+
+11/29/86 ECO #1	Change the upper half (15-8) of the UNET input register to an inverting
+	        74LS534.  This, together with the LS534 on the output compensates for
+		the inverting 26S10's, making all bits of the port active high.
+
+	REPLACE: 74LS374 @ D14 with 74LS534.
+
+11/29/86 ECO #2	Two wires got inadvertently deleted in LXADR drawing.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+			C11-01 : B10-01		STATUS.TO.LB L
+
+			C11-11 : B10-11		STATUS.TO.LB
+
+12/06/86 ECO#3 	Create a separate bit in LOCAL for XBUS.INIT vs. XBUS.POWER.RESET.  Setting
+		this bit will cause all XBUS devices to remove themselves from the bus if
+		not already so removed.  Devices can also "soft clear" themselves if that is
+		meaningful.  Boards like the XBUS DSP can be cleared by this signal without
+		clobbering LMGREY SRAM.  "Hard clear" can be forced by XBUS.POWER.RESET.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+    cw 	C04-09 : C02-01				RESET		Temporarily
+    ccw	C02-01 : B03-06
+			C04-09 : C02-01				Replace
+
+			E04-16 : B03-06		XBUS.INIT
+
+1/11/87 ECO #4  Setup time into DI is an issue (see NOTE BOOK: XBUS NOTES, LXB Case; and also
+		the comment about slowing down CLK.DI).  Better to use F374's.
+
+	REPLACE:  74LS374's at C14, C15, C16, and C17 with 74F374's.
+
+3/07/87 ECO #5  LB.WRITE no longer has a source.  Use inverter section @ F03.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+			F04-12 : F03-02		-LB.WRITE
+
+			F03-18 : D10-13		LB.WRITE
+
+
+3/08/87 ECO #6 	RAR is presently incremented by the trailing edge of XBUS.ACK.  This, in
+		turn, is essentially the same as the trailing edge of XBUS.RQ, delayed by
+		around 100ns, but is dependent on slave response, not to mention many 
+		cascades of logic and xcvrs.  It is safer and more correct to use the
+		trailing edge of XBUS.RQ delayed by about 60ns.  This, in conjunction with
+		the 50ns delay on SET.XBUS.RQ provides safe margins on address/data setup
+		and hold.
+
+	DELETE:		ADD:			SIGNAL:		COMMENTS:
+
+    cw	D08-12 : C04-12				XBUS.ACK
+    ccw	C04-12 : A03-08
+			D08-12 : A03-08
+
+			D06-11 : E11-04		SEND.RQ
+
+			E11-13 : C04-12		SEND.RQ+60	New signal
+
+			E11-17 : E11-20		+5
+
+	ADD COMPONENT: TD100 @ E11
+
+9/21/88 TEMPORARY ECO:  This brings buffered PPORT.OUT to pin 17 of UNET connector.
+		This is necessary for interfacing with the LXB Tester unit.  A
+		spare F244 section is used for the driver.   Note that 8031 UNET boards
+		have pin 17 tied to ground.  There is no longer any need for this and
+		it can be changed by removing a single wire (J02-17 : A04-03).  However,
+		trying to drive a micro card without this fix could fry the LXB F244.
+		Caution should be employed.  For the SLXB case, the spare S38 (O.C)
+		section can be used.  Grounding this won't cause any damage!
+
+			D13-16 : F11-02		PPORT.OUT
+
+			F11-18 : J04-17		UNET.PPORT.OUT

@@ -1,0 +1,521 @@
+;;; -*- Mode:LISP; Package:USER; Base:8 -*-
+
+;; This is the state machine code for REV5 and REV4 with ECO 6 or later.
+;; "Early" CLR-LBUS-WAIT functionality has been taken into account, mainly
+;; requiring the functions that drive the LBUS (e.g. DI-TO-LBUS) to hang
+;; around for one less cycle.  Also, a seeming bug in TEST-ACK-PENDING has
+;; been fixed:  MAP.RD & *PF must be handled separately.  In the REV4 code,
+;; CSM could be looping in $$0, then fall to $$0+1, due to a MAP.RD&*PF,
+;; asserting DI-TO-LBUS. Upon ACK it falls to $$0+7 (BRANCH IDLE XBUS-WR)
+;; which doesn't assert DI-TO-LBUS, and then IDLE+2 which asserts it again.
+;; It seems much better to handle the MAP.RD&*PF case separately so we can
+;; keep DI-TO-LBUS on. Note that the case in question could only lose if
+;; PRE-FETCH is off, which not usually the case. But we may need it for
+;; referencing control type things which are placed in the MAP area.
+
+(DEFCONST LXB-SOURCE
+ '(
+	(LOC 0)
+
+;Test pending conditions.  IDLE should be at loc 0, so that the LED indicator is meaningful.
+ IDLE	(TEST-PENDING IDLE)				;; Nothing; try again
+ 1	(BRANCH WRITE LOAD-ADR)				;; MAP WRITE
+ 2	(BRANCH READ LOAD-ADR DI-TO-LBUS)		;; MAP RD & PREFETCH off
+ 3	(BRANCH RD-MCH DI-TO-LBUS CLR-LBUS-WAIT		;; MAP READ MATCH & PREFETCH on. HW
+				 SET-XBUS-RQ)		;; has updated ADR.  Data is in DI.
+							;; Release LBUS & post next XBUS RQ.
+							;; Start driving LBUS(DI-TO-LBUS)
+							;; 
+ 4	(BRANCH RD*MCH LOAD-ADR DI-TO-LBUS)		;; MAP READ, NO MATCH & PREFETCH on
+							;; Must re-load ADR before posting RQ
+ 5	(BRANCH RW-CTL)					;; RD or WR XBUS control area
+ 6	(BRANCH RW-CRG)					;; RD or WR CREG
+ 7	(BRANCH RW-URG)					;; RD or WR UREG
+	(ROUND-DOWN)
+
+;MAP Write
+ WRITE	(INC LOAD-ADR CLK-ADR CLK-DO CLR-LBUS-WAIT XBUS-WR);; LOAD ADR/DATA, release LBUS,
+ 	(INC SET-XBUS-RQ LOAD-ADR XBUS-WR CLR-VALID)	;; XBUS REQUEST, XBUS WRITE
+							;; Wait for ACK
+ $$0	(TEST-ACK-PENDING $$0 LOAD-ADR XBUS-WR)		;; *ACK & nothing pending
+ 1	(TEST-ACK-PENDING $$0 DI-TO-LBUS LOAD-ADR XBUS-WR);; *ACK & MAP READ Pending
+ 2	(TEST-ACK-PENDING $$0 LOAD-ADR XBUS-WR)		;; *ACK & something else pending
+ 3	(TEST-ACK-PENDING $$0 CLR-LBUS-WAIT SET-XBUS-RQ	;; ACK & MAP WRITE pending
+			  LOAD-ADR XBUS-WR)		;; ADR & DO reg have been loaded by HW
+							;; Post XBUS RQ immediately.
+ 4	(BRANCH ERROR)					;; READ MATCH with VALID off??
+ 5	(BRANCH RD*MCH LOAD-ADR DI-TO-LBUS XBUS-WR)	;; ACK & MAP READ, NO MATCH pending.
+							;; Must re-load ADR before posting RQ
+ 6	(BRANCH READ LOAD-ADR DI-TO-LBUS XBUS-WR)	;; ACK & MAP RD&*PF     "
+ 7	(BRANCH IDLE XBUS-WR)				;; ACK & anything else. Wait extra
+							;; cycle for XBUS-WR to clear(Note 4.)
+	(ROUND-DOWN)
+
+;MAP Read with prefetching off
+ READ	(INC LOAD-ADR CLK-ADR DI-TO-LBUS)
+	(INC SET-XBUS-RQ CLR-VALID DI-TO-LBUS)		;; XBUS RQ; Clear VALID, to be safe.
+							;; Wait for ACK
+ $$1	(TEST-ACK-RW $$1 DI-TO-LBUS)			;; *ACK(& READ)
+ 1	(BRANCH $$2 DI-TO-LBUS CLR-LBUS-WAIT)		;;  ACK(& READ)--data to DI done by HW
+							;;	       --finish LBUS read cyc
+ 2	(BRANCH ERROR)					;; *ACK & WRITE--Cycle type changed??
+ 3	(BRANCH ERROR)					;;  ACK & WRITE--Cycle type changed??
+ 4	(BRANCH ERROR)					;;
+ 5	(BRANCH ERROR)					;;
+ 6	(BRANCH ERROR)					;;
+ 7	(BRANCH ERROR)					;;
+	(ROUND-DOWN)
+
+ $$2	(TEST-PENDING IDLE DI-TO-LBUS)			;; LBUS Timing requires this extra
+							;; step--the last "active cycle."
+							;; Return to IDLE loop.
+
+;MAP Read/Match, with prefetching on
+ RD-MCH	(TEST-ACK-PENDING $$3 DI-TO-LBUS SET-VALID HOLD-ACK);; See Note 3(below) re: HOLD-ACK.
+							;; Set VALID, just in case.
+							;; Drive LBUS one more cycle and start
+							;; testing for ACK.  If a READ pending
+							;; condition occurs,start driving LBUS
+
+ $$3	(TEST-ACK-PENDING $$3)				;; *ACK & nothing pending
+ 1	(TEST-ACK-PENDING $$3 DI-TO-LBUS)		;; *ACK & MAP READ Pending
+ 2	(TEST-ACK-PENDING $$3)				;; *ACK & something else pending
+ 3	(BRANCH WRITE LOAD-ADR)				;; ACK & MAP WRITE pending
+ 4	(BRANCH RD-MCH DI-TO-LBUS CLR-LBUS-WAIT
+				 SET-XBUS-RQ)		;; ACK & MAP READ, MATCH. Service ASAP
+ 5	(BRANCH RD*MCH LOAD-ADR DI-TO-LBUS)		;; ACK & MAP READ, NO MATCH pending.
+							;; Must re-load ADR before posting RQ
+ 6	(BRANCH ERROR)					;; PF went off??
+ 7	(BRANCH IDLE)					;; ACK & anything else
+	(ROUND-DOWN)
+
+;MAP Read/No-Match, with prefetching on
+ RD*MCH (INC LOAD-ADR CLK-ADR DI-TO-LBUS)		;; First fetch the word requested
+	(INC SET-XBUS-RQ DI-TO-LBUS)			;; XBUS RQ
+ $$4	(TEST-ACK-RW $$4 DI-TO-LBUS)			;; *ACK(& READ)--Wait for ACK
+ 1	(BRANCH $$5 SET-XBUS-RQ DI-TO-LBUS CLR-LBUS-WAIT);; ACK(& READ)--Finish LBUS cycle.
+							;; ADR was incremented by HW.
+							;; Post RQ for prefetch, immediately.
+ 2	(BRANCH ERROR)					;; *ACK & WRITE--Cycle type changed??
+ 3	(BRANCH ERROR)					;;  ACK & WRITE--Cycle type changed??
+ 4	(BRANCH ERROR)					;;  Illegal
+ 5	(BRANCH ERROR)					;;     "
+ 6	(BRANCH ERROR)					;;     "
+ 7	(BRANCH ERROR)					;;     "
+	(ROUND-DOWN)
+
+ $$5	(TEST-ACK-PENDING $$6 DI-TO-LBUS SET-VALID	;; Set VALID. See Note 3 re: HOLD-ACK.
+				HOLD-ACK)		;; Start testing for ACK
+							;; If a READ pending
+							;; condition occurs,start driving LBUS
+ $$6	(TEST-ACK-PENDING $$6)				;; *ACK & nothing pending
+ 1	(TEST-ACK-PENDING $$6 DI-TO-LBUS)		;; *ACK & MAP READ Pending
+ 2	(TEST-ACK-PENDING $$6)				;; *ACK & something else pending
+ 3	(BRANCH WRITE LOAD-ADR)				;; ACK & MAP WRITE pending
+ 4	(BRANCH RD-MCH DI-TO-LBUS CLR-LBUS-WAIT
+				SET-XBUS-RQ)		;; ACK & MAP READ, MATCH pending
+							;; Post yet another RQ, so as to merge
+							;; into RD-MCH flow.
+ 5	(BRANCH RD*MCH LOAD-ADR DI-TO-LBUS)		;; ACK & MAP READ, NO MATCH pending.
+							;; Must re-load ADR before posting RQ
+ 6	(BRANCH ERROR)					;; PF went off??
+ 7	(BRANCH IDLE)					;; ACK & anything else
+	(ROUND-DOWN)
+
+ RW-CTL (TEST-ACK-RW $$7 LOAD-ADR CLR-VALID)
+							;; Ignore ACK, as ACTIVE may be off.
+ $$7	(BRANCH R-CTL LOAD-ADR CLK-ADR)			;;(*ACK &)READ
+ 1	(BRANCH R-CTL LOAD-ADR CLK-ADR)			;;( ACK &)READ
+ 2	(BRANCH W-CTL CLK-DO LOAD-ADR CLK-ADR XBUS-WR	;;(*ACK &)WRITE
+					 CLR-LBUS-WAIT)
+ 3	(BRANCH W-CTL CLK-DO LOAD-ADR CLK-ADR XBUS-WR	;;( ACK &)WRITE
+					CLR-LBUS-WAIT)
+ 4	(BRANCH ERROR)					;;
+ 5	(BRANCH ERROR)					;;
+ 6	(BRANCH ERROR)					;;
+ 7	(BRANCH ERROR)					;;
+	(ROUND-DOWN)
+ 
+ R-CTL	(TEST-ACK-RW $$8 SET-XBUS-RQ)			;; Try putting DI-TO-LBUS here.
+							;; Wait for ACK
+ $$8	(TEST-ACK-RW $$8)				;; *ACK(& READ)     "
+ 1	(BRANCH $$9 DI-TO-LBUS CLR-LBUS-WAIT)		;;  ACK(& READ)--data to DI, Inc ADR
+							;;	       --finish LBUS read cyc
+ 2	(BRANCH ERROR)					;; *ACK & WRITE--Illegal
+ 3	(BRANCH ERROR)					;;  ACK & WRITE--Illegal
+ 4	(BRANCH ERROR)					;; 
+ 5	(BRANCH ERROR)					;; 
+ 6	(BRANCH ERROR)					;; 
+ 7	(BRANCH ERROR)					;; 
+	(ROUND-DOWN)
+
+ $$9	(TEST-PENDING IDLE DI-TO-LBUS)
+
+ W-CTL	(TEST-ACK-RW $$10 SET-XBUS-RQ XBUS-WR)
+							;; Wait for ACK. READ/WRITE is don't
+ 							;; care since LBUS has been released.
+ $$10	(TEST-ACK-RW $$10 XBUS-WR)			;; *ACK(& READ)
+ 1	(BRANCH IDLE XBUS-WR)				;;  ACK(& READ)
+ 2	(TEST-ACK-RW $$10 XBUS-WR)			;; *ACK(& WRITE)
+ 3	(BRANCH IDLE XBUS-WR)				;;  ACK(& WRITE)--allow one cycle for
+							;; XBUS-WR to clear in case read pend.
+ 4	(BRANCH ERROR)					;;  Illegal
+ 5	(BRANCH ERROR)					;;     "
+ 6	(BRANCH ERROR)					;;     "
+ 7	(BRANCH ERROR)					;;     "
+	(ROUND-DOWN)
+
+ RW-CRG (TEST-ACK-RW $$11)				;; Test whether READ or WRITE.
+
+ $$11	(BRANCH R-CRG)					;;(*ACK &)READ--Ignore ACK
+ 1	(BRANCH R-CRG)					;;  ACK & READ     "
+ 2	(BRANCH W-CRG)					;;(*ACK &)WRITE    "
+ 3	(BRANCH W-CRG)					;;  ACK & WRITE    "
+ 4	(BRANCH ERROR)
+ 5	(BRANCH ERROR)
+ 6	(BRANCH ERROR)
+ 7	(BRANCH ERROR)
+	(ROUND-DOWN)
+
+ R-CRG	(INC STATUS-TO-LBUS CLR-LBUS-WAIT)
+	(TEST-PENDING IDLE STATUS-TO-LBUS)
+
+ W-CRG  (INC CLK-CREG CLR-LBUS-WAIT)			;; Wait for BOARD.REF.PENDING to clear
+	(BRANCH IDLE)
+
+ RW-URG (TEST-ACK-RW $$12)				;; Test whether READ or WRITE.
+
+ $$12	(BRANCH R-URG)					;;(*ACK &)READ--Ignore ACK
+ 1	(BRANCH R-URG)					;;  ACK & READ     "
+ 2	(BRANCH W-URG)					;;(*ACK &)WRITE    "
+ 3	(BRANCH W-URG)					;;  ACK & WRITE    "
+
+
+
+ 4	(BRANCH ERROR)
+ 5	(BRANCH ERROR)
+ 6	(BRANCH ERROR)
+ 7	(BRANCH ERROR)
+	(ROUND-DOWN)
+ 
+ R-URG	(INC UNET-TO-LBUS CLR-LBUS-WAIT)
+	(TEST-PENDING IDLE UNET-TO-LBUS)
+
+ W-URG  (INC CLK-UREG CLR-LBUS-WAIT)			;; Wait for BOARD.REF.PENDING to clear
+	(BRANCH IDLE)
+
+ DELAY	(INC)						;; This is entered during initialize
+ 	(INC)						;; to prevent premature bus monitoring
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(INC)
+ 	(BRANCH IDLE)
+
+ ERROR  (BRANCH ERROR)					;; Freeze
+
+ 	(LOC 777)
+
+ INIT	(BRANCH IDLE)					;; LOC 777 entered upon initialize
+
+ ))
+
+
+;;SYMBOL TABLE:
+;Generate this by Evaluating Into Buffer the variable LOC-LIST:
+;((INIT 777) (ERROR 620) (DELAY 420) (W-URG 400) (R-URG 360) ($$12 350) (RW-URG 340)
+;(W-CRG 320) (R-CRG 300) ($$11 270) (RW-CRG 260) ($$10 250) (W-CTL 240) ($$9 230) ($$8 220)
+;(R-CTL 210) ($$7 200) (RW-CTL 170) ($$6 160) ($$5 150) ($$4 140) (RD*MCH 120) ($$3 110)
+;(RD-MCH 100) ($$2 70) ($$1 60) (READ 40) ($$0 30) (WRITE 10) (IDLE 0))
+
+;REV3 LXB TEST PROM - ALSO USED WITH REV4 (AS MANUFACTURED) 
+;					  INPUTS			    OUTPUTS
+;			____________________|_____________________	______|______
+;			|					 |	|	    |
+;			 B   B   P   B   L   E   C   W   M   R   A
+;			 R   R   R   O   O   V   R   R   T   E   C
+;			 .   .   E   R   C   E   T   I   C   Q   K
+;			 C   C   .   D   A   N   L   T   H
+;			 O   O   F   .   L   .   .   E
+;			 D   D   T   R   .   A   R   
+;			 E   E   C   E   R   D   E   
+;			 1   0   H   F   F   R   F   
+;
+;			 H   H   H   L   L   L   L   L   L   H   H
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 0
+;			 0   0   X   X   X   X   X   X   X   X   X      0   0   0   0
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 1
+;NOTHING PENDING    -	 0   1   X   1   X   X   X   X   X   X   X	0   0   0   0
+;MAP.WR		    -	 0   1   X   0   X   X   1   0   X   X   X      0   0   0   1
+;MAP.RD & *PF	    -    0   1   0   0   X   X   1   1   X   X   X	0   0   1   0
+;MAP.RD & PF & MTCH -    0   1   1   0   X   X   1   1   0   X   X	0   0   1   1
+;MAP.RD & PF & *MTCH-    0   1   1   0   X   X   1   1   1   X   X      0   1   0   0
+;RD/WR XBUS CTL	    -    0   1   X   0   1   X   0   X   X   X   X      0   1   0   1
+;RD/WR CREG	    -    0   1   X   0   0   0   0   X   X   X   X      0   1   1   0
+;RD/WR UREG	    -    0   1   X   0   0   1   0   X   X   X   X	0   1   1   1
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 2							  _
+;*ACK & NOTHING PEND-	 1   0   X   1   X   X   X   X   X   X   0 |	0   0   0   0
+;*ACK & MAP.RD PEND -	 1   0   X   0   X   X   1   1   X   X   0 |	0   0   0   1
+;*ACK &ANYTHING ELSE-    1   0   X   X   X   X   X   X   X   X   0_|	0   0   1   0
+;ACK & MAP WR PEND  -    1   0   X   0   X   X   1   0   X   X   1	0   0   1   1
+; " MAP.RD &PF&MTCH -    1   0   1   0   X   X   1   1   0   X   1      0   1   0   0
+; " MAP.RD &PF&*MTCH-    1   0   1   0   X   X   1   1   1   X   1      0   1   0   1
+;   Reserved        -    1   0   					0   1   1   0
+;ACK & ANYTHING ELSE-	 1   0	  &  ALL OTHER COMBINATIONS		0   1   1   1
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 3
+;*ACK & READ	    -	 1   1   X   X   X   X   X   1   X   X   0	0   0   0   0
+;ACK  & READ	    -	 1   1   X   X   X   X   X   1   X   X   1	0   0   0   1
+;*ACK & WRITE	    -	 1   1   X   X   X   X   X   0   X   X   0	0   0   1   0
+;ACK  & WRITE	    -	 1   1   X   X   X   X   X   0   X   X   1	0   0   1   1
+
+(DEFUN LOAD-REV3-LXB-TEST-PROM-ARRAY (ARRAY)
+  (FILLARRAY ARRAY '(0))
+;;BRANCH CODE 0
+  (DO ((N 0 (1+ N)))
+      ((= N 512.))
+    (ASET 0 ARRAY N))				;; Load all locs with 0's
+
+;;BRANCH CODE 1
+  (DO ((N 512. (1+ N)))
+      ((= N 1024.))
+    (COND ((= (LOGAND N 200) 200)		;; If *bd.ref
+	   (ASET 0 ARRAY N))
+	  ((= (LOGAND N 230) 20)		;; If map.write
+	   (ASET 1 ARRAY N))
+	  ((= (LOGAND N 630) 30)		;; If map.read & *prefetch
+	   (ASET 2 ARRAY N))
+	  ((= (LOGAND N 634) 430)		;; If map.read & prefetch & match
+	   (ASET 3 ARRAY N))
+	  ((= (LOGAND N 634) 434)		;; If map.read & prefetch & *match
+	   (ASET 4 ARRAY N))
+	  ((= (LOGAND N 320) 100)		;; If ctl.read or ctl.write
+	   (ASET 5 ARRAY N))
+	  ((= (LOGAND N 360) 0)			;; If creg.read or creg.write
+	   (ASET 6 ARRAY N))
+	  ((= (LOGAND N 360) 40)		;; If unet.read or unet.write
+	   (ASET 7 ARRAY N))))
+
+;;BRANCH CODE 2
+  (DO ((N 1024. (1+ N)))
+      ((= N 1536.))
+    (COND ((= (LOGAND N 201) 200)		;; If *ack & nothing pending	
+	   (ASET 0 ARRAY N))
+	  ((= (LOGAND N 231) 30)		;; If *ack & map.read pending
+	   (ASET 1 ARRAY N))
+	  ((= (LOGAND N 1) 0)			;; If *ack & anything else
+	   (ASET 2 ARRAY N))
+	  ((= (LOGAND N 231) 21)		;; If ack & map.write
+	   (ASET 3 ARRAY N))
+	  ((= (LOGAND N 635) 431)		;; If ack & map.read & prefetch & match
+	   (ASET 4 ARRAY N))
+	  ((= (LOGAND N 635) 435)		;; If ack & map.read & prefetch & *match
+	   (ASET 5 ARRAY N))
+	  (T					;; If ack & anything else
+	   (ASET 7 ARRAY N))))
+
+;;BRANCH CODE 3
+  (DO ((N 1536. (1+ N)))
+      ((= N 2048.))
+    (COND ((= (LOGAND N 11) 10)			;; If *ack & read
+	   (ASET 0 ARRAY N))
+	  ((= (LOGAND N 11) 11)			;; If ack & read
+	   (ASET 1 ARRAY N))
+	  ((= (LOGAND N 11) 0)			;; If *ack & write
+	   (ASET 2 ARRAY N))
+	  ((= (LOGAND N 11) 1)			;; If ack & write
+	   (ASET 3 ARRAY N)))))
+
+;REV5 LXB TEST PROM (BRANCH.CODE 2 has separate code for MAP.RD & *PF)
+;					  INPUTS			    OUTPUTS
+;			____________________|_____________________	______|______
+;			|					 |	|	    |
+;			 B   B   P   B   L   E   C   W   M   R   A
+;			 R   R   R   O   O   V   R   R   T   E   C
+;			 .   .   E   R   C   E   T   I   C   Q   K
+;			 C   C   .   D   A   N   L   T   H
+;			 O   O   F   .   L   .   .   E
+;			 D   D   T   R   .   A   R   
+;			 E   E   C   E   R   D   E   
+;			 1   0   H   F   F   R   F   
+;
+;			 H   H   H   L   L   L   L   L   L   H   H
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 0
+;			 0   0   X   X   X   X   X   X   X   X   X      0   0   0   0
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 1
+;NOTHING PENDING    -	 0   1   X   1   X   X   X   X   X   X   X	0   0   0   0
+;MAP.WR		    -	 0   1   X   0   X   X   1   0   X   X   X      0   0   0   1
+;MAP.RD & *PF	    -    0   1   0   0   X   X   1   1   X   X   X	0   0   1   0
+;MAP.RD & PF & MTCH -    0   1   1   0   X   X   1   1   0   X   X	0   0   1   1
+;MAP.RD & PF & *MTCH-    0   1   1   0   X   X   1   1   1   X   X      0   1   0   0
+;RD/WR XBUS CTL	    -    0   1   X   0   1   X   0   X   X   X   X      0   1   0   1
+;RD/WR CREG	    -    0   1   X   0   0   0   0   X   X   X   X      0   1   1   0
+;RD/WR UREG	    -    0   1   X   0   0   1   0   X   X   X   X	0   1   1   1
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 2							  _
+;*ACK & NOTHING PEND-	 1   0   X   1   X   X   X   X   X   X   0 |	0   0   0   0
+;*ACK & MAP.RD PEND -	 1   0   X   0   X   X   1   1   X   X   0 |	0   0   0   1
+;*ACK &ANYTHING ELSE-    1   0   X   X   X   X   X   X   X   X   0_|	0   0   1   0
+;ACK & MAP WR PEND  -    1   0   X   0   X   X   1   0   X   X   1	0   0   1   1
+; " MAP.RD &PF&MTCH -    1   0   1   0   X   X   1   1   0   X   1      0   1   0   0
+; " MAP.RD &PF&*MTCH-    1   0   1   0   X   X   1   1   1   X   1      0   1   0   1
+; " MAP.RD & *PF    -    1   0   0   0   X   X   1   1   X   X   1	0   1   1   0
+;ACK & ANYTHING ELSE-	 1   0	  &  ALL OTHER COMBINATIONS		0   1   1   1
+;
+;			10  09  08  07  06  05  04  03  02  01  00	3   2   1   0
+;BRANCH.CODE 3
+;*ACK & READ	    -	 1   1   X   X   X   X   X   1   X   X   0	0   0   0   0
+;ACK  & READ	    -	 1   1   X   X   X   X   X   1   X   X   1	0   0   0   1
+;*ACK & WRITE	    -	 1   1   X   X   X   X   X   0   X   X   0	0   0   1   0
+;ACK  & WRITE	    -	 1   1   X   X   X   X   X   0   X   X   1	0   0   1   1
+
+(DEFUN LOAD-REV5-LXB-TEST-PROM-ARRAY (ARRAY)
+  (FILLARRAY ARRAY '(0))
+;;BRANCH CODE 0
+  (DO ((N 0 (1+ N)))
+      ((= N 512.))
+    (ASET 0 ARRAY N))				;; Load all locs with 0's
+
+;;BRANCH CODE 1
+  (DO ((N 512. (1+ N)))
+      ((= N 1024.))
+    (COND ((= (LOGAND N 200) 200)		;; If *bd.ref
+	   (ASET 0 ARRAY N))
+	  ((= (LOGAND N 230) 20)		;; If map.write
+	   (ASET 1 ARRAY N))
+	  ((= (LOGAND N 630) 30)		;; If map.read & *prefetch
+	   (ASET 2 ARRAY N))
+	  ((= (LOGAND N 634) 430)		;; If map.read & prefetch & match
+	   (ASET 3 ARRAY N))
+	  ((= (LOGAND N 634) 434)		;; If map.read & prefetch & *match
+	   (ASET 4 ARRAY N))
+	  ((= (LOGAND N 320) 100)		;; If ctl.read or ctl.write
+	   (ASET 5 ARRAY N))
+	  ((= (LOGAND N 360) 0)			;; If creg.read or creg.write
+	   (ASET 6 ARRAY N))
+	  ((= (LOGAND N 360) 40)		;; If unet.read or unet.write
+	   (ASET 7 ARRAY N))))
+
+;;BRANCH CODE 2
+  (DO ((N 1024. (1+ N)))
+      ((= N 1536.))
+    (COND ((= (LOGAND N 201) 200)		;; If *ack & nothing pending	
+	   (ASET 0 ARRAY N))
+	  ((= (LOGAND N 231) 30)		;; If *ack & map.read pending
+	   (ASET 1 ARRAY N))
+	  ((= (LOGAND N 1) 0)			;; If *ack & anything else
+	   (ASET 2 ARRAY N))
+	  ((= (LOGAND N 231) 21)		;; If ack & map.write
+	   (ASET 3 ARRAY N))
+	  ((= (LOGAND N 635) 431)		;; If ack & map.read & prefetch & match
+	   (ASET 4 ARRAY N))
+	  ((= (LOGAND N 635) 435)		;; If ack & map.read & prefetch & *match
+	   (ASET 5 ARRAY N))
+	  ((= (LOGAND N 631) 31)		;; If ack & map.read & *prefetch
+	   (ASET 6 ARRAY N))
+	  (T					;; If ack & anything else
+	   (ASET 7 ARRAY N))))
+
+;;BRANCH CODE 3
+  (DO ((N 1536. (1+ N)))
+      ((= N 2048.))
+    (COND ((= (LOGAND N 11) 10)			;; If *ack & read
+	   (ASET 0 ARRAY N))
+	  ((= (LOGAND N 11) 11)			;; If ack & read
+	   (ASET 1 ARRAY N))
+	  ((= (LOGAND N 11) 0)			;; If *ack & write
+	   (ASET 2 ARRAY N))
+	  ((= (LOGAND N 11) 1)			;; If ack & write
+	   (ASET 3 ARRAY N)))))
+
+
+
+;Note 1
+;If another MAP READ isn't pending at this point, pipelining is presumably not happening.
+;A good question is: what if the processor was delayed in asserting the next read request,
+;so that we stop driving DI to LBUS for several cycles? Will this lose? More info on LBUS
+;would help.  Ask Symbolics.  At present, we will resume driving of LBUS as soon as the
+;MAP READ pending is sensed(see next note).
+
+;Note 2
+;TEST-PENDING must FULLY resolve the type of reference, excepting possibly R/W which can be
+;resolved via TEST-ACK-RW.  TEST-ACK-PENDING is basically for efficiency  purposes and picks
+;off the special or time critical cases, and lumps the rest together. The REV1 code uses a
+;more efficient TEST-ACK-PENDING dispatch than did REV0.  In particular it resolves the
+;different *ACK casses, so as to allow picking off the MAP READ pending case.
+
+;This is an earlier version of the  code for a TEST-ACK-PENDING situation. The latter dispatch
+;was essentially like the REV0 version.
+
+;The folowing handles the non-pipelining case(See notes 1 and 2 at bottom of file.)
+; $$3A	(TEST-ACK-PENDING $$3A)				;; *ACK
+; 1	(BRANCH WRITE)					;; ACK & MAP WRITE pending
+; 2	(BRANCH ERROR)					;; PREFETCH went off ??
+; 3	(BRANCH RD-MCH DI-TO-LBUS SET-XBUS-RQ)		;; ACK & MAP READ, MATCH
+; 4	(BRANCH RD*MCH LOAD-ADR DI-TO-LBUS)		;; ACK & MAP READ, NO MATCH
+; 5	(BRANCH RW-CTL)					;; ACK & RW CTL pending
+; 6	(BRANCH RW-CRG)					;; ACK & RW CREG pending
+; 7	(BRANCH RW-URG)					;; ACK & RW UREG pending
+;	(ROUND-DOWN)
+;The following handles the pipelining case(See notes 1 and 2 at bottom of file.)
+; $$3B	(TEST-ACK-PENDING $$3B DI-TO-LBUS)		;; *ACK
+; 1	(BRANCH ERROR)
+; 2	(BRANCH ERROR)
+; 3	(BRANCH RD-MCH DI-TO-LBUS SET-XBUS-RQ)		;; ACK & MAP READ pending.Post RQ ASAP
+; 4	(BRANCH RD*MCH LOAD-ADR DI-TO-LBUS)		;; ACK & MAP READ, NO MATCH pending.
+;							;; Must load ADR before posting RQ.
+; 5	(BRANCH ERROR)
+; 6	(BRANCH ERROR)
+; 7	(BRANCH ERROR)
+;	(ROUND-DOWN)
+
+;Note 3
+;The speed-up features associated with ACK have some potential hazards.  In the fastest
+;possible situation, XBUS.RQ will last roughly one clock tick.  ACK will follow it on the
+;next cycle and also last one tick.  That means, if we don't start testing for it on the 
+;very next cycle, we may miss it.  Moreover with the XBUS.RQ gone, the NXM timeout won't
+;even work. Presently, the only code which doesn't start testing immediately, is in the 
+;pre-fetch routines(RD-MCH and RD*MCH).  For the immediately en-visioned purposes, it 
+;shouldn't be possible for ACK to occur fast enough to cause problems, due to frame buffer
+;timing.  However, to make things more general and robust, a new signal is being introduced,
+;HOLD.ACK, which will prevent the synchronous clearing of ACK, and should be asserted in the
+;cycles BETWEEN a SET-XBUS-RQ instruction and the corresponding TEST-ACK instruction, but not
+;including either one.
+
+;Note 4
+;Some care must be taken when branching into a TEST-PENDING dispatch, with regards to MATCH.
+;In order for the comparator to be looking at RAR rather than WAR, it is essential that
+;XBUS-WR be off a cycle before the TEST-PENDING.  It follows that you wouldn't want to do
+;(TEST-PENDING IDLE XBUS-WR), since this would perform the MATCH test on the basis of WAR.
+;Flushing WAR eliminates THIS problem!
+
+;To make new PROM's:
+;	1. (re-)compile LXB-SOURCE (this file)
+;	2. compile AI:LMXBUS;CSMR4 ASSEMB
+;	3. (setq object (assemble-source lxb-source) a nil)
+;	4. (setq a0 (make-array 512.))  a1,a2,a3
+;	5. (load-csm-arrays object a0 a1 a2 a3)
+;	6. compile AI:NGL;PROMP NEW
+;	7. in package CSM:  (user:programmer-reset)
+;			    (user:ppp a0) a1,a2

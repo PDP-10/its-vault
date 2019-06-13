@@ -1,0 +1,412 @@
+;;; -*- Mode:LISP; Package:USER; Base:8 -*-
+
+;NOTICE: LEAVE IN THE STUFF FOR "COL".  IT MIGHT SERVE AS A USEFUL MODEL IN THE FUTURE.
+
+(DEFVAR LOC-LIST NIL)
+
+(SPECIAL LOC-LIST
+	 LOC-PTR
+	 CSM-SOURCE
+	 CSM-OBJECT
+	 LAST-SYMBOL-LOC
+	 DEFAULT-INSTRUCTION
+	 DEFAULT-STEP)					;;This sets the normal spacing between
+							;;instructions, i.e. the closest that
+							;;instructions can be placed, except
+							;;in dispatch tables. 
+(SETQ LOC-LIST NIL
+      LOC-PTR 0
+      LAST-SYMBOL-LOC 0)
+
+(DEFCONST ASSEMBLE-INSTRUCTION 'ASSEMBLE-LXB-INSTRUCTION)
+(DEFCONST DEFAULT-STEP 8.)
+(DEFCONST DEFAULT-INSTRUCTION 233000)
+
+(DEFUN USE-LXB ()
+  (SETQ ASSEMBLE-INSTRUCTION 'ASSEMBLE-LXB-INSTRUCTION
+	DEFAULT-INSTRUCTION 233000
+	DEFAULT-STEP 8.))
+
+(DEFUN USE-VXB ()
+  (SETQ ASSEMBLE-INSTRUCTION 'ASSEMBLE-VXB-INSTRUCTION
+	DEFAULT-INSTRUCTION 0
+	DEFAULT-STEP 8.))
+
+(DEFUN USE-COL ()
+  (SETQ ASSEMBLE-INSTRUCTION 'ASSEMBLE-COL-INSTRUCTION
+	DEFAULT-INSTRUCTION 0
+	DEFAULT-STEP 1))
+
+(DEFUN ASSEMBLE-SOURCE (&OPTIONAL (SLIST CSM-SOURCE))
+  (ASSEMBLE-FIRST-PASS SLIST)
+  (ASSEMBLE-SECOND-PASS SLIST))
+
+;;sets up the symbol a-list, i.e. LOC-LIST.
+(DEFUN ASSEMBLE-FIRST-PASS (SOURCE-LIST &AUX LOC-PTR ELEMENT)
+  (SETQ LOC-LIST NIL)
+  (SETQ LOC-PTR 0)
+  (DO ((LIST SOURCE-LIST (CDR LIST)))
+      ((NULL LIST))
+    (SETQ ELEMENT (CAR LIST))
+    (COND ((NUMBERP ELEMENT)			;;A numeric label. Set LOC-PTR
+	   (SETQ LOC-PTR (+ LAST-SYMBOL-LOC ELEMENT)));;as relative to last symbol.
+
+	  ((ATOM ELEMENT)			;;A symbol(i.e. statement label)
+	   (SETQ LOC-LIST (CONS (LIST ELEMENT LOC-PTR) LOC-LIST));;add entry to LOC-LIST
+	   (SETQ LAST-SYMBOL-LOC LOC-PTR))	;;Save, in case numeric labels below
+
+	  ((EQ (CAR ELEMENT) 'LOC)		;;Explicit LOC statement
+	   (SETQ LOC-PTR (CADR ELEMENT)))
+
+	  ((EQ (CAR ELEMENT) 'ROUND-DOWN)	;;ROUND DOWN to previous octal-work boundry.
+	   (SETQ LOC-PTR (LOGAND LOC-PTR 770)))	;;USED IN LXB AND VXB CASES ONLY
+
+	  ((EQ (CAR ELEMENT) 'DISPATCH-TABLE)	;;Set LOC-PTR next legal dispatch table base.
+	   (SETQ LOC-PTR (+ 16. LOC-PTR		;;USED IN COL CASE ONLY
+			    (LOGAND LOC-PTR 760))))
+	  (T					;;A real instruction - just update LOC-PTR
+	   (SETQ LOC-PTR (+ LOC-PTR DEFAULT-STEP))))))
+
+;;looks up a loc symbol in the LOC-LIST
+(DEFUN GET-SYMBOL-LOC (SYMBOL &AUX TEMP)
+  (SETQ TEMP (CADR (ASSQ SYMBOL LOC-LIST)))
+  (COND((EQ TEMP NIL)
+	(FORMAT NIL "~A is undefined")
+	(SETQ TEMP 0)))					;;Returns 0 for undefined to prevent
+  TEMP)							;;trapping
+
+;;picks off the branch field(either a number of a symbol)and returns a number.  Used by
+;;ASSEMBLE-INSTRUCTION.
+(DEFUN GET-BRANCH-ADR (ILIST)
+  (IF (NUMBERP (CADR ILIST))				;;Absolute branch address
+      (CADR ILIST)
+    (GET-SYMBOL-LOC (CADR ILIST))))			;;Symbolic branch address
+							;;Look-up LOC value in LOC-LIST
+(DEFUN ASSEMBLE-SECOND-PASS (SOURCE-LIST)
+  (SETQ LOC-PTR 0)
+  (SETQ LAST-SYMBOL-LOC 0)
+  (MAPCAR (FUNCTION ASSEMBLE-SLIST-ELEMENT) SOURCE-LIST))
+  
+;;This function interprets each source list element, and calls ASSEMBLE-INSTRUCTION, except
+;;in the case of loc-symbols(statement labels), LOC statements(pseudo-ops), and numerics
+;;(essentially relative location statements).  In the exceptional cases, NIL is returned,
+;;these being discarded by the function which creates the PROM arrays.  Otherwise the function
+;;returns a pair: (<location in PROM> <binary value of instruction>).
+;;The function also maintains the LOC-PTR.  Numeric(relative)labels force the LOC-PTR to
+;;(+ LAST-SYMBOL-LOC <numeric>).  This allows instructions in dispatch tables to be placed
+;;on any word boundry.  AFTER each "real instruction" has been translated into a loc/value
+;;pair, the LOC-PTR is updated to the next "default step" boundry.
+;;HOWEVER, in the case where the default step is > 1(LXB and VXB), after assembling the
+;;last entry in a dispatch table, the LOC-PTR is left pointing too far ahead, and on an
+;;illegal boundry.  Therefore, FOR THE LXB AND VXB CASES ONLY, dispatch tables must be
+;;followed by a ROUND-DOWN statement. In the COL case, dispatch tables must be PRECEDED by
+;;a DISPATCH-TABLE instruction.  This is because dispatch tables for COL must be on hex word
+;;boundries(there are no restrictions for other instructions.  In the LXB and VXB cases most
+;;instructions are on octal boundries.  The dispatch tables occupy octal blocks.
+(DEFUN ASSEMBLE-SLIST-ELEMENT (ELEMENT &AUX TEMP) ;;LAST-SYMBOL-LOC
+  (COND	 ((NUMBERP ELEMENT)			;;A numeric label.  This is interpreted
+	  (SETQ LOC-PTR (+ LAST-SYMBOL-LOC ELEMENT));;as relative to last symbol.
+	  NIL)
+	 ((ATOM ELEMENT)			;;A symbol(i.e. statement label)
+	  (SETQ LAST-SYMBOL-LOC LOC-PTR)	;;Save, in case numeric labels below
+	  NIL)					;;need to refer to this symbol.
+	 ((EQ (CAR ELEMENT) 'LOC)		;;Explicit LOC statement
+	  (SETQ LOC-PTR (CADR ELEMENT))
+	  NIL)
+	 ((EQ (CAR ELEMENT) 'ROUND-DOWN)	;;Set LOC-PTR to previous octal-work boundry.
+	  (SETQ LOC-PTR (LOGAND LOC-PTR 770))	;;USED IN LXB AND VXB CASES ONLY
+	  NIL)
+	 ((EQ (CAR ELEMENT) 'ROUND-UP)		;;Set LOC-PTR next hex-word boundry.
+	  (SETQ LOC-PTR (+ 16. LOC-PTR		;;USED IN COL CASE ONLY
+			   (LOGAND LOC-PTR 760)))
+	  NIL)
+	 (T					;;A real instruction. Assemble it and
+	  (SETQ TEMP (FUNCALL ASSEMBLE-INSTRUCTION ELEMENT));;save put it in TEMP.
+	  (SETQ LOC-PTR (+ LOC-PTR DEFAULT-STEP));;Now update LOC-PTR		<----|
+	  TEMP)))				;;Return the value TEMP(made BEFORE "+")
+						;;(NIL returned by other consequent forms).
+
+;;LXB CSM ASSEMBLER
+
+;;LXB command bit specs:
+(DEFCONST SEND-ACK (ASH 1 0))
+(DEFCONST CLK-DO (ASH 1 1))
+(DEFCONST CLK-CREG (ASH 1 2))
+
+(DEFCONST CLK-WAR (ASH 1 3))				;;obselete
+(DEFCONST CLK-RAR (ASH 1 4))				;;obselete
+(DEFCONST LOAD-RAR (ASH 1 5))				;;obselete
+
+(DEFCONST CLK-ADR (ASH 1 4))
+(DEFCONST LOAD-ADR (ASH 1 5))
+(DEFCONST CLK-UREG (ASH 1 6))
+(DEFCONST XBUS-WR (ASH 1 7))
+(DEFCONST SET-VALID (LOGNOT (ASH 1 8.)))		;;active low
+(DEFCONST CLR-VALID (ASH 1 9.))
+(DEFCONST CLR-LBUS-WAIT (ASH 1 10.))
+(DEFCONST HOLD-ACK (ASH 1 11.))
+(DEFCONST DI-TO-LBUS (LOGNOT (ASH 1 12.)))		;;active low
+(DEFCONST STATUS-TO-LBUS (LOGNOT (ASH 1 13.)))		;;active low
+(DEFCONST UNET-TO-LBUS (LOGNOT (ASH 1 14.)))		;;active low
+(DEFCONST SET-XBUS-RQ (ASH 1 15.))
+
+;;;;;LXB PROGRAMMING NOTES
+
+;;BRANCHING:
+;;The program area is divided into 8 word(24-bit)blocks.  There is restricted access into each
+;;block, as follows.  The first word of each block can be branched to by a BRANCH instruction.
+;;The branch PROM must loaded so as to force 000B into BRANCH-ADR<2-0>.  Any block, can
+;;be the target of an 8-way TEST.  In this case, the branch address field of the TEST is the
+;;first word of the block.
+;;There is an INC instruction, for convenience.  It actually assembles into a BRANCH.
+;;
+;;PHYSICAL LOCATIONS OF INSTRUCTIONS:
+;;Except for DISPATCH tables(for multiway branches), instructions always must be on octal word
+;;boundries.  Other locations can only be branched to by TEST's.  The LOC pseude-op can be
+;;used to keep instructions on legal boundries, or place them at particular locations.
+;;
+;;INSTRUCTION FORMAT:
+;;BRANCH-TYPE<1-0> BRANCH-ADR<8-3>U-OP....U-OP.  For BRANCH, BRANCH-ADR<2-0> is
+;;forced to 000B by the 2Kx4 PROM.  The remaining three branch types are relegated to TEST's.
+
+;;One, TEST-PENDING, is used in the idle loop, and elsewhere, to branch on the various
+;;"pending" conditions.  It has eight possible branch results:
+;;			0 - nothing pending
+;;			1 - map write pending
+;;			2 - map read pending(pre-fetching is OFF)
+;;			3 - map read pending, address MATCH(pre-fetching is ON)
+;;			4 - map read pending, no address MATCH      "
+;;			5 - read or write to XBUS control area
+;;			6 - read or write to CREG buffers
+;;			7 - read or write to UNET buffers
+
+;;TEST-ACK-PENDING is similar to TEST-PENDING, except that it factors in XBUS ACK.
+;;It allows the code to save a cycle in switching between waiting for ACK, and asserting
+;;XBUS RQ in time to get the next PROC window(for the 8-bit Frame Grabber board):
+;;			0 - *ACK & nothing pending
+;;			1 - *ACK & MAP READ pending
+;;			2 - *ACK & something else pending
+;;			3 - ACK & MAP WRITE pending
+;;			4 - ACK & MAP READ, MATCH pending
+;;			5 - ACK & MAP READ, NO MATCH pending
+;;			6 - reserved(error for now)
+;;			7 - ACK & anything else.
+
+;;TEST-ACK-RW is used to test ACK by itself and READ/WRITE.It is really a four-way branch:
+;;			0 - *ACK & READ
+;;			1 -  ACK & READ
+;;			2 - *ACK & WRITE
+;;			3 -  ACK & WRITE
+;;			4 - Should never be generated by PROM
+;;			5 - 		"
+;;			6 - 		"
+;;			7 - 		"
+;;
+;;The following function converts a single instruction list(ILIST)into binary.  Upon entry,
+;;LOC-PTR is pointing to the position in PROM into which the instruction will be loaded.
+;;The binary instruction is constructed in a buffer called I-BUF.
+;;The function returns a list of two elements:  (LOC-PTR I-BUF)
+;;First, the BRANCH-TYPE symbol is tested, and the proper value inserted in the BRANCH-TYPE
+;;field.  In the case of all but INC, the 2nd field will be numeric or symbolic branch adr.
+;;The resulting number is inserted in I-BUF.
+;;At the same time U-OP's that are active-low are pre-set to one.
+;;Then the remaining elements in ILIST(if any) are interpreted as individual U-OP's.  The
+;;active-low cmd's being checked first, and then the active-high's. 
+(DEFUN ASSEMBLE-LXB-INSTRUCTION (ILIST
+				 &AUX I-BUF)
+  (SELECTQ (CAR ILIST)				;;Deposit BRANCH-TYPE field
+						;;and initialze other fields to
+						;;inactive state
+    (BRANCH (SELECTQ (LDB 0003 (GET-BRANCH-ADR ILIST))
+	      (0
+	       (SETQ I-BUF (LOGIOR (ASH (DPB 0 0602 (LDB 0306 (GET-BRANCH-ADR ILIST))) 16.)
+				   70400))	;;BRANCH-TYPE = 0 - "70400" sets active lows
+	       (SETQ ILIST (CDDR ILIST)))	;;Update ILIST
+	      (OTHERWISE
+	       (FORMAT NIL "~A at LOC ~A is an illegal branch" ILIST LOC-PTR))))
+    (INC    (SETQ I-BUF (LOGIOR (ASH (DPB 0 0602 (LDB 0306 (+ LOC-PTR 8.))) 16.)
+				70400))	;;BRANCH-TYPE = 0 - "70400" sets active lows
+	    (SETQ ILIST (CDR ILIST)))		;;Update ILIST
+    (TEST-PENDING (SETQ I-BUF (LOGIOR (ASH (DPB 1 0602 (LDB 0306 (GET-BRANCH-ADR ILIST)))
+					   16.) 70400))
+		  (SETQ ILIST (CDDR ILIST)))	;;BRANCH-TYPE = 1
+    (TEST-ACK-PENDING (SETQ I-BUF (LOGIOR (ASH (DPB 2 0602 (LDB 0306 (GET-BRANCH-ADR ILIST)))
+					       16.) 70400))
+		      (SETQ ILIST (CDDR ILIST)));;BRANCH-TYPE = 2
+    (TEST-ACK-RW (SETQ I-BUF (LOGIOR (ASH (DPB 3 0602 (LDB 0306 (GET-BRANCH-ADR ILIST))) 16.)
+				     70400))
+		 (SETQ ILIST (CDDR ILIST)));;BRANCH-TYPE = 3
+    (TEST-REQ-RW (SETQ I-BUF (LOGIOR (ASH (DPB 3 0602 (LDB 0306 (GET-BRANCH-ADR ILIST))) 16.)
+				     70400))
+		 (SETQ ILIST (CDDR ILIST))))	;;BRANCH-TYPE = 3
+  (DO ((LIST ILIST (CDR LIST)))			;;cdr down the remaining elements and set or
+      ((NULL LIST))				;;clear bits as appropriate.
+    (IF (NOT (SELECTQ (CAR LIST)		;;if active-low bit, set to zero
+	       (SET-VALID (SETQ I-BUF (LOGAND I-BUF SET-VALID)))
+	       (DI-TO-LBUS (SETQ I-BUF (LOGAND I-BUF DI-TO-LBUS)))
+	       (STATUS-TO-LBUS (SETQ I-BUF (LOGAND I-BUF STATUS-TO-LBUS)))
+	       (UNET-TO-LBUS (SETQ I-BUF (LOGAND I-BUF UNET-TO-LBUS)))))
+	(SETQ I-BUF (LOGIOR I-BUF (EVAL (CAR LIST))))));;otherwise set to one
+  (LIST LOC-PTR I-BUF))
+
+
+;;;;DOWN LOADER FOR CONTROL MEMORY BOARD
+
+(DEFVAR DIRECT-MODE NIL)
+(DEFCONST UNIBUS-WRITE-FUNCTION '%UNIBUS-WRITE)
+(DEFCONST UNIBUS-READ-FUNCTION '%UNIBUS-READ)
+
+#+CADR
+(DEFUN USE-CC NIL
+  (SETQ DIRECT-MODE NIL
+	UNIBUS-READ-FUNCTION 'CC:DBG-READ
+	UNIBUS-WRITE-FUNCTION 'CC:DBG-WRITE))
+
+(DEFUN USE-DIRECT NIL
+  (SETQ DIRECT-MODE T
+	UNIBUS-WRITE-FUNCTION '%UNIBUS-WRITE
+	UNIBUS-READ-FUNCTION '%UNIBUS-READ))
+
+(DEFUN READ-GPIO ()
+  (FUNCALL UNIBUS-READ-FUNCTION 764126))
+
+(DEFUN WRITE-GPIO (DATA)
+  (FUNCALL UNIBUS-WRITE-FUNCTION 764126 DATA))
+
+(DEFUN WRITE-CSM-CTL (&OPTIONAL (DATA 0) (CLK-ADR 0) (CLK-DATA 0) (BYTE-SEL 0) (SEL-HI 0))
+  (WRITE-GPIO (DPB DATA 0011
+		   (DPB (LOGAND 1 (1+ CLK-ADR)) 1101		;;Complement bit
+			(DPB (LOGAND 1 (1+ CLK-DATA)) 1201	;;Complement bit
+			     (DPB (IF BYTE-SEL (ASH 1 BYTE-SEL)	;;If BYTE-SEL  NIL -> ash...
+				    0) 1304			;;else -> 0
+				  (DPB SEL-HI 1701 0)))))))
+
+(DEFUN CSM-WRITE-BYTE (ADDRESS DATA BYTE-SEL)
+  (WRITE-CSM-CTL ADDRESS 0 0 NIL 0)				;;load address
+  (WRITE-CSM-CTL ADDRESS 1 0 NIL 0)
+  (WRITE-CSM-CTL DATA 0 0 NIL 0)				;;load data
+  (WRITE-CSM-CTL DATA 0 1 NIL 0)
+  (WRITE-CSM-CTL 0 0 0 BYTE-SEL 0)
+  (WRITE-CSM-CTL 0 0 0 NIL 0))				;;strobe RAM
+
+(DEFUN CSM-READ-BYTE (ADDRESS BYTE-SEL)
+  (WRITE-CSM-CTL ADDRESS 0 0 NIL 0)				;;load address
+  (WRITE-CSM-CTL ADDRESS 1 0 NIL (LDB 0101 BYTE-SEL))		;;fix SEL-HI bit
+  (SELECTQ BYTE-SEL
+    (0 (LDB 0010 (READ-GPIO)))
+    (1 (LDB 1010 (READ-GPIO)))
+    (2 (LDB 0010 (READ-GPIO)))
+    (3 (LDB 1010 (READ-GPIO)))
+    (OTHERWISE (FORMAT T "~%ILLEGAL BYTE-SPEC"))))
+
+(DEFUN CSM-WRITE-RAM (ADDRESS DATA)
+  (CSM-WRITE-BYTE ADDRESS (LDB 0010 DATA) 0)
+  (CSM-WRITE-BYTE ADDRESS (LDB 1010 DATA) 1)
+  (CSM-WRITE-BYTE ADDRESS (LDB 2010 DATA) 2)
+  (CSM-WRITE-BYTE ADDRESS (LDB 3010 DATA) 3))
+
+(DEFUN CSM-READ-RAM (ADDRESS)
+  (DPB (CSM-READ-BYTE ADDRESS 3) 3010
+       (DPB (CSM-READ-BYTE ADDRESS 2) 2010
+	    (DPB (CSM-READ-BYTE ADDRESS 1) 1010
+		 (DPB (CSM-READ-BYTE ADDRESS 0) 0010 0)))))
+
+
+(DEFUN CSM-LOAD-RAM (DATA)
+  (DOTIMES (N 512.)
+    (CSM-WRITE-RAM N DATA)))
+
+(DEFUN CSM-DUMP-RAM ()
+  (DOTIMES (N 512.)
+    (FORMAT T "~%LOC ~3O:  ~11O" N (CSM-READ-RAM N))))
+
+(DEFUN RANDOM-FUNCTION (N)				;this should be a many-to-one function
+  (\ N 251.))						;into the set:{0,1,   251}(n mod 251.)
+							;251. is prime.
+
+(DEFUN CSM-RAM-ADR-TEST (&OPTIONAL LOAD &AUX D)
+  (DOTIMES (BYTE 4)
+    (IF (NOT LOAD) 
+	(DOTIMES (N 512.)
+	  (CSM-WRITE-BYTE N (RANDOM-FUNCTION N) BYTE))))
+  (IF (NOT LOAD) (FORMAT T "~%RAM LOADED"))
+  (DOTIMES (BYTE 4)
+    (DOTIMES (N 512.)
+      (SETQ D (CSM-READ-BYTE N BYTE))
+      (IF (NOT (= D (RANDOM-FUNCTION N)))
+	  (FORMAT T "~%FAILING LOCATION ~3O IN BYTE ~3O: GOT ~3O SHOULD BE ~3O"
+		  N D (RANDOM-FUNCTION N))))))
+
+(DEFUN CSM-RAM-DATA-TEST (&AUX D)
+  (DOTIMES (BYTE 4)
+    (DOTIMES (N 512.)
+      (CSM-WRITE-BYTE N 0 BYTE)
+      (SETQ D (CSM-READ-BYTE N BYTE))
+      (IF (NOT (= D 0))
+	  (FORMAT T "~%FAILING LOCATION ~3O IN BYTE ~3O:  GOT ~3O SHOULD BE ~3O"
+		  N BYTE D 0))
+      (CSM-WRITE-BYTE N 377 BYTE)
+      (SETQ D (CSM-READ-BYTE N BYTE))
+      (IF (NOT (= D 377))
+	  (FORMAT T "~%FAILING LOCATION ~3O IN BYTE ~3O:  GOT ~3O SHOULD BE ~3O"
+		  N  BYTE D 377)))))
+
+(DEFUN CSM-WRITE-READ-LOOP (ADDRESS BYTE &AUX DATA)
+  (DOTIMES (N 9.)
+    (SETQ DATA (LDB 0110 (ASH 1 N)))
+    (FORMAT T "~%WRITING ~O" DATA)
+    (CSM-WRITE-BYTE ADDRESS DATA BYTE)
+    (FORMAT T "~%READING ~O" (CSM-READ-BYTE ADDRESS BYTE))
+    (FORMAT T "~%~%")
+    (TYI)))
+
+;Use this function for creating PROM loading arrays.
+(DEFUN LOAD-CSM-ARRAYS (OBJECT-LIST ARRAY0 ARRAY1 ARRAY2 ARRAY3
+			&AUX ELEMENT ADDRESS DATA)
+  (FILLARRAY ARRAY0 '(0))				;;default to virgin state of PROM
+  (FILLARRAY ARRAY1 '(0))
+  (FILLARRAY ARRAY2 '(0))
+  (FILLARRAY ARRAY3 '(0))
+  (DO ((L OBJECT-LIST (CDR L)))
+      ((NULL L))
+    (SETQ ELEMENT (CAR L))
+    (COND (ELEMENT					;;If ELEMENT not NIL, interpret is as
+	   (SETQ ADDRESS (FIRST ELEMENT)		;;an (address data) pair, and write
+		 DATA (SECOND ELEMENT))			;;bytes into the corresponding arrays.
+	   (ASET (LDB 0010 DATA) ARRAY0 ADDRESS)
+	   (ASET (LDB 1010 DATA) ARRAY1 ADDRESS)
+	   (ASET (LDB 2010 DATA) ARRAY2 ADDRESS)
+	   (ASET (LDB 3010 DATA) ARRAY3 ADDRESS)))))
+
+;Use this function for loading CSM RAM's.
+(DEFUN DOWN-LOAD-CSM (&OPTIONAL (OBJECT-LIST CSM-OBJECT) (ALREADY-LOADED NIL)
+		      &AUX ELEMENT ADDRESS DATA READ-DATA D0 D1 D2 D3)
+  (COND ((NOT ALREADY-LOADED)
+	 (DOTIMES (N 512.)				;;First load RAM's with default
+	   (CSM-WRITE-RAM N DEFAULT-INSTRUCTION))
+	 (DO ((L OBJECT-LIST (CDR L)))			;;Then process OBJECT-LIST
+	     ((NULL L))
+	   (SETQ ELEMENT (CAR L))
+	   (COND (ELEMENT				;;If ELEMENT not NIL, interpret is as
+		  (SETQ ADDRESS (FIRST ELEMENT)		;;an (address data) pair, and write
+			DATA (SECOND ELEMENT))		;;bytes into the corresponding RAM's.
+		  (CSM-WRITE-BYTE ADDRESS (LDB 0010 DATA) 0)
+		  (CSM-WRITE-BYTE ADDRESS (LDB 1010 DATA) 1)
+		  (CSM-WRITE-BYTE ADDRESS (LDB 2010 DATA) 2)
+		  (CSM-WRITE-BYTE ADDRESS (LDB 3010 DATA) 3))))))
+  (DO ((L OBJECT-LIST (CDR L)))				;;Now check CSM
+      ((NULL L))
+    (SETQ ELEMENT (CAR L))
+    (COND (ELEMENT					;;If ELEMENT not NIL, interpret is as
+	   (SETQ ADDRESS (FIRST ELEMENT)		;;an (address data) pair
+		 DATA (SECOND ELEMENT)
+		 D0 (CSM-READ-BYTE ADDRESS 0)		;;Read in 4 bytes from CSM
+		 D1 (CSM-READ-BYTE ADDRESS 1)
+		 D2 (CSM-READ-BYTE ADDRESS 2)
+		 D3 (CSM-READ-BYTE ADDRESS 3)
+		 READ-DATA (DPB D0 0010			;;assemble as a word
+				(DPB D1 1010
+				     (DPB D2 2010
+					  (DPB D3 3010 0)))))
+	   (IF (NEQ DATA READ-DATA)			;;check
+	       (FORMAT T "~%Address ~3O got ~3O should be ~3O" ADDRESS READ-DATA DATA))))))
