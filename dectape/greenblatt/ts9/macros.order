@@ -1,0 +1,306 @@
+		** MACROS ORDER  8/22/76 **
+
+	This file documents the macro library stored in MRC;MACROS >
+on AI, ML and MC.  Favorable comments should be sent to MRC@AI.
+
+	MACROS is a macro library designed to enhance [1] the pseudo-
+operations in MIDAS, [2] the op-code set in MIDAS, [3] the predefined
+symbol set.  MACROS is offered as part(but by no means all!) of the
+answer to the problem of producing structured, readable MIDAS code.
+
+	MACROS is based on part on DEC's MACTEN macro library and on
+the extensive work I did to MACTEN to make many of the macros work.  Other
+parts of MACROS are unique to this package.
+
+	MACROS is logically divided into several sections.  Each
+section is documented separately, with an explanation of the contents
+within.
+
+		** SECTION 1 -- Introduction **
+
+	Section 1 deals with utility functions to MACROS, and establishing
+a MIDAS environment for them.  In any program that uses MACROS, there are
+two differences in how expression formats are treated.  Specifically, the
+formats {A,} and {A,B} treat A like an accumulator rather than as a half-
+word.
+
+	The remainder of section 1 records the environment at assembly time.
+Specifically, the assembly date and time in .RDATIM format are kept in
+%ASTIM and %ASDAT, and the FN2 of the source is remembered in %VERSION.
+This ensures that even if the program does not save these values, they will
+still be available for examination in the symbol table.
+
+		** SECTION 2 -- PDP-10 fields and instructions **
+
+	Section 2 contains masks for the various fields in a PDP-10 word, and
+also defines some instruction aliases for various instruction options.
+
+	%INFIN	:= infinity, the largest positive integer
+	%MINFI	:= minus infinity, the largest negative integer(sign bit only)
+	%LHALF	:= left halfword mask
+	%RHALF	:= right halfword mask
+	%FWORD	:= fullword mask
+	%ICOPC	:= mask for the operation code in a regular instruction
+	%ICACF	:= mask for the accumulator field in a regular instruction
+	%ICIOP	:= mask for the operation code in an I/O instruction
+	%ICIDV	:= mask for the device channel number in an I/O instruction
+	%ICIND	:= mask for the indirect addressing bit in any instruction
+	%ICIDX	:= mask for the index field in any instruction
+	%ICADR	:= mask for the address field in any instruction
+
+	JFOV <address>
+		jump if floating overflow
+	JCRY1 <address>
+		jump if carry over bit 1(overflow into sign bit)
+	JCRY0 <address>
+		jump if carry over bit 0(numeric overflow)
+	JCRY <address>
+		jump if carry over bit 0 or 1
+	JOV <address>
+		jump if overflow condition true
+	PORTAL <address>
+		jump, entering a concealed segment(not used on ITS!)
+	JRSTF <address>
+		jump, restoring PC flags from the effective address
+*	HALT <address>
+		jump, stopping the processor
+*	JEN <address>
+		jump, enabling the PI system and entering user mode
+	MAP <ac>,<address>
+		map an address and return data in accumulator
+	RSW <address>
+		read value of data switches
+	SLITE <address>
+		display data on data lights
+	PJRST <address>
+		replaces a PUSHJ ? POPJ combination
+	PJRSTF <address>
+		similar, but restores PC flags from the effective address
+	PJSP <ac>,<address>
+		similar, but saves the current PC in the accumulator
+	PJUMPL <ac>,<address>
+		replaces a JUMPL <ac>,[PUSHJ ? POPJ]
+	PJMPLE, PJUMPN, PJUMPG, PJMPGE
+		all are for the general form JUMP?? <ac>,[PUSHJ ? POPJ]
+	SAVE <address>
+		save contents of effective address on main stack
+	RETR <address>
+		retrieve contents of effective address from main stack
+	CALL <subroutine>
+		save current PC on main stack and jump to subroutine
+	RETURN
+		retrieve PC from main stack
+
+(* indicates hardware privileged instructions)
+
+		** SECTION 3 -- General Pseudo-ops **
+
+	This section consists of macros that are extensions to the MIDAS
+pseudo-operations, but do not manipulate bytes or text.
+
+	TMPLOC <address>,<expression>
+		causes the value of <expression> to be generated in the
+		specified location, leaving the value of . unaffected.
+
+	ND. <symbol definition>
+		performs the symbol definition if and only if the symbol
+		is not defined.  This is useful for assembly switches and
+		accumulator definitions.
+
+	ACDEF. <accumulator list>
+
+		defines the specified symbols as consecutive accumulators, starting
+		at AC 1.
+
+	FLAG.
+		initialize the FLAG. mechanism.  The first bit assigned will be
+		bit 0.
+
+	FLAG. <bit-name>
+		define the specified name to be a bit name with the value being
+		the next free flag bit.  By using this macro, flags are dynamically
+		assigned and can be removed at any time without leaving holes in
+		the flags register.  An error message is generated if all the
+		available flags have been assigned already, or if the mechanism
+		has not been initialized first.
+
+		** SECTION 4 -- Byte manipulation pseudos **
+
+	These macros are extensions to the MIDAS byte manipulation pseudo-ops.
+Their purpose is to manipulate bytes or masks being used by the program.  This
+section also contains some ASCII and SIXBIT masks generated by these macros.
+
+	POINT. <byte length>,<address>,<byte position>
+		returns a byte pointer for the byte at the specified address
+		of the specified length and with the specified position.  The
+		length and position arguments are in decimal(!!).  If the
+		byte position argument is omitted, the default is the byte
+		previous to the word(ie, an ILDB pointer).
+
+	WID. <mask>
+		returns the width(number of bits) of the specified mask.
+
+	POS. <mask>
+		returns the bit position of the rightmost bit of the
+		specified mask.
+
+	MASK. <width>,<position>
+		returns a mask of the specified width with its rightmost
+		bit at the specified position.
+
+	RGHBT. <mask>
+		returns the rightmost bit of the specified mask.
+
+	LFTBT. <mask>
+		returns the leftmost bit of the specified mask.
+
+	FILIN. <mask>
+		returns a mask with ones insertedfrom the leftmost bit of
+		the specified mask to the rightmost, ie, fill in the holes
+		in the mask.
+
+	INSVL. <value>,<mask>
+		returns a word with the specified value inserted in the
+		specified mask.  This is an EXTEMELY useful macro if you
+		know how to use it!!
+
+	RJUST. <mask>
+		returns the mask, right-justified(ie, bit 35. = 1 unless mask = 0)
+
+	LJUST. <mask>
+		returns the mask, left-justified(ie, bit 0 = 1 unless mask = 0)
+
+		** SECTION 5 -- Text Accumulation pseudos **
+
+	These macros facilitate the accumulation of text for generation later
+in the cases where constants are not adequate.  For example, a text item
+may be longer than the maximum allowed for constants, or, perhaps, the
+text to be accumulated is to be generated at a separate point from the
+constants area, at some specific label.  This text accumulation mechanism
+provides the necessary extension to MIDAS to permit this.
+
+	CINFO.
+		clears and/or initializes the mechanism.  This should be
+		used before any of the other text macros are used, or if
+		the mechanism is to be recycled and used again.
+
+	REDEF. [<text-line>]
+		inserts the specified text line at the end of the accumulated
+		text.  The brackets are essential, since it was decided not
+		to use wholelineness.  A CRLF is added at the end of each
+		line.
+
+	INFO.
+		dumps out the text accumulated so far.  Does not clear the
+		accumulated text from the mechanism(CINFO. is required to do
+		that).
+
+		** SECTION 6 -- Higher-level instructions **
+
+	This final section covers the higher-level type instructions.
+These instructions extend the MIDAS language from being a machine language
+to a lower-level programming language.
+
+	The primary problem tackled by these macros is the question of
+immediates.  On the PDP-10, there is no one way to perform an immediate
+operation.  Depending upon whether the quantity is half or full word,
+negative or positive, all affect the programmer's choice of which
+instruction he or she uses.  These macros place the burden of selecting
+the proper instruction where it belongs, on the assembler.
+
+	Much effort has been spent on making these macros as clever as
+possible in generating as good code as possible, and also in making them
+appear not to be macros at all, but machine instructions.   Hopefully, for
+the large part, I have succeeded.
+
+	SYSCAL <system call name>,[<arguments>]
+		generates code for the specified symbolic system call using
+		the specified arguments.
+		The following symbols exist for the SYSCAL opcodes:
+
+		%CLARG	:= argument
+		%CLARI	:= immediate argument
+		%CLVAL	:= value return
+		%CLERR	:= error code
+		%CLCTL	:= control
+		%CLCTI	:= immediate control
+
+		CLARG. <value>
+			generates either %CLARG or %CLARI on the ambigious
+			immediate value specified.
+		CLCTL. <value>
+			similar, for %CLCTL and %CLCTI.
+
+	UGET <system variable>,<location>
+		generates code to read the contents of the specified system
+		variable into the specified location.
+
+	USET <system variable>,<location>
+		generates code to set the specified system variable for this
+		job to the contents of the specified location.
+
+	USETI <system variable>,<value>
+		generates code to set the specified system variable for this
+		job to the specified value.
+
+	PEEK <ac>,<system location name>
+		generates code to load the contents of the specified ITS location
+		into the specified accumulator.
+
+	INSIRP <instruction>,[<address-list>]
+		generates code to perform the specified instruction on all the
+		specified addresses.  The code is NOT optimized.
+
+	JUMPPT <ac>,<PDP-6 routine>,<KA-10 routine>,<KI-10 routine>,<KL-10 routine>
+		Jump depending upon processor type.  The accumulator is a
+		scratch AC that will be clobbered, and may not be AC 0.
+
+	STORE <value>,<first location>,<last location>,<temp ac>
+		"STORE block".  Load all locations in the block bounded by
+		the specified locations with the specified constant.  The
+		accumulator argument is a scratch AC that will be smashed
+		unless only one location is being loaded, and the value
+		of the constant is either -1, 0, or 1.  If the ac argument
+		is not specified, 0 is used.  If the last location is not
+		specified, just the single location is loaded with the value.
+
+	MOVX <ac>,<value>
+		"MOVE ambigious".  Load the accumulator with the specified
+		value.
+
+	CAX?? <ac>,<value>
+		"Compare ambigious".  Where ?? is either <blank>, L, LE, E,
+		G, GE, N, or A; compare the accumulator with the specified
+		value and skip the next instruction under the condition ??.
+
+	ADDX <ac>,<value>
+		"ADD ambigious".  Add the specified value to the accumulator.
+
+	SUBX, MULX, DIVX, IMULX, IDIVX, FADRX, FSBRX, FMPRX, FDVRX
+		analogous to ADDX.
+
+	TXyz <ac>,<value>
+		"Test ambigious".  Where y is either N, Z, O, or C; and z is
+		either E, N, <blank>, or A; test the accumulator under the
+		specified mask value, apply the y function to the masked bits,
+		and skip the next instruction under the condition z.
+
+	IORX <ac>,<value>
+		"Inclusive OR ambigious".  Inclusive OR the accumulator with
+		the specified mask value.
+
+	ANDX <ac>,<value>
+		"AND ambigious".  AND the accumulator with the specified mask
+		value.
+
+	XORX <ac>,<value>
+		"Exclusive OR ambigious".  Exclusive OR the accumulator with
+		the specified mask value.
+
+	EQVX <ac>,<value>
+		"Equivalence ambigious".  Equivalence the accumulator with the
+		specified mask value.
+
+
+		*** The End ***
+aaaaaaaaaaaaaaaaaa*8Є/па{ю)p  ю&  ю-(  ю.7**ю"*;ю(_ ;ю)   ю/8  ю;@  ю 0  ю8_*>=  ;`  

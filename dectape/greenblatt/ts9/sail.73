@@ -1,0 +1,466 @@
+	title SAIL super-TELNET program
+	subttl Definitions, etc.
+
+;  Special display TELNET to SAIL for MRC.  Handles both old and new network protocols
+; (or rather, the codes that are really necessary).
+
+; Load up the MRC macro library
+
+.insrt MRC;MACROS
+
+; Assembly parameters
+
+nd. patlen==50.	; patch area
+nd. pdllen==20.	; length of push-down stack
+nd. hstadr==11.	; host address of SAIL
+nd. iniskt==197.; initial foreign socket(1.=old TELNET, 23.=new TELNET, 197=Tovar)
+nd. cmdesc==^^	; escape character for commands
+
+ife iniskt-1.	printx/Old TELNET protocol/
+ife iniskt-23.	printx/New TELNET protocol/
+ife iniskt-197.	printx/Tovar TELNET/
+ifn <iniskt-1.>*<iniskt-23.>*<iniskt-197.>	printx/Unknown(assuming new TELNET)/
+printx/
+/
+
+; AC definitions
+
+acdef. [a b c d e tt i q j r w h t u]
+
+; I/O channels
+
+acdef. [icp tti tto nti nto dsk]
+
+; Macro to output an ASCII string
+
+define type string
+	move a,[point. 7,[ascii\string\]]
+	movx b,<.length\string\>
+	syscal SIOT,[clarg. tto
+		     a ? b]
+	 .lose 1000
+termin
+
+	subttl Data area and TELNET command definitions
+
+	loc 100
+
+timout:	60.*60.				; timeout time in 60th's of a second
+icpst:	-1				; -1 => just opened
+icpdne:	3				; 0 => ICP done
+clrscn:	-1				; -1 => clear screen before outputting anything
+iacflg:	block 1				; -1 => SAIL sending network command
+willcd:	block 1				; -1 => WILL code sent after IAC
+retoin:	block 1				; -1 => return to net input routine
+dkosw:	block 1				; -1 => output to disk
+silnce:	block 1				; -1 => silence output
+lclrcv:	block 1				; local receive socket
+lcltrn:	block 1				; local transmit socket
+forrcv:	block 1				; foreign receive socket
+fortrn:	block 1				; foreign transmit socket
+ttyst1:	block 1				; this job's TTYST1 variable
+ttyst2:	block 1				; TTYST2 variable
+ttysts:	block 1				; TTYSTS variable
+locsoc:	block 1				; generated local icp socket
+rch:	block 10			; RCHST block
+pdl:	block pdllen			; push down stack
+pat:	block patlen			; patch area
+patch==pat				; beginning of free patch area
+
+; TELNET commands for the new protocol
+
+se==240.				; Subnegotiation End
+nop==241.				; No OPeration
+dm==242.				; Data Mark
+brk==243.				; BReaK
+ip==244.				; Interrupt Process
+ao==245.				; Abort Output
+ayt==246.				; Are You There
+ec==247.				; Erase Character
+el==248.				; Erase Line
+ga==249.				; Go Ahead
+sb==250.				; SuBnegotiation(lowest code taking option byte)
+will==251.				; indicate WILL perform operation
+wont==252.				; indicate WONT perform operation
+do==253.				; request to DO perform operation
+dont==254.				; request to DONT perform operation
+iac==255.				; Interpret As Command
+
+	subttl Start of program
+
+	tmploc 42,tsint			; set up interrupt trapping
+
+SAIL:	syscal OPEN,[clctl. .uii	; open in unit image input
+		     clarg. tti		; on TTY input channel
+		     clarg. ('TTY)]	; device TTY
+	 .lose 1000			; can't open TTY input
+	syscal OPEN,[clctl. .uio\%tjctn\%tjdis; open unit image output w/ ^P, no line
+		     clarg. tto		; continuation, on TTY output channel
+		     clarg. ('TTY)]	; device TTY
+	 .lose 1000			; can't open TTY output
+	movx p,pdl(,,-pdllen)		; load push down pointer
+	peek a,IMPUP			; look at location IMPUP in ITS
+	jumpg a,netded			; net dead if IMPUP>0
+	syscal TTYGET,[clarg. tto	; get TTY status variables on TTO channel
+		       %clval ttyst1	; first set of character groups
+		       %clval ttyst2	; second set of character groups
+		       %clval ttysts]	; TTY control status
+	 .lose 1000			; can't read TTY status
+	movx a,%tgimg_24.		; disable image mode echoing for ^I, ^J
+	andcam a,ttyst2			; turn bit off in TTYST2
+	movx a,(%tssai\%tsmor)		; enable SAIL char set, disable **More**
+	iorm a,ttysts			; turn bits on in TTYSTS
+	syscal TTYSET,[clarg. tto	; get TTY status variables on TTO channel
+		       %clarg ttyst1	; first set of character groups
+		       %clarg ttyst2	; second set of character groups
+		       %clarg ttysts]	; TTY control status
+	 .lose 1000			; can't set TTY status
+	useti MASK,%pirlt		; enable clock break interrupts
+	useti MSK2,1_tti\1_icp\1_nti\1_nto; enable word 2 interrupts
+	movx j,timout(600000)		; load up timeout setting
+	.realt j,			; and start the realtime clock
+	 jfcl				; ignore failure
+
+; (continued on next page)
+
+	subttl ICP
+
+	syscal OPEN,[clctl. .uii\40050	; open on gensymmed socket, 32 bits
+		     clarg. icp		; on ICP channel
+		     clarg. ('NET)	; NET: device
+		     clarg. %fword	; let ITS pick local socket
+		     clarg. iniskt	; initial foreign socket
+		     %clari hstadr]	; foreign host address
+	 jrst analy			; can't, say why and die
+	skipe icpst			; has SAIL done its part of ICP?
+	 .hang				; no, wait until it has
+	move j,locsoc			; get the generated local socket
+	addx j,2			; compute receive end
+	movem j,lclrcv			; save for open
+	addx j,1			; compute local transmit end
+	movem j,lcltrn			; save for open
+	.iot icp,j			; find out what SAIL is listening at
+	movem j,forrcv			; save for open
+	addx j,1			; find out what SAIL is talking on
+	movem j,fortrn			; save for open
+	syscal OPEN,[clctl. 40\.uai	; open in single ASCII mode
+		     clarg. nti		; on net input channel
+		     clarg. ('NET)	; NET: device
+		     %clarg lclrcv	; local receipt socket
+		     %clarg fortrn	; socket to me!
+		     clarg. hstadr]	; SAIL's host address
+	 jrst analy			; can't, say why
+	syscal OPEN,[clctl. 40\.uao	; open in single ASCII mode
+		     clarg. nto		; on net output channel
+		     clarg. ('NET)	; NET: device
+		     %clarg lcltrn	; local tranmission socket
+		     %clarg forrcv	; foreign receipt socket
+		     clarg. hstadr]	; connect transmit socket to SAIL
+	 jrst analy			; can't, say why
+	.close icp,			; close off ICP socket
+	jfcl				; wake up never
+	.hang				; and go to sleep
+
+; Here when network connection loses.  Say why
+
+analy:	move j,$ercod			; get socket state
+	caxe j,%ensdr			; SAIL down?
+	 jrst analy1			; no, maybe the net is all jammed
+	type [Error; SAIL is dead.]	; yes, complain with proper message
+	.break 16,160000		; and suicide
+analy1:	caxe j,%efldv			; all sockets taken?
+	 .lose				; BARF; have DDT say what it is then
+	type [Error; No free net sockets]; complain about no free sockets
+	.break 16,160000		; and suicide
+
+	subttl Interrupt server
+
+; Here when an interrupt occurs; determine cause and dispatch to appropriate server
+
+tsint:	0				; interrupt status word
+	0				; interrupt PC
+	skipl u,tsint			; clock interrupt?
+	 jrst tsfw			; yes, SAIL died
+	txz u,%minfi			; turn off channel interrupt bit
+tsint1:	txze u,1_tto			; TTO interrupt?
+	 jrst intglx			; yes, glitch
+	txze u,1_icp			; ICP interrupt?
+	 jrst icpint			; yes, service it
+	txze u,1_tti			; TTI interrupt?
+	 jrst ttiint			; yes, service it
+	txze u,1_nti			; NTI interrupt?
+	 jrst ntiint			; yes, service it
+	txze u,1_nto			; NTO interrupt?
+	 jrst ntoint			; yes, service it
+intglx:	type [Error; Spurious interrupt]; report glitched interrupt
+	.lose				; don't destroy core image for debugging
+
+; Here to return from an interrupt
+
+tsret:	skipl retoin			; return to NTI interrupt routine?
+	 jrst tsret1			; no, dismiss interrupt
+	store %zeros,retoin		; clear return to NTI routine flag
+	jrst ntirtn			; and return back to NTI
+
+tsret1:	jumpn u,tsint1			; if any more ints, service them too
+	.dismiss tsint+1		; else dismiss them
+
+; Here if a timeout occurs(clock interrupt)
+
+tsfw:	type [Error; SAIL not responding.]; complain that SAIL crashed
+	.break 16,160000		; and suicide
+
+	subttl Handle ints on ICP channel
+
+icpint:	skipl icpst			; has connection been opened?
+	 jrst cnopn			; yes, probably nothing important
+	move a,[icp,,rch]		; icp channel status to rch block
+	.rchst a,			; get channel status
+	move a,rch+1			; get local socket
+	movem a,locsoc			; and save it
+	hrre a,rch+4			; get socket state
+	jumpl a,netded			; barf if net is dead
+	caxn a,%nscli			; CLS w/ input available?
+	 jrst icpok			; yes, normal
+	caxe a,%nsinp			; input available?
+	 caxn a,%nsopn			; connection open?
+	  jrst icpok			; yes, normal conditions
+	jumpn a,intglx			; CLS received?  barf if not
+	.close icp,			; close socket here
+;	jrst closed			; and type error message
+
+; Here when connection randomly closed on me
+
+closed:	type [Error; Connection closed; Reason=]; error message
+	move a,rch+5			; get error code
+	addx a,"0			; ASCIIify
+	.iot tto,a			; type out error code
+	move a,rch+5			; get reason for closing
+	caxe a,%ncrfs			; refused?
+	 caxn a,%ncfrn			; or SAIL randomly closed connection?
+	  jrst rfsed			; yes, complain and die
+	caxn a,%ncded			; SAIL dead?
+	 jrst hstded			; yes, just found out about it
+	caxe c,%ncrst			; received a restart?
+	 caxn a,%ncinc			; incomplete transmission?
+	  jrst crashd			; yes, say we've crashed
+	type [(randomness)]		; random closing of connection
+	.break 16,160000		; and suicide
+crashd:	type [(SAIL crashed)]		; report that SAIL crashed suddenly
+	.break 16,160000		; and suicide
+hstded:	type [(SAIL is dead)]		; SAIL died since last net connection
+	.break 16,160000		; and suicide
+rfsed:	type [(SAIL is refusing)]	; maybe SAIL getting debugged?
+	.break 16,160000		; and suicide
+
+; Here if the network dies
+
+netded:	type [Error; ARPAnet dead]	; error
+	.break 16,160000		; and die
+
+; Here when indication happens of channel being open
+
+icpok:	store %zeros,icpst		; flag connection started
+	jrst tsret1			; and dismiss int
+
+; Here if ICP interrupt after ICP started okay
+
+cnopn:	move a,[icp,,rch]		; icp channel, to rch block
+	.rchst a,			; get channel status
+	hrre a,rch+4			; get socket state
+	jumpl a,netded			; if network crashed, die
+	jumpn a,tsret1			; ignore everything except CLS
+	move b,rch+5			; connection closed, find out why
+	caxe b,%ncfrn			; SAIL closed it?
+	 jrst closed			; no, lossage
+	.close icp,			; close this end
+	jrst tsret1			; and dismiss interrupt
+
+	subttl Handle ints on TTY channels
+
+ttiint:	.listen a,			; is there a character pending?
+	jumpe a,tsret			; no, dismiss interrupt
+ttint1:	.iot tti,a			; get character
+	caxn a,cmdesc			; user wants a command?
+	 jrst cmprmt			; yes, prompt for command
+chrsnd:	skipe icpdne			; ICP done?
+	 jrst tsret			; no, flush this interrupt
+	.iot nto,a			; yes, send character to SAIL
+	caxn a,^M			; got a <CR>?
+	 .iot nto,[^J]			; yes, send a linefeed also
+	.nets nto,			; force sending buffer for best response
+	jrst ttiint			; avoid timing errors by trying for another char
+
+; Here to process a command
+
+cbctbl:	"B ? wallp			; open disk file and begin output
+	"D ? proced			; DDT
+	"E ? clwalp			; close disk file
+	"Q ? [.break 16,160000]		; quit
+	"S ? status			; do a wholine at SAIL
+	"V ? verboz			; make output verbose again
+	"W ? whispr			; silence output
+	"? ? help			; help cruft
+ncbcch==<.-cbctbl>/2
+
+cmprmt:	type [SZLCommand-]		; prompt for command
+commnd:	.iot tti,a			; and hang for it
+	caxn a,cmdesc			; escape character again?
+	 jrst [	type [RL]		; restore cursor position
+		movx a,cmdesc		; reload character
+		jrst chrsnd]		; yes, send it to SAIL
+	movx b,(,,-ncbcch)		; load command table aobjn pointer
+	caxle a,"a			; lower case alphabetic?
+	 caxle a,"z			; . . .
+	  caxa				; no
+	subx a,<" >			; yes, uppercaseify
+	came a,cbctbl(b)		; got a match?
+	 aobjn b,[aoja b,.-1]		; no, try again
+	jumpge b,cmdret			; if not a command, flush it
+	.iot tto,a			; else echo the command
+	jrst @cbctbl+1(b)		; and do it
+
+	subttl Command service routines
+
+help:	type [R
+B	Begin wallpaper file
+D	DDT
+E	End wallpaper file
+Q	Quit
+S	Status of job at SAIL(does a wholine)
+V	Verbose(re-enable TTY output)
+W	Whisper(disable TTY output)
+?	this cruft
+ZLCommand-]
+	jrst commnd			; and get a command
+
+wallp:	syscal OPEN,[clctl. .uao	; open in single ASCII mode
+		     clarg. dsk		; disk channel
+		     clarg. ('DSK)	; device DSK:
+		     clarg. 'SAILOG	; FN1 of SAILOG
+		     clarg. sixbit/>/]	; generate higher version
+	 .lose 1000			; can't
+	store %fword,dkosw		; flag disk output on
+	jrst cmdret			; and return
+
+proced:	.value [asciz /:VK /]		; return to DDT
+	jrst ttiint			; and return
+
+clwalp:	.close dsk,			; terminate wallpaper file
+	store %zeros,dkosw		; flag disk output off
+	jrst cmdret			; and return
+
+status:	skipe icpdne			; ICP done?
+	 jrst tsret			; no, not ready yet
+	.iot nto,[IAC]			; send IAC
+	.iot nto,[AYT]			; send AYT (which gives wholine at SAIL)
+	.nets nto,			; force sending it out
+	jrst cmdret			; and return
+
+verboz:	store %zeros,silnce		; flag TTY output on
+	jrst cmdret			; and return
+
+whispr:	store %fword,silnce		; flag TTY output off
+	.reset tto,			; shut up the TTY
+	jrst cmdret			; and return
+
+; Here to restore cursor position after a command
+
+cmdret:	type [RL]			; restore cursor position
+	jrst ttiint			; and return
+
+	subttl Handle ints on NTI channel
+
+ntiint:	skipn icpdne			; ICP done yet?
+	 jrst ntint1			; yes
+	movx a,2			; input side is done,...
+	andcab a,icpdne			; flag input bit off
+	jumpn a,ntint1			; if just waiting for this, charge on
+	movx a,%minfi			; no, prepare to turn clock off
+	.realt a,			; and turn real time clock off
+	 jfcl				; ignore errors
+ntint1:	store %fword,retoin		; flag that I want to be returned here
+	.listen a,			; any TTI ints for me?
+	jumpn a,ttint1			; yes, service them
+	store %zeros,retoin		; no longer need to be returned here
+ntirtn:	move a,[nti,,rch]		; status of nti channel
+	.rchst a,			; get status of input socket
+	hrre a,rch+4			; get socket state
+	jumpl a,netded			; net dead?
+	jumpe a,closed			; connection randomly closed?
+	caxe a,%nscli			; CLS w/ input available?
+	 caxn a,%nsinp			; input available?
+	  jrst ntint2			; yes, go get what SAIL sent
+	jrst tsret			; no, ignore this int
+ntint2:	.iot nti,a			; gobble a character
+	jumpe a,ntiint			; flush nulls
+ife iniskt-1,[	;; old TELNET protocol
+	txze a,200			; command character?
+	 jrst ntiint			; yes, flush it
+] ;; End for old TELNET protocol
+.else [	;; new or Tovar TELNET protocol
+	skipe iacflg			; previous IAC?
+	 jrst iacsrv			; yes, service it
+	caxn a,iac			; got an IAC?
+	 store %fword,iacflg		; yes, remember that
+] ;; End for new or Tovar TELNET protocol
+ttoout:	skipe silnce			; TTO enabled?
+	 jrst dskout			; no, probably just DSK output
+	skipn clrscn			; clear screen?
+	 jrst noclrs			; no, already did it
+	.iot tto,[^P]			; ITS positioning escape code
+	.iot tto,["C]			; ...clear screen
+	store %zeros,clrscn		; flag that screen has been cleared
+noclrs:	.iot tto,a			; display character on TTY
+	caxn a,^P			; did SAIL send a ^P?
+	 .iot tto,["P]			; oh well, complete the ^P
+dskout:	skipge dkosw			; DSK output enabled?
+	 .iot dsk,a			; yes, output character to DSK
+	jrst ntiint			; and try for another character
+
+; Here to service new TELNET commands
+
+ifn iniskt-1,[	;; only for new or Tovar protocol
+
+iacsrv:	caxe a,IAC			; image 377?
+	 caxge a,SB			; command only take two bytes?
+	  store %zeros,iacflg		; yes, clear command mode
+	aosn willcd			; just got a WILL code?
+	 soje a,echchk			; yes, check if SAIL wants to echo
+	caxn a,WILL			; is this a WILL code?
+	 store %fword,willcd		; yes, remember that
+	caxe a,IAC			; image 377?
+	 jrst ntiint			; no, ignore it
+	jrst ttoout			; yes, output it
+echchk:	.iot nto,[IAC]			; send IAC
+	.iot nto,[DO]			; send DO
+	.iot nto,[1]			; send ECHO(comfirm wanting echoing)
+	jrst ntiint			; and try for another character
+
+]  ;; End for new or Tovar protocol
+
+	subttl Handle ints on NTO channel
+
+ntoint:	skipn icpdne			; ICP done yet?
+	 jrst ntoin1			; yes
+	movx a,1			; well, output side is...
+	andcam a,icpdne			; so turn output bit off
+	movx a,%minfi			; command to turn off real time clock
+	.realt a,			; turn clock off
+	 jfcl				; ignore error
+ntoin1:	move a,[nto,,rch]		; status of nto channel
+	.rchst a,			; get status of output socket
+	hrre a,rch+4			; get socket state
+	jumpl a,netded			; die if net crashed
+	caxe a,%nsopn			; socket open?
+	 caxn a,%nsrfn			; RFNM wait?
+	  jrst tsret			; okay, ignore that
+	jumpe a,closed			; report error if connection closed
+	 .lose				; something else...lose
+
+; Generate constants
+
+...lit:	consta				; constants
+
+	end SAIL			; *** The End ***
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Ù  # T ¸  ı` 7˝ıˇˇı  ˆ¨ 7◊ıˇˇıÉˇˇ  .T Ù 9ı’ 9>@ +  7hıé  ,8    , 4Zıé  Ù ≥ˇˇÙÄ7, 4Z,X  ıÜ 0©ıÜ 8ı@≥ˇˇ  , 4Z*`  ÙÄ9, 4Z,X  ıÜ 0©ıÜ 8,X  ıó  ˆ3Ä +  2gıè  , 2g $p  7@   $ ıÜ 0•/ ,x   ¸Ä +  8ıÉˇˇ

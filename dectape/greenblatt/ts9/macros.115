@@ -1,0 +1,516 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;									;;
+;;	MM	MM	A	CCCCCC	 RRRRRR	    OOOO     SSSS	;;
+;;	MMMM  MMMM    AA AA    CC     C	 RR    R  OO	OO  S		;;
+;;	MM  MM	MM  AA	   AA  CC	 RRRRRR	  OO	OO   SSSS	;;
+;;	MM	MM  AAAAAAAAA  CC	 RR R	  OO	OO	 S	;;
+;;	MM	MM  AA	   AA  CC     C	 RR  R	  OO	OO  S	 S	;;
+;;	MM	MM  AA	   AA	CCCCCC	 RR   R	    OOOO     SSSS	;;
+;;									;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	Subttl	General-purpose macro library
+
+; Mark Crispin, AI, February 1976; Last updated: MRC August 22, 1976
+
+;  This file contains symbolic and macro definitions that many of my programs
+; use.  It is an experiment in higher-level assembly language programming.
+;  Thanks to MSC, RMS, GLS, MOON, and RG for help in writing this package.
+
+If2 .ineof				; only read this file on pass 1
+.auxil					; don't cref this file's unused symbols
+.nstgw					; do not allow storage words
+
+Ifn 0,[					; for @ happiness
+.insrt SYSTEM;TTYDEF >
+.insrt SYSTEM;BITS >
+]
+
+; These symbols are temporaries that the user should never have to worry about.
+
+.xcref TEMP%%,FLAG%%,%ADD,%ADDI,%SUB,%SUBI,%FADR,%FADRI,%FSBR,%FSBRI
+
+; MIDAS environment alteration and recording(date, time, etc.)
+
+.format 30,2704_24.			; make A, format treat A like an ac
+.format 34,00222704_12.			; make A,B format treat A like an ac
+
+Ife .OSMIDAS-('ITS),[			; ** ITS MIDAS **
+.aop .oper@ 0,.RDATIM			; get date and time of assembly
+%ASTIM==.AVAL1				; time of assembly in SIXBIT (HHMMSS)
+%ASDAT==.AVAL2				; date of assembly in SIXBIT (YYMMDD)
+]					; ** End of ITS MIDAS **
+.else [					; ** DEC MIDAS **
+.aop mstime				; get time of assembly
+%ASTIM==.AVAL1				; time of assembly in MILLISECONDS
+.aop date				; get date of assembly
+%ASDAT==.AVAL1				; date of assembly in DEC date/time format
+]					; ** End of DEC MIDAS **
+%VERSION==.FNAM2			; version when assembled
+
+	Subttl	Instruction, field definitions
+
+; PDP-10 word field definitions
+
+%INFIN==377777777777			; infinity
+%MINFI==400000000000			; minus infinity
+%LHALF==777777000000			; left half word
+%RHALF==000000777777			; right half word
+%FWORD==777777777777			; full word
+%ZEROS==000000000000			; zeroes
+
+; Instruction fields
+
+%ICOPC==777000,,			; opcode
+%ICACF==000740,,			; ac field
+%ICIOP==700340,,			; I/O opcode
+%ICIDV==077400,,			; I/O device channel
+%ICIND==000020,,			; indirect bit
+%ICIDX==000017,,			; index field
+%ICADR==777777				; address
+
+; Special forms of PDP-10 instructions
+
+JOV=jfcl 10,				; jump on overflow
+JCRY0=jfcl 4,				; jump on carry 0
+JCRY1=jfcl 2,				; jump on carry 1
+JCRY=jfcl 6,				; jump on carry 0 or 1
+JFOV=jfcl 1,				; jump on floating overflow
+JEN=jrst 12,				; jump and enable PI system
+HALT=jrst 4,				; stop the processor
+JRSTF=jrst 2,				; jump and restore flags
+PORTAL=jrst 1,				; KI/KL gatekeeper(not used on ITS)
+MAP=257000,,				; map an address(not used on ITS)
+RSW=datai apr,				; read switches
+SLITE=datao pi,				; set program lights
+
+;  The following are used by a subroutine that calls a second
+; subroutine that is to return to the former's caller.
+
+; Instruction				Replaces
+; -----------				--------
+
+PJRST==jrst				; pushj/popj
+PJRSTF==jrstf				; pushj/popj
+PJSP==jsp				; movei .+1/pushj/popj
+PJUMPL==jumpl				; jump??/popj/pushj/popj
+PJMPLE==jumple
+PJUMPN==jumpn
+PJUMPG==jumpg
+PJMPGE==jumpge
+
+;  The following are mostly for convenience in using DDT.
+
+Ifndef P,p==17				; conventional stack pointer ac
+
+SAVE=push p,				; save value on stack
+RETR=pop p,				; retrieve value from stack
+CALL=pushj p,				; save PC on stack and jump
+RETURN=popj p,				; restore PC from stack
+
+	Subttl	General pseudo-ops
+
+; TMPLOC - assemble into a certain location
+;	tmploc loc,value
+
+Define TMPLOC ?loc=0,value=0
+ TEMP%%==. ? .==loc ? value ? .==TEMP%%
+Termin
+
+; END - terminate assembly, expunge temporary symbols
+;	end <start address>
+
+Equals %END,END				; make %END terminate assembly
+
+Define END addr
+ If2 Expunge TEMP%%,FLAG%%,%ADD,%ADDI,%SUB,%SUBI,%FADR,%FADRI,%FSBR,%FSBRI
+ %end addr
+Termin
+
+; ND. - define a symbol if it is not defined
+;	nd. symbol=value
+
+Define ND. defn
+ Irps TEMP%%,,[defn]
+  Ifdef TEMP%%,Null
+  .istop
+ Termin
+ .else defn
+Termin
+
+; ACDEF. - define consecutive accumulators, I/O channels, etc.
+; 	starting at 1.
+;	acdef. <ac-list>
+
+Define ACDEF. aclist
+ Irps TEMP%%,,[aclist]
+  nd. TEMP%%==.IRPCNT+1
+  Ifge TEMP%%-20,.err TEMP%%	Magnitude > 20
+ Termin
+Termin
+
+; FLAG. - dynamically generate a bit flag
+;	flag. flag		;to generate a flag
+;	flag.			;to initialize the mechanism
+
+Define FLAG. bit
+ Ifb bit,FLAG%%==%MINFI ? .istop
+ Ifndef FLAG%%,.err bit	Flags not initialized
+ Ife FLAG%%,.err bit	Too many flags
+ bit==FLAG%%
+ FLAG%%==FLAG%%_-1
+Termin
+
+	Subttl	Byte manipulation pseudo-ops
+
+; POINT. - MACRO-10 style point pseudo-op
+;	point. length,address,position
+
+Define POINT. ?s,addr,b=-1
+<<<<35.-.radix 10.,b>&77>_30.\<<.radix 10.,s>&77>_24.> addr>Termin
+
+; WID. - compute the width of a mask
+;	wid. mask
+
+Define WID. ?mask
+<.ldb 300600,.bp mask>Termin
+
+; POS. - compute the position of a mask
+;	pos. mask
+
+Define POS. ?mask
+<35.-.tz mask>Termin
+
+; MASK. - build a mask pointed to by point wid,loc,pos
+;	mask. width,position
+
+Define MASK. ?wid,pos
+<<<1_wid>-1>_<35.-pos>>Termin
+
+; RGHBT. - generate the rightmost bit in a mask
+;	rghbt. mask
+
+Define RGHBT. ?mask
+<mask&-mask>Termin
+
+; LFTBT. - generate the leftmost bit in a mask
+;	lftbt. mask
+
+Define LFTBT. ?mask
+<1_<35.-.lz mask>>Termin
+
+; FILIN. - fill in ones from leftmost bit of mask to rightmost bit
+;	filin. mask
+
+Define FILIN. ?mask
+<.bm .bp mask>Termin
+
+; INSVL. - position value in mask
+;	insvl. value,mask
+
+Define INSVL. ?value,mask
+<<value_.tz mask>&mask>Termin
+
+; RJUST. - right justify a mask
+;	rjust. mask
+
+Define RJUST. ?mask
+<mask_<-.tz mask>>Termin
+
+; LJUST. - left justify a mask
+;	ljust. mask
+
+Define LJUST. ?mask
+<mask_.lz mask>Termin
+
+	Subttl	Text accumulation pseudo-ops
+
+; CINFO. - macro to clear and/or initialize the text mechanism
+;	cinfo.
+
+Define CINFO.
+ Define INFO. ocruft
+  ocruft
+ Termin
+Termin
+
+; REDEF. - macro to add text to the mechanism.  It adds a <crlf>
+;	at the end.
+;	redef. [...text...]
+
+Define REDEF. ncruft
+ info. [Define INFO. ocruft
+  ocruft]ncruft
+ Termin
+Termin
+
+; INFO. - macro (hacked by CINFO. and REDEF.) to dump out the text.
+;	info.
+
+	Subttl	High-level instructions
+
+; SYSCAL - macro to generate a symbolic system call
+;	syscal call,[args]
+
+Define SYSCAL call,args
+ .call [%MINFI
+	SIXBIT/call/
+	args
+	%MINFI\%CLERR $ERCOD']
+Termin
+
+; SYSCAL op-codes
+
+%CLARG==000000,,			; argument
+%CLARI=001000,,				; immediate argument
+%CLVAL=002000,,				; value
+%CLERR=003000,,				; error
+%CLCTL=004000,,				; control
+%CLCTI=005000,,				; immediate control
+
+;  CLARG. and CLCTL. are to allow for ambigious immediates in a SYSCAL
+; argument and control argument.
+
+Define CLARG. arg
+ TEMP%%=arg
+ Ifn TEMP%%&%LHALF,%CLARG [TEMP%%]
+ .else %CLARI TEMP%%
+Termin
+
+Define CLCTL. ctl
+ TEMP%%==ctl
+ Ifn TEMP%%&%LHALF,%CLCTL [TEMP%%]
+ .else %CLCTI TEMP%%
+Termin
+
+; UGET - fetch a user variable
+;	uget name,loc,channel
+
+Define UGET var,loc,chnl
+ Ifb chnl,.suset [.R!var,,loc]
+ .else .uset chnl,[.R!var,,loc]
+Termin
+
+; USET - set a user variable
+;	uset name,loc,channel
+
+Define USET var,loc,chnl
+ Ifb chnl,.suset [.S!var,,loc]
+ .else .uset chnl,[.S!var,,loc]
+Termin
+
+; USETI - set a user variable, immediate
+;	useti name,value
+
+Define USETI var,val,chnl
+ Ifb chnl,.suset [.S!var,,[val]]
+ .else .uset chnl,[.S!var,,[val]]
+Termin
+
+; PEEK - peek at an ITS system location
+;	peek ac,name
+
+Define PEEK ac,name
+ movx ac,<squoze 0,name>
+ .eval ac,
+  .lose
+ hrli ac,ac
+ movss ac
+ .getloc ac,
+Termin
+
+; INSIRP - repeat over an instruction with various addresses
+;	insirp inst,address(es)
+
+Define INSIRP inst,addrs
+ Irps TEMP%%,,[addrs]
+  inst,TEMP%%
+ Termin
+Termin
+
+; JUMPPT - jump depending upon processor type
+;	jumppt ac,PDP-6,KA-10,KI-10,KL-10
+; ac is a temporary ac not equal to zero.
+
+Define JUMPPT ac=1,cp166=0,ka10=0,ki10=0,kl10=0
+Ife ac,.err JUMPPT	1st arg zero
+If2,Ife cp166*ka10*ki10*kl10,.err JUMPPT	Null processor argument
+	jfcl 1,.+1			; clear PDP-6 PC change flag
+	jrst .+1			; set PC change flag on PDP-6
+	jfcl 1,cp166			; if flag is on, PDP-6
+	movx ac,-1(,,-2)		; ac := -2,,-1
+	aobjp ac,ka10			; non-zero ac means KA-10
+	setz ac,			; ac := 0
+	blt ac,				; KI/KL test
+	jumpe ac,ki10			; zero ac means KI-10
+	jrst kl10			; else it is a KL-10
+Termin
+
+; STORE - macro to place a constant in a block of locations
+;	store <constant>,<first location>,<last location>,<temp ac>
+
+;		** Note Well **
+
+; May generate more than one word of code.
+; If last location is not specified, it is a "MOVXM".  If temp ac is
+; not specified, ac 0 is used.  <== Note Well !!
+
+Define STORE ?cons=0,first=0,last=0,ac=0
+ TEMP%%=0
+ Ife cons,setzm first ? TEMP%%=-1
+ Ife cons+1,setom first ? TEMP%%=-1
+ Ife cons-1,setzm first ? aos first ? TEMP%%=-1
+ Ife cons+2,setom first ? sos first ? TEMP%%=-1
+ Ife TEMP%%,movx ac,cons
+ .also movem ac,first
+ Ifn last,move ac,[first,,first+1] ? blt ac,last
+Termin
+
+; MOVX - macro to load an immediate value into an accumulator
+
+Define MOVX ?ac=0,flag=0
+ TEMP%%=flag
+ Ife TEMP%%,setz ac, ? .istop
+ Ife TEMP%%+1,seto ac, ? .istop
+ Ife TEMP%%&%LHALF,movei ac,TEMP%% ? .istop
+ Ife TEMP%%&%RHALF,movsi ac,(TEMP%%) ? .istop
+ Ife <TEMP%%_-18.>-%RHALF,hrroi ac,TEMP%% ? .istop
+ Ife <TEMP%%_18.>-%LHALF,hrloi ac,(TEMP%%-%RHALF) ? .istop
+ move ac,[TEMP%%]
+Termin
+
+; CAX?? - compare ac with immediate and skip under condition
+
+Irp code,,[,L,LE,E,G,GE,N,A]
+ Define CAX!code ?ac=0,value=0
+  TEMP%%=value
+  Ife TEMP%%&%LHALF,CAI!code ac,TEMP%%
+  .else CAM!code ac,[TEMP%%]
+ Termin
+Termin
+
+; Arithmetic operations
+
+Irps code,,[%ADD,%SUB,MUL,IMUL,DIV,IDIV]
+ Define code!X ?ac=0,value=0
+  TEMP%%=value
+  Ife TEMP%%&%LHALF,code!I ac,TEMP%%
+  .else code ac,[TEMP%%]
+ Termin
+Termin
+
+Define ADDX ?ac=0,value=0
+ TEMP%%=value
+ Ife <TEMP%%_-18.>-%RHALF,subi ac,-TEMP%%
+ .else %addx ac,TEMP%%
+Termin
+
+Equals %ADD,ADD ? Equals %ADDI,ADDI
+
+Define SUBX ?ac=0,value=0
+ TEMP%%=value
+ Ife <TEMP%%_-18.>-%RHALF,addi ac,-TEMP%%
+ .else %subx ac,TEMP%%
+Termin
+
+Equals %SUB,SUB ? Equals %SUBI,SUBI
+
+Irps code,,[%FADR,%FSBR,FMPR,FDVR]
+ Define code!X ?ac=0,value=0
+  TEMP%%==value
+  Ife TEMP%%&%LHALF,code!I ac,(TEMP%%)
+  .else code ac,[TEMP%%]
+ Termin
+Termin
+
+Define FADRX ?ac=0,value=0
+ TEMP%%=value
+ Ife <TEMP%%_18.>-%LHALF,fsbri ac,(%LHALF&-TEMP%%)
+ .else %fadrx ac,TEMP%%
+Termin
+
+Equals %FADR,FADR ? Equals %FADRI,FADRI
+
+Define FSBRX ?ac=0,value=0
+ TEMP%%=value
+ Ife <TEMP%%_18.>-%LHALF,fadri ac,(%LHALF&-TEMP%%)
+ .else %fsbrx ac,TEMP%%
+Termin
+
+Equals %FSBR,FSBR ? Equals %FSBRI,FSBRI
+
+; TX?? - test ac under immediate mask with option and skip under
+;	condition
+
+Irp action,,[N,Z,O,C]
+ Irp code,,[E,N,A]
+  Define TX!action!!code ?ac=0,flag=0
+   TEMP%%=flag
+   Ife TEMP%%&%RHALF,Ifn TEMP%%,TL!action!!code ac,(TEMP%%) ? .istop
+   Ife TEMP%%&%LHALF,TR!action!!code ac,TEMP%% ? .istop
+   TD!action!!code ac,[TEMP%%]
+  Termin
+ Termin
+Termin
+
+Define TXZA ?ac=0,flag=0
+ TEMP%%=flag
+ Ife TEMP%%-%FWORD,tdza a,a
+ Ife TEMP%%&%RHALF,Ifn TEMP%%,tlza ac,(TEMP%%) ? .istop
+ Ife TEMP%%&%LHALF,trza ac,TEMP%% ? .istop
+ tdza ac,[TEMP%%]
+Termin
+
+Define TXN ?ac=0,flag=0
+ trn ac,<,,flag>
+Termin
+
+Define TXZ ?ac=0,flag=0
+ TEMP%%=flag
+ Ife TEMP%%-%FWORD,movx ac,%ZEROS ? .istop
+ Ife <TEMP%%_18.>-%RHALF,andi ac,#TEMP%% ? .istop
+ Ife TEMP%%_18.,Ifn TEMP%%,tlz ac,(TEMP%%) ? .istop
+ Ife TEMP%%_-18.,andcmi ac,TEMP%% ? .istop
+ and ac,[#TEMP%%]
+Termin
+
+Define TXO ?ac=0,flag=0
+ TEMP%%=flag
+ Ife TEMP%%-%FWORD,movx ac,%FWORD ? .istop
+ Ife <TEMP%%_18.>-%RHALF,orcmi ac,#TEMP%% ? .istop
+ Ife TEMP%%_18.,Ifn TEMP%%,tlo ac,(TEMP%%) ? .istop
+ Ife TEMP%%_-18.,iori ac,TEMP%% ? .istop
+ ior ac,[TEMP%%]
+Termin
+
+Define TXC ?ac=0,flag=0
+ TEMP%%=flag
+ Ife TEMP%%-%FWORD,setca ac, ? .istop
+ Ife <TEMP%%_18.>-%RHALF,eqvi ac,#TEMP%% ? .istop
+ Ife TEMP%%_18.,Ifn TEMP%%,tlc ac,(TEMP%%) ? .istop
+ Ife TEMP%%_-18.,xori ac,TEMP%% ? .istop
+ xor ac,[TEMP%%]
+Termin
+
+; IORX, ANDX, XORX, EQVX are super-random versions of TX??
+
+Equals IORX,TXO
+
+Define ANDX ?ac=0,flag=0
+ TEMP%%=flag
+ txz ac,#TEMP%%
+Termin
+
+Equals XORX,TXC
+
+Define EQVX ?ac=0,flag=0
+ TEMP%%=flag
+ xorx ac,#flag
+Termin
+
+.ystgw					; allow storage words again
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;		*** The END ***			;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa p   Nw‡ "w‡ * j  Bgï~ô³ÿùõ` ÉÏ p  û`óÿ÷ô»ÿÿ+@W $  ô»ÿÿ+@| p  ö€ + J gï|ö€Š¥+ J![ Z.ô3ÿÿõp –Éô ³ÿÿQC Z. Np  ô	»ÿÿ $p  ôƒ”õp • p  õ« Ïõæ õç ,x   ô	Œ¹õp • $	}õp ”ëõp ”Ù $ZõŽ  õp ”óZ  Z  +@W $Zõp ”ë * ( j  &   $ tmõ–  +@õŽ ,<   p  5NJ1@f  ô€tÛ+@Fõ` Êm÷“€Êmô	 tÛ+@_ö°€Êmûa@Z]QE Z.ô	 Šû`ÀZ][  +@uú0ÀZ]ô€ / ,x   õŽ  ,8  6F ZSõ` Ê¡[	 ZRö2 ŠËõ` Ê}ö2 ŠSõ` Ê}1H õ` Ê}0Hõ` Ê¡*  +@Sö€Ê¡

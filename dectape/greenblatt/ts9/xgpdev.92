@@ -1,0 +1,423 @@
+	title XGPDEV XGP device handler
+	subttl Definitions
+
+; Mark Crispin, AI, July, 1976; Last updated: MRC August 19, 1976
+
+;  Prints a queue status listing when a directory is taken of
+; the XGP device(ie, XGP^F in DDT).  Is only run on the AI
+; machine; other machines use device AIXGP.  Uses status
+; information from the XGP unspooler's experience, the XGP
+; queue, and from any message left in AI:.XGPR.;XGP NOTICE.
+
+; Insert my macro library, defining all sorts of goodies.
+
+	.insrt MRC;MACROS >
+
+; Insert the file structure definitions file
+
+if1	.insrt SYSTEM;FSDEFS >
+
+;  AC definitions.  CH and CH1 are used for counting
+; characters and their order is important.  A, B,
+; and C are interrupt level AC's and are not to be
+; used for any other purpose.  P is defined in
+; MRC;MACROS > as 17 .  I is an index into the queue
+; directory.  X, Y, and Z are temporary AC's.
+
+acdef. [i x y z ch ch1 a b c]
+
+;  I/O channels.  BOJCH is the channel for the BOJ pipeline.
+; QCH is the channel to read the queues, and XCH is the channel
+; to look at XGPSPL's core.
+
+acdef. [bojch qch xch]
+
+; Assembly switches
+
+nd. pdllen==5.		; length of PDL(hardly ever used at all)
+nd. patlen==100.	; length of patch area
+
+; Macro to output an ASCII string.
+; It may not have unbalanced brackets in the string argument.
+;	type [<string>]
+
+define type string
+	move z,[point. 7,[ascii\string\]]
+	movx y,<.length\string\>
+	addi ch,(y)
+	syscal SIOT,[%clari bojch
+		     z ? y]
+	 jsr lose
+termin
+
+	subttl Data area
+
+	loc 100				; where almost everything begins
+
+tmploc 42,jsr tsint			; address of interrupt server
+
+pdl:	block pdllen			; pushdown list
+qdir:	block 2000			; the XGP queue directory(ie, the
+dirblk==qdir(,,-2000)			; contents of AI:.XGPR.;.FILE. (DIR) )
+args:	block 12			; arguments passed to JOBCAL
+argblk==args(,,-12)			; argument block pointer
+opcode:	block 1				; JOBDEV opcode
+hungry:	block 1				; 0 if queue is hungry for stuff
+test:	%fword				; -1 := I'm not finished yet
+fn1:	block 1				; file name 1
+fn2:	block 1				; file name 2
+hitqin:	block 1				; -1 := found current request
+spldat::				; these five locations MUST be in this order
+forms:	block 1				; -1 := thesis forms, 1 := wait for forms change
+cqin:	block 1				; current QIN(queue ID number)
+abortf:	block 1				; -1 := request abortion
+maintp:	block 1				; -1 := XEROX person is hacking the XGP
+idlep:	block 1				; -1 := XGP is idle
+pat:	block patlen			; patch area
+patch=pat				; beginning of free patch area
+
+;  Status codes that XGPSPL gets from the XGP PDP-11.  The definitions are my own; they
+; really should go into the system.
+
+%XPPWL==204				; paper or web low
+%XPPJM==40				; no -12 or paper jam
+%XPFSC==20				; fuser cold
+%XPFLC==10				; filament cold
+
+	subttl Startup
+
+; Initialize BOJ pipeline, insure request was for "XGP directory"
+
+XGPDEV:	movx ch,%zeros			; clear character counter
+	movx p,pdl-1(,,-pdllen)		; load pdp
+	syscal OPEN,[clctl. .uao\10	; open in unit ASCII output mode
+		     clarg. bojch	; channel for BOJ pipeline
+		     clarg. ('BOJ)]	; BOJ pipeline device
+	 jsr lose			; lossage!
+	useti MSK2,1_bojch		; want interrupts on BOJ channel
+	syscal JOBCAL,[clarg. bojch	; information over BOJ pipeline
+		       clarg. argblk	; argument block
+		       %clval opcode]	; instruction that created me
+	 jsr modnta			; lossage!
+	move x,args+1			; gobble down FN1
+	caxe x,'.FILE.			; insure directory
+	 jrst illfnm			; claim illegal file name
+	move x,args+2			; gobble down FN2
+	caxe x,sixbit/(DIR)/		; insure directory
+	 jrst illfnm			; claim illegal file name
+	syscal JOBRET,[clarg. bojch	; value return to BOJ channel
+		       clarg. 1]	; tell other end it's winning
+	 jsr lose			; PCLSR'd out probably
+
+; Open up the XGP queue directory, output initial header
+
+	syscal OPEN,[clctl. .bii	; open in block image input
+		     clarg. qch		; queue channel
+		     clarg. ('DSK)	; device DSK:
+		     clarg. '.FILE.	; directory FN1
+		     clarg. sixbit/(DIR)/; directory FN2
+		     clarg. '.XGPR.]	; XGP queue directory
+	 jrst cantdo			; claim that device not available
+	syscal IOT,[clarg. qch		; read on queue channel
+		    clarg. dirblk]	; into queue directory block
+	 jrst cantdo			; lossage!
+	.close qch,			; close off channel
+	type [XGP queue status at ]	; header message
+	.rdatim y,			; get date/time in SIXBIT
+repeat 2,[push p,y			; save rest of time
+	  andx y,sixbit/__/		; lose all but top two characters
+	  pushj p,sixdis		; and output it
+	  .iot bojch,[":]		; output a delimiter
+	  addx ch,1			; and count the character in
+	  pop p,y			; restore rest of time
+	  lsh y,wid. '_'_		; and remove top two characters
+]	pushj p,sixdis			; finally output the seconds
+	.iot bojch,[" ]			; delimit with a space
+	addx ch,1			; and count that character in
+	move y,z			; move date up to be mangled easily
+	rot y,wid. '_'_			; fix cretin YYMMDD format to MMDDYY
+repeat 2,[push p,y			; save rest of date
+	  andx y,sixbit/__/		; lose all but two two characters
+	  pushj p,sixdis		; display those two
+	  .iot bojch,["/]		; and output a delimiter
+	  addx ch,1			; bump character count
+	  pop p,y			; restore rest of date
+	  lsh y,wid. '_'_		; and drop the stuff we've output
+]	pushj p,sixdis			; output the year
+	type [	XGPDEV.]		; and the name of this module
+	movx y,%version			; fetch the version
+	pushj p,sixdis			; display it
+	pushj p,crlf			; and cr/lf
+
+; (continued on next page)
+
+; Display XGP status from XGPSPL's information stored in MAINTP and IDLEP
+
+	syscal OPEN,[clctl. .bii	; open in block image input
+		     clarg. xch		; XGP queue channel
+		     clarg. ('USR)	; USR: device to hack inferiors
+		     clarg. ('XGP)	; UNAME=XGP
+		     clarg. 'XGPSPL]	; JNAME=XGPSPL
+	 jrst noxspl			; ..sigh... no XGPSPL to look at
+	.access xch,[73]		; look at locations 73-77
+	movx x,spldat(,,-5)		; load a pointer to peek locations
+	syscal IOT,[clarg. xch		; peek at FORMS, CQIN, ...
+		    %clarg x]		; ... ABORTF, MAINTP, IDLEP
+	 jrst cantdo			; this is impossible, IOT always skips
+	.close xch,			; free up channel
+	skipl abortf			; abort requested?
+	 jrst chkwin			; no, check for winnage
+	type [The current output is being aborted.]
+chkwin:	skipn maintp			; being hacked?
+	 skipe idlep			; or idle/losing?
+	  jrst norun			; yes, not running...say why.
+	type [The XGP spooler is allegedly winning.]
+	pushj p,crlf			; and crlf
+	jrst winnin			; and say it's winnin'
+noxspl:	type [The XGP spooler is not running.]
+	pushj p,crlf			; crlf
+	aos idlep			; flag lossage
+	jrst disabl			; and also say it's disabled
+norun:	skipn maintp			; being hardware hacked?
+	 jrst nomain			; no
+disabl:	type [Spooling is disabled; XGP is being serviced.]
+	pushj p,crlf			; cr/lf display
+nomain:	skipl idlep			; XGP idle?
+	 jrst noidle			; no
+	type [The XGP is idle.]		; say XGP is idle
+	pushj p,crlf			; and crlf
+noidle:	skipg i,idlep			; is XGP winning?
+	 jrst winnin			; yes
+	type [The XGP is losing; human intervention required.]
+	pushj p,crlf			; and crlf
+	txnn i,%xppwl\%xppjm\%xpfsc\%xpflc; any useful information?
+	 jrst winnin			; no, display any other notes
+	type [Reason(s) for lossage are.]; yes, give header notice
+	txnn i,%xppwl			; paper low?
+	 jrst loss1			; no, check for next lossage
+	type [..paper or web out.]	; yes, report it
+loss1:	txnn i,%xppjm			; paper jam?
+	 jrst loss2			; no, check for next lossage
+	type [..no -12/paper jam.]	; yes, report it
+loss2:	txnn i,%xpfsc			; fuser cold?
+	 jrst loss3			; no, check for next lossage
+	type [..fuser cold.]		; yes, report it
+loss3:	txnn i, %xpflc			; filament cold?
+	 jrst loss4			; no, go to queue status
+	type [..filament cold.]		; yes, report it
+loss4:	pushj p,crlf			; and crlf
+
+; (continued on next page)
+
+; Display forms status and XGP status note
+
+winnin:	skipn forms			; special forms?
+	 jrst opnnot			; no, just open the notice
+	skipl forms			; forms mounted?
+	 jrst [	type [The XGP is waiting for a forms change.]
+		jrst donote]		; and do the note
+	type [The XGP has thesis forms mounted.]
+donote:	pushj p,crlf			; and crlf
+opnnot:	syscal OPEN,[clctl. .uai	; open in unit ASCII input
+		     clarg. qch		; queue channel
+		     clarg. ('DSK)	; device DSK:
+		     clarg. ('XGP)	; FN1 of XGP
+		     clarg. 'NOTICE	; FN2 of NOTICE
+		     clarg. '.XGPR.]	; SNAME on .XGPR. directory
+	 jrst nonote			; no special notice
+notice:	.iot qch,x			; get a character
+	jumpl x,endnot			; end of note if EOF
+	caxe x,^L			; ignore ^L's
+	 caxn x,^C			; and ^C's
+	  jrst notice			; snarl
+	.iot bojch,x			; send note character
+	aoja ch,notice			; continue displaying the notice
+endnot:	.close qch,			; close off queue channel
+
+; Here to type out a header and the DONE QUEUE
+
+nonote:	type [Index	Who    Where	When	       Size(words)]
+	pushj p,crlf			; type a header line
+	skipe idlep			; don't do done queue if idle
+	 syscal OPEN,[clctl. .uai	; open in unit ASCII input
+		      clarg. qch	; queue channel
+		      clarg. ('DSK)	; device DSK:
+		      clarg. sixbit/DONE/; FN1 of DONE
+		      clarg. sixbit/QUEUE/; FN2 of QUEUE
+		      clarg. '.XGPR.]	; on the .XGPR. directory
+	  jrst nodunq			; lose, no DONE QUEUE
+	type [*L*	]		; well, DONE QUEUE is hard to describe
+	pushj p,qlist			; and list it
+
+; (continued on next page)
+
+; Loop through queue directory, displaying each queue command
+
+nodunq:	move i,qdir+udnamp		; read pointer to name area
+	addx i,qdir			; offset it by address of dir in core
+	setom hungry			; assume queue is hungry
+qloop:	move y,unfn1(i)			; load up FN1
+	caxe y,'Q1			; queue class 1?
+	 caxn y,'Q2			; queue class 2?
+	  jrst qwin			; yes, hit a queue entry
+	caxe y,'Q3			; queue class 3?
+	 caxn y,'QT			; thesis queue class?
+	  jrst qwin			; yes, hit a queue entry
+	   jrst qretry			; no, random file on .XGPR.;
+qwin:	movem y,fn1			; save FN1
+	move y,unfn2(i)			; load up FN2
+	movem y,fn2			; save FN2
+	syscal OPEN,[clctl. .uai	; open in unit ASCII input
+		     clarg. qch		; queue channel
+		     clarg. ('DSK)	; device DSK:
+		     %clarg fn1		; queue group
+		     %clarg fn2		; priority within group
+		     clarg. '.XGPR.]	; on the .XGPR. directory
+	 jrst qretry			; it suddenly got deleted I guess
+	setzm hungry			; say queue isn't hungry
+	move y,fn1			; get FN1 of this file
+	andx y,'_			; only interested in queue number
+	ior y,fn2			; get the FN2
+	rot y,-<wid. '_>		; and make a QIN out of it
+	came y,cqin			; is this the current QIN?
+	 jrst ncqin			; no, no indication of currentness
+	movem y,hitqin			; and remember hitting a QIN
+	type [*P* ]			; give indication of current request
+	move y,hitqin			; restore the QIN for output
+ncqin:	pushj p,sixdis			; type it
+	.iot bojch,[^I]			; output a tab
+	addx ch,1			; bump character counter
+	pushj p,qlist			; list out this queue
+qretry:	addx i,lunblk			; move to next file
+	caxge i,2000+qdir		; end of UFD?
+	 jrst qloop			; no, not yet
+
+; Finish up status report, send termination codes, and sit around until flushed
+
+	skipn hungry			; is queue empty?
+	 jrst notemp			; no, just had dinner
+	type [The XGP queues are empty.]; inform of hungry queue
+	pushj p,crlf			; and crlf
+notemp:	skipn idlep			; printed the DONE QUEUE?
+	 jrst nolast			; no, do not print message
+	type [*L* means this request was the last completed.]
+	pushj p,crlf			; and crlf
+nolast:	skipn hitqin			; hit a QIN?
+	 jrst nohit			; nope
+	type [*P* means this request is processing now.]
+nohit:	pushj p,crlf			; terminating cr/lf
+	.iot bojch,[^L]			; write a terminating form feed
+	addx ch,1			; bump character counter
+	idivx ch,5			; get # of chars to fill out this word
+	subx ch1,5			; compute how many to write
+	.iot bojch,[-1,,^C]		; that's all folks!
+	aojl ch1,.-1			; more to go maybe
+	aose test			; claim to be finished
+	 jrst hang			; hang around now
+	syscal JOBRET,[clarg. bojch	; value return over the BOJ pipeline
+		       clarg. 1]        ; tell the IOTs that they've won
+	 jfcl				; so what?
+hang:	jfcl				; hang forever
+	.hang				; ...zzz...
+
+	subttl Interrupt server
+
+;  Handle interrupts on the BOJ pipeline.  If a CLOSE happens, commit suicide.
+; If an IOT, and the queue report is still being generated, then ignore the
+; interrupt, because the data is being sent along the pipeline anyway.  If
+; the queue report is done, send an okay return to the IOT, even though nothing
+; actually is getting sent, and wait for the program at the other end to realize
+; that there is nothing more for it.  Otherwise, just send an okay return, and
+; hope for the best.
+
+tsint:	0				; interrupt bits
+	0				; PC
+	skipge a,tsint			; expect bit 0 on
+	 txne a,%infin#<1_bojch>	; expect only my bit on
+	  .lose				; huh???
+	hrroi a,c			; only one word
+	syscal JOBCAL,[clarg. bojch	; get information from the BOJ pipeline
+		       %clarg a		; information pointer
+		       %clval b]	; return value in B
+	 jrst modnta			; moby lossage
+	txne b,(60000)			; want to close?
+	 jsr lose			; all right, then go die
+	hrrzs b				; remove left half
+	caxn b,1			; IOT?
+	 skipl test			; finished with my stuff?
+	  syscal JOBRET,[clarg. bojch	; value return over the BOJ pipeline
+			 clarg. 1]	; not IOT or finished, claim to win
+	   jfcl				; ...sigh...
+	.dismiss tsint+1		; dismiss interrupt
+
+	subttl Random subroutines, literals, etc.
+
+; Here to display a SIXBIT word in Y.  Both X and Y are clobbered.
+
+sixdis:	jumpe y,cpopj			; return when done
+	movx x,%zeros			; clear out any junk
+	rotc x,wid. '_			; load a SIXBIT character
+	addx x,<" >			; convert to ASCII
+	.iot bojch,x			; type it
+	aoja ch,sixdis			; and try for next character
+
+; Here to list an individual entry in the queue
+
+qlist:	.iot qch,y			; gobble a character from file
+	jumpl y,qloss			; EOF???
+	caxe y,<" >			; space?
+	 jrst qlist			; no, search for space
+qout:	.iot qch,y			; gobble a character from queue
+	jumpl y,qloss			; EOF???
+	.iot bojch,y			; send it to queue listing
+	addx ch,1			; bump char counter
+	caxe y,^J			; LF?
+	 jrst qout			; no, continue listing
+	.close qch,			; close off channel
+	popj p,				; and return
+
+; Here to output a carriage return
+
+crlf:	.iot bojch,[^M]			; CR
+	.iot bojch,[^J]			; LF
+	addx ch,2			; bump char counter
+cpopj:	popj p,				; and return
+
+; Here to punt out after winning or losing
+
+lose:	jfcl				; for JSR debugging information
+	.logout				; suicide
+	.lose				; in case not top level
+
+; Here to complain if file name not .FILE. (DIR)
+
+illfnm:	syscal JOBRET,[clarg. bojch	; value return over the BOJ channel
+		       clarg. (%ebdfn)]	; illegal file name
+	 jsr lose			; and die
+	jsr lose			; no matter what happens
+
+; Here to complain if JOBCAL fails
+
+modnta:	syscal JOBRET,[clarg. bojch	; value return over the BOJ channel
+		       clarg. (%ensmd)]	; mode not available
+	 jsr lose			; and die
+	jsr lose			; no matter what happens
+
+; Here to complain if AI:.XGPR.;.FILE. (DIR) is not OPENable
+
+cantdo:	syscal JOBRET,[clarg. bojch	; value return over the BOJ channel
+		       clarg. (%enadv)]	; device not available
+	 jsr lose			; and die
+	jsr lose			; no matter ...
+
+; Here to complain if garbaged queue file
+
+qloss:	syscal JOBRET,[clarg. bojch	; value return over the BOJ channel
+		       clarg. (%ebdfl)]	; unrecognizable file
+	 jsr lose			; and die
+	jsr lose			; no matter ...
+
+...lit:	constants
+
+	end XGPDEV
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ö<  õ` 0µòë 0ûø,  ô0Í      ó¥ 0Í. 0~l.~ ó#€  ,  7 0f00có¤€ ÷« 0»ó$€0Íó¤€ 	ó¥  	ô€0Í6  v7    ,x    25l? Emóüþÿóì«=Ãqk5róÅ;ƒIó·£ä¹ 0   !   !y   "_   #SD  $85  %B  &	4 @     0   ð  -7ð  -ð  -ið  -yð  -)    20  öL     r   ._P   ð  .5: }(.@     /^/  .  õÄ  &  $  ô„      ó$      ó¤  ó¼“u÷  öÉ       `ôH´9 K/ôH~ÕóþòÞÅ  ò  	õŽ 4×ûA€ õŽ  
