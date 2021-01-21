@@ -1,0 +1,784 @@
+PROGRAMMING TECHNOLOGY DIVISION DOCUMENT                      SYS.14.12
+
+
+IDENTIFICATIONî______________
+
+        The DMS Batch System
+
+        S. W. Galley, Marc Seriff, and Jerry Morrison
+
+        April 8, 1980
+
+
+
+MOTIVATIONî__________
+
+The Batch system is designed to permit users to run jobs "in the
+background", when ITS is lightly loaded, and/or at specified times,
+often periodically.  The original version of Batch, implemented in
+Midas/Calico, helped to level the load on ITS and to relieve users from
+performing periodic "bookkeeping" tasks.  As part of the general PTD
+conversion to MDL, the Batch system has been rewritten in MDL/Calico,
+with improved design and new features.
+
+
+REFERENCESî__________
+
+   1.  S. W. Galley and Greg Pfister, The MDL Language, SYS.11.01
+
+   2.  Ed Black, Using MDL's Calico User Interface, SYS.11.21.01
+
+
+OVERVIEW AND NOTATIONî________ ___ ________
+
+The name "Batch" is perhaps not the best one for the Batch system, but
+tradition dictates that it remain.  The Batch system is more properly
+described as a background/absentee-user facility, permitting programs
+to be run without direct human interaction.
+
+Hereinafter the word "job" means one of the things that ITS time-shares
+and organizes into trees.  A "user" is a person that uses ITS, by
+typing on a "console".  While being executed, a job contains one and
+only one "program".  (If a program is careful, it can imitate a user in
+interacting with the Batch system.)  The "Batch daemon" is a job that
+ITS autonomously runs at specified times.  The daemon contains a
+program in MDL that is the workhorse of the Batch system.  When a user
+(or a program) requests that the Batch daemon run a program, the
+physical embodiment of the request is called a "task".  The description
+of a task contains the information that the Batch daemon needs in order
+to satisfy the request, including what program to run and when, what to
+do about console I/O in the absence of a real console, etc.  Each
+element of a task description is called a "field".  Descriptions of
+tasks yet to be run are stored on the disk in a collection of files
+known as the "Batch queue".  The queue is really a set, not a queue,
+but the name seems to go with the name "Batch".  Finally, the "user
+interface" TS BATCH is a program written in/for MDL/Calico that aids a
+user in creating, examining, and modifying task descriptions.
+
+Any program that a person can run interactively ought to be capable of
+PTDD                               2                          SYS.14.12
+
+
+being run by the Batch system.  The only known restrictions are that
+the program cannot assign the console to an inferior job, because it
+doesn't have a real console, and it must actively request console input
+(as do most DMS programs except for Arpanet access programs), not hang
+around and wait for it passively.
+
+Anything which is written in the MDL language or which is typed on a
+computer console appears herein in upper case, as in BATCH.  A
+metasyntactic variable -- something to be replaced in actual use by
+something else -- appears as -          -, enclosed in crow-footî                             <originator>
+brackets.
+
+
+THE USER INTERFACEî___ ____ _________
+
+The user interface for the Batch system is a MDL/Calico subsystem,
+whose commands are described here.  The user interface is invoked from
+the file "SYS: TS BATCH".
+
+TS BATCH provides commands for flexibly creating, modifying, and
+examining task descriptions.  Creating a task consists of setting up a
+task description, optionally inspecting it, and filing it in the disk
+queue.  Similarly, modifying a task consists of setting up and
+inspecting a "task modification" and filing it on disk for the Batch
+daemon to act on.  The daemon is the only one that should actually
+modify filed task descriptions; TS BATCH tries to simulate the effect
+of modifications for a user trying to examine task descriptions, but it
+doesn't attempt to be perfect.  Thus recently-modified tasks may appear
+to the TS BATCH user to be slightly incorrect.
+
+A user of TS BATCH manipulates two core-resident structures: a sample
+task description and a sample task modification.  These samples allow a
+user to make two or more similar descriptions or modifications easily.
+Also the sample modification can contain two or more task
+identifications, so that two or more tasks can be modified identically
+in one fell swoop.  Changes are made in the samples by alternately
+naming fields and entering corresponding values.  Because a field value
+can be retracted by naming the field again and entering a new value,
+the Calico "go back to previous input" special character is sometimes
+not effective.
+
+Task-creation commands manipulate the sample description.  CREATE.TASK
+(most used) prompts a user with the names of a few "required" fields,
+LONG.CREATE.TASK (often tedious) prompts with the names of all possible
+fields, and SHORT.CREATE.TASK (useful when interactive response is
+slow) prompts with the task name only.  Besides naming fields, a user
+can print the sample description as it currently stands, quit or endî    _____                                                ____    ___
+specification by putting the sample description in the disk queue as a
+new task, or abort specification and return to Calico command level.î             _____
+
+Example (user input is underlined):
+
+:BATCHî______
+CALICO Version MB8 in operation
+
+LISTENING-AT-LEVEL 1 PROCESS 1
+PTDD                               3                          SYS.14.12
+
+
+@CReate.task$ named (LINE):  EXAMPLE$î __         _                ________
+system program (FILE):  TS MUDDLE$î                        __ _______
+console input from a file? (SYM):  Y$î                                   __
+which file? (without "s) (FILE):  EXAMPLE INPUT$î                                  _______ ______
+console output to (without "s) (FILE):  EXAMPLE OUTPUT$î                                        _______ _______
+type (SYM):  Short$ run at (LIST|ATOM):  T$î             _    _                      __
+rescheduling interval or sequence (LIST|VECTOR|OBJECT):  ((1 0 0)())$î                                                         ___ _ ______
+field name (SYM):  Print.specifications$î                   _                   _
+
+*** WARNING: the file DSK:SWG;EXAMPLE INPUT given as INPUT-STREAM does
+not exist now.  Are you sure? (SYM):  Y$î                                      __
+Originated by:                  SWG
+Name:                           EXAMPLE
+State:                          RUNNABLE
+To run at:                      0100 EDT on WED  6 OCT 76
+Type:                           SHORT
+Originated at:                  1102 EDT on TUE  5 OCT 76
+Reschedule with:                intervals of 1 year
+File to run:                    SYS:SWG;TS MUDDLE
+Input:                          the file DSK:SWG;EXAMPLE INPUT
+Output file:                    DSK:SWG;EXAMPLE OUTPUT
+CPU time limit (minutes):       5.0
+ field name (SYM):  End.specifications$î                    _                 _
+*** WARNING: the file DSK:SWG;EXAMPLE INPUT given as INPUT-STREAM does
+not exist now.
+
+The new task id number is 704.
+
+All three commands start with a fresh sample description, and any field
+left unspecified receives a default value.  However, the field/value
+alternation can be entered without wiping out the sample descriptionî                           _______
+via the MODIFY.NASCENT.TASK command -- useful for creating near-
+duplicates of both old tasks and the one just created.  For an old
+task, the COPY.TASK command fills the sample description with an
+existing task description and then returns to Calico command level.
+
+Task-modification commands manipulate the sample modification.
+MODIFY.TASK is like SHORT.CREATE.TASK (above) and MODIFY.SIMILARLY is
+like MODIFY.NASCENT.TASK (above); that is, with MODIFY.TASK a user
+makes one or more task modifications from scratch, and with
+MODIFY.SIMILARLY a user makes one or more task modifications by
+starting off with the previous modification, which is left stored in
+the sample.  ABORT.TASK is a special command for quickly stopping a
+task that is running right now by sending an IPC message to the Batch
+daemon; the task remains in the disk queue but is not runnable until
+modified to be so.
+
+Example (user input is underlined):
+
+@Modify.Task$ id(s) (MULT|SYM|FIX):  704$î _      _   _                        ____
+field name (SYM):  Input-stream$î                   _           _
+console input from a file? (SYM):  N$î                                   __
+console input (TEXT):  <FLOAD "EXAMPLE INPUT"> <QUIT>^Q$$î                       ______ ________ _______ __________
+field name (SYM):  Print.modifications$î                   _                  _
+ID number:                      704
+Modified at:                    1105 EDT on TUE  5 OCT 76
+PTDD                               4                          SYS.14.12
+
+
+Input:                          <FLOAD "EXAMPLE INPUT"> <QUIT>$
+Modified by:                    "SWG"
+ field name (SYM):  End.modifications$î                    _                _
+The modification to task 704 has been filed.
+
+Printing commands display task specifications for the user.
+PRINT.TASK.DESCRIPTION fetches a task-description (SPECS) file from
+disk and prints it on the console in a pretty format for inspection.
+PRINT.TASK.STATUS does the same for a few ("status") fields on one
+line.  PRINT.QUEUE.STATUS prints the daemon's abbreviated disk queue,
+one line per task; this information may not agree with the previous two
+commands because of pending task modifications.
+
+Other commands are purely for the user's convenience.  Whenever TS
+BATCH requires the identification of an existing task from the user, it
+employs a symbol table of task names, constructed from the daemon's
+abbreviated disk queue.  A user who wishes to forego this convenience
+in order to save the time needed to construct the symbol table can
+issue the REMOVE.TASK.IDENTIFICATION.SYMBOLS command; thereafter tasks
+must be identified by number rather than name.  This decision can be
+reversed with the REVISE.TASK.IDENTIFICATION.SYMBOLS command, which
+constructs a new symbol table from the abbreviated disk queue; if the
+daemon has updated that file in the meantime, this command updates the
+symbol table.
+
+Finally, the SIGNAL.DAEMON command signals the Batch daemon to (come up
+if not up and) look for new task descriptions and modifications on
+disk.  This command is needed only if description or modification files
+are created other than by TS BATCH, and the daemon must run any taskî                                    ___
+sooner than if the description or modification files had not been
+created.  The same effect can be had in MDL by: <OR <SEND ".BATCH"
+"BATCHN" ""> <DEMSIG "BATCHN">>.  TS BATCH signals the daemon or sets
+its alarm clock whenever it creates such a file, so this command is not
+needed when TS BATCH is used to create or modify tasks.
+
+
+THE BATCH QUEUEî___ _____ _____
+
+Each task description in the Batch queue occupies its own disk file in
+the .BATCH directory, with first name SPECS and second name an integer,
+which is the identification number for the task.  Keeping task
+descriptions in separate files enables individual access and updates to
+them.  A SPECS file contains an (unparsed) MDL VECTOR, whose elements
+are alternately ATOMs and various MDL objects.  Each ATOM names a field
+of the task description, and the immediately following object gives a
+value for the field.  This format makes it easy for a person to read
+and examine the task description, should the Batch system be
+uncooperative.  It is also easy for a program to create a new task by
+writing the proper VECTOR into the file ".BATCH; SPECS >".  Fields not
+named in a SPECS file are given default values by the daemon.
+
+An abbreviated queue is kept in the single file ".BATCH; BATCH QUEUE",
+with only a few fields for each task.  It is used by both the daemon
+and TS BATCH, the former to see which tasks ought to be considered for
+running and hence have their SPECS files read in entirety, the latter
+to give a user a quick look at the status of the queue.
+PTDD                               5                          SYS.14.12
+
+
+Requests to modify task descriptions take the form of files in the
+.BATCH directory with first name MODS.  A MODS file has the same format
+as a SPECS file, though usually the VECTOR is shorter.  The elements in
+the VECTOR are alternately ATOMs naming fields to be given new values
+and the desired new values.  (There are also fields peculiar to a MODS
+file, such as when and by whom it was created.)  Fields not named in a
+MODS file are to be left unchanged, except insofar as consistency
+requires change.  To avoid timing errors and inconsistencies, only the
+Batch daemon should actually modify the SPECS files, which it does
+whenever it examines the queue and finds MODS files.  TS BATCH (or
+another program) writes modifications to the file ".BATCH; MODS >".
+
+The daemon constructs queues of tasks within itself from the queue on
+disk.  These internal queues really are queues, ordered primarily by
+the times at which tasks are to be run.  TS BATCH also has an internal
+queue, ordered by ID number.
+
+
+THE DAEMONî___ ______
+
+The Batch daemon comes up when ITS comes up or when it is signalled by
+another program, for example TS BATCH.  The first thing it does on
+coming up is to examine the queue.  It also examines the queue if sent
+a message via the IPC device, mainly to look for newly generated SPECS
+and MODS files that need immediate processing.  The daemon writes a
+record of its activities in a LOG file in the .BATCH directory.  The
+daemon runs tasks in jobs inferior to itself, using the ITS device-
+translation facility to convert console input/output into pseudo-
+console input/output.
+
+The daemon periodically takes a crude measurement of the load on the
+DMS system.  If the load exceeds a given threshold, the daemon suspends
+the running tasks or does not begin new ones until the load has abated.
+
+Currently the daemon constructs two internal queues, corresponding to
+the two "run slots" for jobs being run under the daemon.  Queue 1 is
+the "short-task queue", reserved for tasks with CPU-time limits of five
+minutes or less.  Queue 2 is the "long-task queue" and has no maximum
+time limit for its tasks.  The short-task queue is nice for getting
+most tasks run reasonably close to the scheduled time, while the long-
+task queue handles tasks that may literally take hours to run.  Note
+that tasks from the two queues are actually run concurrently in the two
+run slots (two separate jobs inferior to the daemon).  By policy, if
+there are no tasks in the long-task queue that can be run at a given
+time, the next task from the short-task queue is run in the long-task
+slot.  Someday there may be a third queue, if anyone can think of a
+useful, program-enforceable criterion to distinguish tasks to be placed
+in it.  More than three queues seem to be prohibited by ITS channel
+limitations in the daemon.
+
+The .BATCH directory will show at all times what tasks the daemon is
+running, if any.  For each run slot currently being used, there is a
+file at the beginning of the directory whose first name is "#Q"
+concatenated with the queue number and whose second name is the name of
+the task being run.  The contents of the file indicate the originator,
+ID number, and running progress of the task.
+PTDD                               6                          SYS.14.12
+
+
+TASK-DESCRIPTON FIELDSî_______________ ______
+
+Each possible field in a task description is here described by giving:
+(1) its name, (2) the default value supplied by TS BATCH and/or the
+daemon, and (3) some facts about how the value is used.
+
+
+TASK-ID-NUMBER                         [one more than largest existing]
+
+This is a number that is unique to a task.  This number is taken from
+the second file name of the SPECS file in which the task description is
+stored.  The TASK-ID-NUMBER field does not appear in the SPECS file,î                                       ___        __
+only as the second name of the SPECS file and in MODS files and the
+internal queues.
+
+
+ORIGINATOR                                                      <UNAME>
+
+This is a STRING giving the name (that is, login initials) of the user
+that is responsible for this task.
+
+
+WHEN-ORIGINATED                          <DTNOW!-TIMFCN!-PACKAGE> [now]
+
+This is the date/time at which the task was created, in standard MDL
+format (described below).
+
+
+TASK-NAME                                                    [required]
+
+This is a STRING giving a name associated with the task.  This name
+need not be unique by itself, but for convenience it should be when
+paired with the ORIGINATOR.  It will normally be the name of the
+"system program" that the task causes to be run (for example, MDL,
+Midas, etc.).  In fact the daemon and TS BATCH use "SYS: TS -î                                                            <task-
+name>î    -" as the default FILE-TO-RUN (see below).
+
+
+TASK-TYPE                                                       "SHORT"
+
+This is a STRING giving the type of the task.  This is the information
+that will be used to determine in which of the daemon's internal queues
+the user wants the task to be.  Currently, the queue manager in the
+daemon recognizes the STRING "SHORT" as being a request for placement
+in queue 1 and anything else as a request for placement in queue 2.
+
+
+TIME-OF-NEXT-RUN                          (()(25)) [1:00 a.m. tomorrow]
+
+This is the date/time at which the next run of the task should take
+place.  Note that the Batch daemon does not guarantee to run the task
+at that time; rather it guarantees that the task will not be run before
+that time, and that it will be run as soon as allowable after that
+time.  This field can be the STRING "NOW" or "ASAP" (both meaning as
+soon as possible), or a date/time LIST.  Briefly, the latter is of the
+PTDD                               7                          SYS.14.12
+
+
+form ((-  - -  - -   -) (-  - -   - -   -) "-    -"), as in ((71 11 28)î       <yr> <mo> <day>   <hr> <min> <sec>   <zone>
+(10 12 0) "EST").  Omitted fields default to the current year, month,
+day; zero second, minute, hour; and local time zone.  Thus (() (24)) is
+midnight tonight.  Consult the MDL library for more information.  See
+also the NIGHT-RUN-SWITCH below.
+
+
+NIGHT-RUN-SWITCH                                              #FALSE ()
+
+The purpose of this field is to try to avoid bothering prime-time
+users, should ITS or the Batch daemon be down at night when the task is
+scheduled to run -- the daemon will wait for another night to run the
+task.  If a non-FALSE value is supplied for this field, then this task
+will be started only during the "night" hours.  If this field contains
+FALSE, then the task may be run at any time.  Night is currently
+defined as 1:00 a.m. to 8:00 a.m., plus Sundays and holidays, plus
+Mondays and days after holidays before 1:00 a.m.
+
+
+TASK-STATE                                                   "RUNNABLE"
+
+This is a STRING giving the current state of the task.  Currently
+defined states are as follows:
+
+    "RUNNABLE" - the task can be considered for running.  Note that
+      this does not imply that the task can be run now, since the TIME-
+      OF-NEXT-RUN may be far in the future and/or the NIGHT-RUN-SWITCH
+      may disallow running it now.
+    "UNRUNNABLE" - the task should be left in the queue but not be
+      considered for running.
+    "ABORTED" - some user or program has manually aborted this task,
+      and it will not be considered for running until its TASK-STATE is
+      changed, perhaps after someone ensures that its data base is
+      consistent (or whatever).
+    "REMOVED" - this is a very temporary state that indicates that a
+      task is to be permanently removed from the queue.
+    "RUNNING" - the task is now running.
+
+Any other value has the same effect as "UNRUNNABLE".
+
+
+SCHEDULER                                                        [none]
+
+This is an expression that can be used to determine when and if the
+task should be rescheduled (run again).  It allows a user to supply an
+arbitrarily complicated rescheduling pattern without requiring
+modifications to the Batch system.  If no SCHEDULER expression is
+supplied by the user, then the RESCHEDULE-INFO field (next) will be
+interpreted according to one of the two standard meanings described
+below.  Please see "Programs in Fields" below before submitting aî        ______
+SCHEDULER; it contains important information.
+PTDD                               8                          SYS.14.12
+
+
+RESCHEDULE-INFO                                                  [none]
+
+If a SCHEDULER expression is supplied by the user, then this field can
+contain anything.  It will exist for the SCHEDULER expression and will
+never be examined by the Batch system.  If no SCHEDULER expression is
+provided, then this field can have either of the following meanings:
+
+    (1)  a relative time - If this field contains a LIST, it will be
+    interpreted as a relative time to be added to the previous
+    (scheduled) run time to get the next run time.  The relative time
+    is in standard date/time format, namely ((-  - -  - -   -) (-  -î                                              <yr> <mo> <day>   <hr>
+    -   - -   -)); "-    -" has no meaning here.î    <min> <sec>     <zone>
+
+    (2)  a sequence of times - If this field contains a VECTOR, it will
+    be interpreted as a sequence of times at which the task is to be
+    run (after the TIME-OF-NEXT-RUN time).  The task will be
+    rescheduled to the first time in the VECTOR, and the first time
+    will be removed from the VECTOR.  Each element of the VECTOR is in
+    standard date/time format, namely ((-  - -  - -   -) (-  - -   -î                                        <yr> <mo> <day>   <hr> <min>
+    -   -) "-    -").î    <sec>   <zone>
+
+Note that, if neither the SCHEDULER nor the RESCHEDULE-INFO is supplied
+by the user, then the task will be run once and then removed from the
+queue; usually this is undesirable, because an unexpected failure
+cannot be explained and corrected for another try -- a very large
+relative time is usually better, until the task runs correctly.  Note
+also that a relative RESCHEDULE-INFO field, when used, will be "added"
+to the TIME-OF-NEXT-RUN field repeatedly, until a date/time is computed
+that is in the future.
+
+
+WHEN-TO-STOP-RESCHEDULING                                       [never]
+
+This is the date/time after which this task should no longer be run.
+That is, if an attempt is ever made to reschedule the task for a time
+that is after this time, then the task will be removed from the queue
+instead.  If no value is supplied, the field will be ignored, and the
+task can be run at any future time.
+
+
+MAXIMUM-NUMBER-OF-RUNS                                      [unlimited]
+
+If and when the contents of the NUMBER-OF-TIMES-RUN field (below)
+reaches the contents of this field, then the task will be removed from
+the queue.  If no value is supplied, the field will be ignored, and the
+task can be run an unlimited number of times.
+
+
+FILE-TO-RUN                   ["SYS" "-          -" "TS" "-         -"]î                                      <originator>        <task-name>
+
+This is the name of the program file to be loaded and run.  It must be
+a VECTOR of STRINGs, in the order ["DEV" "DIR" "NAME1" "NAME2"], a la
+Calico.  (The "SYS" device will work for any SYS- - directory.)î                                                <n>
+PTDD                               9                          SYS.14.12
+
+
+INPUT-STREAM                                                     [none]
+
+Due to difficulties with pseudo-console buffering, a task should use
+simulated console input as little as possible.  Most programs can take
+input from a file rather than a console (for example, FLOAD in MDL),
+and they should be made to do so when run under Batch.  This technique
+not only reduces the daemon's work but also can speed up the task's
+execution by several times.  Note that exhaustion of input will cause
+execution of the task to terminate if and when the program requests
+more input.
+
+If this field contains a STRING, then that STRING will be sent to the
+running task as simulated console input.  If this field contains a
+VECTOR of STRINGs, then it will be taken to be a file name, and the
+contents of the file (when the task starts running) will be read in and
+sent to the running task as console input.  N.B.: The STRINGs are in
+the order ["DEV" "DIR" "NAME1" "NAME2"], a la Calico.
+
+
+DELIMITER-STRING                         [STRING containing CR and ESC]î                                                            __     ___
+
+This is a STRING whose characters are those after which the Batch
+daemon is to pause during the transfer of console input characters to
+the running task.  It is especially important for the Batch daemon to
+pause when the running task resets its console input (for example,
+after a RESTORE in MDL, or after every ESC ESC in Teco).  Due toî                                       ___ ___
+difficulties with pseudo-console buffering, a delimiter should appear
+at least every fifty characters in the INPUT-STREAM.
+
+
+JCL-LINE                                                         [none]
+
+This is a STRING to be passed to the running task if it asks for JCL
+(the "arguments" given after the program name when invoked under Monit
+or DDT).  If no value is supplied, the task will be told that no JCL
+exists.  A carriage-return at the end is not necessary.  The JCL is
+included in the task's transcript file.
+
+
+OUTPUT-FILE                     "DSK: -          -; -         - OUTPUT"î                                      <originator>  <task-name>
+
+This is a VECTOR of four STRINGs or a single STRING naming the file to
+which a transcript of the task's console output should be appended.
+(The file need not exist before appending.)  The daemon adds useful
+information before and after the transcript.  If an empty STRING is
+supplied (please do not use "NUL:"), then no transcript will be
+generated.  If the file name contains a > character, then a new file
+will be created for each run of the task, in the spirit of the ITS >
+feature.
+
+
+WORKING-DIRECTORY                                        "-          -"î                                                          <originator>
+
+This is a STRING naming the default working directory (SNAME) for the
+running task.
+PTDD                              10                          SYS.14.12
+
+
+TIME-LIMIT                       5.0 if TASK-TYPE is "SHORT", else 30.0
+
+This is a FLOAT giving the maximum number of CPU minutes that theî                                                 _______
+running task will be allowed to accumulate on a given run.  Note that
+the allocation of a task to a queue may cause this field to be
+overridden (for example, a task in the short-task queue cannot have a
+TIME-LIMIT greater than 5.0 minutes).  Note also that if the TIME-LIMIT
+is less than or equal to two seconds (type in %</ 2.0 60>), the task
+will have maximum possible priority, that is, the daemon will start it
+and let it run (for up to the small TIME-LIMIT) regardless of the
+system load.  This technique is useful for signalling other daemons,
+etc., but it should be used with discretion.  If the TIME-LIMIT is less
+than five minutes, the task can be started at a higher system load than
+normal: the shorter the limit, the higher the allowed load.
+
+
+HANG-LIMIT                                                            3
+
+This is a FIX giving the maximum number of real minutes during which
+the running task will be allowed to hang without using any CPU time.
+If the limit is exceeded, execution of the task will terminate.  It is
+designed to give other tasks a chance to run whenever this task is
+slowed excessively because of waiting for a resource, for example
+Arpanet service.  A HANG-LIMIT of more than five minutes will force a
+task into the long-task queue.
+
+
+ACKNOWLEDGEMENT-INFO                                             [none]
+
+This is an associative VECTOR containing ATOMs and VECTORs indicating
+what to do on various conditions (happening to this task).  For each
+condition (named by an ATOM), the contents of the next VECTOR
+determines the action as follows:
+        for each STRING, send a message to that user;
+        for each positive FIX, make that task runnable;
+        and for each negative FIX, make that task unrunnable.
+(Acknowledgements are done for one level only, that is, if one task's
+acknowledgement makes another task runnable, the latter task's
+acknowledgements will not be triggered.)  A task can make itself
+unrunnable.  The following conditions are recognized:
+
+        ON-COMPLETION
+        ON-COMPLETION:NORMAL
+        ON-COMPLETION:OUT-OF-INPUT
+        ON-COMPLETION:NOT-CONTINUABLE
+        ON-COMPLETION:CONTINUABLE-INTERRUPT
+        ON-COMPLETION:TIME-LIMIT-EXPIRED
+        ON-COMPLETION:JOB-HUNG
+        ON-COMPLETION:RUN-TEST-FALSE
+        ON-COMPLETION:SYSTEM-CRASH
+        ON-COMPLETION:ERROR-IN-STARTING
+        ON-DELAY
+        ON-VALRET
+        IF-MODIFIED
+        IF-MADE-RUNNABLE
+        IF-MADE-UNRUNNABLE
+PTDD                              11                          SYS.14.12
+
+
+        IF-ABORTED
+        IF-REMOVED-FROM-QUEUE
+        ON-ANY-OTHER
+
+If nothing is supplied for this field (or if an empty VECTOR is
+supplied), then no acknowledgements will take place.  The condition ON-
+ANY-OTHER is satisfied by any of the other conditions, unless thatî                                                       ______
+condition is otherwise mentioned.  Likewise, ON-COMPLETION is satisfied
+by any of the completion conditions, unless that condition isî                                     ______
+specifically mentioned, and IF-MODIFIED is satisfied by any
+modification to the task, which includes all of the IF-...  conditions,
+unless that condition is specifically mentioned.  Note that ON-î______
+COMPLETION:SYSTEM-CRASH is acknowledged when the daemon comes up again
+after an ITS/Batch crash.  ON-DELAY is triggered when the task cannot
+run because the daemon cannot open either an inferior job or a pseudo-
+console.  ON-VALRET may someday allow a string argument, meaning "if
+and when the task valrets this string".
+
+These examples show a two-task interdependency chain:
+
+   ACKNOWLEDGEMENT-INFO field for task # 20:
+        [ON-COMPLETION:SYSTEM-CRASH ["JHM" -21]
+         ON-COMPLETION:NORMAL ON-COMPLETION:OUT-OF-INPUT [-20 21]
+         IF-ABORTED IF-MADE-UNRUNNABLE ["JHM" -21]]
+
+   ACKNOWLEDGEMENT-INFO field for task # 21:
+        [ON-COMPLETION:NORMAL ON-COMPLETION:OUT-OF-INPUT [20 -21]
+         IF-ABORTED IF-MADE-UNRUNNABLE [-20 "JHM"]]
+
+
+RUN-TEST                                                         [none]
+
+If this field is non-FALSE, it will be evaluated whenever the Batch
+daemon is ready to run the task.  If the evaluation returns a FALSE,
+the task will be treated as if it had run to completion without using
+any CPU time.  If the evaluation returns non-FALSE (or if no RUN-TEST
+is supplied), then the task will be run normally.  This is nice for
+checking to see if a task has anything to do before bothering to load
+it and start it up.  Please see "Programs in Fields" below beforeî                     ______
+submitting a RUN-TEST.
+
+There is currently a built-in function that checks to see if a file or
+set of files exists:
+
+        <FILES-EXIST? -     - -     - ...>î                      <file1> <file2>
+
+returns true only if all the files named by its STRING arguments exist.
+Similarly,
+
+        <HOST-EXISTS? -    ->î                      <host>
+
+returns true only if the specified Arpanet host (FIX or STRING) was
+accepting logins at the last survey or other more recent use.  Any
+generally-useful tests will eventually be built in: speak up, world.
+PTDD                              12                          SYS.14.12
+
+
+RUN-TEST-INFO                                                    [none]
+
+This field contains auxiliary information to be supplied to RUN-TEST
+when the latter is evaluated.
+
+
+RESTART-SWITCH                                                #FALSE ()
+
+If a non-FALSE value is supplied for this field, then this task will be
+restarted from the beginning if ITS (or the Batch daemon) crashes
+during its run.  Otherwise, the Batch daemon will act as if the run had
+completed, except that the task will be in the "unrunnable" state until
+modified, and the ON-COMPLETION:SYSTEM-CRASH acknowledgement will be
+satisfied.
+
+
+BATCH-QUEUE-CHECK-SWITCH                                      #FALSE ()
+
+If a non-FALSE value is supplied for this field, the daemon will scan
+the disk queue (.BATCH directory) for newly created SPECS and MODS
+files after the task is run.  In this way, a task can write out such a
+file (being careful to use the correct ATOM names, including implicit
+or explicit trailers) to create new tasks or modify existing tasks.
+
+
+LAST-STARTING-TIME                                               [none]
+
+This field is filled in by the Batch daemon with the current date/time
+whenever the task is started running.
+
+
+LAST-COMPLETION-TIME                                             [none]
+
+This field is filled in by the Batch daemon with the current date/time
+whenever the task completes a run.
+
+
+LAST-CPU-TIME-USED                                                  0.0
+
+This field is filled in by the Batch daemon with the elapsed CPU time
+whenever the task completes a run.
+
+
+ACCUMULATED-CPU-TIME                                                0.0
+
+The Batch daemon increments this field by the elapsed CPU time whenever
+the task completes a run.
+
+
+NUMBER-OF-TIMES-RUN                                                   0
+
+The Batch daemon increments this field by one whenever the task
+completes a run.
+PTDD                              13                          SYS.14.12
+
+
+BY-WHOM-MODIFIED                                                <UNAME>
+
+This field is used only in MODS files.  It is a STRING giving the name
+of the user that requested the modification.
+
+
+WHEN-MODIFIED                            <DTNOW!-TIMFCN!-PACKAGE> [now]
+
+This field is used only in MODS files.  It is the date/time at which
+the modification was requested.
+
+
+PROGRAMS IN FIELDSî________ __ ______
+
+The RUN-TEST and SCHEDULER fields allow the user to specify arbitrary
+expressions for deciding whether to run a task and for rescheduling a
+task to run again.
+
+The RUN-TEST (if specified), is evaluated before creating a job to run
+the task.  The result of the evaluation will be included in the task's
+transcript file.  If this test returns a non-FALSE (and does not cause
+an error), the task's FILE-TO-RUN will be loaded and run.  If this test
+returns a FALSE, the task will be treated as if it had run to
+completion without using any time.
+
+In any case, the daemon will ignore the contents of the RUN-TEST-INFO
+field (except to lose the contents if it is a FALSE).  During the
+evaluation of the RUN-TEST, the ATOM MY-TASK will be bound to the task
+description, so that the RUN-TEST can reference other fields.  The ATOM
+INFO-FIELD will be bound to the RUN-TEST-INFO field.  Both ATOMs are in
+the same OBLIST with all of the task-description field-name ATOMs; thus
+they need have no trailers in SPECS and MODS files.
+
+If the ATOM INFO-FIELD is SET (or PUT into) during the evaluation of
+the RUN-TEST, then the RUN-TEST-INFO field of the task description will
+be changed and included when updating the disk queue.  Various fields
+of the task description can be read with FORMs like <NTH .MY-TASK ,JCL-
+LINE> or just <JCL-LINE .MY-TASK>, and written with <PUT .MY-TASK ,JCL-
+LINE "new jcl line">.
+
+After a task is run, it will be rescheduled if: (1) there exists a
+SCHEDULER, or (2) the RESCHEDULE-INFO field is a LIST or a VECTOR.  If
+there is a SCHEDULER, it will be evaluated while INFO-FIELD is bound to
+the RESCHEDULE-INFO field.  Otherwise, the RESCHEDULE-INFO field will
+be interpreted in the "standard" way.
+
+If a user's SCHEDULER is evaluated, and if the result of the evaluation
+is a LIST, it will be interpreted as a standard absolute date/time, and
+the task will be rescheduled to then.  The LIST must be a legal
+argument to DTNORM!-TIMFCN!-PACKAGE.  If the result is a FIX or a
+FLOAT, then the task will be rescheduled to the "current" TIME-OF-NEXT-
+RUN plus that many minutes.  Otherwise, the task will be removed from
+the queue.
+
+While the daemon is parsing a task's specification file, the OBLIST
+PTDD                              14                          SYS.14.12
+
+
+path contains the ROOT OBLIST and an OBLIST for the names of
+description fields and of built-in functions.  There are other OBLISTs
+existing in the daemon, but access to them requires ATOM trailers.  The
+availability of other OBLISTs is subject to change, but without fail
+the "TIMFCN" Package will be there.
+
+As an example, here is a RUN-TEST that succeeds only on working days:
+
+        <NOT <OR <0? <DOW>> <==? 6 <DOW>> <HOLIDAY?!-TIMFCN!-PACKAGE>>>
+
+Although the daemon tries, there is little it can do to protect itself
+against intentional maliciousness in RUN-TESTs and SCHEDULERs, since it
+is written to provide maximum flexibility and power.  Non-intentional
+errors will be hardship enough.  Examples of uncouth things:
+
+        deliberately causing an ERROR
+        doing a RESTORE
+        playing with LVALs (besides MY-TASK and INFO-FIELD) that you
+          don't bind
+        playing with GVALs
+        having more than two CHANNELs open concurrently
+        leaving CHANNELs open
+        FLOADing random garbage
+        doing I/O to the console (The daemon has none.)
+        running your program inside the daemon
+        anything to do with PROCESSes or interrupts
+
+It is hoped that programs in fields will be fairly short and simple.
+Please contact the authors if you have the slightest question.  Ideas
+for generally-useful functions to build into the daemon are welcome.
+
