@@ -1,0 +1,143 @@
+;;;-*- Mode:LISP; Package: TV; Lowercase: Yes; Base: 8 -*-
+
+
+#+Symbolics
+(defun array-initialize (array initial-contents)
+  (fillarray array (circular-list initial-contents)))
+
+#+Symbolics
+(defsubst ceiling (a b)
+  (if (zerop (remainder a b)) (quotient a b)
+      (1+ (quotient a b))))
+
+#+Symbolics
+(defsubst truncate (a b)
+  (quotient a b))
+
+#+Symbolics
+;Make a pixel array of WIDTH by HEIGHT.  You must specify :TYPE as in MAKE-ARRAY.
+(DEFUN MAKE-PIXEL-ARRAY (WIDTH HEIGHT &REST OPTIONS)
+  (LEXPR-FUNCALL 'MAKE-ARRAY
+		 (LIST WIDTH HEIGHT)
+		 OPTIONS))
+#+Symbolics
+(DEFSUBST PIXEL-ARRAY-WIDTH (ARRAY)
+  (ARRAY-DIMENSION-N 1 ARRAY))
+
+#+Symbolics
+(DEFSUBST PIXEL-ARRAY-HEIGHT (ARRAY)
+  (ARRAY-DIMENSION-N 2 ARRAY))
+
+;Fix the bugs in bitblt blinkers.
+(DEFFLAVOR BITBLT-BLINKER
+	((WIDTH NIL)
+	 (HEIGHT NIL)
+	 (ARRAY NIL))
+	(MOUSE-BLINKER-MIXIN BLINKER)
+  :INITABLE-INSTANCE-VARIABLES)
+
+(DEFMETHOD (BITBLT-BLINKER :BEFORE :INIT) (IGNORE)
+  (UNLESS ARRAY
+    (UNLESS (AND WIDTH HEIGHT)
+      (FERROR NIL
+	      "Attept to create a BITBLT-BLINKER without specifying an array or its size."))
+    (SETQ ARRAY (MAKE-PIXEL-ARRAY (* 32.  (CEILING WIDTH 32.)) HEIGHT
+				  ':TYPE (SHEET-ARRAY-TYPE SHEET))))
+  (IF (NULL WIDTH)
+      (SETQ WIDTH (PIXEL-ARRAY-WIDTH ARRAY)))
+  (IF (NULL HEIGHT)
+      (SETQ HEIGHT (PIXEL-ARRAY-HEIGHT ARRAY))))
+
+
+(DEFMETHOD (BITBLT-BLINKER :SET-SIZE) (NWIDTH NHEIGHT)
+  (UNLESS (AND ( (PIXEL-ARRAY-WIDTH ARRAY) NWIDTH) ( HEIGHT NHEIGHT))
+    (SETQ ARRAY (MAKE-PIXEL-ARRAY (* 32. (1+ (CEILING NWIDTH 32.)))
+				  (* 32. (1+ (CEILING NHEIGHT 32.)))
+				  ':TYPE (SHEET-ARRAY-TYPE SHEET))))
+  (with-blinker-ready ()
+    (SETQ WIDTH NWIDTH HEIGHT NHEIGHT)))
+
+(DEFMETHOD (BITBLT-BLINKER :BLINK) ()
+  (LET* ((SCREEN-ARRAY (SHEET-SCREEN-ARRAY SHEET))
+	 (SWIDTH (PIXEL-ARRAY-WIDTH SCREEN-ARRAY))
+	 (SHEIGHT (PIXEL-ARRAY-HEIGHT SCREEN-ARRAY)))
+    (BITBLT ALU-XOR
+	    (- (MIN SWIDTH (+ X-POS WIDTH))
+	       (MAX 0 X-POS))
+	    (- (MIN SHEIGHT (+ Y-POS WIDTH))
+	       (MAX 0 Y-POS))
+	    ARRAY
+	    (MAX 0 (- X-POS))
+	    (MAX 0 (- Y-POS))
+	    SCREEN-ARRAY (MAX 0 X-POS) (MAX 0 Y-POS))))
+
+(DEFFLAVOR MAGNIFYING-BLINKER
+	((MAGNIFICATION 2.))
+	(BITBLT-BLINKER)
+  (:SETTABLE-INSTANCE-VARIABLES))
+
+(DEFMETHOD (MAGNIFYING-BLINKER :AFTER :INIT) (IGNORE)
+  (UNLESS (AND (ZEROP (\ HEIGHT MAGNIFICATION))
+	       (ZEROP (\ WIDTH MAGNIFICATION)))
+    (FERROR NIL "Height (~D) and width (~D) are not multiples of magnification (~D)."
+	    HEIGHT WIDTH MAGNIFICATION)))
+
+(defmethod (magnifying-blinker :set-magnification-and-size) (m s)
+  (UNLESS (AND (ZEROP (\ (car s) M))
+	       (ZEROP (\ (cadr s) M)))
+    (FERROR NIL "Height (~D) and width (~D) are not multiples of new magnification (~D)."
+	    (car s) (cadr s) M))
+  (lexpr-funcall-self ':set-size s)
+  (setq magnification m))
+
+(DEFMETHOD (MAGNIFYING-BLINKER :BEFORE :BLINK) ()
+  (WHEN (NULL PHASE)
+    (ARRAY-INITIALIZE ARRAY 0)
+    (LET* ((SCREEN-ARRAY (SHEET-SCREEN-ARRAY SHEET))
+	   (SWIDTH (PIXEL-ARRAY-WIDTH SCREEN-ARRAY))
+	   (SHEIGHT (PIXEL-ARRAY-HEIGHT SCREEN-ARRAY)))
+      (WHEN SCREEN-ARRAY
+	(DO ((I (+ (TRUNCATE (- X-OFFSET) MAGNIFICATION) X-OFFSET X-POS) (1+ I))
+	     (I1 0 (+ I1 MAGNIFICATION)))
+	    (( I1 WIDTH))
+	  (DO ((J (+ (TRUNCATE (- Y-OFFSET) MAGNIFICATION) Y-OFFSET Y-POS) (1+ J))
+	       (J1 0 (+ J1 MAGNIFICATION))
+	       TEM)
+	      (( J1 HEIGHT))
+	    (WHEN (AND ( I 0) (< I SWIDTH)
+		       ( J 0) (< J SHEIGHT)
+		       (NOT (ZEROP (SETQ TEM (AR-2 SCREEN-ARRAY I J)))))
+	      (DOTIMES (I2 MAGNIFICATION)
+		(DOTIMES (J2 MAGNIFICATION)
+		  (AS-2 TEM ARRAY (+ I1 I2) (+ J1 J2)))))))
+	(BITBLT ALU-XOR
+		(- (MIN SWIDTH (+ X-POS WIDTH))
+		   (MAX 0 X-POS))
+		(- (MIN SHEIGHT (+ Y-POS WIDTH))
+		   (MAX 0 Y-POS))
+		SCREEN-ARRAY (MAX 0 X-POS) (MAX 0 Y-POS)
+		ARRAY
+		(MAX 0 (- X-POS))
+		(MAX 0 (- Y-POS))))))
+  ;; Make a box around the whole thing so it can be found if screen is blank under it.
+  (LET ((-X-POS- (+ X-POS -1)) (-Y-POS- (+ Y-POS -1))
+	(-HEIGHT- (+ 2 HEIGHT)) (-WIDTH- (+ 2 WIDTH)))
+    (%DRAW-RECTANGLE-CLIPPED 1 -HEIGHT- -X-POS- -Y-POS- ALU-XOR SHEET)
+    (%DRAW-RECTANGLE-CLIPPED (- -WIDTH- 1) 1 (+ -X-POS- 1) -Y-POS- ALU-XOR SHEET)
+    (%DRAW-RECTANGLE-CLIPPED 1 (- -HEIGHT- 1)
+			     (+ -X-POS- -WIDTH- -1) (+ -Y-POS- 1)
+			     ALU-XOR SHEET)
+    (%DRAW-RECTANGLE-CLIPPED (- -WIDTH- 2) 1
+			     (+ -X-POS- 1) (+ -Y-POS- -HEIGHT- -1)
+			     ALU-XOR SHEET)))
+
+(DEFMETHOD (MAGNIFYING-BLINKER :DEFER-REAPPEARANCE) () NIL)
+
+(MOUSE-DEFINE-BLINKER-TYPE ':MAGNIFYING-BLINKER
+			      #'(LAMBDA (SCREEN)
+				  (MAKE-BLINKER SCREEN 'MAGNIFYING-BLINKER
+						':VISIBILITY NIL
+						':WIDTH 64.
+						':HEIGHT 64.
+						':MAGNIFICATION 2.)))
+

@@ -1,0 +1,187 @@
+;;; -*- Mode: LISP; Package: USER -*-
+;;; My LISPM init file -- Leigh L. Klotz, Jr. Most of this stuff is taken from PGS's.
+
+(load "pgs;mars")
+
+(defun marsbp ()
+  (fset-carefully 'si:tv-beep
+		  #'(lambda () (already-spaced-melodize marscore 1 .4)) t)
+  (si:tv-beep) t)
+
+(defun regbp ()
+  (undefun 'si:tv-beep) (si:tv-beep))
+
+(defmacro time-function (funtcion-timed &aux (start-time (time)))
+  `(prog1
+     ,timed-function
+     (princ (string-append "Function evaluation took " (- (time) start-time)))))
+
+
+(setq  (atan 0 -1))
+
+
+
+(login-setq si:scroll-bar-flag ())		  ;I never, ever want a scroll-bar
+
+
+;;; round and fix
+
+(defmacro round (flo)
+	  `(fix (+$ 0.5 ,flo)))
+
+;;; Write a print request file for the XGP queue
+
+(defun xgp (file)
+   (let ((q-stream (open "ai:.xgpr.;    q1 >" ':out))
+         (date-time (chaos:chaos-time "ai"))
+         (midpt))
+        (cond ((listp date-time)
+               (setq date-time
+		     (chaos:time-print (car date-time)
+				       (cdr date-time) nil)
+                     midpt (string-search-char #/  date-time)
+                     date-time (string-append
+				(substring date-time (1+ midpt)) " "
+				(substring date-time 0 midpt))))
+              (t (setq date-time "")))
+        (format q-stream
+		";Status ~A	LM * ~A  ??????	~A ~%" user-id  date-time file)
+	(princ (string-append
+		";Notify AI,KLOTZ Your printout of " file " has started.
+;Default AI:LOGO;
+"
+		file) q-stream)
+        (close q-stream)))
+
+;;; Some of these things modelled after stuff in MMcM's init file.
+
+(zwei:initialize-zmacs-if-necessary)
+
+(login-setq zwei:*default-file-name* "klotz .foo. logo; ai:")
+(login-setq zwei:*comment-column* 620)
+
+
+;;; this defines the ctl-top-f (ctl-delta) character to be the
+;;; List Directory command in my editor.
+
+zwei:(defcom com-logo-view-directory	"list my file directory." (km)
+	(let ((viewed-directory "ai:logo"))
+	  (setq viewed-directory (string-trim '(73 40 211)
+					      (string-upcase viewed-directory)))
+	  (blind-mode-line ("viewing directory " viewed-directory)
+			   (view-file (string-append viewed-directory
+						     "; .file. (dir)"))))
+	dis-none)
+
+(login-eval zwei:(set-comtab-return-undo *standard-comtab*
+					 '("" :com-logo-view-directory)))
+
+;;; this defines the ctl-top-x (ctl-beta) character to be the
+;;; List XGP Queue command in my editor.
+
+zwei:
+(defcom :com-logo-view-xgp-directory "List the XGP queue." (km)
+   (let ((viewed-directory "XGP:LOGO"))
+      (setq viewed-directory
+	    (string-trim '(#/; #\sp #\tab) (string-upcase viewed-directory)))
+      (bind-mode-line ("Viewing Directory " viewed-directory)
+	  (view-file (string-append viewed-directory "; .FILE. (DIR)"))))
+   dis-none)
+
+(login-eval zwei:(set-comtab-return-undo
+		  *standard-comtab*
+		  '("" :com-logo-view-xgp-directory)))
+
+;;; This defines the ctl-top-t (ctl-left-horseshoe) character to be the
+;;; List TTY Users command in my editor.
+
+zwei:
+(defcom :com-logo-list-tty-users "List the TTY users." (km)
+   (let ((viewed-directory "TTY:LOGO"))
+
+	    (string-trim '(#/; #\sp #\tab) (string-upcase viewed-directory)))
+      (bind-mode-line ("Viewing Directory " viewed-directory)
+	  (view-file (string-append viewed-directory "; .FILE. (DIR)"))))
+   dis-none)
+
+(login-eval zwei:(set-comtab-return-undo *standard-comtab*
+					 '("" :com-logo-list-tty-users)))
+
+;;; this defines the ctl-top-m (ctl-existential) character to be the
+;;; View Mail command in my editor.
+
+zwei:
+(defcom :com-logo-view-mail "View my mail." (km)
+   (let ((filename "KLOTZ MAIL AI: LOGO;"))
+     (cond ((file-exists-p filename)
+	    (prompt-line "Viewing ~A" filename)
+	    (view-file filename))
+	   (t (format typeout-io "No mail."))))
+   dis-none)
+
+(login-eval zwei:(set-comtab-return-undo *standard-comtab*
+					 '("" :com-logo-view-mail)))
+
+;;; This defines the ctl-top-s (ctl-greater-or-equal) character to be the
+;;; Save All Files command in my editor.
+
+zwei:
+(defcom :com-logo-save-all-files "Save all files." (km)
+  (save-all-files)
+   dis-none)
+
+(login-eval zwei:(set-comtab-return-undo *standard-comtab*
+					 '("" :com-logo-save-all-files)))
+
+(defcom com-logo-view-directory	"list my file directory." (km)
+	(let ((viewed-directory "ai:logo"))
+	  (setq viewed-directory (string-trim '(73 40 211)
+					      (string-upcase viewed-directory)))
+	  (blind-mode-line ("viewing directory " viewed-directory)
+			   (view-file (string-append viewed-directory
+						     "; .file. (dir)"))))
+	dis-none)
+
+(login-eval zwei:(set-comtab-return-undo
+		  *standard-comtab*
+		  '("" :com-logo-view-xgp-directory)))
+
+(COMMENT
+ NONE OF THE STUFF BELOW HERE WORKS. I'M STILL WORKING ON IT.
+;;;def-view-com defines a command to look at a specific file
+;;;and places the command on a given key. This is more useful than
+;;;one might think at first glance. For example, one can view the xgp and dover
+;;;queues, list home directories, and view mail.
+;;;If the last argument is not given, existence of the file will not be checked
+;;;for in advance. This is useful for things like viewing the xgp queue.
+
+
+zwei:
+(defmacro def-view-com (command-name command-character-string help-string
+			viewed-filename
+			prompt-line-message
+			(&optional (file-not-found-error-string nil)))
+  `(progn 'compile
+	  (defcom ,command-name ,help-string (km)
+		  (cond ((file-exists-p ,viewed-filename)
+			 (prompt-line ,prompt-line-message)
+			 (view-file ,viewed-filename))
+			(t (format typeout-io ,file-not-found-error-string)))
+		  dis-none)
+	  (login-eval (set-comtab-return-undo *standard-comtab*
+					      `(,command-character-string ,command-name))))
+  command-name)
+
+;Evidently these defined commands want to return a value
+;which tells whatever called them something, like DIS-NONE
+;or DIS-TEXT, but I don't know what it means.
+(defun foo ()
+(macroexpand #'
+(zwei:def-view-com com-view-logo-directory "" "View my home directory (logo)."
+  "DIR:KLOTZ;NAME1 UP"
+  "Viewing the friendly LOGO directory."
+  "Fuck! The Logo directory is GONE!")
+))
+
+
+);end of commented out code.

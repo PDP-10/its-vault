@@ -1,0 +1,76 @@
+!* -*- TECO -*- *!
+
+!~FILENAME~:! !Quick mail reader library for me.!
+QUICKR
+
+!& Setup Quickr Library:! !S Setup before first message!
+
+  m.m^R_Quick_Read_Mailu:.x()
+
+ 
+
+!^R Quick Read Mail:! !^R Set up for reading mail file.
+With an arg, uses the current buffer.!
+
+  
+  f-4"n fsuname:f6[u
+          fshsname:f6[h
+	  etDSK:h;U_MAIL
+	  1+4,fMail_File:[F
+	  m(m.mFind_File)F'
+  m.mMake_Local_Q-Register[.Q
+  m.m^R_Next_Screenm.Q_
+  m.m^R_Quickr_Next_Messagem.QN
+  m.m^R_Quickr_Previous_Messagem.QP
+  m.m^R_Quickr_Save_Messagem.Q=
+  m.m^R_Quickr_Quitm.QQ
+
+  0,0fsbound
+  m(m.m^R_Quickr_Next_Message)
+
+
+
+!^R Quickr Next Message:! !^R Move to next message!
+  z[z				    !* save the old end of message!
+  0,fszfsbound		    !* widen bounds!
+  qz+1:j
+  :s			    !* find end of message!
+  :S
+
+  qz,. fsbound			    !* Set bounds to be end of prev, new end!
+  bj				    !* go to beginning of message!
+  :s***_EOOH_***"n .+2,z fsboundw !* Go CRLF past babyl stuff if present!
+    bj'				    !* and set bounds to that!
+   !loop!			    !* Cheaply flush some Recv'ds !
+    .,.+9f~Received:"E l .,z fs bound oloop'
+    .,.+11f~Message-id:"e l .,z fs bound oloop'
+    .,.+4f~__id"e l .,z fs bound oloop'
+    .,.+1f~	id"e l .,z fs bound oloop'
+
+
+
+!^R Quickr Previous Message:! !^R Move to previous message!
+  bj				    !* go to beginning of this message!
+  0,fszfsbound		    !* widen bounds!
+  2<-:s;>			    !* search for end of previous message!
+  :s
+
+  .,.fsbound
+  m(m.m^R_Quickr_Next_Message)
+  
+
+
+!^R Quickr Save Message:! !^R Copy message to *Saved Mail* buffer!
+  hx*[1
+  m(m.mSelect_Buffer)*Saved_Mail*
+  g1
+  m(M.mSelect_Buffer)
+
+
+
+!^R Quickr Quit:! !^R Quit Quickr.!
+  0,fszfsbound
+  m(m.mSelect_Buffer)		    !* either select *Saved Mail* or old buf!
+
+
+

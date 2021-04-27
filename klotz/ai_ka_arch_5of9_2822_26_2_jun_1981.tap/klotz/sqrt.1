@@ -1,0 +1,43 @@
+;	Local variable block:
+ARG	=TEMPN3		;Argument copy
+GUESS	=TEMPN5		;Square-root guess
+
+SSQRT:	JSR GT1FLT	
+	LDA NARG1+1
+	BMI SQRTR	;We don't do negatives
+	JSR CKN1ZR	;See if NARG1 is 0
+	BNE SQRTAE	;Nope
+SQRTO:	JMP OTPFL1	;Yup, output it
+SQRTAE:	LDY #ARG
+	JSR XN1TOY	;Keep a copy of the arg around
+	LDA NARG1	;Halve the exponent to get the first guess...
+	BMI SQRTA
+	LSR A		;Positive exponent, just shift to right
+	BPL SQRTB	;(Always)
+SQRTA:	SEC		;Negative exponent
+	ROR A		;Shift in a one
+	AND #$BF	;Zap the one from before
+SQRTB:	STA NARG1
+	LDY #GUESS
+	JSR XN1TOY	;Copy arg into Guess
+SQRT1:	LDY #ARG
+	JSR XYTON2	;Put orig. arg in NARG2 (Guess is in NARG1 now)
+	JSR FDIVX	;Get Arg/Guess
+	LDY #GUESS
+	JSR XYTON2	;Get guess in NARG2
+	JSR FADD	;Get Guess+Arg/Guess
+	DEC NARG1	;Divide NARG1 by 2 to get (Guess+Arg/Guess)/2
+	LDX #$02	;Compare new guess to old guess
+SQRTL1:	LDA GUESS,X	;First three bytes must be equal
+	CMP NARG1,X
+	BNE SQRT2
+	DEX
+	BPL SQRTL1
+	LDA GUESS+3	;Compare 4 most sig. bits of least sig. bytes
+	EOR NARG1+3
+	AND #$F0
+	BEQ SQRTO	;Good enough, return with new guess
+SQRT2:	LDY #GUESS
+	JSR XN1TOY	;Still not good enough, make this new guess
+	JMP SQRT1	;Try again
+SQRTR:	ERROR XSQT

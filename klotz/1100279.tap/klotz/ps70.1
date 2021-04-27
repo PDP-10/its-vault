@@ -1,0 +1,462 @@
+% -*- Mode: Scheme; Package: Scheme; Syntax: Scheme; -*-
+% oz:<jar>qo.tex
+% This is 6.821 Fall 1987 Handout No. 70
+
+\documentstyle[11pt,6821]{article}
+
+\input{6821-macros}
+\input{6821-commands}
+
+\handout{70}{4 December 1987}
+\pss{8}
+
+\begin{body}
+
+\section{A type inference system}
+
+A program that solves problems 1 and 3 starts on page~\pageref{it}
+of this handout.
+
+Very little explanation is needed, since the program is a
+straightforward transcription of the algorithm presented in handout~58.
+In order for the main procedure {\tt infer} to be rendered in a
+side-effect-free manner, it simulates a ``multiple-value return'' by
+invoking an explicitly-passed two-argument continuation procedure; the
+two return values are the inferred type and the updated substitution.
+
+Note that a substitution must be passed to {\tt bind-pvars} and {\tt
+bind}, as well as to {\tt generic-vars}.
+
+\section{Using the inference system}
+
+\begin{verbatim}
+[a]  (letrec ((fact (lambda (n)
+                      (if (= n 0) 1 (* n (fact (- n 1)))))))
+       fact)
+
+     Inferred type:  (proc (num) num)
+
+[b]  (lambda (g)
+       (let ((f (lambda (x) x)))
+         (g (f 1) (f (not #t)))))
+
+     Inferred type:  (proc ((proc (num bool)
+                              (? result-11)))
+                       (? result-11))
+\end{verbatim}
+\newpage
+\begin{verbatim}
+[c]  (letrec ((map (lambda (p l)
+                     (if (null? l)
+                         '()
+                         (cons (p (car l))
+                               (map p (cdr l)))))))
+       map)
+
+     Inferred type:  (proc ((proc ((? t-10))
+                              (? list-6))
+                            (list (? t-10)))
+                       (list (? list-6)))
+
+[d]  (letrec ((^ (lambda (p n)
+                   (if (= n 0)
+                       (lambda (x) x)
+                       (lambda (x)
+                         (p ((^ p (- n 1)) x)))))))
+       ^)
+
+     Inferred type:  (proc ((proc ((? result-14))
+                              (? result-14))
+                            num)
+                       (proc ((? result-14))
+                         (? result-14)))
+
+[e]  (lambda (f)
+       (let ((g (lambda (x) (f x))))
+         (cons (g 1) (cons (g #f) '()))))
+\end{verbatim}
+Case {\tt [e]} fails because the type inferred for {\tt (g 1)}
+\begin{verbatim}
+   (proc (num) (? result-7))
+\end{verbatim}
+\noindent fails to unify with the type inferred for {\tt (g \#f)}
+\begin{verbatim}
+   (proc (bool) (? result-9))
+\end{verbatim}
+
+\section{Optional declarations}
+
+The inference program handles an expression {\tt(the $T$ $E$)} by
+unifying the type inferred for $E$ with the type $T$.  But in order to
+make sure that there is no interference between type expressions in
+separate {\tt the}-expressions, the type variables in $T$ are first
+renamed.  In the notation of handout~58:
+
+\begin{verbatim}
+  If exp is a declaration (the t e) then:
+    T1 = rename(t)
+    T2 = I[A, e]
+    UNIFY[T1, T2]
+    T = T1
+\end{verbatim}
+
+A similar renaming is performed on {\tt lambda} parameter types.  The
+renamed types are then used directly as the initial type assignment for
+the variables.  Untyped parameters, as before, are assigned new type
+variables.  Thus, for example,
+\begin{verbatim}
+   (lambda (x y) ...)
+\end{verbatim}
+\noindent and
+\begin{verbatim}
+   (lambda ((x (? s)) (y (? t))) ...).
+\end{verbatim}
+\noindent behave in exactly the same way.
+
+\begin{verbatim}
+  If exp is (lambda ((x1 t1) ... (xn tn)) e) then:
+    T1, ... Tn = rename(t1, ... tn)
+    T0 = I[{x1: T1, ... xn: Tn}:A, e]
+    T = (proc (T1 ... Tn) T0)
+\end{verbatim}
+
+
+\begin{verbatim}
+[a]  (lambda ((x num)) x)
+
+     Inferred type:  (proc (num) num)
+
+[b]  (the (proc ((? t)) (? t)) (lambda (x) x))
+
+     Inferred type:  (proc ((? t-3)) (? t-3))
+
+[c]  (letrec ((map (lambda ((p (proc ((? t1)) (? t2)))
+                            (l (list (? t1))))
+                       (if (null? l)
+                           '()
+                           (cons (p (car l))
+                                 (map p (cdr l)))))))
+         map)
+
+     Inferred type:  (proc ((proc ((? result-8)) (? list-6))
+                            (list (? result-8)))
+                           (list (? list-6)))
+\end{verbatim}
+
+
+\section{Declaring polymorphic procedures}
+
+Milner's type inference algorithm, extended to deal with
+optional declarations as specified by part~3, would fail
+to find a type for
+\begin{verbatim}
+   (lambda ((p (proc ((? t)) (? t))))
+     (let ((x (p 1)) (y (p #t)))
+        1))
+\end{verbatim}
+\noindent for the same reason that example 1[e] above fails.  This is
+because under this system adding declarations to a program that is not
+well-typed cannot make it become well-typed; adding declarations can
+only make a well-typed program become not well-typed.
+
+On the other hand, let {\tt Z} be the procedure that is the value of
+the above lambda-expression, and suppose that somehow our program
+decided that {\tt Z} were well-typed and had the type
+\begin{verbatim}
+   (proc ((proc ((? t)) (? t))) num).
+\end{verbatim}
+\noindent A procedure call {\tt(Z~not)} should not be well-typed,
+since the argument to {\tt Z} must be polymorphic and {\tt not} is
+monomorphic.  But our algorithm matches types symmetrically, and the
+type of {\tt not}, {\tt (proc~(bool)~bool)}, unifies with the type that
+{\tt Z} requires of its argument, so unless we added some more
+involved inference mechanisms, {\tt(Z~not)} would pass our
+type checker, resulting in a call {\tt(not~1)} at run time.
+
+This naturally leads us to ask whether it is possible to improve
+Milner's inference algorithm so that polymorphic procedures may be
+passed as arguments, and whether declarations might help us out.  This
+is an open research problem, although A.~J.~Kfoury seems to have some
+results (unpublished).  As expected, his approach is to employ
+explicitly quantified universal types ({\tt poly}) and a modified
+unification algorithm.  The main difficulty is in proving that a more
+forgiving type inference algorithm doesn't accept any programs that might
+encounter run-time type errors.
+
+\newpage
+
+\label{it}
+
+\begin{verbatim}
+
+; Milner's type inference algorithm, written in Scheme.
+
+; Top level entry point
+;  e.g. (infer-top '(lambda (x) (odd? x)))
+;          =>  '(proc (num) bool)
+
+(define (infer-top exp)
+  (reset-unique-id)
+  (infer exp initial-type-assignment the-empty-frame
+         (lambda (type frame)
+           (if (eq? frame 'failed)
+               'failed
+               (instantiate type frame)))))
+
+; INFER applies its continuation, RETURN, to two values:
+;  (a) the inferred type
+;  (b) an extended frame
+
+(define (infer exp env frame return)
+  (cond ((eq? frame 'failed) 'failed)
+        ((number? exp)  (return 'num frame))
+        ((boolean? exp) (return 'bool frame))
+        ((quotation? exp)
+         (return (constant-type (quotation-value exp)) frame))
+        ((pvariable? exp)
+         (return (lookup exp env
+                         (lambda (val poly? generic-vars)
+                           (if poly?
+                               (rename-generic-vars-in val generic-vars)
+                               val)))
+                 frame))
+        ((combination? exp)
+         (infer-combination-type exp env frame return))
+        ((if-form? exp)
+         (infer-if-type exp env frame return))
+        ((lambda-form? exp)
+         (infer-lambda-type exp env frame return))
+        ((let-form? exp)
+         (infer-let-type exp env frame return))
+        ((letrec-form? exp)
+         (infer-letrec-type exp env frame return))
+        ((declaration? exp)
+         (infer-declaration-type exp env frame return))
+        (else
+         (error "unknown expression type" exp))))
+
+; Specialist routines
+
+(define (constant-type obj)
+  (cond ((number? obj) 'num)
+        ((null? obj)
+         (make-list-type (make-new-var 'list (unique-id))))
+        ((boolean? obj) 'bool)
+        ((symbol? obj) 'symbol)
+        (else (error "untypable constant" obj))))
+
+(define (infer-lambda-type exp env frame return)
+  (let ((id (unique-id)))
+    (let ((parameter-types
+            (map (lambda (param)
+                   (if (pair? param)
+                       (cadr param)
+                       (make-new-var param id)))
+                 (rename-all-vars-in (lambda-parameters exp)))))
+      (infer (lambda-body exp)
+             (bind-pvars (map (lambda (param)
+                                (if (pair? param)
+                                    (car param)
+                                    param))
+                              (lambda-parameters exp))
+                         parameter-types #f env frame)
+             frame
+             (lambda (body-type frame)
+               (return (make-proc-type parameter-types body-type)
+                       frame))))))
+
+(define (infer-combination-type exp env frame return)
+  (letrec ((loop
+            (lambda (args arg-types frame)
+              (if (null? args)
+                  (infer (operator exp)
+                         env
+                         frame
+                         (lambda (proc-type frame)
+                           (let ((id (unique-id)))
+                             (let ((var (make-new-var 'result id)))
+                               (return var
+                                       (unify proc-type
+                                              (make-proc-type
+                                                   (reverse arg-types)
+                                                   var)
+                                              frame))))))
+                  (infer (car args)
+                         env
+                         frame
+                         (lambda (arg-type frame)
+                           (loop (cdr args)
+                                 (cons arg-type arg-types)
+                                 frame)))))))
+    (loop (operands exp) '() frame)))
+
+(define (infer-letrec-type exp env frame return)
+  (let ((id (unique-id)))
+    (let ((new-vars (map (lambda (pvar) (make-new-var pvar id))
+                         (map car (letrec-bindings exp)))))
+      (let ((new-env (bind-pvars (map car (letrec-bindings exp))
+                                 new-vars #f env frame)))
+        (letrec ((loop
+                  (lambda (bindings vars frame)
+                    (if (null? bindings)
+                        (infer (letrec-body exp) new-env frame
+                               return)
+                        (infer (cadr (car bindings)) new-env frame
+                               (lambda (type frame)
+                                 (loop (cdr bindings)
+                                       (cdr vars)
+                                       (unify type (car vars) frame))))))))
+          (loop (letrec-bindings exp) new-vars frame))))))
+
+(define (infer-let-type exp env frame return)
+  (letrec ((loop
+            (lambda (bindings val-types frame)
+              (if (null? bindings)
+                  (infer (let-body exp)
+                         (bind-pvars (map car (let-bindings exp))
+                                     (instantiate (reverse val-types) frame)
+                                     #t
+                                     env
+                                     frame)
+                         frame
+                         return)
+                  (infer (cadr (car bindings)) env frame
+                         (lambda (val-type frame)
+                           (if (eq? frame 'failed)
+                               frame
+                               (loop (cdr bindings)
+                                     (cons val-type val-types)
+                                     frame))))))))
+    (loop (let-bindings exp) '() frame)))
+
+(define (infer-if-type exp env frame return)
+  (infer (if-test exp) env frame
+         (lambda (test-type frame)
+           (infer (if-consequent exp) env (unify test-type 'bool frame)
+                  (lambda (con-type frame)
+                    (infer (if-alternate exp) env frame
+                           (lambda (alt-type frame)
+                             (return con-type
+                               (unify con-type alt-type frame)))))))))
+
+(define (infer-declaration-type exp env frame return)
+  (infer (declaration-value exp)
+         env
+         frame
+         (lambda (val-type frame)
+           (return val-type
+                   (unify val-type
+                          (rename-all-vars-in
+                             (declaration-type exp))
+                          frame)))))
+
+
+; New expression type (THE <type> <exp>)
+
+(define declaration? (eq-car? 'the))
+(define declaration-type cadr)
+(define declaration-value caddr)
+
+
+; New version of UNIQUE-ID that lets INFER-TOP reset the
+; counter back to 0.
+
+(define *unique-id* 0)
+
+(define (unique-id)
+  (set! *unique-id* (+ *unique-id* 1))
+  *unique-id*)))
+
+(define (reset-unique-id)
+  (set! *unique-id* 0))
+
+
+; Updated auxiliary routines that propagate the substitution
+; through the type assignment:
+
+(define (bind-pvars pvars vals poly? env frame)
+  (if (null? pvars)
+      env
+      (bind-pvars (cdr pvars)
+                  (cdr vals)
+                  poly?
+                  (bind (car pvars) (car vals) poly? env frame)
+                  frame)))
+
+(define (bind pvar val poly? env frame)
+  (cons (list pvar val poly?
+              (if poly? (generic-vars val env frame) #f))
+        env))
+
+(define (generic-vars pat env frame)
+  (cond ((constant? pat) '())
+        ((var? pat)
+         (if (generic-var? pat env frame) (list pat) '()))
+        (else
+         (union (generic-vars (car pat) env frame)
+                (generic-vars (cdr pat) env frame)))))
+
+(define (generic-var? var env frame)
+  (cond ((null? env) #t)
+        ((and (not (pbinding-polymorphic? (car env)))
+              (occurs-in? var
+                          (instantiate (pbinding-value (car env))
+                                       frame)))
+         #f)
+        (else (generic-var? var (cdr env) frame))))
+
+; RENAME-GENERIC-VARS-IN consistently renames all the
+; generic type variables in a given pattern.
+
+(define (rename-generic-vars-in pat generic-vars)
+  (rename-vars-in pat (lambda (var)
+                        (member var generic-vars))))
+
+; RENAME-ALL-VARS-IN consistently renames all the type
+; variables in a given pattern.
+
+(define (rename-all-vars-in pat)
+  (rename-vars-in pat (lambda (var) #t)))
+
+; Common abstraction for above two routines
+
+(define (rename-vars-in pat pred)
+  (let ((id (unique-id)))
+    (letrec ((copy
+              (lambda (pat)
+                (cond ((constant? pat) pat)
+                      ((var? pat)
+                       (if (pred pat)
+                           (make-new-var (cadr pat) id)
+                           pat))
+                      (else (cons (copy (car pat))
+                                  (copy (cdr pat))))))))
+      (copy pat))))
+
+
+
+; The initial type assignment maps variables to
+; their types.
+
+(define initial-type-assignment
+  (let ((bindings
+         '((not (proc (bool) bool))
+           (+ (proc (num num) num))
+           (- (proc (num num) num))
+           (* (proc (num num) num))
+           (/ (proc (num num) num))
+           (= (proc (num num) bool))
+           (< (proc (num num) bool))
+           (> (proc (num num) bool))
+           (odd? (proc (num) bool))
+           (cons (proc ((? t) (list (? t))) (list (? t))))
+           (car  (proc ((list (? t))) (? t)))
+           (cdr  (proc ((list (? t))) (list (? t))))
+           (null? (proc ((list (? t))) bool)))))
+    (bind-pvars (map car bindings)
+                (map cadr bindings)
+                #t
+                '()
+                the-empty-frame)))
+\end{verbatim}
+\end{body}

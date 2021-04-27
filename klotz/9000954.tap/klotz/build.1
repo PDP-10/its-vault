@@ -1,0 +1,223 @@
+Date: Mon, 6 Feb 89 20:59:23 -0800
+From: disessa%cogsci.Berkeley.EDU@jade.berkeley.edu (Andy diSessa)
+Message-Id: <8902070459.AA20115@cogsci.berkeley.edu>
+To: ehl%SOE.Berkeley.EDU@jade.berkeley.edu
+Cc: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu,
+        dmh%garnet.Berkeley.EDU@jade.berkeley.edu,
+        rel%SOE.Berkeley.EDU@jade.berkeley.edu
+In-Reply-To: Edward Lay's message of Mon, 6 Feb 89 17:12:28 PST <8902070112.AA28880@dewey.soe.berkeley.edu>
+Subject: tell and !'s
+
+Well, here's a short sketch of the design, as I remember it.
+
+What's clean is the basic specification that !'s and @'s work only in
+BUILDs.  By themselves, say in data boxes, they can be passed just
+fine without doing any magic.
+
+However, it is clear we could use some kind of magic at top level to
+change evaluation defaults, etc., and instead of forcing people to
+type, for example,
+
+RUN BUILD {tell joe fd !x}
+
+we figured we'd allow ! and @ to work as macros at the top level.
+Hence, the model is, in a line of code, ! and @ marked entities get
+replaced with their "results", and then the whole line gets executed
+as usual.
+
+Hence
+
+input var
+tell joe tell frank fd !var
+
+should work.
+
+By this model, you could get the effect of telling joe to use his var
+in a message to frank with
+
+tell joe run build {tell frank fd !var}
+
+This is because the ! is inside a data box, so doesn't get expanded
+til the build gets run, which is only inside joe.  Of course, there
+are lots of other ways to arrange this (somebody, please supply an
+example that shows good taste), but the main point is it is possible,
+and also secondary to the main functionality of ! at top level, which
+gets the job done as in the original problem
+
+input var
+tell joe tell frank fd !var
+,
+
+Bottom line, I don't see this example as a threat to the proposed
+model.  It actually seems more a threat to the my and your notation,
+which is yucky in these circumstances, since it is hard to tell who is
+the me that belongs to the my if you know what I mean.  Makes you want
+to type
+
+tell joe tell frank fd joe's var
+
+or
+
+tell joe tell frank fd frank's var
+
+Barf.  I kind of liked the my/your sugar.
+
+--Andy
+
+Date: Mon, 6 Feb 89 22:19:53 est
+From: klotz@ORION.AI.MIT.EDU (Leigh L. Klotz)
+Message-Id: <8902070319.AA02393@orion>
+To: bug-boxer%dewey.SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: Triggers/Ports, TELL/!!.
+Reply-To: KLOTZ@AI.AI.MIT.EDU
+
+If you didn't keep using these things they wouldn't break.
+
+Triggers have been due for a re-implementation for a while.  Sorry.
+They do not get run in the environment of the box where the trigger
+is.  I think exit triggers get run after you the cursor exits the
+box, too.
+
+I'm busy on my thesis, which was due last month or yesterday or something.
+However, I figured I should at least address the second problem.  I've
+appended an explanation and some code.  I won't be able to test out
+the code, though.
+
+Leigh.
+
+
+BOXER-SYMEVAL-HANDLE-! can be fixed by keeping the
+*OLD-DYNAMIC-VARIABLES-ROOT* and *OLD-STATIC-VARIABLES-ROOT* variables
+and adding an *OLD-TELL-SPECIAL-FRAME* state variable to the TELL
+recursive funcall primitive frame.  This variable should be
+initialized to NIL.  In the SET-AND-SAVE-STATE-VARIABLES call call in
+TELL, it should be set to to *PDL*.
+
+BOXER-SYMEVAL-HANDLE-! should then loop through these frame pointers,
+and use the automatically-generated stack frame variable accessors
+(which will be DEBUG-TELL-FRAME-*OLD-TELL-SPECIAL-FRAME* etc.)  These
+won't be as fast as they could be, since they will be defstruct-generated
+inlines.  There may be some compile-time lossage having to do with
+immediately using macros which you just defined, though loading the
+file evaluated ought to work.  It also is slightly bothersome since
+these functions are defined for the debugger; this will be the only
+function which looks up stack frames without the intention of actually
+unwinding them.  If we really keep on with this scheme I will have
+to either make my own macros (the defstructs are just for the
+Lisp-level debugger) or come up with a new scheme.
+
+BOXER-SYMEVAL-HANDLE-! should still keep track of its data types
+and try to be fast.
+
+-->Andy has proposed a MY or YOUR command to take the place of !.  Doing
+   that would make all variable reference faster because we could get rid
+   of the evaluator call to boxer-symeval-handle-! routine and put it
+   inside the MY or YOUR primitive.
+
+Whatever name we pick should make sense in the case we're worried about here:
+   	tell joe tell jill forward my my x
+sounds a little insistent.
+
+
+
+;;; From prims.lisp:
+(defrecursive-funcall-primitive bu::tell ((bu::port-to who) (list-rest what))
+  :stack-frame-allocation (10 5)
+  ;; for now, to make ! work with TELL, we add these *OLD- variables.
+  :state-variables (*old-dynamic-variables-root* *old-lexical-variables-root*
+		    *old-tell-special-frame*
+ 		    *dynamic-variables-root* *lexical-variables-root*)
+  :before (progn
+	    (set-and-save-state-variables
+	     *dynamic-variables-root* *lexical-variables-root*
+	     *PDL*			;; *PDL* will be this new stack frame.
+	     nil (boxer::box-or-port-target who))
+	    (recursive-funcall-invoke
+	      (if (or (not (null (cdr what)))
+		      (symbolp (car what))
+		      (numberp (car what))
+		      (not (fast-eval-doit-box? (car what))))
+		  (make-interpreted-procedure-from-list (list what))
+		  (cached-code-virtual-copy (car what)))))
+
+  :after
+    (progn (restore-state-variables) nil))
+
+
+;;; From bind.lisp.
+;;; BUGS: No longer handles !var outside of a TELL.
+;;;       This used to be handled by checking 
+;;;         (eq *lexical-variables-root* *old-lexical-variables-root*).
+;;;       Never tested.
+;;; Inefficiencies:
+;;;       Shouldn't use TELL-SPECIAL-FRAME-... functions.
+;;;       Should special-case the first !.
+;;;       Shouldn't use SPECIAL-TOKEN-ITEM? unless it's made faster.
+;;;        That part is gross anyway.
+
+(defun boxer-symeval-handle-! (object)
+  (if (symbolp object) (boxer-symeval object) 
+      (do ((object (special-token-item object) (special-token-item object))
+	   (next-to-old-frame NIL old-frame)
+	   (old-frame *old-tell-special-frame* (tell-special-frame-*old-tell-special-frame* old-frame)))
+	  ((symbolp object)
+			;; Maybe fix ! outside of TELL by making these
+			;; next two be (or (tell-mumble-*xxx-old* old-frame) *xxx*)
+	     (let ((*dynamic-variables-root* (tell-special-frame-*old-dynamic-variables-root* old-frame))
+		   (*lexical-variables-root* (tell-special-frame-*old-lexical-variables-root* old-frame))
+		   (boxer-symeval object))))
+	;; We only get here in ![] or !!... cases.
+	(when (not (special-token-item? object)) (return object)))))
+	
+
+
+Date: Mon, 6 Feb 89 17:00:42 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8902070100.AA28859@dewey.soe.berkeley.edu>
+To: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: triggers
+
+
+triggers aren't run in the right place.
+
+For example, 
+CHANGE < port to X-Position box> 43
+
+gets an error because the update-x-position in the trigger gets run in
+the current environment instead of in the environment of the target of
+the port.
+
+ed
+
+Date: Mon, 6 Feb 89 17:12:28 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8902070112.AA28880@dewey.soe.berkeley.edu>
+To: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: tell and !'s
+Cc: dmh%garnet.Berkeley.EDU@jade.berkeley.edu,
+        rel%SOE.Berkeley.EDU@jade.berkeley.edu
+
+
+2 different people in the last few days have written something like:
+
+[ input var                                       ] 
+[tell outside-box tell inside-box change foo !var ]
+
+This doesn't work (because tell currently processes "!'s" by backing
+up to the previous lexical-variables-root).  The real question is
+what the model should be.  Currently, we seem to be saying that
+"!" in the 2nd arg to TELL means "evaluate it before we send the text
+to the 1st arg to TELL".  This implies that what is written above should
+work.  On the other hand, a different model might require users to end
+the last line with "!!var" rather than "!var".  This gives people a 
+much finer grain control over where to scope from at the cost of forcing
+them to count/match TELL's and !'s.  Counting TELL's and !'s may be
+problematic especially if people take to imbedding them inside of doit boxes
+which are fed to TELL.
+
+Leigh, I tried fixing this by making boxer-symeval-handle-! recursive
+but it doesn't work.  Any ideas ?
+
+ed
+
+

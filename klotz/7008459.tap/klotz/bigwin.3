@@ -1,0 +1,42 @@
+;;;-*- Mode:LISP; Package: TV; Lowercase: Yes; Base: 8 -*-
+
+(DEFFLAVOR TEST-WINDOW ()
+	   (BORDERS-MIXIN BOTTOM-BOX-LABEL-MIXIN WINDOW)
+  (:DEFAULT-INIT-PLIST :SAVE-BITS T :BLINKER-P NIL :MORE-P NIL :LABEL ""))
+
+(DEFMETHOD (TEST-WINDOW :BEFORE :SELECT) (&REST IGNORE)
+  (FUNCALL-SELF ':CLEAR-INPUT)
+  (FUNCALL-SELF ':SET-LABEL "Magnifying Mouse"))
+
+(DEFVAR *TEST-MAGNIFICATION* 2
+  "Magnification factor for magnifying mouse blinker TEST windows")
+
+(DEFVAR *TEST-SIZE* '(40 40) "Size of magnifying mouse blinker in TEST windows.")
+
+(DEFMETHOD (TEST-WINDOW :HANDLE-MOUSE) ()
+  (IF (MEMQ *TEST-MAGNIFICATION* '(NIL 0 1))
+      (MOUSE-STANDARD-BLINKER SELF)
+      (MOUSE-SET-BLINKER-DEFINITION ':MAGNIFYING-BLINKER
+				    0 0 T
+				    ':SET-MAGNIFICATION-AND-SIZE
+				    *TEST-MAGNIFICATION*
+				    *TEST-SIZE*))
+  (send self ':set-label (format nil "Size: ~D x ~D, Magnification, ~D."
+				 (car *test-size*)
+				 (cadr *test-size*)
+				 *test-magnification*))
+  (MOUSE-DEFAULT-HANDLER SELF (FUNCALL-SELF ':SCROLL-BAR-P)))
+
+(COMPILE-FLAVOR-METHODS TEST-WINDOW)
+
+(DEFVAR *TEST-WINDOW*
+	(WINDOW-CREATE 'TEST-WINDOW
+			  ':POSITION '(77 77)
+			  ':INSIDE-SIZE '(1001 1001)))
+
+(DEFUN FOO ()
+    (SEND *TEST-WINDOW* ':SELECT)
+    (send *test-window* ':refresh)
+    (SEND *TEST-WINDOW* ':DRAW-LINE 100 200 300 200)
+    (SEND *TEST-WINDOW* ':STRING-OUT "Once upon a midnight dreary."))
+

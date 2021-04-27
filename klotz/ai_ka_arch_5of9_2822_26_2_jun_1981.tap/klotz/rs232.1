@@ -1,0 +1,33 @@
+;Initializes the RS232 card.
+
+RSINIT:	LDA #$03
+	STA RSTATU		;Init acia
+	LDA #$10
+	STA RSTATU		;Set baud rate to high
+	RTS	
+
+;Output
+RSCOUT:	STA RSDATA
+	;shouldn't there be something here to look at RSTATUS?
+	RTS	
+	
+SLPNT1:	LDX #$00	;Print1 to RS232 Device. 
+	JMP DOLPNT
+SLPRNT:	LDX #$20	;Print to RS232 device.
+DOLPNT:	LDA OTPDEV	;Save the old device.
+	PHA
+	LDA OTPDEV+1
+	PHA
+	SETV OTPDEV,RSCOUT ;Rs232 character output routine.
+;Now do an sprint, and restore otpdev.
+	TXA		;20 for PRINT, 00 for PRINT1
+	PHA
+	JSR SPRNT
+	PLA
+	BEQ NOBRK
+	JSR BREAK1
+NOBRK:	PLA
+	STA OTPDEV+1
+	PLA
+	STA OTPDEV
+	JMP POPJ

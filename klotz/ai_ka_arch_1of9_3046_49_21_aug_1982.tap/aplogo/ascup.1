@@ -1,0 +1,61 @@
+;-*-MIDAS-*-
+.ENABL LC
+.NLIST SEQ
+.TITLE Apple Ascii Uploader
+
+;This code uploads $7000 (28672.) of ascii text from $2000-$9000
+;and sends it to the rs232 interface.
+
+;Exits when it reaches $9000 or a tilde (~).
+
+STATUS=$C0AE			;Slot 3
+DATA=$C0AF			;Slot 3
+
+BUFFER=$2000
+BUFEND=$9000
+
+;Page zero locations.
+LOCPT=0				;Two bytes. Current location reading.
+
+.=$1BF0				;Right beneath the buffer.
+INIT:	LDA #$03
+	STA STATUS		;INIT ACIA
+	LDA #$11
+	STA STATUS		;SET BAUD RATE TO HIGH
+
+	LDA #BUFFER&$FF		;Initialize pointer.
+	STA LOCPT
+	LDA #BUFFER^
+	STA LOCPT+1
+	LDY #$00
+
+SSEND:	LDA (LOCPT),Y
+	JSR SENDC
+	CPX #<'Z-$20>		;Ctrl-Z ends it.
+	BEQ EXIT		
+	INC LOCPT
+	BNE SSEND
+	INC LOCPT+1
+	LDA LOCPT+1
+	CMP #BUFEND^
+	BCC SSEND
+EXIT:	RTS			;Done.
+
+.IFNE 0
+;Returns with a character in A.  Doesn't trash Y.
+GCHAR:	LDA STATUS
+	LSR A
+	BCC GCHAR
+	LDA DATA
+	AND #$7F
+	RTS
+
+.ENDC ;IFNE 0
+;This code sends a character.  Moves character to X, trashes A.
+SENDC:	TAX
+TLOOP:	LDA STATUS
+	AND #$02
+	BEQ TLOOP
+	STX DATA
+	RTS
+.END

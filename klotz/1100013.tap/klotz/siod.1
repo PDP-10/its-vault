@@ -1,0 +1,1599 @@
+Date:  Thu, 5 Jan 89 07:23:35 est
+From: gjc%bucsf.BU.EDU@bu-it.bu.edu (George J. Carrette)
+Message-Id:  <8901051223.AA31866@bucsf>
+To: klotz@ORION.AI.MIT.EDU
+Subject: long tail.
+
+I dont know. Just an obvious hack really. There is probably some
+mention of it in "The Art of the Interpreter" however.
+
+Do you think it is worth doing a c-coded implementation of boxer under
+X-windows? Is boxer interesting enough for that.
+
+Well, you know about doing a logo interpreter. But to show you how
+much easier a lisp style interpreter is, here is SIOD, try it out
+on any unix box (it uses the tail technique also):
+
+#! /bin/sh
+# This file is a total of 44872 bytes long
+# This is a shell archive.  Remove anything before this line, then unpack
+# it by saving it into a file and typing "sh file".  To overwrite existing
+# files, type "sh file -c".  You can also feed this as standard input via
+# unshar, or by typing "sh <file", e.g..  If this archive is complete, you
+# will see the following message at the end:
+#		"End of shell archive."
+# Contents:  makefile siod.1 siod.c siod.doc siod.scm
+# Wrapped by gjc@bu-it on Tue May 17 19:33:19 1988
+PATH=/bin:/usr/bin:/usr/ucb ; export PATH
+if test -f makefile -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"makefile\"
+else
+echo shar: Extracting \"makefile\" \(89 characters\)
+sed "s/^X//" >makefile <<'END_OF_makefile'
+X# Note: add the -f68881 flag if you are on a SUN III.
+Xsiod:	siod.c
+X	cc -O -o siod siod.c
+END_OF_makefile
+if test 89 -ne `wc -c <makefile`; then
+    echo shar: \"makefile\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f siod.1 -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"siod.1\"
+else
+echo shar: Extracting \"siod.1\" \(901 characters\)
+sed "s/^X//" >siod.1 <<'END_OF_siod.1'
+X.TH SIOD 1C LOCAL 
+X.SH NAME
+Xsiod \- small scheme interpreter (Scheme In One Defun).
+X.SH SYNOPSIS
+X.B siod
+X[-hXXXXX] [-iXXXXX]
+X.SH DESCRIPTION
+X.I Siod
+Xis a very small scheme interpreter which can be used for short calculations
+Xor included as a command interpreter or extension/macro language in other
+Xapplications.
+X
+X.RE
+X.SS COMMAND LINE OPTIONS
+X.TP 8
+X.BI \-h "XXXXX"
+XThe
+X.I XXXXX
+Xshould be an integer, specifying the number of cons cells to
+Xallocate in the heap. The default is 5000.
+X.TP
+X.BI \-i "XXXXX"
+XThe 
+X.I XXXXX
+Xshould be the name of an init file to load before going into
+Xthe read/eval/print loop.
+X.SH FILES
+Xsiod.doc siod.scm
+X.PD
+X.SH SEE ALSO
+X.I Structure and Interpretation of Computer Programs
+X, by Ableson and Sussman, MIT PRESS.
+X.SH DIAGNOSTICS
+XError messages may also set the variable errobj to the offending object.
+X.SH BUGS
+XDoes not GC during EVAL, only before each READ/EVAL/PRINT cycle.
+END_OF_siod.1
+if test 901 -ne `wc -c <siod.1`; then
+    echo shar: \"siod.1\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f siod.c -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"siod.c\"
+else
+echo shar: Extracting \"siod.c\" \(28178 characters\)
+sed "s/^X//" >siod.c <<'END_OF_siod.c'
+X/* Scheme In One Defun, but in C this time.
+X   (c) Copyright 1988 George Carrette, gjc@bu-it.bu.edu
+X   For demonstration purposes only.
+X
+X   If your interests run to practical applications of symbolic programming
+X   techniques, in LISP, Macsyma, C, or other language:
+X
+X   Paradigm Associates Inc          Phone: 617-492-6079
+X   29 Putnam Ave, Suite 6
+X   Cambridge, MA 02138
+X
+X   Release 1.0: 24-APR-88
+X   Release 1.1: 25-APR-88, added: macros, predicates, load. With additions by
+X    Barak.Pearlmutter@DOGHEN.BOLTZ.CS.CMU.EDU: Full flonum recognizer,
+X    cleaned up uses of NULL/0. Now distributed with siod.scm.
+X   Release 1.2: 28-APR-88, name changes as requested by JAR@AI.AI.MIT.EDU,
+X    plus some bug fixes.
+X   Release 1.3: 1-MAY-88, changed env to use frames instead of alist.
+X    define now works properly. vms specific function edit.
+X
+X   This example is small, has a garbage collector, and can run a good deal
+X   of the code in Structure and Interpretation of Computer Programs.
+X   (Start it up with the siod.scm file for more features).
+X   Replacing the evaluator with an explicit control "flat-coded" one
+X   as in chapter 5 would allow garbage collection to take place
+X   at any time, not just at toplevel in the read-eval-print loop,
+X   as herein implemented. This is left as an exersize for the reader.
+X
+X   Techniques used will be familiar to most lisp implementors.
+X   Having objects be all the same size, and having only two statically
+X   allocated spaces simplifies and speeds up both consing and gc considerably.
+X   The MSUBR hack allows for a modular implementation of tail recursion,
+X   an extension of the FSUBR that is, as far as I know, original.
+X
+X   Error handling is rather crude. A topic taken with machine fault,
+X   exception handling, tracing, debugging, and state recovery
+X   which we could cover in detail, but clearly beyond the scope of
+X   this implementation. Suffice it to say that if you have a good
+X   symbolic debugger you can set a break point at "err" and observe
+X   in detail all the arguments and local variables of the procedures
+X   in question, since there is no ugly "casting" of data types.
+X   If X is an offending or interesting object then examining
+X   X->type will give you the type, and X->storage_as.cons will
+X   show the car and the cdr.
+X
+X  */
+X
+X#include <stdio.h>
+X#include <string.h>
+X#include <ctype.h>
+X#include <setjmp.h>
+X#include <signal.h>
+X#include <math.h>
+X
+Xstruct obj
+X{short gc_mark;
+X short type;
+X union {struct {struct obj * car;
+X		struct obj * cdr;} cons;
+X	struct {double data;} flonum;
+X	struct {char *pname;
+X		struct obj * vcell;} symbol;
+X	struct {char *name;
+X		struct obj * (*f)();} subr;
+X	struct {struct obj *env;
+X		struct obj *code;} closure;}
+X storage_as;};
+X
+X#define CAR(x) ((*x).storage_as.cons.car)
+X#define CDR(x) ((*x).storage_as.cons.cdr)
+X#define PNAME(x) ((*x).storage_as.symbol.pname)
+X#define VCELL(x) ((*x).storage_as.symbol.vcell)
+X#define SUBRF(x) (*((*x).storage_as.subr.f))
+X#define FLONM(x) ((*x).storage_as.flonum.data)
+X
+Xstruct obj *heap_1;
+Xstruct obj *heap_2;
+Xstruct obj *heap,*heap_end,*heap_org;
+Xlong heap_size = 5000;
+Xlong old_heap_used;
+Xint which_heap;
+Xint gc_status_flag = 1;
+Xchar *init_file = (char *) NULL;
+X
+X#define TKBUFFERN 100
+X
+Xchar tkbuffer[TKBUFFERN];
+X
+Xjmp_buf errjmp;
+Xint errjmp_ok = 0;
+Xint nointerrupt = 1;
+X
+Xstruct obj *cons(), *car(), *cdr(), *setcar(), *setcdr(),*consp();
+Xstruct obj *symcons(),*rintern(),*cintern(),*cintern_soft(),*symbolp();
+Xstruct obj *flocons(),*plus(),*ltimes(),*difference(),*quotient();
+Xstruct obj *greaterp(),*lessp(),*eq(),*eql(),*numberp();
+Xstruct obj *assq();
+Xstruct obj *lread(),*leval(),*lprint(),*lprin1();
+Xstruct obj *lreadr(),*lreadparen(),*lreadtk(),*lreadf();
+Xstruct obj *subrcons(),*closure();
+Xstruct obj *leval_define(),*leval_lambda(),*leval_if();
+Xstruct obj *leval_progn(),*leval_setq(),*leval_let(),*let_macro();
+Xstruct obj *leval_args(),*extend_env(),*setvar();
+Xstruct obj *leval_quote(),*leval_and(),*leval_or();
+Xstruct obj *oblistfn(),*copy_list();
+Xstruct obj *gc_relocate(),*get_newspace(),*gc_status();
+Xstruct obj *vload(),*load();
+Xstruct obj *leval_tenv(),*lerr(),*quit(),*nullp();
+Xstruct obj *symbol_boundp(),*symbol_value();
+Xstruct obj *envlookup(),*arglchk(),*sys_edit(),*reverse();
+X
+X
+Xint handle_sigfpe();
+Xint handle_sigint();
+X
+X#define NIL ((struct obj *) 0)
+X#define EQ(x,y) ((x) == (y))
+X#define NEQ(x,y) ((x) != (y))
+X#define NULLP(x) EQ(x,NIL)
+X#define NNULLP(x) NEQ(x,NIL)
+X
+X#define TYPE(x) (((x) == NIL) ? 0 : ((*(x)).type))
+X
+X#define TYPEP(x,y) (TYPE(x) == (y))
+X#define NTYPEP(x,y) (TYPE(x) != (y))
+X
+X#define tc_nil    0
+X#define tc_cons   1
+X#define tc_flonum 2
+X#define tc_symbol 3
+X#define tc_subr_0 4
+X#define tc_subr_1 5
+X#define tc_subr_2 6
+X#define tc_subr_3 7
+X#define tc_lsubr  8
+X#define tc_fsubr  9
+X#define tc_msubr  10
+X#define tc_closure 11
+X
+Xinit_subrs()
+X{init_subr("cons",tc_subr_2,cons);
+X init_subr("car",tc_subr_1,car);
+X init_subr("cdr",tc_subr_1,cdr);
+X init_subr("set-car!",tc_subr_2,setcar);
+X init_subr("set-cdr!",tc_subr_2,setcdr);
+X init_subr("+",tc_subr_2,plus);
+X init_subr("-",tc_subr_2,difference);
+X init_subr("*",tc_subr_2,ltimes);
+X init_subr("/",tc_subr_2,quotient);
+X init_subr(">",tc_subr_2,greaterp);
+X init_subr("<",tc_subr_2,lessp);
+X init_subr("eq?",tc_subr_2,eq);
+X init_subr("eqv?",tc_subr_2,eql);
+X init_subr("assq",tc_subr_2,assq);
+X init_subr("read",tc_subr_0,lread);
+X init_subr("print",tc_subr_1,lprint);
+X init_subr("eval",tc_subr_2,leval);
+X init_subr("define",tc_fsubr,leval_define);
+X init_subr("lambda",tc_fsubr,leval_lambda);
+X init_subr("if",tc_msubr,leval_if);
+X init_subr("begin",tc_msubr,leval_progn);
+X init_subr("set!",tc_fsubr,leval_setq);
+X init_subr("or",tc_msubr,leval_or);
+X init_subr("and",tc_msubr,leval_and);
+X init_subr("quote",tc_fsubr,leval_quote);
+X init_subr("oblist",tc_subr_0,oblistfn);
+X init_subr("copy-list",tc_subr_1,copy_list);
+X init_subr("gc-status",tc_lsubr,gc_status);
+X init_subr("load",tc_subr_1,load);
+X init_subr("pair?",tc_subr_1,consp);
+X init_subr("symbol?",tc_subr_1,symbolp);
+X init_subr("number?",tc_subr_1,numberp);
+X init_subr("let-internal",tc_msubr,leval_let);
+X init_subr("let-internal-macro",tc_subr_1,let_macro);
+X init_subr("symbol-bound?",tc_subr_2,symbol_boundp);
+X init_subr("symbol-value",tc_subr_2,symbol_value);
+X init_subr("set-symbol-value!",tc_subr_3,setvar);
+X init_subr("the-environment",tc_fsubr,leval_tenv);
+X init_subr("error",tc_subr_2,lerr);
+X init_subr("quit",tc_subr_0,quit);
+X init_subr("not",tc_subr_1,nullp);
+X init_subr("null?",tc_subr_1,nullp);
+X init_subr("env-lookup",tc_subr_2,envlookup);
+X#ifdef vms
+X init_subr("edit",tc_subr_1,sys_edit);
+X#endif
+X init_subr("reverse",tc_subr_1,reverse);
+X }
+X
+Xstruct obj *oblist = NIL;
+Xstruct obj *truth = NIL;
+Xstruct obj *eof_val = NIL;
+Xstruct obj *sym_errobj = NIL;
+Xstruct obj *sym_progn = NIL;
+Xstruct obj *sym_lambda = NIL;
+Xstruct obj *sym_quote = NIL;
+Xstruct obj *open_files = NIL;
+Xstruct obj *unbound_marker = NIL;
+X
+Xscan_registers()
+X{oblist = gc_relocate(oblist);
+X eof_val = gc_relocate(eof_val);
+X truth = gc_relocate(truth);
+X sym_errobj = gc_relocate(sym_errobj);
+X sym_progn = gc_relocate(sym_progn);
+X sym_lambda = gc_relocate(sym_lambda);
+X sym_quote = gc_relocate(sym_quote);
+X open_files = gc_relocate(open_files);
+X unbound_marker = gc_relocate(unbound_marker);}
+X
+Xmain(argc,argv)
+X int argc; char **argv;
+X{printf("Welcome to SIOD, Scheme In One Defun, Version 1.3\n");
+X printf("(C) Copyright 1988, George Carrette\n");
+X process_cla(argc,argv);
+X printf("heap_size = %d cells, %d bytes\n",
+X        heap_size,heap_size*sizeof(struct obj));
+X init_storage();
+X printf("heap_1 at 0x%X, heap_2 at 0x%X\n",heap_1,heap_2);
+X repl_driver();
+X printf("EXIT\n");}
+X
+Xprocess_cla(argc,argv)
+X int argc; char **argv;
+X{int k;
+X for(k=1;k<argc;++k)
+X   {if (strlen(argv[k])<2) continue;
+X    if (argv[k][0] != '-') {printf("bad arg: %s\n",argv[k]);continue;}
+X    switch(argv[k][1])
+X      {case 'h':
+X	 heap_size = atol(&(argv[k][2])); break;
+X       case 'i':
+X	 init_file = &(argv[k][2]); break;
+X       default: printf("bad arg: %s\n",argv[k]);}}}
+X
+Xrepl_driver()
+X{int k;
+X k = setjmp(errjmp);
+X if (k == 2) return;
+X signal(SIGFPE,handle_sigfpe);
+X signal(SIGINT,handle_sigint);
+X close_open_files();
+X errjmp_ok = 1;
+X nointerrupt = 0;
+X if (init_file && (k == 0)) vload(init_file);
+X repl();}
+X
+X#ifdef unix
+X#ifdef sun
+Xdouble myruntime(){return(clock()*1.0e-6);}
+X#else
+X#ifdef encore
+Xdouble myruntime(){return(clock()*1.0e-6);}
+X#else
+X#include <sys/types.h>
+X#include <sys/times.h>
+Xstruct tms time_buffer;
+Xdouble myruntime(){times(&time_buffer);return(time_buffer.tms_utime/60.0);}
+X#endif
+X#endif
+X#else
+X#ifdef vms
+X#include <stdlib.h>
+Xdouble myruntime(){return(clock() * 1.0e-2);}
+X#include <descrip.h>
+X struct obj *
+Xsys_edit(fname)
+X struct obj *fname;
+X{struct dsc$descriptor_s d;
+X if NTYPEP(fname,tc_symbol) err("filename not a symbol",fname);
+X d.dsc$b_dtype = DSC$K_DTYPE_T;
+X d.dsc$b_class = DSC$K_CLASS_S;
+X d.dsc$w_length = strlen(PNAME(fname));
+X d.dsc$a_pointer = PNAME(fname);
+X nointerrupt = 1;
+X edt$edit(&d);
+X nointerrupt = 0;
+X return(fname);}
+X#else
+Xdouble myruntime(){long x;long time();time(&x);return(x);}
+X#endif
+X#endif
+X
+Xhandle_sigfpe(sig,code,scp)
+X int sig,code; struct sigcontext *scp;
+X{signal(SIGFPE,handle_sigfpe);
+X err("floating point exception",NIL);}
+X
+Xhandle_sigint(sig,code,scp)
+X int sig,code; struct sigcontext *scp;
+X{signal(SIGINT,handle_sigint);
+X if (nointerrupt == 0) err("control-c interrupt",NIL);
+X printf("interrupts disabled\n");}
+X 
+Xrepl() 
+X{struct obj *x,*cw;
+X double rt;
+X while(1)
+X   {if ((gc_status_flag) || heap >= heap_end)
+X     {rt = myruntime();
+X      gc();
+X      printf("GC took %g seconds, %d compressed to %d, %d free\n",
+X             myruntime()-rt,old_heap_used,heap-heap_org,heap_end-heap);}
+X    printf("> ");
+X    x = lread();
+X    if EQ(x,eof_val) break;
+X    rt = myruntime();
+X    cw = heap;
+X    x = leval(x,NIL);
+X    printf("Evaluation took %g seconds %d cons work\n",
+X	   myruntime()-rt,heap-cw);
+X    lprint(x);}}
+X
+Xerr(message,x)
+X char *message; struct obj *x;
+X{nointerrupt = 1;
+X if NNULLP(x) 
+X    printf("ERROR: %s (see errobj)\n",message);
+X  else printf("ERROR: %s\n",message);
+X if (errjmp_ok == 1) {setvar(sym_errobj,x,NIL); longjmp(errjmp,1);}
+X printf("FATAL ERROR DURING STARTUP OR CRITICAL CODE SECTION\n");
+X exit(1);}
+X
+X struct obj *
+Xlerr(message,x)
+X struct obj *message,*x;
+X{if NTYPEP(message,tc_symbol) err("argument to error not a symbol",message);
+X err(PNAME(message),x);
+X return(NIL);}
+X
+X struct obj *
+Xcons(x,y)
+X struct obj *x,*y;
+X{register struct obj *z;
+X if ((z = heap) >= heap_end) err("ran out of storage",NIL);
+X heap = z+1;
+X (*z).gc_mark = 0;
+X (*z).type = tc_cons;
+X CAR(z) = x;
+X CDR(z) = y;
+X return(z);}
+X
+X struct obj *
+Xconsp(x)
+X struct obj *x;
+X{if TYPEP(x,tc_cons) return(truth); else return(NIL);}
+X
+X struct obj *
+Xcar(x)
+X struct obj *x;
+X{switch TYPE(x)
+X   {case tc_nil:
+X      return(NIL);
+X    case tc_cons:
+X      return(CAR(x));
+X    default:
+X      err("wta to car",x);}}
+X
+X struct obj *
+Xcdr(x)
+X struct obj *x;
+X{switch TYPE(x)
+X   {case tc_nil:
+X      return(NIL);
+X    case tc_cons:
+X      return(CDR(x));
+X    default:
+X      err("wta to cdr",x);}}
+X
+X struct obj *
+Xsetcar(cell,value)
+X struct obj *cell,*value;
+X{if NTYPEP(cell,tc_cons) err("wta to setcar",cell);
+X return(CAR(cell) = value);}
+X
+X struct obj *
+Xsetcdr(cell,value)
+X struct obj *cell,*value;
+X{if NTYPEP(cell,tc_cons) err("wta to setcdr",cell);
+X return(CDR(cell) = value);}
+X
+X struct obj *
+Xflocons(x)
+X double x;
+X{register struct obj *z;
+X if ((z = heap) >= heap_end) err("ran out of storage",NIL);
+X heap = z+1;
+X (*z).gc_mark = 0;
+X (*z).type = tc_flonum;
+X (*z).storage_as.flonum.data = x;
+X return(z);}
+X
+X struct obj *
+Xnumberp(x)
+X struct obj *x;
+X{if TYPEP(x,tc_flonum) return(truth); else return(NIL);}
+X
+X struct obj *
+Xplus(x,y)
+X struct obj *x,*y;
+X{if NTYPEP(x,tc_flonum) err("wta(1st) to plus",x);
+X if NTYPEP(y,tc_flonum) err("wta(2nd) to plus",y);
+X return(flocons(FLONM(x)+FLONM(y)));}
+X
+X struct obj *
+Xltimes(x,y)
+X struct obj *x,*y;
+X{if NTYPEP(x,tc_flonum) err("wta(1st) to times",x);
+X if NTYPEP(y,tc_flonum) err("wta(2nd) to times",y);
+X return(flocons(FLONM(x)*FLONM(y)));}
+X
+X struct obj *
+Xdifference(x,y)
+X struct obj *x,*y;
+X{if NTYPEP(x,tc_flonum) err("wta(1st) to difference",x);
+X if NTYPEP(y,tc_flonum) err("wta(2nd) to difference",y);
+X return(flocons(FLONM(x)-FLONM(y)));}
+X
+X struct obj *
+Xquotient(x,y)
+X struct obj *x,*y;
+X{if NTYPEP(x,tc_flonum) err("wta(1st) to quotient",x);
+X if NTYPEP(y,tc_flonum) err("wta(2nd) to quotient",y);
+X return(flocons(FLONM(x)/FLONM(y)));}
+X
+X struct obj *
+Xgreaterp(x,y)
+X struct obj *x,*y;
+X{if NTYPEP(x,tc_flonum) err("wta(1st) to greaterp",x);
+X if NTYPEP(y,tc_flonum) err("wta(2nd) to greaterp",y);
+X if (FLONM(x)>FLONM(y)) return(truth);
+X return(NIL);}
+X
+X struct obj *
+Xlessp(x,y)
+X struct obj *x,*y;
+X{if NTYPEP(x,tc_flonum) err("wta(1st) to lessp",x);
+X if NTYPEP(y,tc_flonum) err("wta(2nd) to lessp",y);
+X if (FLONM(x)<FLONM(y)) return(truth);
+X return(NIL);}
+X
+X  struct obj *
+Xeq(x,y)
+X struct obj *x,*y;
+X{if EQ(x,y) return(truth); else return(NIL);}
+X
+X  struct obj *
+Xeql(x,y)
+X struct obj *x,*y;
+X{if EQ(x,y) return(truth); else 
+X if NTYPEP(x,tc_flonum) return(NIL); else
+X if NTYPEP(y,tc_flonum) return(NIL); else
+X if (FLONM(x) == FLONM(y)) return(truth);
+X return(NIL);}
+X
+X struct obj *
+Xsymcons(pname,vcell)
+X char *pname; struct obj *vcell;
+X{register struct obj *z;
+X if ((z = heap) >= heap_end) err("ran out of storage",NIL);
+X heap = z+1;
+X (*z).gc_mark = 0;
+X (*z).type = tc_symbol;
+X PNAME(z) = pname;
+X VCELL(z) = vcell;
+X return(z);}
+X
+X struct obj *
+Xsymbolp(x)
+X struct obj *x;
+X{if TYPEP(x,tc_symbol) return(truth); else return(NIL);}
+X
+X struct obj *
+Xsymbol_boundp(x,env)
+X struct obj *x,*env;
+X{struct obj *tmp;
+X if NTYPEP(x,tc_symbol) err("not a symbol",x);
+X tmp = envlookup(x,env);
+X if NNULLP(tmp) return(truth);
+X if EQ(VCELL(x),unbound_marker) return(NIL); else return(truth);}
+X
+X struct obj *
+Xsymbol_value(x,env)
+X struct obj *x,*env;
+X{struct obj *tmp;
+X if NTYPEP(x,tc_symbol) err("not a symbol",x);
+X tmp = envlookup(x,env);
+X if NNULLP(tmp) return(CAR(tmp));
+X tmp = VCELL(x);
+X if EQ(tmp,unbound_marker) err("unbound variable",x);
+X return(tmp);}
+X
+X struct obj *
+Xcintern_soft(name)
+X char *name;
+X{struct obj *l;
+X for(l=oblist;NNULLP(l);l=CDR(l))
+X   if (strcmp(name,PNAME(CAR(l))) == 0) return(CAR(l));
+X return(NIL);}
+X
+X struct obj *
+Xcintern(name)
+X char *name;
+X{struct obj *sym;
+X sym = cintern_soft(name);
+X if(sym) return(sym);
+X sym = symcons(name,unbound_marker);
+X oblist = cons(sym,oblist);
+X return(sym);}
+X
+X char *
+Xmust_malloc(size)
+X unsigned long size;
+X{char *tmp;
+X tmp = (char *) malloc(size);
+X if (tmp == (char *)NULL) err("failed to allocate storage from system",NIL);
+X return(tmp);}
+X
+X struct obj *
+Xrintern(name)
+X char *name;
+X{struct obj *sym;
+X char *newname;
+X sym = cintern_soft(name);
+X if(sym) return(sym);
+X newname = must_malloc(strlen(name)+1);
+X strcpy(newname,name);
+X sym = symcons(newname,unbound_marker);
+X oblist = cons(sym,oblist);
+X return(sym);}
+X
+X struct obj *
+Xsubrcons(type,name,f)
+X int type; char *name; struct obj * (*f)();
+X{register struct obj *z;
+X if ((z = heap) >= heap_end) err("ran out of storage",NIL);
+X heap = z+1;
+X (*z).gc_mark = 0;
+X (*z).type = type;
+X (*z).storage_as.subr.name = name;
+X (*z).storage_as.subr.f = f;
+X return(z);}
+X
+X struct obj *
+Xclosure(env,code)
+X struct obj *env,*code;
+X{register struct obj *z;
+X if ((z = heap) >= heap_end) err("ran out of storage",NIL);
+X heap = z+1;
+X (*z).gc_mark = 0;
+X (*z).type = tc_closure;
+X (*z).storage_as.closure.env = env;
+X (*z).storage_as.closure.code = code;
+X return(z);}
+X
+Xinit_storage()
+X{int j;
+X heap_1 = (struct obj *)must_malloc(sizeof(struct obj)*heap_size);
+X heap_2 = (struct obj *)must_malloc(sizeof(struct obj)*heap_size);
+X heap = heap_1;
+X which_heap = 1;
+X heap_org = heap;
+X heap_end = heap + heap_size;
+X unbound_marker = cons(cintern("**unbound-marker**"),NIL);
+X eof_val = cons(cintern("eof"),NIL);
+X truth = cintern("t");
+X setvar(truth,truth,NIL);
+X setvar(cintern("nil"),NIL,NIL);
+X setvar(cintern("let"),cintern("let-internal-macro"),NIL);
+X sym_errobj = cintern("errobj");
+X setvar(sym_errobj,NIL,NIL);
+X sym_progn = cintern("begin");
+X sym_lambda = cintern("lambda");
+X sym_quote = cintern("quote");
+X init_subrs();}
+X
+Xinit_subr(name,type,fcn)
+X char *name; int type; struct obj *(*fcn)();
+X{setvar(cintern(name),subrcons(type,name,fcn),NIL);}
+X
+X struct obj *
+Xassq(x,alist)
+X struct obj *x,*alist;
+X{register struct obj *l,*tmp;
+X for(l=alist;TYPEP(l,tc_cons);l=CDR(l))
+X   {tmp = CAR(l);
+X    if (TYPEP(tmp,tc_cons) && EQ(CAR(tmp),x)) return(tmp);}
+X if EQ(l,NIL) return(NIL);
+X err("improper list to assq",alist);}
+X
+X struct obj *
+Xgc_relocate(x)
+X struct obj *x;
+X{struct obj *new;
+X if EQ(x,NIL) return(NIL);
+X if ((*x).gc_mark == 1) return(CAR(x));
+X switch TYPE(x)
+X   {case tc_flonum:
+X      new = flocons(FLONM(x));
+X      break;
+X    case tc_cons:
+X      new = cons(CAR(x),CDR(x));
+X      break;
+X    case tc_symbol:
+X      new = symcons(PNAME(x),VCELL(x));
+X      break;
+X    case tc_closure:
+X      new = closure((*x).storage_as.closure.env,
+X		    (*x).storage_as.closure.code);
+X      break;
+X    case tc_subr_0:
+X    case tc_subr_1:
+X    case tc_subr_2:
+X    case tc_subr_3:
+X    case tc_lsubr:
+X    case tc_fsubr:
+X    case tc_msubr:
+X      new = subrcons(TYPE(x),
+X		     (*x).storage_as.subr.name,
+X		     (*x).storage_as.subr.f);
+X      break;
+X    default: err("BUG IN GARBAGE COLLECTOR gc_relocate",NIL);}
+X (*x).gc_mark = 1;
+X CAR(x) = new;
+X return(new);}
+X
+X struct obj *
+Xget_newspace()
+X{struct obj * newspace;
+X if (which_heap == 1)
+X   {newspace = heap_2;
+X    which_heap = 2;}
+X else
+X   {newspace = heap_1;
+X    which_heap = 1;}
+X heap = newspace;
+X heap_org = heap;
+X heap_end = heap + heap_size;
+X return(newspace);}
+X
+Xscan_newspace(newspace)
+X struct obj  *newspace;
+X{register struct obj *ptr;
+X for(ptr=newspace; ptr < heap; ++ptr)
+X   {switch TYPE(ptr)
+X      {case tc_cons:
+X       case tc_closure:
+X	 CAR(ptr) = gc_relocate(CAR(ptr));
+X	 CDR(ptr) = gc_relocate(CDR(ptr));
+X	 break;
+X       case tc_symbol:
+X	 VCELL(ptr) = gc_relocate(VCELL(ptr));
+X	 break;
+X       default:
+X	 break;}}}
+X      
+Xgc()
+X{struct obj *newspace;
+X errjmp_ok = 0;
+X nointerrupt = 1;
+X old_heap_used = heap - heap_org;
+X newspace = get_newspace();
+X scan_registers();
+X scan_newspace(newspace);
+X errjmp_ok = 1;
+X nointerrupt = 0;}
+X
+X struct obj *
+Xgc_status(args)
+X struct obj *args;
+X{if NNULLP(args) 
+X  if NULLP(car(args)) gc_status_flag = 0; else gc_status_flag = 1;
+X if (gc_status_flag)
+X  printf("garbage collection is on\n"); else
+X  printf("garbage collection is off\n");
+X printf("%d allocated %d free\n",heap - heap_org, heap_end - heap);
+X return(NIL);}
+X
+X struct obj *
+Xleval_args(l,env)
+X struct obj *l,*env;
+X{struct obj *result,*v1,*v2,*tmp;
+X if NULLP(l) return(NIL);
+X if NTYPEP(l,tc_cons) err("bad syntax argument list",l);
+X result = cons(leval(CAR(l),env),NIL);
+X for(v1=result,v2=CDR(l);
+X     TYPEP(v2,tc_cons);
+X     v1 = tmp, v2 = CDR(v2))
+X  {tmp = cons(leval(CAR(v2),env),NIL);
+X   CDR(v1) = tmp;}
+X if NNULLP(v2) err("bad syntax argument list",l);
+X return(result);}
+X
+X struct obj *
+Xextend_env(actuals,formals,env)
+X struct obj *actuals,*formals,*env;
+X{if TYPEP(formals,tc_symbol)
+X    return(cons(cons(cons(formals,NIL),cons(actuals,NIL)),env));
+X return(cons(cons(formals,actuals),env));}
+X
+X struct obj *
+Xenvlookup(var,env)
+X struct obj *var,*env;
+X{struct obj *frame,*al,*fl,*tmp;
+X for(frame=env;TYPEP(frame,tc_cons);frame=CDR(frame))
+X   {tmp = CAR(frame);
+X    if NTYPEP(tmp,tc_cons) err("damaged frame",tmp);
+X    for(fl=CAR(tmp),al=CDR(tmp);
+X	TYPEP(fl,tc_cons);
+X	fl=CDR(fl),al=CDR(al))
+X      {if NTYPEP(al,tc_cons) err("too few arguments",tmp);
+X       if EQ(CAR(fl),var) return(al);}}
+X if NNULLP(frame) err("damaged env",env);
+X return(NIL);}
+X
+X struct obj *
+Xleval(x,env)
+X struct obj *x,*env;
+X{struct obj *tmp;
+X loop:
+X switch TYPE(x)
+X   {case tc_symbol:
+X      tmp = envlookup(x,env);
+X      if (tmp) return(CAR(tmp));
+X      tmp = VCELL(x);
+X      if EQ(tmp,unbound_marker) err("unbound variable",x);
+X      return(tmp);
+X    case tc_cons:
+X      tmp = leval(CAR(x),env);
+X      switch TYPE(tmp)
+X	{case tc_subr_0:
+X	   return(SUBRF(tmp)());
+X	 case tc_subr_1:
+X	   return(SUBRF(tmp)(leval(car(CDR(x)),env)));
+X	 case tc_subr_2:
+X	   return(SUBRF(tmp)(leval(car(CDR(x)),env),
+X			     leval(car(cdr(CDR(x))),env)));
+X	 case tc_subr_3:
+X	   return(SUBRF(tmp)(leval(car(CDR(x)),env),
+X			     leval(car(cdr(CDR(x))),env),
+X			     leval(car(cdr(cdr(CDR(x)))),env)));
+X	 case tc_lsubr:
+X	   return(SUBRF(tmp)(leval_args(CDR(x),env)));
+X	 case tc_fsubr:
+X	   return(SUBRF(tmp)(CDR(x),env));
+X	 case tc_msubr:
+X	   if NULLP(SUBRF(tmp)(&x,&env)) return(x);
+X	   goto loop;
+X	 case tc_closure:
+X	   env = extend_env(leval_args(CDR(x),env),
+X			    car((*tmp).storage_as.closure.code),
+X			    (*tmp).storage_as.closure.env);
+X	   x = cdr((*tmp).storage_as.closure.code);
+X	   goto loop;
+X	 case tc_symbol:
+X	   x = cons(tmp,cons(cons(sym_quote,cons(x,NIL)),NIL));
+X	   x = leval(x,NIL);
+X	   goto loop;
+X	 default:
+X	   err("bad function",tmp);}
+X    default:
+X      return(x);}}
+X
+X struct obj *
+Xsetvar(var,val,env)
+X struct obj *var,*val,*env;
+X{struct obj *tmp;
+X if NTYPEP(var,tc_symbol) err("wta(non-symbol) to setvar",var);
+X tmp = envlookup(var,env);
+X if NULLP(tmp) return(VCELL(var) = val);
+X return(CAR(tmp)=val);}
+X 
+X
+X struct obj *
+Xleval_setq(args,env)
+X struct obj *args,*env;
+X{return(setvar(car(args),leval(car(cdr(args)),env),env));}
+X
+X struct obj *
+Xsyntax_define(args)
+X struct obj *args;
+X{if TYPEP(car(args),tc_symbol) return(args);
+X return(syntax_define(
+X        cons(car(car(args)),
+X	cons(cons(sym_lambda,
+X	     cons(cdr(car(args)),
+X		  cdr(args))),
+X	     NIL))));}
+X      
+X struct obj *
+Xleval_define(args,env)
+X struct obj *args,*env;
+X{struct obj *tmp,*var,*val;
+X tmp = syntax_define(args);
+X var = car(tmp);
+X if NTYPEP(var,tc_symbol) err("wta(non-symbol) to define",var);
+X val = leval(car(cdr(tmp)),env);
+X tmp = envlookup(var,env);
+X if NNULLP(tmp) return(CAR(tmp) = val);
+X if NULLP(env) return(VCELL(var) = val);
+X tmp = car(env);
+X setcar(tmp,cons(var,car(tmp)));
+X setcdr(tmp,cons(val,cdr(tmp)));
+X return(val);}
+X 
+X struct obj *
+Xleval_if(pform,penv)
+X struct obj **pform,**penv;
+X{struct obj *args,*env;
+X args = cdr(*pform);
+X env = *penv;
+X if NNULLP(leval(car(args),env)) 
+X    *pform = car(cdr(args)); else *pform = car(cdr(cdr(args)));
+X return(truth);}
+X
+X struct obj *
+Xleval_lambda(args,env)
+X struct obj *args,*env;
+X{struct obj *body;
+X if NULLP(cdr(cdr(args)))
+X   body = car(cdr(args));
+X  else body = cons(sym_progn,cdr(args));
+X return(closure(env,cons(arglchk(car(args)),body)));}
+X                         
+X struct obj *
+Xleval_progn(pform,penv)
+X struct obj **pform,**penv;
+X{struct obj *env,*l,*next;
+X env = *penv;
+X l = cdr(*pform);
+X next = cdr(l);
+X while(NNULLP(next)) {leval(car(l),env);l=next;next=cdr(next);}
+X *pform = car(l); 
+X return(truth);}
+X
+X struct obj *
+Xleval_or(pform,penv)
+X struct obj **pform,**penv;
+X{struct obj *env,*l,*next,*val;
+X env = *penv;
+X l = cdr(*pform);
+X next = cdr(l);
+X while(NNULLP(next))
+X   {val = leval(car(l),env);
+X    if NNULLP(val) {*pform = val; return(NIL);}
+X    l=next;next=cdr(next);}
+X *pform = car(l); 
+X return(truth);}
+X
+X struct obj *
+Xleval_and(pform,penv)
+X struct obj **pform,**penv;
+X{struct obj *env,*l,*next;
+X env = *penv;
+X l = cdr(*pform);
+X if NULLP(l) {*pform = truth; return(NIL);}
+X next = cdr(l);
+X while(NNULLP(next))
+X   {if NULLP(leval(car(l),env)) {*pform = NIL; return(NIL);}
+X    l=next;next=cdr(next);}
+X *pform = car(l); 
+X return(truth);}
+X
+X struct obj *
+Xleval_let(pform,penv)
+X struct obj **pform,**penv;
+X{struct obj *env,*l;
+X l = cdr(*pform);
+X env = *penv;
+X *penv = extend_env(leval_args(car(cdr(l)),env),car(l),env);
+X *pform = car(cdr(cdr(l)));
+X return(truth);}
+X
+X struct obj *
+Xreverse(l)
+X struct obj *l;
+X{struct obj *n,*p;
+X n = NIL;
+X for(p=l;NNULLP(p);p=cdr(p)) n = cons(car(p),n);
+X return(n);}
+X
+X struct obj *
+Xlet_macro(form)
+X struct obj *form;
+X{struct obj *p,*fl,*al,*tmp;
+X fl = NIL;
+X al = NIL;
+X for(p=car(cdr(form));NNULLP(p);p=cdr(p))
+X  {tmp = car(p);
+X   if TYPEP(tmp,tc_symbol) {fl = cons(tmp,fl); al = cons(NIL,al);}
+X   else {fl = cons(car(tmp),fl); al = cons(car(cdr(tmp)),al);}}
+X p = cdr(cdr(form));
+X if NULLP(cdr(p)) p = car(p); else p = cons(sym_progn,p);
+X setcdr(form,cons(reverse(fl),cons(reverse(al),cons(p,NIL))));
+X setcar(form,cintern("let-internal"));
+X return(form);}
+X   
+X  struct obj *
+Xleval_quote(args,env)
+X struct obj *args,*env;
+X{return(car(args));}
+X
+X struct obj *
+Xleval_tenv(args,env)
+X struct obj *args,*env;
+X{return(env);}
+X
+X struct obj *
+Xlprint(exp)
+X struct obj *exp;
+X{lprin1(exp);
+X printf("\n");
+X return(NIL);}
+X
+X struct obj *
+Xlprin1(exp)
+X struct obj *exp;
+X{struct obj *tmp;
+X switch TYPE(exp)
+X   {case tc_nil:
+X      printf("()");
+X      break;
+X   case tc_cons:
+X      printf("(");
+X      lprin1(car(exp));
+X      for(tmp=cdr(exp);TYPEP(tmp,tc_cons);tmp=cdr(tmp))
+X	{printf(" ");lprin1(car(tmp));}
+X      if NNULLP(tmp) {printf(" . ");lprin1(tmp);}
+X      printf(")");
+X      break;
+X    case tc_flonum:
+X      printf("%g",FLONM(exp));
+X      break;
+X    case tc_symbol:
+X      printf("%s",PNAME(exp));
+X      break;
+X    case tc_subr_0:
+X    case tc_subr_1:
+X    case tc_subr_2:
+X    case tc_subr_3:
+X    case tc_lsubr:
+X    case tc_fsubr:
+X    case tc_msubr:
+X      printf("#<SUBR(%d) %s>",TYPE(exp),(*exp).storage_as.subr.name);
+X      break;
+X    case tc_closure:
+X      printf("#<CLOSURE ");
+X      lprin1(car((*exp).storage_as.closure.code));
+X      printf(" ");
+X      lprin1(cdr((*exp).storage_as.closure.code));
+X      printf(">");
+X      break;}
+X return(NIL);}
+X
+X struct obj *
+Xlread()
+X{return(lreadf(stdin));}
+X
+X int
+Xflush_ws(f,eoferr)
+X FILE *f;
+X char *eoferr;
+X{int c;
+X while(1)
+X   {c = getc(f);
+X    if (c == EOF) if (eoferr) err(eoferr,NIL); else return(c);
+X    if (isspace(c)) continue;
+X    return(c);}}
+X
+X struct obj *
+Xlreadf(f)
+X FILE *f;
+X{int c;
+X c = flush_ws(f,(char *)NULL);
+X if (c == EOF) return(eof_val);
+X ungetc(c,f);
+X return(lreadr(f));}
+X
+X struct obj *
+Xlreadr(f)
+X FILE *f;
+X{int c,j;
+X char *p;
+X c = flush_ws(f,"end of file inside read");
+X switch (c)
+X   {case '(':
+X      return(lreadparen(f));
+X    case ')':
+X      err("unexpected close paren",NIL);
+X    case '\'':
+X      return(cons(sym_quote,cons(lreadr(f),NIL)));}
+X p = tkbuffer;
+X *p++ = c;
+X for(j = 1; j<TKBUFFERN; ++j)
+X   {c = getc(f);
+X    if (c == EOF) return(lreadtk(j));
+X    if (isspace(c)) return(lreadtk(j));
+X    if (strchr("()'",c)) {ungetc(c,f);return(lreadtk(j));}
+X    *p++ = c;}
+X err("token larger than TKBUFFERN",NIL);}
+X
+Xstruct obj *
+Xlreadparen(f)
+X FILE *f;
+X{int c;
+X struct obj *tmp;
+X c = flush_ws(f,"end of file inside list");
+X if (c == ')') return(NIL);
+X ungetc(c,f);
+X tmp = lreadr(f);
+X return(cons(tmp,lreadparen(f)));}
+X
+X struct obj *
+Xlreadtk(j)
+X int j;
+X{int k;
+X char c,*p;
+X p = tkbuffer;
+X p[j] = 0;
+X if (*p == '-') p+=1;
+X { int adigit = 0;
+X   while(isdigit(*p)) {p+=1; adigit=1;}
+X   if (*p=='.') {
+X     p += 1;
+X     while(isdigit(*p)) {p+=1; adigit=1;}}
+X   if (!adigit) goto a_symbol; }
+X if (*p=='e') {
+X   p+=1;
+X   if (*p=='-'||*p=='+') p+=1;
+X   if (!isdigit(*p)) goto a_symbol; else p+=1;
+X   while(isdigit(*p)) p+=1; }
+X if (*p) goto a_symbol;
+X return(flocons(atof(tkbuffer)));
+X a_symbol:
+X return(rintern(tkbuffer));}
+X      
+X struct obj *
+Xcopy_list(x)
+X struct obj *x;
+X{if NULLP(x) return(NIL);
+X return(cons(car(x),copy_list(cdr(x))));}
+X
+X struct obj *
+Xoblistfn()
+X{return(copy_list(oblist));}
+X
+Xclose_open_files()
+X{struct obj *l;
+X FILE *p;
+X for(l=open_files;NNULLP(l);l=cdr(l))
+X   {p = (FILE *) PNAME(car(l));
+X    if (p)
+X      {printf("closing a file left open\n");
+X       fclose(p);}}
+X open_files = NIL;}
+X
+X
+X struct obj *
+Xvload(fname)
+X char *fname;
+X{struct obj *sym,*form;
+X FILE *f;
+X printf("loading %s\n",fname);
+X sym = symcons(0,NIL);
+X open_files = cons(sym,open_files);
+X PNAME(sym) = (char *) fopen(fname,"r");
+X f = (FILE *) PNAME(sym);
+X if (!f) {open_files = cdr(open_files);
+X	  printf("Could not open file\n");
+X	  return(NIL);}
+X while(1)
+X   {form = lreadf(f);
+X    if EQ(form,eof_val) break;
+X    leval(form,NIL);}
+X fclose(f);
+X open_files = cdr(open_files);
+X printf("done.\n");
+X return(truth);}
+X
+X struct obj *
+Xload(fname)
+X struct obj *fname;
+X{if NTYPEP(fname,tc_symbol) err("filename not a symbol",fname);
+X return(vload(PNAME(fname)));}
+X
+X struct obj *
+Xquit()
+X{longjmp(errjmp,2);
+X return(NIL);}
+X
+X struct obj *
+Xnullp(x)
+X struct obj *x;
+X{if EQ(x,NIL) return(truth); else return(NIL);}
+X
+X struct obj *
+Xarglchk(x)
+X struct obj *x;
+X{struct obj *l;
+X if TYPEP(x,tc_symbol) return(x);
+X for(l=x;TYPEP(l,tc_cons);l=CDR(l));
+X if NNULLP(l) err("improper formal argument list",x);
+X return(x);}
+X
+X   
+END_OF_siod.c
+if test 28178 -ne `wc -c <siod.c`; then
+    echo shar: \"siod.c\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f siod.doc -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"siod.doc\"
+else
+echo shar: Extracting \"siod.doc\" \(9748 characters\)
+sed "s/^X//" >siod.doc <<'END_OF_siod.doc'
+XSIOD: Scheme In One Defun
+X(c) Copyright 1988 George Carrette, gjc@bu-it.bu.edu
+XFor demonstration purposes only.
+X
+XIf your interests run to practical applications of symbolic programming
+Xtechniques, in LISP, Macsyma, C, or other language:
+X
+X   Paradigm Associates Inc          Phone: 617-492-6079
+X   29 Putnam Ave, Suite 6
+X   Cambridge, MA 02138
+X
+XDocumentation for Release 1.3 1-MAY-88
+XUpdated with more detail for experimenters on 17-MAY-88.
+X
+X[SUBJECT INDEX:]
+X [SUBJECT INDEX]
+X [FILES]
+X [COMPILATION]
+X [INVOCATION]
+X [SYSTEM]
+X [SYNTAX]
+X [SPECIAL FORMS]
+X [MACRO SPECIAL FORMS]
+X [BUILT-IN PROCEDURES]
+X [UTILITIES IN SIOD.SCM]
+X [A STREAMS IMPLEMENTATION]
+X [BENCHMARKS]
+X [PORTING]
+X [ADDING NEW SUBRS]
+X
+X[Files:]
+X
+X siod.c   The source in C, approximately 28 thousand bytes.
+X siod.doc This file, approximately 8 thousand bytes.
+X siod.scm Some utility function written in Scheme.
+X
+X[Compilation:]
+X
+XThe code has been compiled and run by the author on Sun III and IV,
+XEncore Multimax, 4.3BSD VAX, VAX/VMS, and AMIGA 500 using the Lattice C
+Xcompiler.
+X
+XOn all unix machines use
+X
+X  %cc -o siod siod.c
+X
+Xon VAX/VMS:
+X
+X  $ cc siod
+X  $ link siod,sys$input:/opt
+X  sys$library:vaxcrtl/share
+X  $ siod == "$" + F$ENV("DEFAULT") + "SIOD"
+X
+Xon AMIGA 500, ignore warning messages about return value mismatches,
+X  %lc siod.c
+X  %blink lib:c.o,siod.o to siod lib lib:lcm.lib,lib:lc.lib,lib:amiga.lib
+X
+X
+X[Invocation:]
+X
+Xsiod [-hXXXXX] [-iXXXXX]
+X -h where XXXXX is an integer, to specify the heap size, in obj cells,
+X -i where XXXXX is a filename to load before going into the repl loop.
+X
+X  Example:
+X   siod -isiod.scm -h100000
+X
+X[System:]
+X 
+XThe interrupts called SIGINT and SIGFPE by the C runtime system are
+Xhandled by invoking the lisp error procedure. SIGINT is usually caused
+Xby the CONTROL-C character and SIGFPE by floating point overflow or underflow.
+X
+X[Syntax:]
+X
+XThe only special characters are the parenthesis and single quote.
+XEverything else, besides whitespace of course, will make up a regular token.
+XThese tokens are either symbols or numbers depending on what they look like.
+XDotted-list notation is not supported on input, only on output.
+X
+X[Special forms:]
+X
+XThe CAR of a list is evaluated first, if the value is a SUBR of type 9 or 10
+Xthen it is a special form.
+X
+X(define symbol value) is presently like (set! symbol value).
+X
+X(define (f . arglist) . body) ==> (define f (lambda arglist . body))
+X
+X(lambda arglist . body) Returns a closure.
+X
+X(if pred val1 val2) If pred evaluates to () then val2 is evaluated else val1.
+X
+X(begin . body) Each form in body is evaluated with the result of the last
+Xreturned.
+X
+X(set! symbol value) Evaluates value and sets the local or global value of
+Xthe symbol.
+X
+X(or x1 x2 x3 ...) Returns the first Xn such that Xn evaluated non-().
+X
+X(and x1 x2 x3 ...) Keeps evaluating Xj until one returns (), or Xn.
+X
+X(quote form). Input syntax 'form, returns form without evaluation.
+X
+X(let pairlist . body) Each element in pairlist is (variable value).
+XEvaluates each value then sets of new bindings for each of the variables,
+Xthen evaluates the body like the body of a progn. This is actually
+Ximplemented as a macro turning into a let-internal form.
+X
+X(the-environment) Returns the current lexical environment.
+X
+X[Macro Special forms:]
+X
+XIf the CAR of a list evaluates to a symbol then the value of that symbol
+Xis called on a single argument, the original form. The result of this
+Xapplication is a new form which is recursively evaluated.
+X
+X[Built-In functions:]
+X
+XThese are all SUBR's of type 4,5,6,7, taking from 0 to 3 arguments
+Xwith extra arguments ignored, (not even evaluated!) and arguments not
+Xgiven defaulting to (). SUBR's of type 8 are lexprs, receiving a list
+Xof arguments. Order of evaluation of arguments will depend on the
+Ximplementation choice of your system C compiler.
+X
+Xconsp cons car cdr setcar setcdr
+X
+Xnumber? + - * / < > eqv?
+XThe arithmetic functions all take two arguments.
+X
+Xeq?, pointer objective identity, eqv? also works on numbers.
+X
+Xsymbol?
+X
+Xsymbol-bound? takes an optional environment structure.
+Xsymbol-value also takes optional env.
+Xset-symbol-value also takes optional env.
+X
+Xenv-lookup takes a symbol and an environment structure. If it returns
+Xnon-nil the CAR will be the value of the symbol.
+X
+Xassq
+X
+Xread,print
+X
+Xeval, takes a second argument, an environment.
+X
+Xcopy-list. Copies the top level conses in a list.
+X
+Xoblist, returns a copy of the list of the symbols that have been interned.
+X
+Xgc-status, prints out the status of garbage collection services, the
+Xnumber of cells allocated and the number of cells free. If given
+Xa () argument turns gc services off, if non-() then turns gc services on.
+X
+Xload, given a filename (which must be a symbol, there are no strings)
+Xwill read/eval all the forms in that file.
+X
+Xquit, will exit back to the operating system.
+X
+Xerror, takes a symbol as its first argument, prints the pname of this
+Xas an error message. The second argument (optional) is an offensive
+Xobject. The global variable errobj gets set to this object for later
+Xobservation.
+X
+Xnull?, not. are the same thing.
+X
+Xedit is a VMS specific function that takes a single filename argument
+Xand calls the sharable EDT editor to edit the file.
+X
+X[Utility procedures in siod.scm:]
+X
+XShows how to define macros.
+X
+Xcadr,caddr,cdddr,replace,list.
+X
+X(defvar variable default-value)
+X
+XAnd for us old maclisp hackers, setq and defun, and progn, etc.
+X
+X[A streams implementation:]
+X
+XThe first thing we must do is decide how to represent a stream.
+XThere is only one reasonable data structure available to us, the list.
+XSo we might use (<stream-car> <cache-flag> <cdr-cache> <cdr-procedure>)
+X
+Xthe-empty-stream is just ().
+X
+Xempty-stream?
+X
+Xhead
+X
+Xtail
+X
+Xcons-stream is a special form. Wraps a lambda around the second argument.
+X
+X*cons-stream is the low-level constructor used by cons-stream.
+X
+X[Benchmarks:]
+X
+XA standard-fib procedure is included in siod.scm so that everyone will
+Xuse the same definition in any reports of speed. Make sure the return
+Xresult is correct. use command line argument of
+X %siod -h100000 -isiod.scm
+X
+X(standard-fib 10) => 55 ; 795 cons work.
+X(standard-fib 15) => 610 ; 8877 cons work.
+X(standard-fib 20) => 6765 ; 98508 cons work.
+X
+X[Porting:]
+X
+XThe only code under #ifdef is the definition of myruntime, which
+Xshould be defined to return a double float, the number of cpu seconds
+Xused by the process so far. This is currently specific for encore and
+Xsun unix, with a default unix which would work on any 4.2BSD derived
+Xsystem. The other specific case is vms, and the last default has
+Xmyruntime calling the time function, which usually means an integer
+Xnumber of realtime seconds. Nested ifdef's are very difficult to
+Xread of course. Sorry.
+X
+XThere is a bit of type casting in close_open_files and vload. The
+Xpname of an un-interned symbol is used as a pointer to FILE. This
+Xsaves the code (a conser, a print case, and two gc cases) of defining
+Xa new data type for keeping track of binary data. Are there any machines
+Xwhere a pointer to char and a pointer to FILE are different?
+X
+XThere should be no problem with integers vs longs on short integer
+Xmachines.
+X
+X[Adding new SUBRS:]
+X (1) choose a name for it and add a forward declaration to the group
+X     of various forward declarations near the beginning of the file.
+X     The arguments must all be of type struct obj *, as is the return value.
+X (2) choose a lisp name and add a call to init_subr for it near all the
+X     other calls in the procedure init_subrs. The first argument to init_subr
+X     is the lisp name as a string, the second is a subr type code, and the
+X     third is the name of the C coded procedure.
+X     Dont bother with special forms without detailed understanding of how
+X     msubrs in particular work. Use tc_subr_0 to get zero arguments through
+X     tc_subr_3 for three arguments. Otherwise use tc_lsubr to receive a
+X     single list of evaluated arguments.
+X (3) If you need to use stack lisp variables (you can always use
+X     calls to cintern to get a handle on a symbol however) these must
+X     be declared before the procedure scan_registers, always init to NIL,
+X     and explicitely relocated in the scan_register procedure.
+X (4) inside your subr you need not worry about gc relocating since the gc
+X     wont go off except at toplevel. You must of course be conservative
+X     about your using of cons and flocons if your procedure will have to 
+X     run long. Since symbol pnames ARE NOT RELOCATED you do not have to worry
+X     about passing the pname string of a symbol to a system procedure that will
+X     keep an unprotected pointer to it, even across toplevel calls to GC.
+X     However, do not pass pointers to things such as &(FLONM(x)) if the
+X     called procedure is going to keep that pointer in its internal storage
+X     after it returns. Never pass pointers to lisp data to system routines
+X     which may asynchronously go off (such as VMS AST's) at a later time
+X     and use that pointer data. Instead you may want to cons an uninterned
+X     symbol, malloc some data, and set the symbol PNAME to that data
+X     if you want to keep track of it. Example kludge:
+X      m = "Binary_DATA_"
+X      x = (char *) malloc(3+strlen(m)+1+data_needed);
+X      y = symcons(x,NIL);
+X      sprintf(x,"%s%3d",m,data_needed);
+X     The print name of the symbol Y will be harmless looking enough,
+X     because of the zero terminating byte put in by sprintf,
+X     but the C programmer will know that its pname points to more
+X     interesting goodies inside. The VCELL part of the symbol should
+X     come in handy for storing other things, like an alist of object
+X     properties perhaps. This just goes to show you that you dont need
+X     to go through a lot of trouble, like definining new primitive lisp
+X     object types and modifying the printer, to get something useful.
+X
+X
+END_OF_siod.doc
+if test 9748 -ne `wc -c <siod.doc`; then
+    echo shar: \"siod.doc\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f siod.scm -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"siod.scm\"
+else
+echo shar: Extracting \"siod.scm\" \(2104 characters\)
+sed "s/^X//" >siod.scm <<'END_OF_siod.scm'
+X'(SIOD: Scheme In One Defun
+X  (c) Copyright 1988 George Carrette, gjc@bu-it.bu.edu
+X  For demonstration purposes only.
+X  Optional Runtime Library for Release 1.3)
+X
+X(define list (lambda n n))
+X
+X(define (sublis l exp)
+X  (if (cons? exp)
+X      (cons (sublis l (car exp))
+X	    (sublis l (cdr exp)))
+X      (let ((cell (assq exp l)))
+X	(if cell (cdr cell) exp))))
+X
+X(define (cadr x) (car (cdr x)))
+X(define (caddr x) (car (cdr (cdr x))))
+X(define (cdddr x) (cdr (cdr (cdr x))))
+X
+X(define (replace before after)
+X  (set-car! before (car after))
+X  (set-cdr! before (cdr after))
+X  after)
+X
+X(define (push-macro form)
+X  (replace form
+X	   (list 'set! (caddr form)
+X		 (list 'cons (cadr form) (caddr form)))))
+X
+X(define (pop-macro form)
+X  (replace form
+X	   (list 'let (list (list 'tmp (cadr form)))
+X		 (list 'set! (cadr form) '(cdr tmp))
+X		 '(car tmp))))
+X
+X(define push 'push-macro)
+X(define pop 'pop-macro)
+X
+X(define (defvar-macro form)
+X  (list 'or
+X	(list 'value-cell (list 'quote (cadr form)))
+X	(list 'define (cadr form) (caddr form))))
+X
+X(define defvar 'defvar-macro)
+X
+X(define (defun-macro form)
+X  (cons 'define
+X	(cons (cons (cadr form) (caddr form))
+X	      (cdddr form))))
+X
+X(define defun 'defun-macro)
+X	   
+X(define setq set!)
+X(define progn begin)
+X
+X(define the-empty-stream ())
+X
+X(define empty-stream? null?)
+X
+X(define (*cons-stream head tail-future)
+X  (list head () () tail-future))
+X
+X(define head car)
+X
+X(define (tail x)
+X  (if (car (cdr x))
+X      (car (cdr (cdr x)))
+X      (let ((value ((car (cdr (cdr (cdr x)))))))
+X	(set-car! (cdr x) t)
+X	(set-car! (cdr (cdr x)) value))))
+X
+X(define (cons-stream-macro form)
+X  (replace form
+X	   (list '*cons-stream
+X		 (cadr form)
+X		 (list 'lambda () (caddr form)))))
+X
+X(define cons-stream 'cons-stream-macro)
+X
+X(define (enumerate-interval low high)
+X  (if (> low high)
+X      the-empty-stream
+X      (cons-stream low (enumerate-interval (+ low 1) high))))
+X
+X(define (print-stream-elements x)
+X  (if (empty-stream? x)
+X      ()
+X      (begin (print (head x))
+X	     (print-stream-elements (tail x)))))
+X
+X(define (standard-fib x)
+X  (if (< x 2)
+X      x
+X      (+ (standard-fib (- x 1))
+X	 (standard-fib (- x 2)))))
+X
+END_OF_siod.scm
+if test 2104 -ne `wc -c <siod.scm`; then
+    echo shar: \"siod.scm\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+echo shar: End of shell archive.
+exit 0
+
+
+

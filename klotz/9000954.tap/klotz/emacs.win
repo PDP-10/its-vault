@@ -1,0 +1,62 @@
+Date: Fri, 20 Jan 89 20:27:57 EST
+From: norden@oucsace.cs.OHIOU.EDU (Jeff Norden)
+Message-Id: <8901210127.AA04184@oucsace.cs.OHIOU.EDU>
+To: KLOTZ@AI.AI.MIT.EDU
+In-Reply-To: "Leigh L. Klotz"'s message of Thu, 19 Jan 89 14:00:43 EST <522848.890119.KLOTZ@AI.AI.MIT.EDU>
+Subject: emacs
+
+
+ >  I really, really do understand what is going on.  I've been working on
+ >  EMACS internals for many years.  Like, probably before you were born.
+ >  Certainly before GNU Emacs was born.
+
+Oops.  Sorry, I didn't mean to offend.  I guess I (incorrectly) assumed that
+I was responding to an emacs neophite.
+
+ >  I am suggesting that ^X-O be inhibited unless specifically turned on.
+ >  I just sent a message suggesting that inhibit-recursive-minibufffers
+ >  should control this behavior.
+
+I see your point, but I still disagree.  Being able to leave the
+mini-buffer is so useful that I don't think it should be disabled even for
+novice users.  RMS even describes doing this in the manual - see the
+"minibuffer edit" node of the emacs info system.
+
+In fact, I seem to remember that this was one of the first features I
+discovered about GNU (I had never used any flavor of emacs before).  When I
+realized that C-x o worked even from the minibuffer, my reaction was along
+the lines of "Wow, this editor was really put together well.  I wonder what
+else it can do."  If this had been disabled, I might never have become
+hooked by EMACS (yes, and my life might be a lot simpler than it is...  I
+would problably still be using ms-dos).
+
+But anyway, it is kind of confusing that the cursor must be in the
+minibuffer in order for C-g to cancel the pending command (it was to me at
+first).  How about the following changes to simple.el in order to alleviate
+the confusion?
+
+-------------------------------------------------------------------------
+;;Minor changes for simple.el to make recusive minibuffers less confusing.
+;;Some users may want to set minibuf-recurse-auto-abort to nil in order to
+;;avoid accidentally canceling a recusive edit.
+
+(defvar minibuf-recurse-auto-abort 't 
+"* If non nil, then \\[keyboard-quit] will cause a pending minibuffer command
+to be canceled even if the cursor is not in the minbuffer.")
+
+(defun keyboard-quit ()
+  "Signal a  quit  condition, and also abort a recursive-edit if there is a
+pending minibuffer command and minibuf-recurse-auto-abort is non-nil."
+  (interactive)
+  (and
+   minibuf-recurse-auto-abort
+   (> (minibuffer-depth) 0)
+   (abort-recursive-edit))
+  (signal 'quit nil))
+---------------------------------------------------------------------------
+
+	-Jeff Norden, norden@ace.cs.ohiou.edu
+	Dept of Math, Ohio Univ, Athens OH  45701
+In these troubled times of mail incompatibility, you may need to use:
+norden%ace.cs.ohiou.edu@uxc.cso.uiuc.edu   or   ...!att!oucsace!norden
+

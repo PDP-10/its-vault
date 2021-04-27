@@ -1,0 +1,1616 @@
+.dv press
+.if press
+.fo 0 timesroman10
+.fo 1 timesroman12
+.fo 2 timesroman12b
+.fo 3 timesroman10
+.fo 4 timesroman10b
+.fo 5 Gacha10
+.fo 6 Gacha8
+.fo 7 Gacha9
+.fo 8 TimesRoman8               Footnote font.
+.else
+.fo 0 times 10rom
+.fo 1 times 12rom
+.fo 2 times 12bold
+.fo 3 times 10rom
+.fo 4 times 10bold
+.fo 5 times 10rom
+.fo 6 times 8rom
+.fo 7 times 9rom
+.end if
+.so r.macros
+.so tab
+.de para
+. sp 1
+. ne 3l
+. ti +5
+.em
+.
+.nr Chapter_font 2
+.nr section_font 4
+.nr Chapter_toc_font 3
+.nr section_toc_font 3
+.nr Chapter_starts_page 0
+.nr footnote_font 8
+.nr Figure_title_font 5
+.nr Figure_font 5			was 7
+.nr Figure_title_center 1
+.sr Figure_number_form \current_Figure
+.sr Figure_title_form \\Figure_title_font\\Figure_name_form. \Figure_title\*
+.sr figure_name_form Figure \current_figure
+.sr toc_toc_form Table of Contents . \toc_start_page
+
+.nr toc_toc_font 3
+.sr toc_toc_indent 0
+.sr tof_toc_form Table of Figures . \tof_start_page
+.nr tof_toc_font 3
+.sr tof_toc_indent 0
+.nr lpt_hack 1
+.nr tty_table_of_contents 3
+.nr table_of_Figures 1
+.sr toc_blurb \_font_\big_font!!TABLE OF CONTENTS*
+.sr tof_blurb \_font_\big_font!!LIST OF FIGURES*
+.nr heading_pos 1000             maybe? was nd
+.sr Figure_sep_width 1
+.nr print_Figure_title 1
+.nr print_Figure_title_top 0
+.nr immediate_Figure 1  Make Figures fit wherever.
+.nr Immediate_table 1
+.sr list_indent 2
+.sr list_start \list_count.        
+
+.sr list_space 1
+.sr list_spacing 1
+.sr chapn 0
+.sr chap \sec_tit . \chapn
+.nr chan 1
+.sr chap_form \chap_num \sec_tit
+.sr sec_tit 0
+.sr chap_num 0
+.sr chap_indent 3
+.macro chap
+.  sr sec_tit \0
+.  sr chapn \chan
+.  nr chan chan+1
+.  if chan>3
+.    nr chan chan+1	yes this really sucks, but it works!
+.  end if
+.  if chan>5
+.    nr chan chan-1
+.  end if
+.   if toc_level>0
+.    am table_of_contents
+.      set_font chapter_toc_font                // for big sp
+.      sp \chapter_toc_space_before
+.      ne \chapter_toc_need
+.      in \chap_indent
+\chap
+.      in
+.      sp \chapter_toc_space_after
+.      ns
+\.     em
+.   end if
+.  fi
+.  ns
+.  endmacro
+
+.nf
+.rs
+.fs 1
+.sp 1i
+2A MICROPROCESSOR-CONTROLLED INTERNAL-COMBUSTION ENGINE*
+.sp
+by
+.sp
+2ALEXANDER KRYMM*
+.sp 2
+SUBMITTED IN PARTIAL FULFILLMENT
+OF THE REQUIREMENTS FOR THE
+DEGREE OF
+.sp
+BACHELOR OF SCIENCE
+.sp
+at the
+.sp
+MASSACHUSETTS INSTITUTE OF TECHNOLOGY
+.sp
+June 1982
+.sp
+(C) Massachusetts Institute of Technology 1982
+.sp 4
+.fs 4
+Signature of Author.
+Department of Electrical Engineering and Computer Science
+June 1, 1982
+.sp
+Certified By.
+Jeffrey H. Lang
+Thesis Supervisor
+.sp
+Accepted By.
+David Adler
+Chairman, Department Committee on Theses
+.fs 0
+.margin 1.5i 1.5i 1.5i 1.5i
+.ls 2
+.bp
+A MICROPROCESSOR-CONTROLLED INTERNAL-COMBUSTION ENGINE
+by
+Alexander Krymm
+.sp 2
+.nf
+.ls 1
+Submitted to the Department of Electrical Engineering
+and Computer Science on June 1, 1982, in partial fulfillment
+of the requirements for the Degree of Bachelor of Science
+.ls 2
+.sp 4
+ABSTRACT
+.sp 1
+.ls 1
+.fi
+        The design and implementation of a
+microprocessor-based regulator for an internal combustion engine is
+examined.  Engine models, linearized about operating points, are
+used.
+A experimental setup is executed.  Further a
+linearized 2 state engine generator model is summarized.  Open-loop
+measurements are performed in order to write an appropriate
+microprocessor control algorithm that would ensure stable operation
+under varying load conditions.
+Various measurements and problems encountered are written up in the
+Appendix section.
+.nf
+.sp 3
+Thesis Supervisor:      Jeffrey H. Lang
+.sp
+Title:  Assistant Professor of Electrical Engineering 
+           Department of Electrical Engineering and Computer Science
+.fi
+.begin_table_of_contents "3"
+.bp 6
+.chap "Title Page"
+.chap "Abstract"
+.chap "Table of Contents"
+.chap "Table of Figures"
+.chap "Acknowledgments"
+ACKNOWLEDGMENTS
+.sp 1i
+.ls 2
+.para
+I would like first to thank Jeffrey H. Lang for his support and
+guidance as my thesis advisor.  His direction and suggestions were
+fundamental to the successful culmination of this work.
+Second, I have to thank Frank J. Bunick from the EECS Machine
+Shop for his advice and for helping me machine the required parts that
+were needed for this project.  Finally Briggs & Stratton is
+acknowledged for donating the internal-combustion engine.
+.sp 2
+.ls 1
+.nf
+Alexander Krymm    
+February 4 1982    
+.sp
+.fi
+.bp
+.ls 2
+.fs 0
+.Chapter "Introduction"
+.section "Introduction and Motivation"
+.nr Chapter_starts_page 1
+.para
+The use of microprocessors to control internal-combustion engines is no
+longer a novelty.  Many cars coming off the assembly line today
+incorporate microprocessor-based control systems.  These systems
+control ignition, regulate the fuel supply and the
+throttle opening, and regulate other actuators that are operated
+differently during the various driving phases such as deceleration,
+acceleration and constant speed driving.  The purpose of these control
+systems includes the avoidance of engine damaging predetonation, the
+improvement of emission control, and the improvement of engine
+performance and efficiency, all of which require a more accurate
+control of the internal-combustion engine.  The most important
+purpose, however, presently appears to be engine emission control.
+.para
+In contrast to the automotive engine control systems, this thesis tries
+to develop a simplified microprocessor-controlled engine with no
+regards to emissions controls, but with an emphasis on precise engine
+speed control.  This system is designed to operate with only a
+external supply of fuel, such as methane or propane, and a ventilation
+system that permits the evacuation of exhaust gases produced by the
+engine.  The contributions of the thesis are:
+.in .1i
+ 1)  the development of an internal-combustion engine and
+computer-based control  system,  2)  the development of a variable
+generator load,  3)  the development and verification of a system
+model, and  4)  the execution of closed-loop speed regulation
+experiments.
+.in 0
+.fi
+.section "Thesis Outline"
+.para
+The remaining sections of this Chapter present a basic description of
+the main components of the experimental system and a brief summary
+of the control objectives.  Chapter 2 presents a detailed
+description of the mechanical components of the system and the
+modifications that have been performed on them.  Additionally this
+Chapter presents the electronic circuits that have been assembled
+in order to achieve microprocessor-based control of the engine.
+Chapter 3 presents open-loop measurement of the engine system.  The
+initial measurements are devoted to the determination of torque-speed
+curves about various operating points, while the latter
+measurements are step responses used to determine the various
+time constants of the system.  Chapter 4 uses the results
+from Chapter 3 to develop a mathematical model of the system.
+Chapter 5 describes the closed-loop experiments.  Finally,
+Chapter 6 contains a summary, conclusions, and suggestions for
+further work.  The appendices contain numerical details,
+manufacturer specifications, and listings of assembly language programs
+used in the experiments.
+.section "A Brief Description of the Experimental System"
+.para
+The experimental system has two main units. The first is the
+internal-combustion engine, a model 131400 Briggs & Stratton 
+horizontal-shaft 5-horsepower engine.  Stepping motors are
+connected to the engine so as to provide for throttle and air-fuel
+ratio control by the computer.  The engine is modified to use
+propane fuel.  The second unit is a dc motor that has been
+converted for use as a dc generator; the original motor is a
+Prestolite model
+.bp
+4001 series wound motor.  The stator current of this
+generator is also controlled by the microprocessor through a power
+amplifier so as to provide a varying mechanical load to the
+internal-combustion engine.  The dc generator output is connected
+to a bank of high power resistors in order to dissipate the
+generated power.  The whole system except for the resistor bank is
+mounted on a portable table; see Figure 1.
+.begin_page_Figure "A Picture of the Experimental System."
+.sp 7i
+.finish_Figure
+.sp .5i
+.section "Engine Control Objectives"
+.para
+There are three computer-controlled inputs to the experimental system.
+They are the engine throttle opening, the engine air-fuel ratio and
+the generator field current.  There is one input to the
+microprocessor, namely, the output voltage of the field winding of
+the dc generator.  This voltage provides a measurement of the total
+power dissipated in the generator-load system, and can be used to
+the determine the generator and engine speed.
+Figure 2 shows the inputs and outputs used for the
+microprocessor closed-loop control of the system.
+.begin_page_Figure "Input-Output Computer Connections"
+.sp 7i
+.finish_Figure
+.para
+The main control objective of the thesis is to maintain,
+under varying load conditions set by the generator field current,
+a constant engine rotational speed.  The engine itself has very
+non-linear characteristics, particularly with respect to the
+air-fuel ratio.  To obtain a simple control system, the engine is
+modeled as a linear system in a small interval around a fixed speed
+setting and a linear computer-based regulator is derived based upon
+this model.  This approach is easily expanded to achieve a control
+over a wider range of speed settings with the use of lookup tables,
+which provide linearized model parameters about a variety of
+operating points.
+.Chapter "Experimental System"
+.section "Introduction"
+.para
+This Chapter provides a detailed description of the experimetnal
+system upon which the engine control experiments of this thesis were
+performed.  The experimental system, exclusive of the computer,
+has two main units.  Figure 3 summarizes the
+interconnecting parts of the system.
+.begin_Figure "Interconnecting Parts of the Experimental System"
+.sp 7i
+.finish_Figure
+The first unit is the internal-combustion engine.  Stepping motors are
+connected to the engine so as to provide for throttle and air-fuel
+ratio control by the computer.  The second unit is a dc generator
+connected to a resistor bank 
+which serves as an engine load.  The stator current of this generator
+is also controlled by the microprocessor through a power amplifier to
+allow for a varying engine load.  Additionally, the generator output
+provides a measure of the generator and engine speed.  
+As shown in Figure 1, a portable table supports, on one side, the
+gasoline engine with the stepping
+motors, and on the other, the dc generator and the stator amplifier
+output stage with the heat sinks.  The dc generator is connected to
+the engine by means of a V-belt covered by a guard.
+.para
+Three cables support the interconnections in Figure 3.  
+The first cable connects the generator output to an
+external resistor bank; the resistor bank can be moved as desired.
+The second cable connects the engine control circuits to the
+microprocessor parallel output port, digital-to-analog converter,
+analog-to-digital converter and 5 volt power supply.  The third cable
+connects to a separate power supply which provides four supply
+voltages used by the stepping motors and their control circuitry, and
+by the power amplifier.
+.para
+The microprocessor is a Compu-Pro Z80 with a 4 Megaherzt clock, 
+currently running under CP/M.  One interface board contains an 8-bit parallel
+input port, an 8-bit parallel output port, two analog-to-digital 
+converters and eight comparators.  A separate analog-to-digital converter
+circuit is used.  Theses two circuits provide all the interfacing
+needed between the stepper motors and the various input and output
+voltages on one side, and the microprocessor programs on the other.
+One floppy disk permits system booting and storage for programs and
+data.
+.sp .5i
+.section "The Table"
+.para
+The experimental system is constructed on a portable table, see Figure
+4.  The table
+supports the engine and the stepping motors on one side, and the 
+dc generator and power amplifier on the other side.  The table is a
+modified standard sheet metal table with lateral dimensions of 36
+inches by 21 inches, and a height of 24 inches.  The table is
+modified to obtain a sturdy frame capable of supporting continuous
+operation of the internal-combustion engine.
+.para
+A significant additional problem is the resonance of the table in
+response to vibrations caused by the engine.  This resonance
+increases the overall noise level considerably.
+To increase the table strength and decrease its resonance, two
+3/4  inch plywood plates, 21 by 36 inches, are connected to the table
+top and bottom.  Added support is provided by vertical wooden beams.
+.begin_page_Figure "The Table"
+.sp 7i
+.finish_Figure
+Finally, rubber mounts are used to isolate the rest of the system from the
+internal-combustion engine.  The effectiveness of this isolation is
+inversely proportional to the weight ratio of the engine to the rest
+of the system.  This ratio was decreased by the use of a heavy cement
+block fitted under the table.  The total weight of the system is 120
+pounds, while the engine weighs 30 pounds.  Thus, the isolation ratio
+is 1 to 3 which is not big enough to eliminate all vibrations, but
+reduces them considerably.
+
+.section "The Engine System"
+.para
+The original engine is a model 131400 Briggs & Stratton
+horizontal-shaft 5-hp gasoline engine.  Engine details and
+engine maintenance procedures are given in Appendix 1.
+Several modifications are made to the engine in order to
+adapt it for microprocessor control.  These are individually discussed
+below.
+.sp
+        First, the mechanical centrifugal governor is
+disconnected.  Under
+normal operation this governor provides speed control by acting
+directly on the throttle lever.  The retention of this governor as a
+backup
+in the event of a microprocessor failure is not practicle because
+of the high minimum holding force of the linear stepper motor used to
+control the throttle position; see Appendix 3.  The spring loaded
+governor is not able to overcome this holding force.
+.sp
+        Second, the carburation system is modified to accept propane
+fuel.  The modifications are described in detail in Appendix 1.  The
+conversion to propane causes a loss of available power output on the
+order of 15 to 20 percent.
+The percentage power loss varies considerably depending on the propane
+supply system used.  There are three basic supply systems.  The best
+conversion uses a new carburator that has been developed to use
+propane as fuel.  The intermediate system uses a spacer that is
+introduced in the carburator at the height of the throttle plate.  The
+propane is injected through an orifice into that section of the
+carburator.  The last system is the one used here as it was the only
+system 
+that would fit the intake port of the engine used for this project.
+It consists of a spud that is affixed in the intake port prior to
+the carburator, see section 2.4 for technical details of the spud.  A
+good estimate of the power loss due to the use of this particular
+conversion kit is 20 percent.
+Consequently, the expected maximum power output at the shaft, which was
+4.4 hp for gasoline as fuel, is now approximately 3.5 hp, or 2.4 Kw.
+(See torque and horsepower curves in Appendix 1).  
+The carburator was additionally modified to reduce unwanted turbulence of the
+air-fuel flow at the intake port, and to increase intake vacuum.
+To do so, the carburator high-speed needle adjustment screw and the
+associated jet were removed, see Figure 5. 
+The high-speed needle adjustment assembly is of no use when running
+the engine on propane.
+.begin_page_Figure "Carburator Modification"
+.sp 7i
+.finish_Figure
+.para
+The third modification removed the gas tank and the
+associated fuel lines from the engine.  The remaining fuel openings
+were plugged with appropriately machined bolts.
+The fourth modification repositioned the manual starter
+assembly for easy access when starting the engine.
+
+        Finally, in order to keep the belt tight, thereby avoiding
+belt slippage and power loss at the dc generator, a simple sliding
+rack arrangement was built for the generator.  Figure 6 shows a wood
+base with the two tightener shafts 
+and four clamp down bolts.  The main part of the procedure to
+start the engine consists in tightening and positioning the belt in
+the right manner.  The complete procedure for starting the engine is
+given in Appendix 1.
+.begin_page_Figure "Sliding-Rack arrangement."
+.sp 7i
+.finish_Figure
+.bp
+.section "The Generator and Resistive Load"
+.para
+The dc generator is a modified Prestolite dc series wound
+motor, model number 4001, with a operating voltage of 36 volts and a
+maximum power output of 6 Kw.  Appendix 2 provides further details
+concerning the original motor.  The resistive load is constructed
+from heating lamps.  These components are described individually
+below.
+.para
+For this thesis, the following modification to the generator stator 
+windings has been made in order to control the stator current with
+appropriate power 
+transistor circuitry.  The stator windings were originally wound with
+windings of 0.04135 inches by 0.5 inch copper band wire around each of
+the four poles.  The
+stator resistance was measured to be 0.009 Ohms.  From the Figure 24
+in Appendix 2 it is seen that the current
+at a 3.4 hp load is 150 Amps, which in turns gives a 1.4
+Volt drop across the stator, which is an impractical
+voltage for the present control purposes.  Consequently, 
+the stator was rewound with 14 gauge copper wire.  Utilizing
+approximately the same winding volume, 58 
+turns per coil were wound around each pole giving a voltage
+multiplication, or current division, of 58/8, or 7.25.  The original
+rated current of 150 amps and voltage of 1.4 volts, now become 20.7
+amps and 11 volts.  The resistance of the new winding is measured as
+0.531 Ohms; see
+Appendix 2.  Graphs concerning the dc motor can be seen in the
+second part of Appendix 2, Figure 24.  The dc generator is also used in
+this thesis as a tachometer.  The details of this use are explained in
+section 3.2.
+.para
+The generator load is provided by an array of 15 modified heating
+lamps fixed on a heat resistant board.  Each original lamp has
+a maximum power absorption of 660 watts at 110 volts.  For the present
+purposes, which require a maximum load voltage of 21 volts,  each lamp
+is provided with a center tap to yield a power absorption of 660
+watts at 55 volts by treating the center of the lamp as one terminal
+and connecting the two original terminals to create a second modified
+terminal.  The 15 modified lamps are then connected in parallel.
+.para
+The maximum power into the load will never exceed 2.4 Kw, since the
+maximum power developed by the internal combustion engine does not
+exceed 3.5 hp.  The average
+power is expected to be around 1.7 Kw.  This is far
+below the maximum rating which is 9.9 Kw ( 15 x 660 = 9900 watts).
+The increase in temperature of the whole load assembly is small
+enough so that the resistance of the load
+is assumed constant for the present purposes.  The
+exact resistance is measured to be 0.220 ohms without the cables.
+Each row of three resistance-lamps is connected to one of the
+main terminals by a throw switch.  It is possible to disconnect any
+number of the five rows, even while the engine is running.
+.sp .25i
+.section "The Power Amplifier"
+.para
+A power amplifier is used to control the generator stator currents.
+Through the amplifier, the computer is able to vary the load  on the
+gasoline engine.  The amplifier is controlled from the computer through
+a D/A converter.  An optical isolation stage is inserted between the
+converter and the power amplifier for protection purposes.
+.para
+The power amplifier is shown in Figure 7.  It is designed to regulate
+the generator stator current over a range of 0.0 to 14.0 amps.  For this
+output current , the input voltage ranges from 2.5 to 0.0 volts.  The
+amplifier static input-output transfer characteristic is shown in
+Figure 9.  It is linear over the current range from 0 to 11 amps.
+Outside this range the amplifier power supply voltage drops, producing
+the non-linear relation shown in Figure 9; the power supply is
+described in Appendix 4.  Due to the amplifier non-linearity, a
+look-up table is used by the computer to determine the power amplifier
+input voltage from a desired output current.
+.para
+The input voltage to the power amplifier is buffered by an operational
+amplifier which is followed by a low power transistor and then two
+stages of power transistors.  To assure linearity of the power stage, a
+feedback loop is used.  The feedback loop is compensated to prevent
+oscillations.  The stator current is monitored through the voltage
+across the power stage emitter resistor of 0.2 Ohms; see Figure 7.
+Note that the power amplifier is an inverting amplifier generating a
+maximum output voltage for zero input voltage.  This feature is deemed
+useful in the case of a microprocessor failure; a maximum load
+prevents engine damage at high rotational velocities.
+.para
+The D/A converter used to drive the power amplifier is a 12-bit
+converter operating over the -1 to +1 volt range.  Because negative
+stator currents are not necessary for this thesis, only the positive
+range of the converter is utilized here.  Thus, in the present
+situation the converter provides 7 useful bits of operating range,
+through its most significant byte, which, in turn, does provide enough
+precision for the present purposes.
+If more accurate D/A control is needed, the four bits of the least
+significant byte can be added to obtain 11 useful bits.
+The D/A output voltage is finally amplified to obtain a 0 to 5 volt
+operating range.
+.begin_page_Figure "Power Amplifier Circuit"
+.sp 7i
+.finish_Figure
+.begin_page_Figure "Opto-Isolator Stage of the Power Amplifier"
+.sp 6i
+This circuit has perfect linear voltage transfer 
+characteristics.                              
+.finish_Figure
+.begin_page_Figure "Input-Output Transfer Characteristics of the Power Amplifier."
+.sp 6i
+The input voltage is also specified in terms of the
+digital converter input.
+.finish_Figure
+.para
+The optical isolator stage shown if Figure 8 is inserted between the
+power amplifier and the converter for protection purposes.  The front
+end of the isolator is powered by the computer power supply.  The
+remainder part of the isolator is powered by an outboard supply
+described in Appendix 4.  
+The actual opto-isolator was found to be a non-linear analog device.
+To achieve a linear transfer of voltage across the isolator, a
+voltage controlled oscillator (VCO) was introduced before the
+opto-isolator and an integrator stage was placed at the output of the
+opto-isolator.  The VCO generates a series of pulses of constant
+width.  The time between pulses is a linear function of the voltage
+applied to the input, with a higher voltage producing a longer delay
+between pulses.  The VCO works over the range of 2.5 to 5 volts at
+the input, so a voltage divider and translator circuit was introduced
+before the VCO to accommodate the full 0 to 5 volt range of the D/A
+output voltage.
+At the opto-isolator output the pulse train is stretched and
+integrated by a capacitor-resistor integrator to produce a constant
+output voltage.  This output voltage is linearly proportional to the
+input voltage.
+.sp .5i
+.section "The Computer"
+.para
+The computer system used is an Inter-Systems Z-80 microprocessor based
+system with a 4 Megaherzt clock.  The operating system is CP/M.  The
+important features of the computer system for the present
+purposes are : 1)  the digital-to-analog interface card, which
+contains an 8-bit parallel input and output port, two 8-bit
+digital-to-analog converters and 8 analog comparators,  2)  the
+analog-to-digital converter circuit which uses a serial input port and
+2 bits of the parallel output port,  3)  a floppy disk drive for
+system booting, program and data storage, and  4)  a lineprinter to
+record the experimetnal results.
+.sp .5i
+.section  "Stepper Motors and Control Circuits"
+.para
+There are two stepping motors used in this thesis.  The first is
+a linear stepping motor, Airpax number K92221-P2, which actuates the
+throttle plate of the carburator.  The second is a
+rotary stepper, Airpax number K82-420, which regulates the
+air-fuel mixture screw on the spud used by the propane conversion kit.
+More detailed information about the stepping motors is given in
+Appendix 3.  
+The linear stepping motor is connected to the throttle lever through a
+standard metal linkage.
+The rotary stepping motor is connected to the air-fuel ratio screw by
+a piece of rubber neoprene hose that permits a flexible connection and
+reduces vibrations transmitted to the stepping motor.
+.para
+Both stepping motors require an electronic driving system based on an
+Airpax SAA-1027  integrated circuit and several external components;
+see Figure 10.
+A set of external clamping diodes have
+been added to minimize internal
+driver heating in the case of prolonged use of the stepping motors.
+Following the instructions of Appendix 3 a 270 ohm and a 180 ohm 1 watt
+resistor are used as bias resistors for the linear and rotary
+stepper motors respectively.
+.keep
+.begin_page_Figure "Stepper Motor Control Circuit"
+.sp 1i
+.finish_Figure
+.begin_Figure "Opto-Isolator Stage for the Stepper Motor Control."
+.sp 1i
+.finish_Figure
+.end_keep
+.para
+Figure 10 shows three control inputs to each driver chip,
+denoted T, S, R.  T is the trigger input.  S is the enable input and
+is not connected to the microprocessor.  R is the directional
+input.
+A high level at the R input will cause the shaft to retract in the
+case of the linear
+stepper motor and a clockwise rotation for the rotary stepping
+monitor.
+The two microprocessor connections T and R are opto-isolated using the
+circuit in Figure 11.  A standard transistor opto-isolator is used.
+To conserve the sharp
+edges of the microcomputer pulses when the circuit is driven at its
+frequency limit, a pair of CMOS schmitt-triggers are inserted between the
+opto-isolator and the driver chip.  The maximum stepping rate for this
+circuit is 200 steps per second.  This limitation is a function of the
+diode current and the gain of the transistor in the opto-isolator.
+.chapter "Open-Loop Measurements"
+.section "Introduction"
+.para
+This section presents the open-loop measurements performed for the
+purpose of system identification.  
+Three series of open-loop measurements are
+executed.  First, a method for deriving the generator speed 
+from the generator rotor voltage is developed.  This method requires
+the determination of one unknown generator constant.  The second series
+of measurements determines the steady-state engine torque as a function
+of the engine speed and throttle and mixture position.  The final
+series determines the engine dynamics
+in the event of a change in the operating conditions, such as
+a variation in the load.  The resulting data will be used to develop
+a mathematical model for the engine in Chapter 4.
+.section "Determination of Engine Speed"
+.para
+The engine speed is directly related to the generator speed, but he two
+are not equal as a consequence of the interconnecting drive.
+The belt drive uses a 3 3/4 inch pulley at the engine and a 5 3/4 inch
+pulley at the generator, hence the ratio of engine to generator
+speed is 1.53.  For example, the engine speed of 3200 rpm results in a
+generator speed of 2086 rpm.  This is the upper generator speed
+desired for closed-loop control purposes.  All further reference to
+rotational speeds will involve the speed of the dc generator, unless
+otherwise noted.
+.para
+The generator speed can be determined from the voltage at the
+generator rotor (armature) terminals.  This voltage is a function, of
+the generator speed w, the stator (field) current If,
+the armature resistance Ra, the armature inductance La and the
+load resistance Rl.  Figure 12 shows a model of this relation as
+presented in [1].
+.begin_page_Figure "DC Generator Model"
+.sp 6i
+.ls 1
+.in 2i
+Ra: rotor resistance
+Ia: rotor current
+Va: rotor voltage
+Rf: stator resistance
+If: stator current
+Vf: stator voltage
+Rl: load resistance
+.sp
+.in 0
+.finish_Figure
+.fs 0
+.ls 2
+According to the figure, the relation between the rotor terminal
+parameters, the rotor speed and the stator current is given by,
+.sp
+Va = Ra Ia + La div(dIa dt) + G w If .(1)
+.sp
+Here,
+G is a speed coefficient that depends only on the generator geometry and 
+magnetic material properties, provided that the
+magnetic material has not saturated.
+.para
+The experimental determination
+of G is most easily performed with an open circuit at the rotor.  
+In this case, equation (1) reduces to
+.sp
+Va = G w If .(2)
+.sp
+The dc generator was run at various speeds and the values
+of the stator current and the resulting rotor voltages were recorded
+and used to determine G according to equation (2).
+These values of G are given if Figure 13 as a function 
+of If.
+.begin_page_figure "Table of G as a function of If"
+.sp 2i
+.keep
+The following table summarizes the results for G as a function of
+the stator current If.
+.sp 2
+table 1
+.sp .5i
+.fs 6
+.tab 0 1
+.tab_center
+.row If 1 2 3 4 5 6 7 8 9 10 11 12 13 14
+.row c 800 400 267 200 160 134 114 100 89 80 72 67 62 57
+.row G10-3 11.9 11.9 11.8 11.9 11.9 11.9 11.9 11.9 11.9 11.9 11.8 11.7 10.8 10.4
+.end_tab
+.end_keep
+.in 0
+.sp 3
+.fs 0
+.sp 2i
+.finish_figure
+.fi
+Notice that due to saturation in the stator field, the value for G is
+not constant when If exceeds 11 amperes.
+.para
+In all further experiments, a load resistance Rl is connected to
+the generator rotor terminals.  In this case,
+.nf
+.sp
+.ti 2i
+Va = - Rl  Ia .(3)
+Eliminating the rotor current Ia from equations (1) and (3), under
+the assumption of steady state operation, yields
+.sp
+.ti 2i
+Va = div(Rl Rl+Ra) G w If (4)
+.sp
+which can be written as
+.sp
+w = (1 + div(Ra Rl))  div(Va GIf) .(5)
+.fi
+.para
+With the help of table 1, equation (5) determines the speed of the 
+generator from the rotor voltage Va and the stator current If
+under steady state conditions.  Since the rotor time constant 
+div(La Ra+Rl) of 0.011 seconds is small compared to all
+other relevant time constants of the engine-generator operation, the
+steady state assumption is valid even if the engine-generator operation
+is not strictly steady.  Consequently equation (5) is assumed from here on.
+.begin_page_figure "Entire Circuit for Open Loop Measurements"
+.sp 7i
+.finish_Figure
+.para
+The output voltage at the stator terminals will vary from 0 to 22.9
+Volts maximum.  The analog to digital converter connected to the
+computer measures voltages from 
+0 to 10 Volts.  Consequently, a resistance bridge was used to reduce 
+the voltage by a ratio of 12 / 39 so that the reduced voltage Vpt,
+at the input of the analog to digital converter, ranges from 0 to 7.1
+Volts.  Thus,
+.sp
+ Va = 3.25 Vpt. (6)
+.sp
+Since this voltage has a floating reference a simple subtracting
+circuit was inserted between the rotor terminals and the
+analog to digital converter.  This
+circuit takes the differential input voltage and transforms to a
+ground referenced voltage for the analog to digital conversion, see
+Figure 14.  Finally 
+the output of subtractor is connected to a RC network that
+eliminates the voltage spikes caused by the generator commutation.
+The time constant of this filter is 0.3 milliseconds and should not
+affect any future measurements, since the minimum sampling 
+interval will be between 10 and 20 milliseconds.  The omission of the
+RC filter results in readings from the analog to digital converter
+that differ by as much as 20 percent from the actual value.
+
+.section "Engine Torque-Speed Relations"
+.para
+Open-loop engine torque-speed measurements were performed for various
+combinations of the throttle plate and the air-fuel mixture screw
+settings.  The computer was used to control the two stepping motors
+which actuate the engine parameters, and to vary
+the load and hence the engine speed by 
+means of the stator current.  The computer was also used to read
+the generator voltage which ultimately provided the torque-speed
+measurements.  The programs used for these experiments are listed in
+appendix 6.
+.para
+Three different settings for each stepping motor actuator were
+investigated, yielding a total of nine experiments.  At each
+different setting the stator
+current was varied from 4.0 to 6.5 amps in steps of approximately 0.5 amps
+and the rotor voltage Va was recorded, along with the position of
+both stepping motors and the stator current If.
+In addition to this the speed of the dc generator was measured with
+the help of a stroboscope to verify the consistency of the readings
+printed out by the computer.  The results are given in Figure 15.
+.begin_page_Figure "Main Table generated from program output 1."
+.sp 7i
+.finish_Figure
+.sp 2
+With reference to Figure 16, the total steady-state power dissipated in the
+rotor circuit, Ptotal, is given by
+.sp
+.nf
+Ptotal = Ia2 (Ra + Rl) (7)
+.sp
+where
+.sp
+Ia = div(Va Rl) (8)
+.sp 2
+.fi
+By combining equations (7) and (8), Ptotal is related to the dc
+generator rotor voltage Va according to,
+.sp
+.nf
+Ptotal = (1 + div(Ra Rl)) x div(Va2 Rl) (9)
+.sp
+.fi
+Substituting the values for the resistances Ra and Rl  given
+in Figure 11 yields,
+.sp
+.nf
+Ptotal = (4.507 Ohms-1) Va2 (10)
+.sp
+.fi
+The reading on the printout, Vpt, is equal to actual voltage
+divided by 3.25 or,
+.sp
+.nf
+Va = div(Vpt 3.25)  (11)
+.sp
+.fi
+Substitution of equation (4) yields,
+.sp
+.nf
+Ptotal = 0.357 . Vpt2 (12)
+.sp
+.fi
+.para
+Equation (12) converts the computer reading of the generator voltage
+into power.  Together with the generator speed
+readings of the stroboscope or 
+the look-up table from section 3.1, equation (12) allows the
+calculation of engine torque produced at the generator.  Torque
+calculations are performed using the data from Figure 15 and these
+calculations result in the torque-speed curves shown in Figures 16
+through 21.  The first series of the three Figures 16-18,
+contain 3 torque-speed curves each done with the position of the
+linear stepping motor ls, and hence the throttle, held constant.
+The second series of curves are plotted with the rotary stepping
+motor position rs, and hence the air-fuel mixture, held constant.
+.bp
+The three positions, ls, of the linear stepping motor are:
+160 , 200 , 240   unit steps.
+.begin_Figure "Plots with constant ls = 160 steps."
+.sp 6i
+.finish_Figure
+.begin_page_Figure "Plots with constant ls = 200 steps."
+.sp 6i
+.finish_Figure
+.begin_page_Figure "Plots with constant ls = 240 steps."
+.sp 6i
+.finish_figure
+.bp
+The three positions, rs, of the rotary stepping motor are:
+5.5 , 6.0 , 6.5   turns
+.begin_Figure "Plots with constant rs = 5.5 turns."
+.sp 6i
+.finish_Figure
+.begin_page_Figure "Plots with constant rs = 6.0 turns."
+.sp 6i
+.finish_Figure
+.begin_page_Figure "Plots with constant rs = 6.5 turns."
+.sp 6i
+.finish_figure
+.bp
+.section "Step Response of the System"
+.para
+The preceding section has determined the static engine torque as a
+function of the engine speed, and throttle and mixture settings.  The
+only remaining elements of a dynamic engine model are the time
+constants which describe the rates at which the engine can respond to
+change in control settings and load.  This section is concerned with
+the determination of time constants of the system which govern the
+aforementioned dynamic behavior.  These constants involve the moment of
+inertia of the engine-generator system denoted J, the 
+div(La Ra+Rl)
+time constant of the generator-rotor-load L/R circuit, and the
+carburator lag.
+.para
+The electrical time constant of the generator circuit is determined
+by measuring the 
+various resistances and the rotor inductance La using a
+bridge.  These measurements determined La to be 33 mH, Ra to
+be 0.68 ohms and Rl to be 0.245 Ohms.  The resulting div(La Ra+Rl)  time constant is calculated to be 0.011 seconds.
+.para
+For present purposes we will try to ignore the delay caused by the
+carburator lag, which occurs when either one of the two carburator
+controls are modified.  This delay is
+caused by the distance that the mixture has to travel from the
+carburator or from the air-fuel screw to the engine cylinder.  A good
+estimate of this lag is 45 rpm-sec / w.
+At w = 2000 rpm, this gives a 20 milliseconds delay, which will be
+ignored in all further experiments.
+.para
+The determination of the moment of inertia J of the engine-generator
+system is
+attempted by means of a step response.  The step response is performed
+by changing either the value of the engine torque Tm or of the
+generator load Te. The step in the mechanical
+engine torque was accomplished by an increase in the position of the
+linear stepping motor.  The generator load was preset to a value
+determined by the stator current Ifo.
+.para
+Consider the step in the mechanical engine torque.  A torque balance
+of the engine-generator yields,
+
+.sp
+J div(dw dt) = Tm - Te (13)
+.sp
+where J denotes the engine-generator moment of inertia, w denotes the
+generator velocity,Tm the mechanical engine torque at the
+generator, and Te the generator torque.
+The generator torque is given by
+.sp
+ Te = G Ifo Ia , (14)
+.sp
+as described in [1].  Combining equation (13) and (14) gives,
+.sp
+ J div(dw dt) = Tm - G Ifo Ia . (15)
+.sp
+Under the assumption that the electrical dynamics of the generator
+can be ignored, equations (1) and (3) combine to yield
+.sp
+Ia = div(1 Rl+Ra) G w Ifo . (16)
+.sp
+Substitution of equation (16) into equation (14) yields
+.sp
+J div(dw dt) = Tm - div(G2Ifo2 Rl+Ra) w, (17)
+.sp
+or,
+.sp
+J div(dw dt) + div(G2Ifo2 Rl+Ra) w = Tm . (18)
+.sp
+If Tm undergoes a step change, then equation (18) has a solution
+of the form,
+.sp
+w(t) = div(Tm2tm J) + div((Tm1-Tm2)tm J) e-div(t tm)
+.sp
+where tm = div(J(Ra+Rl) G2If2),  Tm1 and Tm2 are the mechanical torques before
+and after the step, respectively.
+  Here it is assumed that Tm is
+not a function of w, which restricts the speed at which this
+analysis holds.
+Figure 23
+shows the plot of the system response to a step in the linear motor
+position as indicated in the Figure.  The slope at t=0 is div(Tm1-Tm2 J) = 53.
+Consequently
+.sp
+J = 0.103 kg.m2
+.sp
+.begin_page_Figure "Output Plot for the Step Response with the Linear Stepper."
+.sp 7i
+.finish_Figure
+.section "Summary"
+.para
+In this chapter we have obtained four main results.  In the first
+section we have determined a means of measuring w from Vpt which
+has verified by strobe measurements.  The second section measured the
+torque-speed curves of the engine.
+The open-loop torque-speed curves appear valid in the range from w =
+160 rad.sec-1 to 250 rad.sec-1.  The distance between two
+different curves remains close to constant.  In the lower speed range
+we have intersecting curves which is an unpleasant feature reflecting
+most probably pronounced non-linearities in the two carburator controls.
+The maximum power output is measured at 2.4 kW or 3.2 HP at 1900 rpm.
+Figure 20 shows the maximum torque to be 13.2 N.m at 1400 rpm.  The
+peak power was expected because of the propane conversion system.  The
+difference between the expected value and the actual value can be
+accounted from frictional looses.  The peak torque remains constant
+but at a lower speed which again is a consequence of the particular
+propane spud-in conversion system as described in Figure 5, section
+2.3 and in appendix 1.
+Section 3 measured the dynamic time constant and determined the value
+of J to be 0.103 kg m2.  The main result of this last section is
+that the system has only one significant time constant which is the
+inertial time constant tm.
+.fs 0
+.Chapter "A Mathematical System Model"
+.section "Introduction"
+.para
+This chapter develops a mathematical model of the internal-combustion
+engine and generator-load system.  The model is then numerically
+evaluated using the data from Chapter 3.  The highly non-linear
+engine characteristics pictured
+in Figures 17 through 24 preclude the development a simple model,
+unless 
+restriction is imposed on the operating range of the engine.
+In this event, linearization is the most common method used to obtain
+a simple workable model.  An operating point denoted by  Po, which
+consists of wo, lso and rso is chosen and the torque at 
+any point within the operating range is approximated by a linear
+expansion from the torque at Po.  Section 4.2 develops
+the linearized equations from the physical laws involved, while section
+4.3 utilizes the results from Chapter 3 to derive numerical equations.
+.section "General Equations"
+.para
+There are two fundamental equations which describe the mechanical dynamic
+behavior of the engine.  The first is a torque balance.
+The second is a Taylor expansion of the engine torque
+equation around the chosen operating point Po.
+.para
+Denote the engine-generator moment of inertia by J, the generator velocity
+by w, the mechanical engine torque by Tm,  the electrical generator
+torque by Te .  A torque balance then yields
+law states that:
+.sp 
+J div(dw dt) = Tm - Te (1)
+.sp 2
+.fi
+As described above, the mechanical torque Tm of
+the engine is expanded as a linear function of the various engine
+controls,
+.nf
+T (w, ls, rs) = T (wo ,lso ,rso) + div(dT dls)Po ls1 + div(dT drs)|Po rs1 + div(dT dw) |Po  w1 ,  (2)
+.sp 2
+where
+w = wo + w1, rs = rso + rs1, ls = lso + ls1.
+.sp 2
+.fi
+The electrical dynamic behavior of the generator was examined in
+Chapter 3.  It was determined that
+.nf
+.sp
+Va = G w If + La div(dIa dt) + Ra Ia , (3)
+.sp
+.fi
+where Ia denotes the rotor current, 
+La denotes its inductance, Ra denotes its resistance,
+If the stator current, and G is a physical constant measured to
+be 0.0119.
+.sp
+The terminal characteristic of the load is given by,
+.sp
+Va = - Rl Ia (4)
+.br
+.sp
+Finally the electrical torque of the generator, Te is given by
+.sp
+.br
+Te = G If Ia . (5)
+.br
+.para
+Equations (2) and (3) combine to yield
+.nf
+.sp
+J div(dw1 dt) = div(dT dls)|Po ls1 + div(dT drs)|Po  rs1 + div(dT dw) |Po  w1 + G Ifo Ia1 + G wo If1  (6)
+.sp 2
+.fi
+where the equilibria wo, rso, and lso have been eliminated.
+The sign conventions for Ia imposes a negative sign.  An increase
+in the rotor current is described by a negative incremental rotor
+current Ia1.
+.sp
+.nf
+From equations (3) through (6),
+.sp
+La div(dIa1 dt) = - (Ra + Rl) Ia1 - G w1 If - G Iao If1 (7)
+.sp
+.fi
+where the equilibria Iao and Ifo have been eliminated.
+The previous two equations can be written as a system in the matrix form
+.nf
+.sp 7
+matrix (8)
+.sp 8
+.fs 0
+.fi
+.section "Numerical Solution"
+.para
+Figure 24 presents the various constants within equation (12) which
+represent the operating conditions for further closed-loop control
+experiments.  The operating point Po was chosen as
+.sp
+.nf
+.in .8i
+wo = 200 rad/sec
+rso = 6.0 turns or 2880 steps
+lso = 200 steps
+.in 0
+.sp
+At this operating point we have:
+.in .8i
+div(dT drs)|Po = div(-1 480)
+div(dT Dls)|Po = div(1 70)
+div(dT dw)|Po = - 0.024
+.in 0
+.fi
+.ls 2
+.sp 2
+.begin_page_Figure "Table of constants used in all measurements"
+.sp 1.5i
+.tab 0 2
+.tab_center
+.row Constant Variable Unit Value_of_Constant Range
+.row " " " " " " " " " "
+.row " " " " " " " " " "
+.row lso - step 200 -
+.row - ls1 step - +-40
+.row rso - step 2880 -
+.row - rs1 step - +-240
+.row wo - rad.sec-1 200 -
+.row - w1 rad.sec-1 - +-20
+.row Iao - amps -82
+.row - Ia1 amps - +-5
+.row Ifo - amps 11.7 -
+.row - If1 amps - +-0.5
+.row J - kg.m2 0.103 -
+.row Go - - 0.01183 -
+.row L=La - Henry 0.033 -
+.row (Ra+Rl) - Ohm 0.306 -
+.row dT/drs|rso - - -1/480 -
+.row dT/ls|lso - - 1/70 -
+.row dT/dw|wo - - -0.024 -
+.row dIf1/dw1|po - - -1/19.8 -
+.end_tab
+.sp 2i
+.finish_Figure
+.fi
+.para
+Combining those constants with those of Figure 24, equation (8) is
+written as
+.sp 1i
+matrix(9)
+.sp 1.5i
+.fi
+.Chapter "Closed Loop Experiments"
+.section "Introduction"
+.para
+The previous two chapter have provided us a simple mathematical model
+of the engine-generator-load system.  An attempt will now be made to
+achieve a stable closed-loop control of the system.  The purpose of
+the control is to regulate the generator speed against changes in
+generator load.  The two feedback
+control inputs are, the engine throttle ls, and the air-fuel ratio
+rs.  The 
+one feedback control output is the generator rotor voltage Vpt.
+The load will be varied by means of the stator current If.  In
+this case the If will be varied from the computer terminal
+input.
+.para
+Before trying to solve the closed-loop problem, we should consider the
+limitations that are imposed on the linear model
+developed in Chapter 4.  Figure 25 sets the following limitations:
+1)  The operating conditions are determined by,
+.sp
+.in 1i
+wo = 180 rad/sec
+lso = 200 steps
+rso = 2880 steps
+.in 0
+.sp
+2)  the maximum range of variation allowed for the incremental variables
+are,
+.nf
+.sp
+.in 1i
+ls1 = +- 40 steps
+rs1 = +- 240 steps
+w1 = +- 20
+If1 = +- 0.5 amps
+.sp 1i
+.fi
+.in 0
+.section "Determination of a Stable Closed-Loop Control Algorythm"
+.para
+In Chapter 4 we have developed the following model of the system in
+form of a matrix equation.
+.br
+.sp 1i
+matrix (1)
+.sp 1i
+.para
+To obtain a stable closed-loop solution we will have to transform
+this matrix equation into the form div(d dt) [X] = [A] [X].  A
+stable solution will exist for eigenvalues of matrix A located in the
+negative half-plane.
+.para
+In order to obtain this simplified matrix equation, we assume that
+both the incremental linear position ls1, the incremental rotary
+position rs1, and the incremental stator current If1 are a
+linear function of w1:
+.nf
+.ls 1
+.sp 2
+rs1 = a w1
+ls1 = b w1
+If1 = c w1
+.ls 2
+.fi
+.sp
+The matrix equation becomes:
+.sp 1.2i
+matrix (2)
+.sp 1.2i
+which yields the desired form
+.sp 1i
+matrix (3)
+.sp 1i
+The characteristic equation of this matrix is:
+.br
+.sp
+x2 + (9.64 + 0.024 a - 0.14 b + 9.2 c) x + ( 7.42 + 0.226 a - 1.32 b + 178 c) = 0 (4)
+.sp 2
+        A stable solution exists if the roots of this equation are
+both negative.  For a second order equation of the form x2 + A x + B
+= 0, this requires that both A and B are positive.  This condition can
+be written as,
+.br
+.sp
+.in 0.5i
+.ls 1
+.nf
+                | 9.64 + 0.024 a - 0.14 b + 9.2 c > 0
+                | (5)
+                | 7.42 + 0.226 a - 1.32 b + 178 c > 0
+.ls 2
+.in 0
+.fi
+.para
+We have to impose two further constraints on the values of the
+constants a,b and c.  The first constraint results from the assumption
+that we are operating in continuous time.  This assumption implies
+that the time the stepping motors take to reach a new operating point
+can be ignored with respect to the inertial time constant determined
+in section 3.4.  The stepping times for the linear and rotary
+steppers are 10 and 4 milliseconds respectively.  If we call Tmax
+the limiting time we obtain the constraint,
+.sp
+.nf
+|ls1| 10-2 + |rs1| 4 10-3 < Tmax (6)
+.sp
+.fi
+Since ls1 = b w1, rs1 = a w1, and |w1| < 5 rad.sec-1, the final time constraint is given by,
+.sp
+.nf
+2 | a | + 5 | b |  <  100  Tmax (7)
+.sp
+.fi
+.para
+The second constraint derives from the relation If1 = c
+w1 .  The torque-speed curves determine the value of c as -1/19.8
+around the operating point Po.
+.sp
+Combining equations from (6) and (7) yields,
+.sp
+.nf
+.in 1i
+9.17 + 0.024 a - 0.14 b > 0
+- 1.57 + 0.226 a - 1.32 b > 0 (8)
+2 a + 5 b < 100 Tmax
+.in 0
+.fi
+.para
+The valid region for this system is shown in Figure 25.  The values
+chosen for closed-loop control are:
+.sp
+.nf
+.in 2i
+a = 2 
+b = -1 (9)
+.fi
+.in 0
+.sp
+Combining equations (1) with the results in (9) yields the final
+relation, for the stepper motor positions,
+.sp
+.nf
+.in 2i
+rs1 = 2 w1
+ls1 = - w1 (10)
+.in 0
+.fi
+.begin_page_figure "Stable Operating Region for Closed-Loop Control."
+.sp 6.5i
+.finish_figure
+.para
+The last step to obtain a workable algorithm now consists in determining
+w1 as a function of the microprocessor reading Vpt.  From
+chapter 3,
+.nf
+w = (1 + div(Ra RL)) div(Va GIf) (11)
+.sp
+.fi
+or since div(Ra RL) = 0.23, Va = 0.254 Vpt and G = 11
+10-3
+.nf
+.sp
+w = 28.4 div(Vpt If) (12)
+.sp
+.fi
+If we write w = wo + w1, If = Ifo + If1 and
+Vpt = Vpto + Vpt1 then
+.nf
+.sp
+w1 = - 18.5 If1 + Vpt1 - 0.25 Vpt1 If1 (13)
+.sp
+we have If1 = - div(Vf1 19.8)
+.sp
+Finally we obtain
+.sp
+rs1 = 4 Vf1 + 2 Vpt1 + div(1 8) Vpt1 Vf1 
+(14)
+ls1 = -2 Vf1 - Vpt1 - div(1 16) Vpt1 Vf1 
+.sp
+.fi
+
+.section "Closed Loop Experiments"
+.para
+Closed-loop experiments were executed about a chosen operating point.
+An 8080 assembly language program was used because of time
+constraints.  The closed-loop control is implemented by a loop that
+checks for variations in the rotor and in the stator voltages.  If a
+deviation from the desired speed is detected, new stepper positions
+are calculated using equation (14) in section 5.2 and the steppers are
+moved to 
+the new positions.  The variation in the load is simulated by changing
+the stator voltage from the terminal input.  A printout of the two
+stepper positions, the stator load voltage Vf1, and the rotor
+voltage Vpt1 is stored on disk.  The resulting plot of the
+speed as a function of time for different load settings is given in
+Figure 25.
+.para
+The drift in the equilibrium speed value can be attributed to three
+causes, 1) the stator amplifier voltage tends to drift with changing
+temperature, 2) the values of the stepper positions are integers that
+have been approximated from real numbers and 3) noise in the loop .
+.begin_page_figure "Closed-Loop speed with varying Conditions"
+.sp 6.5i
+.finish_figure
+.para
+Figure 27 shows a stable closed-loop control experiment.  Changes in
+the load are accomplished by modifying the voltage of the stator field
+from the computer terminal input.  The resulting change in speed is
+counter-acted by new stepping motor positions that bring the speed
+back to the initial operating value.  Small variations in the new
+equilibrium value of the speed that have been expected are observed.
+.Chapter "Summary, Conclusions and Suggestions for Future Work"
+            
+.Chapter "References"
+.sp 1.5i
+.fs 0
+.ls 1
+.in 1i
+.nf
+Reference [1]:        Woodson & Melcher
+.sp 2
+Reference [2]:        Peter Grogono, ADDISON-WESLEY
+                          Programming in Pascal
+.sp 2   
+Reference [3]:        Lance A. Leventhal, OSBORNE/McGraw Hill
+                          Assembly Language Programming.
+.sp 2
+Reference [4]:        James Brian Lewis, MIT-LIDS-TH-1012 Thesis
+                          Automotive Engine Control: A quadratic approach.
+
+.sp 2
+.in 0
+.ls 2
+.fi
+.Appendix "Internal-Combustion Engine Information"
+.keep
+Engine Torque and Horsepower Curves
+1) Torque and horsepower curves for the Briggs and Stratton 5 HP
+engine running on gasoline.
+.begin_Figure "Internal Combustion Engine Torque Curves."
+.sp 6i
+.finish_Figure
+.end_keep
+.bp
+4PROCEDURE FOR STARTING THE ENGINE0
+.sp .5i
+Before starting the engine the transmission belt has to be tightened.
+Figure 26 shows the three necessary steps that are outlined below: 
+.sp
+.in .5i
+1) Make sure both pulleys are tightened to their respective shafts.
+.sp
+2) Start tightening the nuts on the side of the table until proper
+belt tension is obtained.  The belt is tight when pushing on the
+middle of it causes only defections of less than half an inch from
+the straight line.
+.sp
+3) Finally tighten the four clamp-down bolts to fasten the generator
+to the table.
+.in 0
+.para
+Now connect the power supply cable to the input plug on the table and
+the propane bottle to the fuel line.  The engine is ready to be
+started.  Figure 27 shows the final steps:
+.in .5i
+.sp
+1) Make sure that the stepping motors are in the right positions
+.sp
+2) Open the propane bottle supply screw 2 turns.
+.sp
+3) Saturate the carburator intake system with propane by pushing the
+primer knob on the second regulator for about 3 seconds.
+.sp
+4) Start the engine by pulling on the starting rope.  The engine
+should fire by the fourth pull.  Otherwise repeat 3) and 4).
+.sp
+5) After the engine starts immediately connect the stator power supply
+cable to the power supply input.  The generator speed should settle
+down to around 1700 rpm for If = 11.5 amperes for the operating
+point we chose.
+.in 0
+.begin_page_Figure "Starting Diagram One"
+.sp 3i
+.finish_Figure
+.begin_page_Figure "Starting Diagram Two"
+.sp 3i
+.finish_Figure
+.sp 2
+.para
+If some part of the entire system does not seem to be working,
+shut off the propane and then either wait till the engine runs out
+off fuel, or else short circuit the ignition system by pushing the
+metal tab on the cylinder head onto the spark plug boot.  In the last
+case the tab should be kept in contact with the spark plug terminal
+until the engine comes to a complete stop; otherwise engine misfire,
+also called backfire, might occur causing internal damage to the
+engine.
+.bp
+.sp .6i
+2Internal-Combustion Engine Parameters0
+.sp .65
+4Model number 131490, single cylinder L-head, air cooled0
+.sp
+Bore            2-9/16 "
+Stroke          2-7/16 "
+Displacement    12.57 cu.in
+Horsepower      5.0 Max # 3600 RPM
+Torque (ft.pds) 7.66 Max # 3200 RPM
+.sp .7i
+2General maintenance (first 0 to 1000 hours of operations)0
+.sp 2
+.ls 2
+.para
+The use of propane as fuel reduces the routine maintenance to a
+minimum.  Due to the minimal amount of combustion residues, the
+following procedures can be ignored until noticeable wear is visible,
+such as dirty oil, carbonized spark-plug, dirty air-filter.
+.sp 2
+                a) Oil change
+.para
+This is the most important part of the maintenance.  A suitable drain
+hole has been made in the table on the right side.
+A dipstick on the left front side of the engine indicates the oil
+level.
+Oil required: 10 W 40
+Capacity (max): 1 1/4 pints or 0.6 liters.
+.sp 2
+                b) Air-filter
+.para
+Should only be changed if the engine is operated in dusty areas or if
+the filter appears dirty.
+.sp 2
+                c) Ignition System
+.para
+The spark plug should be cleaned every 100 hours of operation and
+regapped if necessary.  The point gap should be adjusted if
+necessary.
+.sp
+Spark Plug Gap = 0.030 inches
+.sp
+Point Gap = 0.020 inches
+.sp 2
+                d) Other
+.sp
+             _ Check for belt tightness, for belt wear (cracks)and for fuel line cracks and leaks.
+.bp
+2CONVERSION PROCEDURE AND INFORMATION0
+.fi
+.sp .3i
+.para
+Because of the difference in diameter between the spud from the
+conversion kit and the carburator intake pipe, a brass ring was
+machined to allow for a tight fit in the carburator intake system.
+The dimensions of the ring are:
+inside diameter:  0.847 inch, outside diameter:  1.0685 inch,
+thickness:  .100 inch
+.sp 2
+4The procedure for installing the propane conversion system are:0
+.sp
+        1)  Remove carburator and gas tank assembly from engine.
+.sp
+        2)  Separate the air cleaner and gas tank from the carburator.
+
+        3)  File off the rivet which holds choke plug in and remove choke plug.
+
+.fi
+        4)  Install load block-fuel assembly into choke plug hole and secure
+             with the lock screw provided.
+.br
+        5)  Re-assemble the air cleaner and gas tank onto the carburator and
+             re-install the entire assembly onto the engine.
+.sp .3i
+Kit number 650-101; spud-in conversion kit, Garretson equipment co.
+Inc. , Box 111 Mt. Pleasant, IOWA 52641, Tel 319-385-2203.
+
+.bp
+2Part Numbers and Suppliers0
+.sp .3i
+.in 1.3i
+.nf
+Dc Generator Pulley:    Browning AK 59
+Motor Pulley:   Browning AK 39
+Idler Pulley:   Browning NAK30
+Tightener Shaft:        Browning N1
+Belt:   Browning 46 inch standard V-belt
+Muffler:        Ryker X1207
+Supplier Brookine Machine Co Inc, 90 Antwerp Bri MA.
+.fi
+.sp .5i
+4Machined parts: (dimensions, materials...)0
+.sp
+.in 1i
+            _ small muffler to flexible exhaust pipe adaptor
+            _ 2 muffler adaptors from 3/4 inch pipe diameter to 1 1/2 inch normal diameter.
+            _ flexible exhaust pipe 1 1/2 inch diameter
+            _ plugs for carburator
+            _ muffler inlet dispersing tube
+.fi
+.in 0
+.appendix "Dc Generator Details"
+Torque and Horsepower curves for the dc motor with initial
+windings.
+.begin_Figure "Dc Motor Torque Curves."
+.sp 6i
+.finish_Figure
+.bp
+.sp 2
+21)Physical Constants of the Dc Generator and Load Assembly0
+.sp .7i
+.ti 1.2i
+4a) Resistances0
+.sp
+.nf
+.in .5i
+Resistance of the stator windings:  Rf = 0.531 +- 0.001  Ohms
+Resistance of the rotor windings:  Ra = 0.0064 +- 0.0002  Ohms
+Resistance of the cable:  Rc = 0.025  Ohms
+Resistance of the load:  Rl = 0.245 +- 0.002  Ohms
+.fi
+.sp 3
+.ti 1.2i
+4b)   Inductances0
+.sp 2
+Inductance of the rotor windings:  La = 0.33 +- 0.02  millihenrys
+
+.Appendix "Power Supply Specifications"
+.para
+The power supply that was built for this project contains three
+separate power power supply units;  1)  a bipolar operational
+amplifier power supply, with voltages of -10, ground and 10 volts,
+used by the amplifier circuit that controls the stator current,  2)  a
+voltage regulated power supply used by the stepping motors and their
+control circuits ( 15 volts ) , and  3)  a non-regulated high power
+supply capable of delivering 15 Amperes at 10 volts.
+the 15 volt power supply used by the stepping motors  can be adjusted
+in the range from 12 to 18 volts.  The three power supplies are fitted
+in to a metal fan cooled box.  All voltages are available from the
+front panel.
+
+.begin_page_figure "Power Supply Diagram"
+.sp 6i
+.finish_Figure
+.appendix "Additional Circuitry for the Sattelite Board"
+.para
+The present Compu_Pro system is connected to a wire-wrapped board
+that provides all the interfacing from the microprocessor to the
+internal-combustion engine and dc generator assembly.  The board
+supports a 16 bit parallel input and output port, four digital to
+analog converters, one analog to digital converter and sixteen led
+outputs.  The parallel output port is an open collector port and
+pulldown resistors are required.
+.para
+The  D/A has a maximum output voltage of 1 volt.  A simple amplifier
+circuit was built to extend the range to 5 volts.  The parallel port
+open-collector outputs were each connected to a couple of inverters to
+avoid overloading the output stage on the board.
+
+
+.Appendix "Assembly Language Programs and Printouts"
+.sp 3i
+2Table of Contents0
+.ls 1
+.sp 1i
+.in 2i
+1)  Torque-Speed 8080 Program 1
+.sp
+2)  Step-Response 8080 Program 2
+.sp
+3)  Closed-Loop 8080 Program 3
+.sp
+4)  Output From Program 1
+.sp
+5)  Output From Program 2
+.sp
+6)  Output From Program 3
+.ls 2
+.in 0

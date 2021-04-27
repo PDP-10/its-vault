@@ -1,0 +1,33 @@
+;;; -*- Package: TV -*-
+(defun magnify-pixel-array-portion (screen-array x-pos y-pos magnification
+				    width height
+				    &optional (x-offset 0) (y-offset 0))
+  (LET* ((SWIDTH (PIXEL-ARRAY-WIDTH SCREEN-ARRAY))
+	 (SHEIGHT (PIXEL-ARRAY-HEIGHT SCREEN-ARRAY))
+	 (ARRAY
+	   (MAKE-PIXEL-ARRAY (* 32.  (CEILING WIDTH 32.)) HEIGHT
+			     ':TYPE (ARRAY-TYPE SCREEN-ARRAY)))
+	 (array-temp
+	   (make-pixel-array (* 32.  (CEILING WIDTH 32.)) HEIGHT
+			     ':TYPE (ARRAY-TYPE SCREEN-ARRAY))))
+    (bitblt tv:alu-seta width height
+	    screen-array
+	    x-pos y-pos
+	    array-temp  0 0)
+   (dotimes (j magnification)
+      (dotimes (i (// width magnification))
+	(bitblt tv:alu-seta 1 height
+		screen-array
+		(+ x-pos i) y-pos
+		array-temp
+		(+ j (* i magnification))
+		0)))
+    (dotimes (j magnification)
+      (dotimes (i (// height magnification))
+	(bitblt tv:alu-seta width 1
+		array-temp
+		0 i
+		array
+		0
+		(+ j (* i magnification)))))	      
+    array))

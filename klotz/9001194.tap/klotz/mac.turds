@@ -1,0 +1,622 @@
+To: tecot%apple@csnet-relay
+s: What makes programming for the Mac difficult.
+--Text follows this line--
+Hello Ed.
+
+I'm assuming by your address that you work for Apple.  Are you doing this
+in any sort of official way, or just as a personal interest?
+
+I'm hypersensitive to the issue of difficulties in Mac programming.  I
+worked at MIT on the first implementations of Logo for the TI and Apple II
+computers, at MIT on various MIT and Symbolics Lisp Machine projects, and
+at Terrapin, Inc., on other implementations of Logo.  I maintain the
+original implementation of EMACS in TECO at MIT.  In general, I'm not a
+bozo.
+
+A friend of mine who now works for Lucid, Inc. (the portable Common Lisp
+people) and I wrote a version of Logo for the Macintosh for Terrapin.  We
+wanted the Mac version to be a showcase product for the portable
+implementation which was to be done in C.  Our target time was nine
+months, starting in Summer '84, and the product was to run on the Mac 128,
+which was all there was at the time.  It wound up taking about 20 months.
+
+One of the biggest problems we faced was that the Green Hills C programming
+environment, when it finally became available (and only for the Lisa
+P-system), lagged behind Apple's other support by about six months.  HFS
+support, for instance, wasn't available until eight months after it was
+out for the Pascal and assembly language systems.  Knowing what I know now
+about HFS, I could probably make the old C compiler work, but there was
+absolutely no way I could gain that knowledge without being able to write
+programs and try them out -- a bootstrapping problem.
+
+A lack of example programs was another hindrance in the first half of the
+project.  The Pascal system came with a program called "File" or "Edit" or
+something like that.  It was an exercise in stupidity.  Everything that I
+wanted to learn from that program had huge comments around it saying "This
+is the wrong way.  Don't do it this way."  Eventually someone on the
+INFO-MAC mailing list wrote a program called SKEL that did just about
+nothing, but was invaluable in getting me started with doing the user
+interface portion of Logo.  SKEL, of course, was buggy.  I found, fixed,
+and reported some of the bugs.  I had the wrong idea for a year about
+which heap desk accessories were allocated in.
+
+I had a terrific problem just trying to write a scrolling text window
+interaction system for Logo.  There are dozens of little tricks and things
+that have to be done.  The algorithms for dealing with the scroll bars and
+printing to windows are fraught with fencepost pitfalls.  Here the FILE
+program was of some use, but its use was severely limited because of the
+brain-damaged way in which the comments admitted the code worked.  Since
+my application was doing printing to the window, doing a half-dozen
+function calls and adding up row lengths on every character was just too
+expensive.  Even now, output to the window is slower than I think it ought
+to be, but I've never seen a Mac program print out to an textedit window
+much faster, so I've given up.
+
+Eventually one of the software releases for the Pascal system included a
+debugging tool which let you do output to a text edit window, but there
+was no source, and the package was expressly for debugging only.  We were
+prohibited from using it in an application.  I guess the code was too
+crufty, and since I didn't get source I couldn't warp it into what I
+needed for my user interface spec.
+
+The Memory allocation on the Mac is from the 1960's.  Here's some
+examples:  
+
+I deallocated a code segment containing my initialization code,
+from another segment and after the init was done.  Logo crashes in weird
+memory-related ways much later.
+
+I took the "cheese buffer" approach to memory overflow protection.  I
+allocated two 2K objects with NewHandle.  My GrowZone function clears
+the current text window, prints a warning message, and deallocates one of
+the buffers.  It sets a flag which causes Logo to abort execution and
+return to toplevel.  At top level Logo tries to reallocate the buffer, and
+prints an appropriate warning message if it can't.  This method isn't
+foolproof.  Users never fail to mouse Quit or Save at this point.
+If the memory allocation is in just the wrong state, the area allocated
+for the under-the-menu bitmap restoration will push Logo back into the
+out-of-memory trap.  "Use the SAVE procedure, not the menu SAVE item" our
+message prints out.
+
+Now, I figure with sufficient cleverness I could get around these sorts of
+problems.  The real problem though, is the bd memory allocation scheme
+which features both relocationa and fragmentation coupled with a machine
+that's just no-two-ways-about-it not got enough memory on it.  Come on,
+you guys, what's the story with a 68000 with 128K of memory?  1M is more
+like the minimum acceptable amount.  At 512K in reasonable sized programs
+you have random lossage with not enough memory and spend all your time
+fighting memory allocation bugs that crop up only when you're making the
+poor operating system swap its heart out to get maximum use out of those
+last couple of K.
+
+My suggestion: Don't do anything brain damaged with the 68020.  Use
+virtual memory, and have enough RAM.  Don't make the people who write
+application programs have to worry about explicitly swapping code segments
+in and out, or have to worry about the operating system doing it under
+them in such a way as to screw you totally when your function returns to
+some segment which has been relocated.  I don't see how you can fix it in
+the 68000-based machines.
+
+Here's another problem.  Something I did recently makes Logo crash AFTER
+it does ExitToShell.  It crashes with 02 errors sometimes if the Exit call
+is at one point in the code, and crashes with the "shift every bit in
+memory over and buzz every 30 seconds" bug in another.  I'm going back
+over every innocous change I've made in the past couple of weeks to find
+out when this happened.  Oh, if I have extra windows open or have
+successfully saved to the disk via the SfPPutFile operation it doesn't
+crash.  I'm not asking you to debug this.  I'm just giving it as an
+example of a completely bizarre programming problem that the Macintosh is
+just full of.
+
+The graphics system has some insufficiencies which I labored to get around
+but eventually gave up.  In a nutshell, I want the same functionality for
+windows that menu pull-down windows have.  I want a bit save array.  I do
+not want to allocate a separate bitmap for each window and draw into both
+that window and the screen.  If the machine had 1MB standard and was
+twice as fast (no big request, come on why 5Mhz?) that approach would have
+been the right one.  I can't use a Picture object because Logo supports
+operations like BITBLT.
+
+So, I decided to implement bit save arrays on overlapping objects.
+Anything that wanted to draw would come to the front of the screen.  I
+know that's not what you folks want me to do, but since you have put the
+burden of that part of graphics management on the applications programmer
+and not provided adequate tools for dealing with drawing on undisplayed
+windows a la Xerox, you takes what you gets.  Anyway, my first blow came
+on discovering that a window gets told that it has been clobbered, not
+that it's about to be clobbered.  What kind of difference does it make to
+the people who wrote your operating system whether you post a deactivate
+event before you post an activate event?  Why was it necessary to do those
+things in an order that screws the bit-save-array approach?
+
+So, in our Logo (and in LCSI Logo that Microsoft distributed until they
+discovered nobody who had a Mac wanted to buy Logo), and in
+ExperTelligence fake-Logo, if you drag a window or a pop-up dialog box or
+alarm clock or whatever on top of turtle graphics, you lose.
+ExperTelligence tried to implement Picture graphics, but being the
+brain-damaged people they are they simply ignored the cases where the
+Picture object doesn't capture everything (bitblt, for instance).  Using
+the Picture display method is also horribly slow.
+
+For ages and ages there was no debugger that worked with the C compiler.
+Eventually I found I could use the two-Mac setup, but I could not get
+symbol values out of the Green Hills compiler, so I had to recompile
+things with eight character symbol names as strings in the C procedures
+(talk about the 1960's!  I spent a week writing a program to rewrite the
+symbol names for the stupid Lisa linker.) in order to get an idea of where
+I was in the code.  Of course, the symbols didn't come out in disassembled
+code or anything, so debugging was possible but highly painful.  The
+multiple windows and anchors icons and three different kinds of hex window
+displays and all were just icing on mud pie without symbols in the
+debugger.
+
+Why does the mouse die?  Why is there one kind of crash that I get all the
+time (like now with my ExitToShell crash) where I get no mouse, a bomb box
+I can't believe, and a disk insertion icon just under the File menu?
+
+It was a big mistake not to make use of supervisor mode and have protected
+memory.  It makes it impossible to debug programs that have bugs you don't
+understand in them.
+
+In summary, here's what I think are the problems:
+
+Lack of sufficient example programs
+Lack of support for "supported" programming environments
+Poor design in memory management system
+Inflexible and overly complicated graphics system
+Willy-nilly crashes that trash the machine
+
+I have a bug mail log describing more specific problems spanning the
+project.  If you're really interested I can send you that too.
+
+Leigh Klotz
+NE43-434
+Educational Computing Group
+MIT Laboratory for Computer Science
+545 Technology Square
+Cambridge, MA  02142
+
+Received: from MC.LCS.MIT.EDU (CHAOS 3131) by AI.AI.MIT.EDU 26 May 87 20:00:53 EDT
+Received: from RELAY.CS.NET (TCP 1201000005) by MC.LCS.MIT.EDU 26 May 87 18:36:17 EDT
+Received: from relay2.cs.net by RELAY.CS.NET id ad23952; 26 May 87 17:39 EDT
+Received: from apple by csnet-relay.csnet id bs03712; 26 May 87 17:31 EDT
+Received: by apple.csnet (4.12/5.1.Apple)
+	id AA01218; Tue, 26 May 87 12:52:57 pdt
+Date: Tue, 26 May 87 12:52:57 pdt
+From: Ed Tecot <tecot%apple.csnet@RELAY.CS.NET>
+Posted-Date: Tue, 26 May 87 12:52:57 pdt
+To: KLOTZ%mc.lcs.mit.edu@RELAY.CS.NET
+Subject: Re:  What makes programming for the Mac difficult.
+
+You write:
+>Hello Ed.
+
+Hi.
+
+>I'm assuming by your address that you work for Apple.  Are you doing this
+>in any sort of official way, or just as a personal interest?
+
+A bizarre combination of the two.
+
+>I'm hypersensitive to the issue of difficulties in Mac programming.  I
+>worked at MIT on the first implementations of Logo for the TI and Apple II
+>computers, at MIT on various MIT and Symbolics Lisp Machine projects, and
+>at Terrapin, Inc., on other implementations of Logo.  I maintain the
+>original implementation of EMACS in TECO at MIT.  In general, I'm not a
+>bozo.
+
+>A friend of mine who now works for Lucid, Inc. (the portable Common Lisp
+>people) and I wrote a version of Logo for the Macintosh for Terrapin.  We
+>wanted the Mac version to be a showcase product for the portable
+>implementation which was to be done in C.  Our target time was nine
+>months, starting in Summer '84, and the product was to run on the Mac 128,
+>which was all there was at the time.  It wound up taking about 20 months.
+>My partner and I are currently in legal dealings with Terrapin.
+
+>One of the biggest problems we faced was that the Green Hills C programming
+>environment, when it finally became available (and only for the Lisa
+>P-system), lagged behind Apple's other support by about six months.  HFS
+>support, for instance, wasn't available until eight months after it was
+>out for the Pascal and assembly language systems.  Knowing what I know now
+>about HFS, I could probably make the old C compiler work, but there was
+>absolutely no way I could gain that knowledge without being able to write
+>programs and try them out -- a bootstrapping problem.
+
+Fine, but this is a language support problem; I can do absolutely nothing
+about Green Hills' lackadaisical approach to support.
+
+>A lack of example programs was another hindrance in the first half of the
+>project.  The Pascal system came with a program called "File" or "Edit" or
+>something like that.  It was an exercise in stupidity.  Everything that I
+>wanted to learn from that program had huge comments around it saying "This
+>is the wrong way.  Don't do it this way."  Eventually someone on the
+>INFO-MAC mailing list wrote a program called SKEL that did just about
+>nothing, but was invaluable in getting me started with doing the user
+>interface portion of Logo.  SKEL, of course, was buggy.  I found, fixed,
+>and reported some of the bugs.  I had the wrong idea for a year about
+>which heap desk accessories were allocated in.
+
+Not at all.  File gave a good example of the basic structure of Macintosh
+software.  Most of the parts labelled as "don't do this this way" (only
+2 as far as I recall) were not that hard to figure out a better way to do;
+I did it myself.  You may argue that these should have been done correctly
+the first time.  My two arguments that are: 1) These examples are not
+intended to show everything; a little perspiration is required to understand;
+if we handed perfect code out on a silver platter, that would be an incentive
+not to try to understand what was going on.  2)  We are making efforts to
+provide better examples; however, I am not really interested in how I can
+make the environment better understood, but how I can IMPROVE the environment
+so that it is EASIER understood.
+
+>I had a terrific problem just trying to write a scrolling text window
+>interaction system for Logo.  There are dozens of little tricks and things
+>that have to be done.  The algorithms for dealing with the scroll bars and
+>printing to windows are fraught with fencepost pitfalls.  Here the FILE
+>program was of some use, but its use was severely limited because of the
+>brain-damaged way in which the comments admitted the code worked.  Since
+>my application was doing printing to the window, doing a half-dozen
+>function calls and adding up row lengths on every character was just too
+>expensive.  Even now, output to the window is slower than I think it ought
+>to be, but I've never seen a Mac program print out to an textedit window
+>much faster, so I've given up.
+
+TextEdit is optimized for small portions of text (<500 characters).  It was
+intended for use with the dialog manager and little else.  If you want
+something faster, write it yourself; everyone else does.  If you are using
+a dozen tricks to manipulate scroll bars, you are probably overworking
+yourself.  The code in FILE is a good example, not brain-damaged as you
+state.  The comments don't say that either, they simply fail to explain
+how the code works.
+
+>Eventually one of the software releases for the Pascal system included a
+>debugging tool which let you do output to a text edit window, but there
+>was no source, and the package was expressly for debugging only.  We were
+>prohibited from using it in an application.  I guess the code was too
+>crufty, and since I didn't get source I couldn't warp it into what I
+>needed for my user interface spec.
+
+>The Memory allocation on the Mac is from the 1960's.  Here's some
+>examples:  
+
+When you build a machine without an MMU (which was unavailable in 1983),
+you don't have much choice.
+
+>I deallocated a code segment containing my initialization code,
+>from another segment and after the init was done.  Logo crashes in weird
+>memory-related ways much later.
+
+For someone who is not a "bozo", you sure take a strange approach to
+debugging.  If it crashes in weird ways "much later", why do you assume
+it is related to this?
+
+>I took the "cheese buffer" approach to memory overflow protection.  I
+>allocated two 2K objects with NewHandle.  My GrowZone function clears
+>the current text window, prints a warning message, and deallocates one of
+>the buffers.  It sets a flag which causes Logo to abort execution and
+>return to toplevel.  At top level Logo tries to reallocate the buffer, and
+>prints an appropriate warning message if it can't.  This method isn't
+>foolproof.  Users never fail to mouse Quit or Save at this point.
+>If the memory allocation is in just the wrong state, the area allocated
+>for the under-the-menu bitmap restoration will push Logo back into the
+>out-of-memory trap.  "Use the SAVE procedure, not the menu SAVE item" our
+>message prints out.
+
+That's right.  Your objects are relocatable, so unless you are really low
+on memory, your approach probably won't recover.  I take a different
+approach.  Every program requires some breathing room to avoid crashing.
+In most cases this should be enough to display an error alert and
+possibly bring in a segment that the program needs (if the segment can't
+be loaded, the program WILL crash.)  Whenever something uses memory
+(NewHandle, NewPointer, NewWindow, TENew, etc.)  I check to see if I can
+allocate my "breathing room".  If I can't, I undo the action and display
+an alert.  Otherwise I deallocate my breathing room and continue on my
+merry way.
+
+>Now, I figure with sufficient cleverness I could get around these sorts of
+>problems.  The real problem though, is the bd memory allocation scheme
+>which features both relocationa and fragmentation coupled with a machine
+>that's just no-two-ways-about-it not got enough memory on it.  Come on,
+>you guys, what's the story with a 68000 with 128K of memory?  1M is more
+>like the minimum acceptable amount.  At 512K in reasonable sized programs
+>you have random lossage with not enough memory and spend all your time
+>fighting memory allocation bugs that crop up only when you're making the
+>poor operating system swap its heart out to get maximum use out of those
+>last couple of K.
+
+We haven't sold 128K machines for over a year.  512K actually works fine if
+have you take the above approach.  What I can't understand is that only
+recently microcomputers even considered virtual memory (before it was just too
+expensive), but every one seems to bitch and moan only on the Mac.
+
+>My suggestion: Don't do anything brain damaged with the 68020.  Use
+>virtual memory, and have enough RAM.  Don't make the people who write
+>application programs have to worry about explicitly swapping code segments
+>in and out, or have to worry about the operating system doing it under
+>them in such a way as to screw you totally when your function returns to
+>some segment which has been relocated.  I don't see how you can fix it in
+>the 68000-based machines.
+
+Not everyone can afford lots of memory, only defense contactors and lazy
+programmers.  You don't have to worry about explicitly swapping segments in,
+just out.  If you call a segment that's not loaded, it will be.  Calling
+UnloadSeg simply allows you to have more control over these matters; I think
+it would be much worse to have segments swapped out behind my back.
+
+>Here's another problem.  Something I did recently makes Logo crash AFTER
+>it does ExitToShell.  It crashes with 02 errors sometimes if the Exit call
+>is at one point in the code, and crashes with the "shift every bit in
+>memory over and buzz every 30 seconds" bug in another.  I'm going back
+>over every innocous change I've made in the past couple of weeks to find
+>out when this happened.  Oh, if I have extra windows open or have
+>successfully saved to the disk via the SfPPutFile operation it doesn't
+>crash.  I'm not asking you to debug this.  I'm just giving it as an
+>example of a completely bizarre programming problem that the Macintosh is
+>just full of.
+
+Chances are you are trashing the system in some way.  Are you dereferencing
+NIL pointers? (I certainly hope not)  Are you modifying some system global
+and forgetting to restore it on exit?  Are you trashing the stack?  Maybe
+you are calling CloseWindow(FrontWindow()) even when FrontWindow is NIL.
+Or you may be calling InitApplZone().  The basic rule is not to deallocate
+or reinitialize anything you dont't have to.
+
+>The graphics system has some insufficiencies which I labored to get around
+>but eventually gave up.  In a nutshell, I want the same functionality for
+>windows that menu pull-down windows have.  I want a bit save array.  I do
+>not want to allocate a separate bitmap for each window and draw into both
+>that window and the screen.  If the machine had 1MB standard and was
+>twice as fast (no big request, come on why 5Mhz?) that approach would have
+>been the right one.  I can't use a Picture object because Logo supports
+>operations like BITBLT.
+
+Use a bitmap to save in.  CopyBits should do the trick.  Pictures DO support
+this as well.  And the current Macintosh standard is 1MB @ 8MHz (always has
+been 8MHz).  Of course, keeping a separate bitmap is not a bad idea.
+
+>So, I decided to implement bit save arrays on overlapping objects.
+>Anything that wanted to draw would come to the front of the screen.  I
+>know that's not what you folks want me to do, but since you have put the
+>burden of that part of graphics management on the applications programmer
+>and not provided adequate tools for dealing with drawing on undisplayed
+>windows a la Xerox, you takes what you gets.  Anyway, my first blow came
+>on discovering that a window gets told that it has been clobbered, not
+>that it's about to be clobbered.  What kind of difference does it make to
+>the people who wrote your operating system whether you post a deactivate
+>event before you post an activate event?  Why was it necessary to do those
+>things in an order that screws the bit-save-array approach?
+
+Because if the activate event came first, you would use more memory.  If
+you guarantee that the old window is purged when the new one comes up, you
+have a little more (or in some cases a lot more) elbow room.  The
+bit-save-array apporach may be the cat's meow to you, but to me it's something
+from the 60's.  Keep an image attached to the window and redisplay it whenever
+you need to.  That's what pictures are for.
+
+>So, in our Logo (and in LCSI Logo that Microsoft distributed until they
+>discovered nobody who had a Mac wanted to buy Logo), and in
+>ExperTelligence fake-Logo, if you drag a window or a pop-up dialog box or
+>alarm clock or whatever on top of turtle graphics, you lose.
+>ExperTelligence tried to implement Picture graphics, but being the
+>brain-damaged people they are they simply ignored the cases where the
+>Picture object doesn't capture everything (bitblt, for instance).  Using
+>the Picture display method is also horribly slow.
+
+It should if you use CopyBits.  The Picture method is not all that slow
+when compared to most other methods.
+
+>For ages and ages there was no debugger that worked with the C compiler.
+>Eventually I found I could use the two-Mac setup, but I could not get
+>symbol values out of the Green Hills compiler, so I had to recompile
+>things with eight character symbol names as strings in the C procedures (talk about the 1960's!  I spent
+>a week writing a program to rewrite the symbol names for the stupid Lisa
+>linker.) in order to get an idea of where I was in the code.  Of course,
+>the symbols didn't come out in disassembled code or anything, so debugging
+>was possible but highly painful.  The multiple windows and anchors icons
+>and three different kinds of hex window displays and all were just icing
+>on mud pie without symbols in the debugger.
+
+Symbols are nice, but I've managed to work without them.  Once again you
+are complaining about Green Hills.  This is Apple, remember?
+
+>Why does the mouse die?  Why is there one kind of crash that I get all the
+>time (like now with my ExitToShell crash) where I get no mouse, a bomb box
+>I can't believe, and a disk insertion icon just under the File menu?
+
+You must be excuting random memory.  The mouse freezes if you confuse the
+VIA (by writing a strange command to it)
+
+>It was a big mistake not to make use of supervisor mode and have protected
+>memory.  It makes it impossible to debug programs that have bugs you don't
+>understand in them.
+
+The difference in cost would be significant.  If we had done that, there might
+not even be a Macintosh today.  That second statement is a bit strong.  I'd
+rephrase it to say:  "It makes it impossible to find bugs in programs that
+you don't understand"
+
+>In summary, here's what I think are the problems:
+
+>Lack of sufficient example programs
+Agreed.  We are improving.  But not what I'm after.
+
+>Lack of support for "supported" programming environments
+An artifact of the past.
+
+>Poor design in memory management system
+Not poor, just lacking.  However, neither of us can improve it without
+throwing hardware at the problem.
+
+>Inflexible and overly complicated graphics system
+I still disagree.  You say it is inflexible because you can't bit-save.
+I don't know why you think it is overly complicated.
+
+>Willy-nilly crashes that trash the machine
+Remember that there is no memory protection.  Anything your application
+does can and will be used against you.
+
+>I have a bug mail log describing more specific problems spanning the
+>project.  If you're really interested I can send you that too.
+
+No thanks.
+
+I may have seemed a bit harsh, after all, you are doing me a favor by
+responding.  I do appreciate it, I really do.  My comments are directed to
+get you to reply again.  I want to get at the heart of your problems and
+most importantly find out what I (personally) can do.  I carry no weight
+in User Education, Support, or Languages.  I want to know what can be done
+to improve the environment without undue cost or hardware.  I want to thank
+you for your time and hope to hear from you again.
+
+						Tnx,
+						_emt
+
+Date: Wed, 27 May 87 19:47:00 EDT
+From: "Leigh L. Klotz" <KLOTZ@AI.AI.MIT.EDU>
+To: tecot%apple.csnet@RELAY.CS.NET
+cc: KLOTZ@AI.AI.MIT.EDU
+Message-ID: <206004.870527.KLOTZ@AI.AI.MIT.EDU>
+
+Ed,
+
+I just read your last paragraph.  I responded below without reading the
+whole thing.  If you think I'm being polemical, please be charitable and
+bear that in mind.
+----
+Thanks for taking the time to give me a detailed answer.  I hadn't
+expected that you'd do anything more than provide me with a summary of
+your responses.
+
+You make many valid points.  I won't argue with you on the style issues,
+or rebut point-by-point or anything, since it's hard to get across the
+right impression about oneself and the depth of feeling one has about
+these sorts of issues via net mail.  I also imagine you have better
+things to do.
+
+However, there are a couple of things I'd like to point out.  You said
+that my problems with the C compiler were Green Hills' problems, not
+Apple's.  You may indeed know something I don't about the internals of
+Apple's distribution and such, but I got that compiler from Paul Zemlin of
+Apple, and it was billed as "the" Apple C compiler.  It first ran under
+the Pascal P-system.  Later I got from Paul a version that ran under the
+Macintosh Programmer's Workshop.  Now Apple distributes it through APDA.
+It is definitely an Apple product, all the way.
+
+If what you said was the result of a simple misunderstanding, then I'll be
+wrong here, but if it is the case that Apple considers support of things
+like its C compiler to be the responsibility of the company which provided
+the initial code for Apple, then I think that's better support for
+languages that Apple sells is something I'd add to wish list for making
+programming on the Mac easier.
+
+I was surprised to be told that "everyone else" writes their own routines
+to do text display and doesn't use textedit.  From what I've seen,
+no one but people who do document preparation systems writes their own
+code.  (Not using CoreEdit I can understand...)  LightSpeed C, unless I
+badly miss the mark, uses TextEdit.  If I'm wrong and there are better
+implementations of TextEdit-like things for programming language editors,
+could you let me know?  I'd be interested.
+
+The tricks I'm talking about with scroll bars are tricks about knowing
+when to check whether the insertion point has moved off the screen so I
+don't have to do it on every character or every I/O buffer output
+operation.
+
+I'm going to go against what I said above, because I figure this is
+something you might be interested in point-by-point...
+
+>>I deallocated a code segment containing my initialization code,
+>>from another segment and after the init was done.  Logo crashes in weird
+>>memory-related ways much later.
+
+>For someone who is not a "bozo", you sure take a strange approach to
+>debugging.  If it crashes in weird ways "much later", why do you assume
+>it is related to this?
+
+The problem was indeed related to deallocating the code segment containing
+my initialization code.  The reason I knew it was related to the
+deallocation was that that was the only change I made in the source code.
+Now, of course, that deallocation wasn't the REAL cause; it only made some
+latent problem show up, as you point out.  The problem was that the Lisa
+OS version of the Apple C compiler output locked code segments, and the
+MPW version switched to unlocked, purgeable ones.  I did not find any
+notice of this change; it seems a bad idea, anyway, to have code segments
+be purgeable by default.
+
+Another point I'd like to query you on is your suggestion that I do keep a
+separate bitmap for updating my graphics screen.  Since there isn't enough
+memory to do this on a 512K Mac, I guess it would be a feature that
+wouldn't be loaded on the 512K version.  Tough cookies, I guess.  No one
+can fault you for bringing out bigger&better computers; indeed if you
+didn't people would complain.  However, when I bring out a product that
+requires 1MB now, people who have 512K machines will complain to me.
+There's no way around this unless you're a defense contractor, I guess.
+
+You suggest that I keep an image attached to the window and redisplay it
+whenever I need to.  I guess we're getting into ideology here, so I'll
+just ask whether we understand each other:  I'm suggesting saving the bits
+only when you need to, in order to make drawing faster, but at the expense
+of not being able to draw on hidden windows.  You are suggesting saving
+the bits always at the expense of speed (and memory if you believe in
+512K machines) in order to gain the ability to draw on hidden windows.
+Your point about my approach being 60's technology is insightful.  The
+analogy with my complaint about code relocation is strong.  In both cases,
+there were concessions forced by lack of hardware.  (I'm pleased to hear
+that pictures capture CopyBits.  I must have messed up my experiment ages
+ago when I tried it.)
+
+>The difference in cost would be significant.  If we had done that, there might
+>not even be a Macintosh today.  That second statement is a bit strong.  I'd
+>rephrase it to say:  "It makes it impossible to find bugs in programs that
+>you don't understand"
+Or in operating systems you can't understand.  The way I see it, there's
+two ways to figure out how to program for an operating system.  One is to
+read the documentation and try things and see what goes wrong, and the
+other is to look at enough examplary code to understand what the paradigms
+and pitfalls are.  When I started using the Mac, neither approach was
+possible.  Nowadays, though, there are more people who know what's going
+on and more programs to look at.  I suspect that that fact alone will make
+the machine easier to program, so in some ways I'm complaining about the past.
+It's still easy to fry the whole machine, though.
+
+>>Willy-nilly crashes that trash the machine 
+>Remember that there is no memory protection.  Anything your application
+>does can and will be used against you.
+
+Uh, here I go again with the rebuttals that aren't rebuttals on issues
+that aren't issues.  Yes.  You and I agree here.  It is a problem.  It
+bugs you because you can't do anything about it and still have a computer
+to sell and it bugs me because my computer dies and I can't find out why.
+
+Remember, you asked why programming the Mac is hard.  My main complaint is
+about the difficulty of debugging and understanding the operating system.
+I believe the two are necessarily intertwined.  Now that I understand the
+operating system better, it's easier to debug code, but I still blanch at
+the prospect of finding a memory-management related bug in code I didn't
+write, or that I wrote under faulty assumptions.  If we all wrote perfect
+code, there would be no bugs.  There are two school of thought here at MIT
+that both strongly believe that statement.  The people on the 5th floor
+think that you should write perfect code all the time, and that you should
+design your languages accordingly.  The people in the AI lab think that
+you should be able to debug your code all the time, and that you should
+design your language accordingly.  The AI lab produced the Lisp Machine
+environment, and the 5th floor people produced CLU.  Ever heard of CLU?
+You might have actually.  Some of its ideas on exception handling were
+incorporated into ADA, but by and large it's been ignored.
+
+-----
+One more thing.  You can take this or leave it.  I'm currently trying to
+figure out what to do about running out of memory when I have a graphics
+region open.  I have a growzone function that looks at a flag I always set
+when doing a region definition operation, and if it's set it calls
+SetEmptyRgn on the RgnTemp (or whatever that grafport variable is called--
+I can't look at the code from here).  This method does not seem to work.
+My growzone function gives me either the empty flickering bomb box crash
+or the disk-exchange-icon-with-bomb-box crash.  I gather you disapprove of
+growzone functions anyway.
+
+Could you tell me what you mean about improving the environment?  I
+figured you meant stuff like debugging and example programs if you don't
+mean extra hardware, but that doesn't seem to interest you.
+
+Leigh.
+

@@ -1,0 +1,267 @@
+% -*- Mode: TeX -*-
+% 6821 Handout 58.
+\documentstyle[11pt,6821]{article}
+
+\handout{58}{17 November 1987}
+\handouttitle{Type Inference}
+
+\include{6821-macros}
+
+\newcommand{\ts}{\mbox{$\:\vdash\:$}}                   % turnstyle and space
+
+\begin{body}
+      
+The type system that we have introduced so far requires that all formal
+parameters have their types declared. Consider the procedure:
+      
+\begin{verbatim}
+  (lambda (x) (odd? x)),
+\end{verbatim}
+      
+In order for us to use our inference rules to ensure that the expression
+is well-typed, the programmer must specify that \code{x} is a number by
+writing \code{(lambda ((x num)) ...)}.  However, by looking at the
+expression \code{(odd?  x)} we can see that \code{x} must be a number.
+Why can't the type checker figure this out?
+      
+The problem of computing the type of an expression that does not contain
+type information is known as {\em type inference}, or {\em type
+reconstruction}.  Type inference is more complicated than type checking
+because type inference must operate properly without programmer supplied
+type assertions.
+      
+In essence, type inference solves a set of simultaneous equations that
+restrict the type of an expression.  If these equations can be solved,
+then the most general typing for the expression results.  If these
+equations cannot be solved then the expression is not well-typed.  For
+example, in our above example we must solve equations of the form:
+      
+\begin{verbatim}
+  ?t  = (proc (?t1) ?t2)
+  ?t3 = (proc (num) bool)
+  ?t3 = (proc (?t1) ?t2)
+\end{verbatim}
+      
+\noindent A solution to these equations is:
+      
+\begin{verbatim}
+  ?t  = (proc (num) bool)
+  ?t1 = num
+  ?t2 = bool
+  ?t3 = (proc (num) bool)
+\end{verbatim}
+      
+In order to solve such equations we will use the unification method due
+to Robinson.  Unification takes two expressions and attempts to find a
+substitution for the variables in the two expressions (here prefixed
+with ``?'') such that the two expressions are equal.  More formally, a
+unification algorithm \code{U} produces a substitution \code{E}:
+      
+\begin{verbatim}
+  E = U[a, b]  iff  (E a) = (E b)
+\end{verbatim}
+      
+\noindent where \code{E} defines substitutions on variables.
+Unification can of course fail.
+      
+\newpage
+
+Here are some examples of unification:
+      
+\begin{verbatim}
+   U[(?x ?y), (num ?x)]
+     ?x = num
+     ?y = num
+      
+   U[(proc (num) bool), (proc (bool) ?x)]
+     FAILS
+      
+   U[(proc (?x) (pair ?x ?y)), (proc (num) ?z)]
+     ?x = num
+     ?z = (pair num ?y)
+\end{verbatim}      
+      
+We can now present a type inference algorithm due to Milner.  In the
+following algorithm, \code{A} is a type environment and \code{E},
+\code{S} and \code{E'} are substitutions.  \code{UNIFY} is defined to
+change the global substitution \code{E}, such that:
+      
+\begin{verbatim}
+   UNIFY[a, b]
+     S = U[(E a), (E b)]
+     E changed to SE  (the composition of substitution S and E)
+\end{verbatim}
+      
+\noindent If \code{UNIFY} fails then the expression is not well typed.
+
+Type inference is defined by the function \code{I} which computes the
+type \code{T} of expression \code{EXP} in type environment \code{A}.
+      
+\begin{verbatim}
+   I[A, exp] = T, where:
+   
+     If exp is the variable x, then:
+       If x was bound with LAMBDA or LETREC then  T = A[x]
+       If x was bound with LET              then  T = T'
+     where T' is formed by replacing all ``generic'' type variables
+     in A[x] with new type variables, where ``generic'' means does
+     not occur free in the type of any enclosing LAMBDA or LETREC
+     bound parameter. [Milner, p.354&362]
+   
+     If exp is a let (let ((x1 e1) ... (xn en)) e0) then:
+       T1 = I[A, e1]
+       ...
+       Tn = I[A, en]
+       T = I[{x1: T1, ... xn: Tn}:A, e0]
+   
+     If exp is a letrec (letrec ((x1 e1) ... (xn en)) e0) then:
+       T1 = I[{x1: ?t1 ... xn: ?tn}:A, e1], where ?t1...?t2 new
+       UNIFY[T1, ?t1]
+       ...
+       Tn = I[{x1: ?t1 ... xn: ?tn}:A, en]
+       UNIFY[Tn, ?tn]
+       T = I[{x1: T1, ... xn: Tn}:A, e0]
+\end{verbatim}
+\newpage
+\begin{verbatim}
+     If exp is (lambda (x1 ... xn) e) then:
+       T0 = I[{x1: ?t1, ... xn: ?tn}:A, e], where ?t1...?tn new
+       T = (proc (?t1 ... ?tn) T0)
+
+     If exp is the application (d e1 ... en) then:
+       T0 = I[A, d]
+       T1 = I[A, e1]
+       ...
+       Tn = I[A, en]
+       UNIFY[T0, (proc (T1 ... Tn) ?t)], where ?t is new, unique
+       T = ?t
+
+     If exp is (if b e1 e2) then:
+       T1 = I[A, b]
+       UNIFY[T1, bool]
+       T2 = I[A, e1]
+       T3 = I[A, e2]
+       UNIFY[T2, T3]
+       T = T2 (or T3 since they have been unified)
+\end{verbatim}
+
+We will assume that type inference starts with a type environment that
+contains Scheme primitive functions and literals, all of which appear
+to have been bound with \code{LET}.
+
+We present two examples of type inference.  For each example, the type
+of an inference appears in the same horizontal column immediately below
+it.  The incremental substitution \code{E'} computed by a \code{UNIFY}
+is shown below the \code{UNIFY}.  The final type generated by the
+procedure must be interpreted with respect to the final substitution
+\code{E}.
+
+\begin{verbatim}
+1. (lambda (x y) (cons x y))
+
+  I[{}, (lambda (x y) (cons x y))]
+    I[{x: ?t1, y: ?t2}, (cons x y)]
+      I[{x: ?t1, y: ?t2}, cons]
+      (proc (?x1 ?x2) (pair ?x1 ?x2))
+      I[{x: ?t1, y: ?t2}, x]
+      ?t1
+      I[{x: ?t1, y: ?t2}, y]
+      ?t2
+      UNIFY[(proc (?x1 ?x2) (pair ?x1 ?x2)),
+            (proc (?t1 ?t2) ?t3)]
+        ?x1 = ?t1
+        ?x2 = ?t2
+        ?t3 = (pair ?t1 ?t2)
+    ?t3
+  (proc (?t1 ?t2) ?t3)
+
+==> (proc (?t1 ?t2) (pair ?t1 t2))
+\end{verbatim}
+\newpage
+\begin{verbatim}
+2. (lambda (x y) (if (odd? x) (cons 1 y) (cons 2 y)))
+
+  I[{}, (lambda (x y) (if (odd? x) (cons 1 y) (cons 2 y)))]
+    I[{x: ?t1, y: ?t2}, (if (odd? x) (cons 1 y) (cons 2 y))]
+      I[{x: ?t1, y: ?t2}, (odd? x)]
+        I[{x: ?t1, y: ?t2}, odd?]
+        (proc (num) bool)
+        I[{x: ?t1, y: ?t2}, x]
+        ?t1
+        UNIFY[(proc (num) bool), (proc (?t1) ?t3)]
+          ?t1 = num
+          ?t3 = bool
+      ?t3
+      UNIFY[?t3, bool]
+      I[{x: ?t1, y: ?t2}, (cons 1 y)]
+        I[{x: ?t1, y: ?t2}, cons]
+        (proc (?x1 ?x2) (pair ?x1 ?x2))
+        I[{x: ?t1, y: ?t2}, 1]
+        num
+        I[{x: ?t1, y: ?t2}, y]
+        ?t2
+        UNIFY[(proc (?x1 ?x2) (pair ?x1 ?x2)),
+              (proc (num ?t2) ?t4)]
+          ?x1 = num
+          ?x2 = ?t2
+          ?t4 = (pair num ?t2)
+      ?t4
+      I[{x: ?t1, y: ?t2}, (cons 2 y)]
+        I[{x: ?t1, y: ?t2}, cons]
+        (proc (?z1 ?z2) (pair ?z1 ?z2))
+        I[{x: ?t1, y: ?t2}, 2]
+        num
+        I[{x: ?t1, y: ?t2}, y]
+        ?t2
+        UNIFY[(proc (?z1 ?z2) (pair ?z1 ?z2)),
+              (proc (num ?t2) ?t5)]
+          ?z1 = num
+          ?z2 = ?t2
+          ?t5 = (pair num ?t2)
+      ?t5
+      UNIFY[?t4, ?t5]
+    ?t4
+  (proc (?t1 ?t2) ?t4)
+
+==> (proc (num ?t2) (pair num ?t2))
+\end{verbatim}
+
+\newpage
+\noindent Milner proved two theorems about his type inference algorithm:
+
+\begin{enumerate}
+
+\item The semantic soundness theorem states that if an expression is
+well-typed (by his definition of well-typed, which is expressed as a set
+of inference rules), then the expression cannot encounter a dynamic type
+error.  More generally, he showed that, if with respect to type
+environment \code{P}, an expression \code{E} has static type \code{T}
+(\ie \code{P \ts E:T}), then the denotation of \code{E} with respect to
+an environment \code{N} that respects \code{P} has type \code{T} (\ie
+\code{[E] N:T}).  An environment \code{N} respects type environment
+\code{P} if for all variables \code{x} in \code{P}, \code{N[x]} has type
+\code{P[x]}.
+
+\item The syntactic soundness theorem states that if the type inference
+algorithm \code{I} above discovers a type for an expression \code{E},
+then the type it discovers is a provable type of \code{E}, and thus
+\code{E} is well-typed.
+
+\end{enumerate}
+
+Of course there are limitations to type inference.  For example, in
+Milner's type system the following expressions are not well typed:
+
+\begin{verbatim}
+  (lambda (x) (x x))                    Self-application
+
+  (lambda (f) (cons (f 1) (f #t)))      First-class polymorphic
+                                        values
+\end{verbatim}
+
+The second restriction appears to be more severe than the first.  In
+fact, there is presently no way of giving an independent
+characterization of the expressions that are not well-typed in Milner's
+system.
+
+\end{body}

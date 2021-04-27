@@ -1,0 +1,485 @@
+% -*- Mode: TeX -*-
+% This is 6821 Fall '87 Handout #65.
+\documentstyle[11pt,6821]{article}
+
+\handout{65}{1 December 1987}
+\handouttitle{Object-oriented Programming}
+
+\input{6821-macros}
+\input{6821-commands}
+
+\begin{body}
+
+\section*{An object-oriented language}
+
+As an aid in understanding the semantics of Smalltalk, we have written
+an implementation of a Smalltalk subset in Scheme.
+
+The subset support these features of Smalltalk:
+\begin{itemize}
+  \item Every operation is generic across as many types as care to
+    support it.
+
+  \item A type (class) describes the way in which generic operations
+    are handled by its instances.
+
+  \item There is an inheritance hierarchy, so that new classes
+    can be defined as refinements of existing ones.  Subclasses inherit
+    the methods and instance variables from their superiors.
+\end{itemize}
+
+For simplicity, many Smalltalk features have been omitted,
+including the following:
+\begin{itemize}
+  \item There are no class variables or class methods.
+
+  \item Only user-defined classes are available as objects
+   (e.g.\ for {\tt new});
+   system classes like {\tt number} are unavailable.  There is no
+   {\tt class-of} message.
+
+  \item No subclasses of system classes can be defined.
+
+  \item A class's methods can't be added or altered dynamically.
+
+  \item Not all things in the implementation are visible as objects at the
+   user level.  For example, selectors, methods, etc. are not objects.
+
+  \item Sending to {\tt super} isn't implemented.
+
+  \item There are no metaclasses.
+\end{itemize}
+
+
+Here is the syntax used for subset language.
+
+\begin{verbatim}
+<program> ::= (<definition>*)
+
+<definition> ::= (define-class <id> <id> (<id>*) <meth>*)
+
+<method> ::= (<selector> (<id>*) <exp>*)
+
+<exp> ::= <constant> | <id> | (set! <id> <exp>)
+        | (<selector> <exp> <exp>*)
+        | <block>
+
+<block> ::= [<exp>+]
+          | [<id>* | <exp>+]
+
+<selector> ::= <id>
+\end{verbatim}
+\noindent
+In a class definition, the first {\tt <id>} is the name of the class,
+the second is the name of the superclass, and the list of
+{\tt <id>}'s gives the names of the instance variables.
+
+A {\tt let} construct would be quite helpful, but isn't provided here.
+
+Actually, we represent blocks as Scheme list structure using
+the following equivalence:
+
+\begin{verbatim}
+         [exp...]          ==  (block () exp...)
+         [id... | exp...]  ==  (block (id...) exp...)
+\end{verbatim}
+
+\noindent but this syntax would be very cumbersome to use,
+since blocks are essential in Smalltalk for writing
+conditionals and loops.
+
+
+Here are some domain equations for the implementation.  They don't
+account for the posisbility of side-effects or non-local exits, and
+don't account for many possible error conditions; making a pure
+interpreter would have made this presentation more complicated without
+really providing any new insight.
+
+\begin{verbatim}
+Object = Non-primitive-object + Number + Symbol + Block + Class
+
+Non-primitive-object = Dispatcher x Env
+ (the environment gives the bindings of the object's
+ instance variables)
+
+Class = Dispatcher x Symbol x Identifier*
+ (the symbol names the class for printing purposes, and the
+ list of identifiers are the names of the instance variables)
+
+Dispatcher = Selector -> Method
+
+Method = Object -> Object* -> Object
+         (self)  (arguments) (result)
+
+Selector = Symbol
+
+Block = Object* -> Object
+
+\end{verbatim}
+
+
+ Some abbreviations used in this program:
+\begin{itemize}
+ \item {\tt sel} stands for ``selector"
+ \item {\tt n-p} stands for ``non-primitive"
+\end{itemize}
+
+\begin{verbatim}
+
+
+(define (eq-car sym)
+  (lambda (obj) (and (pair? obj) (eq? (car obj) sym))))
+
+; EV-PROGRAM evaluates a program.  A program is a list of
+; class definitions.  This procedure has the side effect of
+; altering *GLOBAL-ENV*, so that future evaluations will have
+; these class definitions available.
+
+(define (ev-program def-list)
+  (for-each ev-definition def-list))
+
+
+; Class definition
+;  <def> ::= (define-class <id> <id> (<id>*) <meth>*)
+;
+;  <method> ::= (<selector> (<id>*) <exp>*)
+;
+; A definition (DEFINE-CLASS FOO ...) defines the variable FOO
+; to be a class, to which a NEW message can be sent in order
+; to create instances.
+
+(define (ev-definition def)
+  (let ((name (definition-class-name def))
+        (super-name (definition-super-name def)))
+    (let ((super-dispatcher
+           (case super-name
+             ((object) object-dispatcher)
+             ((number symbol boolean block class)
+              (error "can't make a subclass of this class"
+                     super-name))
+             (else
+              (n-p-class-inst-dispatcher
+               (lookup super-name global-env))))))
+      (assign! name
+               (make-n-p-class
+                 ;; Dispatcher for instances of new class:
+                 (lambda (sel obj args)
+                   (let ((probe
+                          (assq sel (definition-methods def))))
+                     (if probe
+                         (ev-sequence (method-body probe)
+                           (bind (method-vars probe)
+                                 args
+                                 (bind '(self)
+                                       (list obj)
+                                       (n-p-object-env obj))))
+                         (super-dispatcher sel obj args))))
+                 (definition-instance-vars def)
+                 name)
+               global-env))))
+
+; Expression evaluation
+
+(define (ev exp env)
+  (cond ((symbol? exp) (lookup exp env))
+        ((or (number? exp) (boolean? exp)) exp)
+        ((eq? (car exp) 'quote)
+         (let ((obj (cadr exp)))
+           (if (or (symbol? obj) (number? obj) (boolean? obj))
+               obj
+               (error "unimplemented quotation" exp))))
+        ((eq? (car exp) 'set!)
+         (assign! (cadr exp) (ev (caddr exp) env) env))
+        ((eq? (car exp) 'block)
+         (make-block (lambda (args)
+                       (ev-sequence (cddr exp)
+                                    (bind (cadr exp)
+                                          args env)))))
+        (else
+         (send (car exp)
+               (ev (cadr exp) env)
+               (map (lambda (arg) (ev arg env)) (cddr exp))))))
+
+(define (ev-sequence seq env)
+  (if (null? (cdr seq))
+      (ev (car seq) env)
+      (begin (ev (car seq) env)
+             (ev-sequence (cdr seq) env))))
+
+(define definition-class-name cadr)     ;Syntactic abstraction
+(define definition-super-name caddr)
+(define definition-instance-vars cadddr)
+(define definition-methods cddddr)
+
+(define method-name car)
+(define method-vars cadr)
+(define method-body cddr)
+
+
+; Message passing mechanics
+
+; To send a message to an object, the object's "dispatcher"
+; is invoked.
+
+(define (send sel obj args)
+  ((cond ((number? obj) number-dispatcher)
+         ((symbol? obj) symbol-dispatcher)
+         ((boolean? obj) boolean-dispatcher)
+         ((block? obj) block-dispatcher)
+         ((n-p-class? obj) n-p-class-dispatcher)
+         ((n-p-object? obj)
+          (n-p-object-dispatcher obj))
+         (else (error "unknown object type" obj)))
+   sel obj args))
+
+; This is the dispatcher for class OBJECT, of which there are
+; no instances.  This dispatcher is called as a last resort by
+; dispatchers for other classes, since every class is a
+; subclass of class OBJECT.
+
+(define object-dispatcher
+  (lambda (sel obj args)
+    (case sel
+      ((write)
+       (display "<object>"))
+      (else
+       (error "operation not handled" sel obj args)))))
+
+; "Primitive" objects are numbers, booleans, etc., and are
+; instances of "primitive classes".  "Non-primitive" objects
+; are instances of "non-primitive classes", which are
+; generally user-defined.
+
+(define n-p-class-dispatcher
+  (lambda (sel obj args)
+    (case sel
+      ((new)
+       (let ((names (n-p-class-inst-var-names obj)))
+         (make-n-p-object
+           (n-p-class-inst-dispatcher obj)
+           (bind names
+                 (map (lambda (name) '**uninitialized**)
+                      names)
+                 global-env))))
+      ((write)
+       (display "<class ")
+       (write (n-p-class-name obj))
+       (display ">"))
+      (else
+       (object-dispatcher sel obj args)))))
+
+(define (make-n-p-class disp inst-var-names name)
+  (list 'n-p-class disp inst-var-names name))
+(define n-p-class? (eq-car 'n-p-class))
+(define n-p-class-inst-dispatcher cadr)
+(define n-p-class-inst-var-names caddr)
+(define n-p-class-name cadddr)
+
+(define (make-n-p-object disp env)
+  (list 'n-p-object disp env))
+(define n-p-object? (eq-car 'n-p-object))
+(define n-p-object-dispatcher cadr)
+(define n-p-object-env caddr)
+
+; Primitive classes: NUMBER, BOOLEAN, BLOCK, etc.
+
+; Numbers
+
+(define number-dispatcher
+  (lambda (sel obj args)
+    (case sel
+      ((+) (+ obj (car args)))
+      ((-) (- obj (car args)))
+      ((*) (* obj (car args)))
+      ((<) (< obj (car args)))
+      ((=) (= obj (car args)))
+      ((sqrt) (sqrt obj))
+      ((write) (write obj))
+      (else (object-dispatcher sel obj args)))))
+
+; Booleans handle the IF message by sending a VALUE message to
+; the first or second argument to the IF message.
+
+(define boolean-dispatcher
+  (lambda (sel obj args)
+    (case sel
+      ((if)
+       (if obj
+           (send 'value (car args) '())
+           (send 'value (cadr args) '())))
+      ((write) (write obj))
+      (else
+       (object-dispatcher sel obj args)))))
+
+; Symbols
+
+(define symbol-dispatcher
+  (lambda (sel obj args)
+    (case sel
+      ((write) (display "'") (write obj))
+      (else
+       (object-dispatcher sel obj args)))))
+
+; Blocks are really the same as closures (procedures) in
+; Scheme.
+
+(define (make-block proc)
+  (list 'block proc))
+(define block? (eq-car 'block))
+(define block-code cadr)
+
+(define block-dispatcher
+  (lambda (sel obj args)
+    (case sel
+      ((value)
+       ((block-code obj) args))
+      ((while-true)
+       (letrec ((loop (lambda ()
+                        (if (send 'value obj '())
+                            (begin (send 'value (car args) '())
+                                   (loop))
+                            'unspecified))))
+         (loop)))
+      ((write) (display "<block>"))
+      (else
+       (object-dispatcher sel obj args)))))
+
+; Environments
+
+(define (bind vars vals env)
+  (let ((a-list (map list vars vals)))
+    (lambda (id)
+      (let ((probe (assq id a-list)))
+        (if probe probe (env id))))))
+  
+(define (lookup id env)
+  (cadr (env id)))
+
+(define (assign! id val env)
+  (set-car! (cdr (env id)) val))
+
+(define global-env
+  (lambda (id)
+    (let ((probe (assq id *global-env*)))
+      (if probe probe
+          (let ((cell (list id '**uninitialized**)))
+            (set! *global-env* (cons cell *global-env*))
+            cell)))))
+
+(define *global-env* '())
+
+\end{verbatim}
+
+\newpage
+
+\section*{Examples}
+
+\begin{verbatim}
+(define (e x) (ev x global-env))  ;For testing
+
+; (* 2 2) => 4
+(e '(* 2 2))
+
+; (if (< 2 3) [4] [5]) => 4
+(e '(if (< 2 3) (block () 4) (block () 5)))
+
+
+; (while-true [(< 0 x)]
+;             [(write x)
+;              (set! x (- x 1))])
+;   prints 6 5 4 3 2 1
+(e '(set! x 6))
+(e '(while-true (block () (< 0 x))
+                (block ()
+                  (write x)
+                  (set! x (- x 1)))))
+
+; Point and vector example
+(ev-program '((define-class point object (x y)
+                            (create (nx ny)
+                                    (set! x nx)
+                                    (set! y ny)
+                                    self)
+                            (x () x)
+                            (y () y))
+              (define-class vector point ()
+                            (dot (v) (+ (* (x v) x)
+                                        (* (y v) y)))
+                            (magnitude ()
+                                       (sqrt (dot self self)))
+                            (+ (v) (create (new vector) 
+                                           (+ x (x v))
+                                           (+ y (y v)))))))
+
+(e '(magnitude (create (new vector) 1 2)))
+
+(e '(magnitude (+ (create (new vector) 1 2)
+                  (create (new vector) 2 3))))
+
+
+; Cell example.
+(ev-definition '(define-class cell object (val)
+                  (store! (new-val) (set! val new-val))
+                  (fetch () val)))
+
+(e '(set! c (new cell)))
+(e '(store! c 7))
+(e '(fetch c))  ;=>  7
+
+
+; Cells with history.  H-CELL is a subclass of CELL.  H-CELLs
+; retain one value previous to the one most recently stored.
+(ev-definition '(define-class h-cell cell (prev)
+                  (store! (new-val)
+                          (set! prev val)
+                          (set! val new-val))
+                  (previous () prev)))
+
+(e '(set! h (new h-cell)))
+(e '(store! h 5))
+(e '(store! h 6))
+(e '(previous h))   ;=> 5
+\end{verbatim}
+
+\newpage
+
+\section*{Correction to handout 62}
+
+There was a bug in the definitions of {\tt generic-vars}\ and {\tt
+generic-var?}\ in the auxiliary routines handed out last week.  It is
+possible to use the old versions if you employ sufficient kludges, but
+you will probably want to use these improved versions instead:
+
+\begin{verbatim}
+(define (generic-vars pat env frame)
+  (cond ((constant? pat) '())
+        ((var? pat)
+         (if (generic-var? pat env frame) (list pat) '()))
+        (else
+         (union (generic-vars (car pat) env frame)
+                (generic-vars (cdr pat) env frame)))))
+
+(define (generic-var? var env frame)
+  (cond ((null? env) #t)
+        ((and (not (pbinding-polymorphic? (car env)))
+              (occurs-in? var
+                  (instantiate (pbinding-value (car env))
+                               frame)))
+         #f)
+        (else (generic-var? var (cdr env) frame))))
+\end{verbatim}
+
+There is also a bug in the procedure {\tt string->symbol} on
+the machines in the 6.001
+lab, which can be fixed by redefining that procedure as follows:
+
+\begin{verbatim}
+(define (string->symbol string)
+  (intern-character-list (string-to-list string)))
+\end{verbatim}
+
+We will add this fix to the Revised$^3$ Scheme compatibility package
+sometime soon.
+
+
+\end{body}

@@ -1,0 +1,57 @@
+(defmacro when (condition &body body)
+  `(if ,condition ., body))
+
+
+(defun l () (load "foo"))
+
+(defun fdiv (a b)
+  (//$ (float a) (float b)))
+
+(defun fadd (a b)
+  (+$ (float a) (float b)))
+
+(defun fsub (a b)
+  (-$ (float a) (float b)))
+
+(defun fmul (a b)
+  (*$ (float a) (float b)))
+
+(defun try-one (r1 r2)
+  (format t "Trying ~d ~d~%" r1 r2)
+  (let ((ratio (fdiv r2 (fadd r1 r2))))
+    (//$ ratio)))
+
+
+(defun find-desired-ratio (desired r-values)
+  (do ((r1-rest r-values (cdr r1-rest))
+       (r1 (car r-values) (car r1-rest))
+       (closest-r1 nil)
+       (closest-r2 nil)
+       (closest-pair-ratio nil))
+      ((null r1-rest) (list closest-r1 closest-r2 closest-pair-ratio))
+    (do ((r2-rest r1-rest (cdr r2-rest))
+	 (r2 (car r1-rest) (car r2-rest)))
+	((null r2-rest))
+      (let ((trial-ratio (try-one r1 r2)))
+	(when (closer? trial-ratio closest-pair-ratio desired)
+	 (setq closest-pair-ratio trial-ratio
+		closest-r1 r1
+		closest-r2 r2))
+	(when (greaterp trial-ratio desired)
+	  (return nil))))))
+
+(defun closer? (trial current-best desired)
+  (if (null current-best) t
+      (lessp (abs (fsub trial desired))
+	     (abs (fsub current-best desired)))))
+
+(defvar resistors
+  '(10 100 220 270 330 390 470 560
+    910 1000 1200 1500 2200
+    3300 3900 4700 5100 7500 10000 15000
+    18000 22000 27000 33000 47000 56000
+    68000 82000 100000 120000 150000 180000
+    220000 270000 560000))
+(sort resistors #'greaterp)
+
+

@@ -1,0 +1,38 @@
+;;; -*- Mode: LISP; Package: boxer; Base: 10. -*-
+
+
+(defflavor magnifying-pair
+	(cursor-blinker magnifying-blinker)
+	()
+  :initable-instance-variables
+  :gettable-instance-variables
+  :settable-instance-variables
+  (:default-handler magnifying-pair-forwarder))
+
+(defun-method magnifying-pair-forwarder magnifying-pair (&rest stuff)
+  (lexpr-funcall cursor-blinker stuff)
+  (lexpr-funcall magnifying-blinker stuff))
+
+(defmethod (magnifying-pair :init) (options)
+  (let ((sheet (get options :sheet))
+	(options (remprop options :sheet)))
+  (setq magnifying-blinker (tv:make-blinker sheet 'tv:magnifying-blinker options))
+  (setq cursor-blinker
+	(tv:make-blinker sheet 'tv:rectangular-blinker :visibility nil))
+  (send self :set-visibility nil)))
+
+(defmethod (magnifying-pair :set-visibility) (new)
+  (if new (send cursor-blinker :set-visibility nil))
+  (send magnifying-blinker :set-visibility new)
+  (send cursor-blinker :set-visibility new))
+
+(defmethod (magnifying-pair :set-cursorpos) (x y)
+  (send cursor-blinker
+	:set-cursorpos
+	x y)
+  (send magnifying-blinker
+	:set-cursorpos
+	(logand x #o3777740)
+	(logand y #o3777740)))
+
+

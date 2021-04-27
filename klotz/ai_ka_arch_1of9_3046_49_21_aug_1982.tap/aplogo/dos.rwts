@@ -1,0 +1,1108 @@
+Date:  2 May 1981 0301-EDT
+From: STILLMAN.JOSEPH at RUTGERS
+Subject: dos 3.3 stuff
+To: SLH at MIT-MC, joseph at GREEN
+In-Reply-To: Your message of 30-Apr-81 2029-EDT
+Steve,
+Here it is.  Good luck.
+
+	
+	The two files on the Apple RWTS contain a source listing to the 6502 machine
+	code that is located in DOS 3.3.  In a 48k Apple the code in "RWTS" is in memory
+	at $BD00-$BFC8, "RW-DISK" is at $B800-$BCFF.
+	
+	RRTS (Read/Write Track/Sector) subroutine is the mainline program that reads
+	and write a sector of data to/from the diskette.  Included in that is the
+	16 sector formatter which takes up about the 2nd half of "RWTS".
+	
+	RR-DISK (Read/Write Disk) subroutines are routines which do the actual
+	reading/writing of nybbles and control the disk hardware.
+	There are 6 major subroutines in this file, they are:
+	PRENIB  - prenibblize - encodes 256 data bytes into 342 nibbles.
+	WRITE   - writes the encoded nibbles to the disk.
+	POSTNB  - postnibblize - decodes the nibbles read from the disk.
+	READ    - reads the nibbles from the disk.
+	RDADR   - reads the address field that identifies each sector.
+	SEEK    - controls the hardware to move the head over the proper track.
+
+	
+	
+	        .PAGE 'RWTS 16 SECTOR'
+	;*************************************
+	;*                                   *
+	;*     Apple II Disk II 16 Sector    *
+	;*   Read/Write Track/Sector (RWTS)  *
+	;*                                   *
+	;*     Disassembled using DSM/65     *
+	;*         by Gary Morris            *
+	;*    Assembled using ASM/65 V2.0    *
+	;*          by Sandy Tiedeman        *
+	;*                                   *
+	;*      comments & labels added      *
+	;*      by Gary Morris  12/7/80      *
+	;*************************************
+	
+	        *=$BD00
+	;
+	; constants:
+	;
+	AMARK1  =$D5    ;address field markers
+	AMARK2  =$AA
+	--more--
+	disabled.
+	AMARK3  =$96
+	DMARK1  =$D5    ;data field markers
+	DMARK2  =$AA
+	DMARK3  =$AD
+	CMARK1  =$DE    ;closing markers
+	CMARK2  =$AA
+	CMARK3  =$EB
+	SYNC    =$FF    ;sync nybble
+	;
+	; zero page variables:
+	;
+	T1      =$26    ;temp variables
+	T2      =$27
+	T3      =$2A
+	T4      =$2B
+	CHKSUM  =$2C    ;checksum read by rdadr
+	SECTOR  =$2D    ;sector read by rdadr
+	TRACK   =$2E    ;track read by rdadr
+	VOLUME  =$2F    ;volume read by rdadr
+	DRIVNO  =$35
+	PTRDST  =$3C
+	DCT     =PTRDST ;pointer to device control table
+	BUFPTR  =PTRDST+2   ;pointer to data buffer
+	AA      =$3E    ;used by formatter for timing
+	SECT    =$3F    ;sector being formatted
+	VOL     =$41    ;volume   "       "
+	TRAK    =$44    ;track    "       "
+	NSYNC   =$45    ;number sync nybbles before addr field
+	MONTIM  =$46    ;motor on time
+	IOB     =$48    ;pointer to I/O block
+	;
+	; other variable locations:
+	;
+	DRV0TK  =$0478
+	DRV1TK  =$04F8
+	;
+	; DRV0TK, DRV1TK are kept for each slot.
+	; add slot number to address.
+	; ex: for S6,D0 --> LDA DRV0TK+6
+	;
+	CURTRK  =$0478  ;current track
+	SEEKCT  =$04F8
+	RTRYCT  =$0578  ;retry count
+	SLOT    =$05F8
+	SLOT1   =$0678
+	RECALS  =$06F8  ;recalibration counter
+	;
+	; disk hardware control locations:
+	;
+	PHSOFF  =$C080  ;turn off phases
+	;
+	; these addresses pulse the head stepping motor:
+	;   phase  on    off
+	;   ----- ----- -----
+	;     0   $C080 $C081
+	;     1   $C082 $C083
+	;     2   $C084 $C085
+	;     3   $C086 $C087
+	;
+	MTROFF  =$C088  ;turn off motor
+	MTRON   =$C089  ;turn on motor
+	DRV0EN  =$C08A  ;select drive 1
+	DRV1EN  =$C08B  ;select drive 2
+	;
+	; state machine control table:
+	;
+	Q6L     =$C08C  ;set output Q6 lo
+	Q6H     =$C08D  ;set output Q6 hi
+	Q7L     =$C08E  ;set output Q7 lo
+	Q7H     =$C08F  ;set output Q7 hi
+	;
+	; Q6 Q7 Function
+	; -- -- --------
+	; LO LO read a nybble
+	; HI LO sense write protect
+	; LO HI write a nybble
+	; HI HI write load
+	;
+	
+	RRTS    STY IOB         ;set IOB pointer
+	        STA IOB+1
+	        LDY #2
+	        STY RECALS      ;recal counter
+	        LDY #4
+	        STY SEEKCT      ;set seek counter
+	        LDY #1
+	        LDA (IOB),Y     ;get slot#
+	        TAX
+	        LDY #$0F
+	        CMP (IOB),Y     ;get old slot#
+	        BEQ SAMESL
+	;
+	; now are using a different slot. wait
+	; for this drive to turn off, to sense
+	; motor not spinning, data must be the
+	; same for at least 96 microseconds.
+	        TXA         ;save new slot#
+	        PHA
+	        LDA (IOB),Y ;get old slot#
+	        TAX
+	        PLA
+	        PHA
+	        STA (IOB),Y ;save new slot#
+	        LDA Q7L,X   ;go into read mode
+	STILON  LDY #8      ;to be sure data
+	        LDA Q6L,X   ;must be same 96us
+	NOTSUR  CMP Q6L,X
+	        BNE STILON  ;still spinning
+	        DEY
+	        BNE NOTSUR
+	;
+	; previous slot's drive now off...
+	;
+	        PLA     ;restore new slot#
+	        TAX
+	;
+	; now check if the motor is on, then
+	; start it
+	;
+	SAMESL  LDA Q7L,X ;make sure read mode
+	        LDA Q6L,X
+	        LDY #8
+	NOTYET  LDA Q6L,X ;get the data
+	        PHA
+	        PLA
+	        PHA
+	        PLA
+	        STX SLOT  ;save slot
+	        CMP Q6L,X ;data changing?
+	        BNE ITSON ;yes, its on
+	        DEY
+	        BNE NOTYET
+	ITSON   PHP
+	        LDA MTRON,X     ;turn on motor
+	        LDY #6      ;move all pointers
+	PTRMOV  LDA (IOB),Y ;from IOB to zpage
+	        STA PTRDST-6,Y
+	        INY
+	        CPY #10     ;moved all pntrs?
+	        BNE PTRMOV
+	;PTRDST=(DCT), PTRDST+2=(BUFPTR)
+	;
+	        LDY #$03
+	        LDA (DCT),Y ;get time count
+	        STA MONTIM+1
+	        LDY #$02
+	        LDA (IOB),Y ;get drive#
+	        LDY #$10
+	        CMP (IOB),Y ;save as before?
+	        BEQ OK
+	        STA (IOB),Y ;new 'old drive#'
+	        PLP
+	        LDY #$00    ;set Z flag to show
+	        PHP         ;motor was off
+	OK      ROR A       ;drive# into carry
+	        BCC DRIVE1
+	        LDA DRV0EN,X    ;enable drive0
+	        BCS DRIVE0
+	DRIVE1  LDA DRV1EN,X    ;enable drive1
+	DRIVE0  ROR DRIVNO
+	        PLP
+	        PHP         ;set flags
+	        BNE WASON   ;motor was on
+	
+	        LDY #$07    ;wait for motor
+	MTRWAT  JSR DELAY   ;to get going
+	        DEY
+	        BNE MTRWAT
+	
+	        LDX SLOT
+	WASON   LDY #$04
+	        LDA (IOB),Y ;get track#
+	        JSR MYSEEK  ;go to it.
+	        PLP
+	        BNE TRYTRK  ;motor on
+	        LDY MONTIM+1
+	        BPL TRYTRK
+	;
+	; motor was off, wait for it to speed up
+	;
+	MMROF   LDY #$12
+	CONWAT  DEY
+	        BNE CONWAT
+	        INC MONTIM
+	        BNE MTROF
+	        INC MONTIM+1
+	        BNE MTROF
+	;
+	; disk is now up to speed, read it!
+	; now check: if not formatting then
+	; find the right sector for this op.
+	;
+	TRYTRK  LDY #$0C
+	        LDA (IOB),Y  ;get command code
+	        BEQ GALLDN   ;if null all done
+	        CMP #$04     ;format command?
+	        BEQ FRMDSK
+	        ROR A        ;C=1=Read
+	        PHP          ;C=0=Write
+	        BCS TRYTK2
+	        JSR PRENIB   ;prenib for write
+	TRYTK2  LDY #48      ;only 48 retrys
+	        STY RTRYCT
+	TRYADR  LDX SLOT
+	        JSR RDADR  ;read nxt adr field
+	        BCC READRT
+	TRYAD2  DEC RTRYCT   ;another misteak!
+	        BPL TRYADR   ;try again...
+	TRYAD3  LDA CURTRK
+	        PHA        ;save track we want
+	        LDA #$60
+	        JSR SETTRK ;set to track 80
+	        DEC RECALS
+	        BEQ DRVERR ;give it up...
+	        LDA #$04
+	        STA SEEKCT ;reset seek counter
+	        LDA #$00
+	        JSR MYSEEK ;recalibrate head
+	        PLA        ;track we want
+	GOCAL   JSR MYSEEK ;try again
+	        JMP TRYTK2
+	;
+	; have now read address field correctly
+	; make sure its right track, sect & vol
+	;
+	READRT  LDY TRACK
+	        CPY CURTRK  ;check track
+	        BEQ RTTRK   ;right track
+	;
+	; try recalibrating from here
+	;
+	        LDA CURTRK  ;better try again!
+	        PHA         ;save trk we want
+	        TYA         ;seek from here
+	        JSR SETTRK
+	        PLA
+	        DEC SEEKCT
+	        BNE GOCAL  ;recal again
+	        BEQ TRYAD3
+	DRVERR  PLA             ;clear stack
+	        LDA #$40        ;drive error
+	JMPTO1  PLP
+	        JMP HDLERR
+	GALLDN  BEQ ALLDUN
+	FRMDSK  JMP FORMAT
+	;
+	; drive is finally on right track
+	; check volume#
+	;
+	RTTRK   LDY #$03
+	        LDA (IOB),Y  ;expected volume#
+	        PHA
+	        LDA VOLUME   ;actual vol#
+	        LDY #$0E
+	        STA (IOB),Y  ;save in IOB
+	        PLA
+	        BEQ VOLOK    ;zero matches all
+	        CMP VOLUME   ;save volume?
+	        BEQ VOLOK
+	        LDA #$20     ;vol mismatch err
+	        BNE JMPTO1
+	VOLOK   LDY #$05
+	        LDA (IOB),Y ;get desired sect
+	        TAY
+	        LDA STABLE,Y ;convert sect#
+	        CMP SECTOR  ;right sector?
+	        BNE TRYAD2  ;get next one
+	        PLP
+	        BCC WRIT    ;write
+	        JSR READ    ;read
+	        PHP         ;save errflag
+	        BCS TRYAD2  ;didnt work, again
+	        PLP         ;careful w/stack
+	        LDX #$00
+	        STX T1
+	        JSR POSTNB  ;decode nybbles
+	        LDX SLOT    ;all done!!!
+	ALLDUN  CLC         ;clr error flag
+	        .BYT $24    ;bit opcode
+	HDLERR  SEC         ;set error flag
+	        LDY #$0D
+	        STA (IOB),Y    ;save errcode
+	        LDA MTROFF,X   ;turn it off
+	        RTS            ;all done!
+	;
+	WRIT    JSR WRITE   ;write nibbles now
+	        BCC ALLDUN  ;if ok, then done
+	        LDA #$10    ;write prot error
+	        BCS HDLERR  ;always branch
+	;
+	; this is the "SEEK" routine
+	; moves head to track 'N' in slot X/16
+	; if DRIVNO is neg then drive 0
+	; if DRIVNO is pos then drive 1
+	;
+	MYSEEK  PHA             ;preserve track
+	        LDY #$01
+	        LDA (DCT),Y     ;get #phases
+	        ROR A
+	        PLA
+	        BCC SEEKIT
+	        ASL A
+	        JSR SEEKIT
+	        LSR CURTRK
+	        RTS
+	SEEKIT  STA T3          ;save dest track*2
+	        JSR XTOY        ;set Y=slot#
+	        LDA DRV0TK,Y    ;get old track
+	        BIT DRIVNO
+	        BMI WASD0       ;correct drive
+	        LDA DRV1TK,Y    ;was drive 1
+	WASD0   STA CURTRK      ;old track
+	        LDA T3          ;get new track to
+	        BIT DRIVNO      ;update old track#
+	        BMI ISDRV0
+	        STA DRV1TK,Y    ;update drv1
+	        BPL GOSEEK
+	ISDRV0  STA DRV0TK,Y    ;update drv0
+	GOSEEK  JMP SEEKAB      ;move head from "old" track to "new"
+	;
+	XTOY    TXA     ;get slot*16 from X
+	        LSR A   ;div by 16, put in Y
+	        LSR A
+	        LSR A
+	        LSR A
+	        TAY
+	        RTS
+	;
+	; set the slot/drive dependant track location
+	;
+	SETTRK  PHA             ;save track#
+	        LDY #$02
+	        LDA (IOB),Y     ;get drive#
+	        ROR A           ;get drive# into carry
+	        ROR DRIVNO      ;DRIVNO(BIT7) <= C
+	        JSR XTOY        ;get slot# into Y
+	        PLA
+	        ASL A
+	        BIT DRIVNO
+	        BMI ONDRV0
+	        STA DRV1TK,Y    ;save "old" track#
+	        BPL SETRTS      ;why not just "RTS"
+	ONDRV0  STA DRV0TK,Y
+	SETRTS  RTS
+	
+	        .PAGE '16 SECTOR FORMATTER'
+	;*************************************
+	;*                                   *
+	;*        16 Sector formatter        *
+	;*         Apple II  Disk II         *
+	;*                                   *
+	;*************************************
+	FORMAT  LDY #$03
+	        LDA (IOB),Y
+	        STA VOL         ;volume# to format
+	        LDA #$AA
+	        STA AA          ;used for timing purposes
+	        LDY #$56
+	        LDA #$00
+	        STA TRAK        ;set track#=0
+	CLRNB1  STA NIBBUF+$FF,Y
+	        DEY
+	        BNE CLRNB1
+	CLRNB2  STA NIBBUF,Y    ;fill nibbuf's with zero's
+	        DEY
+	        BNE CLRNB2
+	        LDA #80
+	        JSR SETTRK      ;force recalibration
+	        LDA #40
+	        STA NSYNC
+	FTRAKS  LDA TRAK        ;get track#
+	        JSR MYSEEK      ;seek it
+	        JSR FTRACK      ;format it
+	        LDA #$08        ;format error code
+	        BCS FMTERR
+	        LDA #48
+	        STA RTRYCT      ;set retry counter
+	TRYAGN  SEC
+	        DEC RTRYCT
+	        BEQ FMTERR
+	        JSR RDADR       ;check to see if entire
+	        BCS TRYAGN      ;bad adr field
+	        LDA SECTOR
+	        BNE TRYAGN      ;sector 0?
+	        JSR READ        ;check data field
+	        BCS TRYAGN      ;bad data field
+	        INC TRAK        ;next track
+	        LDA TRAK
+	        CMP #$23        ;last track?
+	        BCC FTRAKS      ;no, do next track
+	        CLC             ;clear error flag
+	        BCC FDONE       ;completed ok
+	FMTERR  LDY #$0D
+	        STA (IOB),Y     ;save error code
+	        SEC             ;set error flag
+	FDONE   LDA MTROFF,X    ;turn off motor
+	        RTS
+	
+	;;
+	; format the current track
+	;
+	FTRACK  LDA #$00        ;format track
+	        STA SECT        ;start w/sector 0
+	        LDY #$80        ;write 128 nybbles sync
+	        BNE FTRAK1      ;before 1st addr field
+	FLOOP   LDY NSYNC
+	FTRAK1  JSR WRADR       ;write addr field
+	        BCS RTS2
+	        JSR WRITE       ;write data field
+	        BCS RTS2
+	        INC SECT        ;next sector
+	        LDA SECT
+	        CMP #$10        ;last sector?
+	        BCC FLOOP
+	        LDY #$0F
+	        STY SECT
+	        LDA #$30
+	        STA RTRYCT
+	FILLTB  STA TABLE,Y     ;fill table w/$30
+	        DEY
+	        BPL FILLTB
+	        LDY NSYNC
+	REVOLV  JSR RTS2        ;wait 1 revolution
+	        JSR RTS2
+	        JSR RTS2
+	        PHA
+	        PLA
+	        NOP
+	        DEY
+	        BNE REVOLV
+	        JSR RDADR       ;read next adr field
+	        BCS NOGOOD
+	        LDA SECTOR      ;should be sector 0
+	        BEQ READIT
+	        LDA #$10
+	        CMP NSYNC       ;set C for subtract
+	        LDA NSYNC
+	        SBC #$01        ;decr NSYNC by 1 or 2
+	        STA NSYNC
+	        CMP #$05        ;below 5 is an error
+	        BCS NOGOOD
+	        SEC             ;return w/error
+	        RTS
+	
+	RRSECT  JSR RDADR       ;read next sector
+	        BCS RETRY
+	READIT  JSR READ        ;read data area
+	        BCC CHKTAB
+	RETRY   DEC RTRYCT      ;another error!
+	        BNE RDSECT
+	NOGOOD  JSR RDADR       ;find sector $F
+	        BCS ERRAGN      ;error?
+	        LDA SECTOR
+	        CMP #$0F        ;check for sector $F
+	        BNE ERRAGN      ;look again
+	        JSR READ        ;check data on sector $F
+	        BCC FTRACK      ;ok, reformat right after sector $F
+	ERRAGN  DEC RTRYCT
+	        BNE NOGOOD
+	        SEC             ;set error flag and
+	RTS2    RTS             ;return
+	
+	CCKTAB  LDY SECTOR      ;check to see if this
+	        LDA TABLE,Y     ;sector was done before
+	        BMI RETRY       ;if so, retry
+	        LDA #$FF
+	        STA TABLE,Y     ;mark it as done
+	        DEC SECT        ;do all 16 sectors
+	        BPL RDSECT      ;rdsect if any sect's left
+	        LDA TRAK
+	        BNE TDONE       ;if not track 0, tdone
+	        LDA NSYNC       ;track 0, so if
+	        CMP #$10        ;NSYNC<16 then done.
+	        BCC RTS2
+	        DEC NSYNC       ;shorted pre-addr-sync
+	        DEC NSYNC
+	TDONE   CLC             ;return & do other tracks
+	        RTS
+	
+	TTBLE   .BYT $FF,$FF,$FF,$FF
+	        .BYT $FF,$FF,$FF,$FF
+	        .BYT $FF,$FF,$FF,$FF
+	        .BYT $FF,$FF,$FF,$FF
+	
+	;;
+	; determines order sectors are used in
+	;
+	STABLE  .BYT 0,13,11,9,7,5,3,1
+	        .BYT 14,12,10,8,6,4,2,15
+
+	        .FILE 'RW DISK'
+	 
+
+	
+	
+	        .PAGE 'RWTS SUBROUTINES'
+	
+	        *=RWTS-$500
+	;
+	; prenybblize
+	; convert 256 byte data buffer into 342 nybbles
+	; in NIBBUF thru NIBBUF+$155. each nybble will
+	; get 6 data bits in bits 0-5, bits 6,7 are 0.
+	;
+	PRENIB  LDX #$00        ;prenybblize
+	        LDY #$02
+	PRENB1  DEY
+	        LDA (BUFPTR),Y
+	        LSR A
+	        ROL NIBBUF+$100,X
+	        LSR A
+	        ROL NIBBUF+$100,X
+	        STA NIBBUF,Y
+	        INX
+	        CPX #$56
+	        BCC PRENB1
+	        LDX #$00
+	        TYA
+	        BNE PRENB1
+	        LDX #$55
+	PRENB2  LDA NIBBUF+$100,X
+	        AND #$3F
+	        STA NIBBUF+$100,X
+	        DEX
+	        BPL PRENB2
+	        RTS
+	
+	;;
+	; write nybble buffer to disk
+	; this routine is timing sensitive
+	;
+	WRITE   SEC
+	        STX T2          ;save slot*16
+	        STX SLOT1
+	        LDA Q6H,X       ;check write prot.
+	        LDA Q7L,X
+	        BMI WPERR       ;write prot. error
+	
+	        LDA NIBBUF+$100
+	        STA T1
+	        LDA #SYNC
+	        STA Q7H,X       ;set write mode
+	        ORA Q6L,X
+	        PHA
+	        PLA
+	        NOP             ;delay
+	        LDY #$04        ;put 4 nybbles
+	WRITE1  PHA
+	        PLA
+	        JSR WRNIB1      ;write self-sync
+	        DEY
+	        BNE WRITE1
+	        LDA #DMARK1     ;write data mark
+	        JSR WRNIB
+	        LDA #DMARK2
+	        JSR WRNIB
+	        LDA #DMARK3
+	        JSR WRNIB
+	        TYA
+	        LDY #$56
+	        BNE WRITE3
+	WRITE2  LDA NIBBUF+$100,Y
+	WRITE3  EOR NIBBUF+$FF,Y
+	        TAX
+	        LDA NYBLS+$18,X ;lookup nybble
+	        LDX T2
+	        STA Q6H,X       ;write nybble
+	        LDA Q6L,X
+	        DEY
+	        BNE WRITE2      ;loop back
+	        LDA T1
+	        NOP
+	WRITE4  EOR NIBBUF,Y
+	        TAX
+	        LDA NYBLS+$18,X ;lookup nybble
+	        LDX SLOT1
+	        STA Q6H,X       ;write nybble
+	        LDA Q6L,X
+	        LDA NIBBUF,Y
+	        INY
+	        BNE WRITE4      ;loop back
+	        TAX
+	        LDA NYBLS+$18,X ;get checksum
+	        LDX T2          ;need slot#
+	        JSR WRNIB2      ;write checksum
+	        LDA #CMARK1     ;write closing
+	        JSR WRNIB       ;markers
+	        LDA #CMARK2
+	        JSR WRNIB
+	        LDA #CMARK3
+	        JSR WRNIB
+	        LDA #SYNC       ;and a sync nybble
+	        JSR WRNIB
+	        LDA Q7L,X       ;turn off write mode
+	WPERR   LDA Q6L,X
+	        RTS
+	
+	WWNIB   CLC             ;write nybble routine
+	WRNIB1  PHA             ;slight delay
+	        PLA
+	WRNIB2  STA Q6H,X       ;output nybble
+	        ORA Q6L,X
+	        RTS
+	
+	PPSTNB  LDY #$00        ;post nybblize
+	PSTNB1  LDX #$56
+	PSTNB2  DEX
+	        BMI PSTNB1
+	        LDA NIBBUF,Y    ;get 6 bits
+	        LSR NIBBUF+$100,X  ;get a bit
+	        ROL A
+	        LSR NIBBUF+$100,X  ;get a bit
+	        ROL A
+	        STA (BUFPTR),Y  ;save the byte
+	        INY             ;next byte
+	        CPY T1
+	        BNE PSTNB2
+	        RTS
+	
+	;;
+	; read nybbles routine
+	;
+	READ    LDY #32         ;set max# tries
+	READ1   DEY
+	        BEQ RDERR       ;give up, read error
+	READ2   LDA Q6L,X       ;wait for DMARK1
+	        BPL READ2
+	READ3   EOR #DMARK1
+	        BNE READ1       ;if not, try again
+	        NOP
+	READ4   LDA Q6L,X       ;wait for DMARK2
+	        BPL READ4
+	        CMP #DMARK2
+	        BNE READ3
+	        LDY #$56
+	READ5   LDA Q6L,X       ;wait for DMARK3
+	        BPL READ5
+	        CMP #DMARK3
+	        BNE READ3
+	;
+	; read nybbles into NIBBUF+$100 to NUBBUF+$155
+	;
+	        LDA #$00
+	READ6   DEY
+	        STY T1
+	READ7   LDY Q6L,X       ;get a nybble
+	        BPL READ7
+	        EOR NYBLS-17,Y  ;convert
+	        LDY T1
+	        STA NIBBUF+$100,Y   ;save in NIBBUF
+	        BNE READ6
+	;
+	; read nybbles into NIBBUF to NIBBUF+$FF
+	;
+	READ8   STY T1
+	READ9   LDY Q6L,X       ;get a nybble
+	        BPL READ9
+	        EOR NYBLS-17,Y  ;convert
+	        LDY T1
+	        STA NIBBUF,Y    ;save in NIBBUF
+	        INY
+	        BNE READ8
+	READ10  LDY Q6L,X       ;get checksum nybble
+	        BPL READ10
+	        CMP NYBLS-17,Y  ;check checksum
+	        BNE RDERR
+	READ11  LDA Q6L,X       ;wait for CMARK1
+	        BPL READ11
+	        CMP #CMARK1
+	        BNE RDERR
+	        NOP
+	READ12  LDA Q6L,X       ;wait for CMARK2
+	        BPL READ12
+	        CMP #CMARK2
+	        BEQ NOERR
+	RDERR   SEC
+	        RTS
+	
+	RRADR   LDY #$FC        ;read addr field
+	        STY T1
+	RDADR1  INY
+	        BNE RDADR2
+	        INC T1
+	        BEQ RDERR
+	RDADR2  LDA Q6L,X
+	        BPL RDADR2
+	RDADR3  CMP #AMARK1     ;find addr marker1
+	        BNE RDADR1
+	        NOP
+	RDADR4  LDA Q6L,X
+	        BPL RDADR4
+	        CMP #AMARK2     ;find addr marker2
+	        BNE RDADR3
+	        LDY #$03
+	RDADR5  LDA Q6L,X
+	        BPL RDADR5
+	        CMP #AMARK3     ;find addr marker3
+	        BNE RDADR3
+	        LDA #$00        ;init checksum
+	RDADR6  STA T2
+	RDADR7  LDA Q6L,X       ;read address nybbles
+	        BPL RDADR7
+	        ROL A
+	        STA T1
+	RDADR8  LDA Q6L,X
+	        BPL RDADR8
+	        AND T1
+	        STA CHKSUM,Y
+	        EOR T2
+	        DEY
+	        BPL RDADR6
+	        TAY
+	        BNE RDERR
+	RDADR9  LDA Q6L,X
+	        BPL RDADR9
+	        CMP #CMARK1     ;check closing mark1
+	        BNE RDERR
+	        NOP
+	RDADR0  LDA Q6L,X
+	        BPL RDADR0
+	        CMP #CMARK2     ;check closing mark2
+	        BNE RDERR
+	NOERR   CLC
+	        RTS
+	
+	SSEKAB  STX T4
+	        STA T3
+	        CMP CURTRK      ;on correct track?
+	        BEQ SKRTS       ;if so return
+	        LDA #$00
+	        STA T1
+	SEEK1   LDA CURTRK
+	        STA T2
+	        SEC
+	        SBC T3
+	        BEQ SEEK6
+	        BCS SEEK2
+	        EOR #$FF
+	        INC CURTRK
+	        BCC SEEK3
+	SEEK2   ADC #$FE
+	        DEC CURTRK
+	SEEK3   CMP T1
+	        BCC SEEK4
+	        LDA T1
+	SEEK4   CMP #$0C
+	        BCS SEEK5
+	        TAY
+	SEEK5   SEC
+	        JSR SEEK7
+	        LDA NYBLS,Y
+	        JSR DELAY
+	        LDA T2
+	        CLC
+	        JSR SEEK8
+	        LDA NYBLS+$C,Y
+	        JSR DELAY
+	        INC T1
+	        BNE SEEK1
+	SEEK6   JSR DELAY
+	        CLC
+	SEEK7   LDA CURTRK
+	SEEK8   AND #$03
+	        ROL A
+	        ORA T4
+	        TAX
+	        LDA PHSOFF,X
+	        LDX T4
+	SKRTS   RTS
+	
+	;;how does it get here?????
+	        TAX
+	        LDY #$A0
+	
+	DDLAY   LDX #$11        ;delay between tracks
+	DLOOP1  DEX
+	        BNE DLOOP1
+	        INC MONTIM
+	        BNE DLOOP2
+	        INC MONTIM+1
+	DLOOP2  SEC
+	        SBC #$01
+	        BNE DELAY
+	        RTS
+	
+	;;
+	; nybble conversion tables & misc tables:
+	;
+	NYBLS   .BYT $01,$30,$28,$24,$20,$1E
+	        .OPT NOLIST
+	        .BYT $1D,$1C,$1C,$1C,$1C,$1C
+	        .BYT $70,$2C,$26,$22,$1F,$1E
+	        .BYT $1D,$1C,$1C,$1C,$1C,$1C
+	        .BYT $96,$97,$9A,$9B,$9D,$9E
+	        .BYT $9F,$A6,$A7,$AB,$AC,$AD
+	        .BYT $AE,$AF,$B2,$B3,$B4,$B5
+	        .BYT $B6,$B7,$B9,$BA,$BB,$BC
+	        .BYT $BD,$BE,$BF,$CB,$CD,$CE
+	        .BYT $CF,$D3,$D6,$D7,$D9,$DA
+	        .BYT $DB,$DC,$DD,$DE,$DF,$E5
+	        .BYT $E6,$E7,$E9,$EA,$EB,$EC
+	        .BYT $ED,$EE,$EF,$F2,$F3,$F4
+	        .BYT $F5,$F6,$F7,$F9,$FA,$FB
+	        .BYT $FC,$FD,$FE,$FF,$B3,$B3
+	        .BYT $A0,$E0,$B3,$C3,$C5,$B3
+	        .BYT $A0,$E0,$B3,$C3,$C5,$B3
+	        .BYT $A0,$E0,$B3,$B3,$C5,$AA
+	        .BYT $A0,$82,$B3,$B3,$C5,$AA
+	        .BYT $A0,$82,$C5,$B3,$B3,$AA
+	        .BYT $88,$82,$C5,$B3,$B3,$AA
+	        .BYT $88,$82,$C5,$C4,$B3,$B0
+	        .BYT $88,$00,$01,$98,$99,$02
+	        .BYT $03,$9C,$04,$05,$06,$A0
+	        .BYT $A1,$A2,$A3,$A4,$A5,$07
+	        .BYT $08,$A8,$A9,$AA,$09,$0A
+	        .BYT $0B,$0C,$0D,$B0,$B1,$0E
+	        .BYT $0F,$10,$11,$12,$13,$B8
+	        .BYT $14,$15,$16,$17,$18,$19
+	        .BYT $1A,$C0,$C1,$C2,$C3,$C4
+	        .BYT $C5,$C6,$C7,$C8,$C9,$CA
+	        .BYT $1B,$CC,$1C,$1D,$1E,$D0
+	        .BYT $D1
+	        .BYT $D2,$1F,$D4,$D5,$20,$21
+	        .BYT $D8,$22,$23,$24,$25,$26
+	        .BYT $27,$28,$E0,$E1,$E2,$E3
+	        .BYT $E4,$29,$2A,$2B,$E8,$2C
+	        .BYT $2D,$2E,$2F,$30,$31,$32
+	        .BYT $F0,$F1,$33,$34,$35,$36
+	        .BYT $37,$38,$F8,$39,$3A,$3B
+	        .BYT $3C,$3D,$3E,$3F
+	        .OPT LIST
+	;
+	; nybble buffer (NIBBUF TO NIBBUF+$155)
+	;
+	NIBBUF  .WOR 0,0,0,0,0,0,0,0
+	        .OPT NOLIST
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .BYT 0,0,0,0,0,0
+	
+	        .OPT LIST
+	;
+	; write address field (used by formatter)
+	; Y has number of sync bytes to be written
+	; this routine is very timing sensitive
+	;
+	WRADR   SEC             ;write address field
+	        LDA Q6H,X
+	        LDA Q7L,X       ;check write protection
+	        BMI ADRDUN      ;error, exit.
+	        LDA #SYNC
+	        STA Q7H,X       ;write sync
+	        CMP Q6L,X
+	        PHA
+	        PLA
+	WSYNC   JSR RTS1        ;time delay
+	        JSR RTS1        ;time delay
+	        STA Q6H,X
+	        CMP Q6L,X       ;write load
+	        NOP
+	        DEY
+	        BNE WSYNC       ;write more sync
+	        LDA #AMARK1
+	        JSR WNIBL2      ;write address markers
+	        LDA #AMARK2
+	        JSR WNIBL2
+	        LDA #AMARK3
+	        JSR WNIBL2
+	        LDA VOL         ;write vol#
+	        JSR WBYTE
+	        LDA TRAK        ;write track#
+	        JSR WBYTE
+	        LDA SECT        ;write sect#
+	        JSR WBYTE
+	        LDA VOL         ;compute checksum
+	        EOR TRAK
+	        EOR SECT
+	        PHA
+	        LSR A
+	        ORA AA          ;write part of checksum
+	        STA Q6H,X
+	        LDA Q6L,X
+	        PLA
+	        ORA #$AA
+	        JSR WNIBLA      ;write part of checksum
+	        LDA #CMARK1
+	        JSR WNIBL2      ;write closing markers
+	        LDA #CMARK2
+	        JSR WNIBL2
+	        LDA #CMARK3
+	        JSR WNIBL2
+	        CLC
+	ADRDUN  LDA Q7L,X       ;leave it in read mode
+	        LDA Q6L,X
+	RTS1    RTS
+	
+	WWYTE   PHA             ;write a byte
+	        LSR A
+	        ORA AA
+	        STA Q6H,X
+	        CMP Q6L,X
+	        PLA
+	        NOP
+	        NOP
+	        NOP
+	        ORA #$AA
+	WNIBLA  NOP         ;write a nybble
+	WNIBL2  NOP
+	        PHA
+	        PLA
+	        STA Q6H,X
+	        CMP Q6L,X
+	        RTS
+	
+	        .BYT 0
+	        .WOR 0,0,0,0,0,0,0,0
+	        .WOR 0,0,0,0,0,0,0,0
+	
+	        .END
+
+
+	
+	
+	        DISKETTE NIBBLIZING
+	
+	TTis is a dump of actual nibbles that
+	were stored on a diskette. It is from a
+	16 sector disk, the actual data con-
+	tents of the read sector was all 0's.
+	
+	**
+	*1328.14AF
+	
+	1128- FF FF FF FF FF FF FF FF
+	1330- FF FF FF D5 AA 96 AA AB
+	1338- AB BA AA AB AB BA DE AA
+	1340- E9 83 FE FF FC FF FF FF
+	1348- FF D5 AA AD 96 96 96 96
+	1350- 96 96 96 96 96 96 96 96
+	1358- 96 96 96 96 96 96 96 96
+	1360- 96 96 96 96 96 96 96 96
+	1368- 96 96 96 96 96 96 96 96
+	1370- 96 96 96 96 96 96 96 96
+	1378- 96 96 96 96 96 96 96 96
+	1380- 96 96 same....
+	1488- 96 96 96 96 96 96 96 96
+	1490- 96 96 96 96 96 96 96 96
+	1498- 96 96 96 96 96 96 96 96
+	14A0- 96 96 96 DE AA EB EE FF
+	14A8- FF FF FF FF FF FF FF FF
+	
+	**
+	
+	             NIBBLE SUMMARY
+	
+	-------------
+	!   SYNC    ! all $FF's
+	+-----------+
+	!  ADDRESS  ! $D5,$AA,$96
+	!  MARKERS  !
+	+-----------+
+	!  ADDRESS  ! 4 pairs of nibbles,
+	!   FIELD   ! vol, track, sect, chksum
+	+-----------+
+	! TRAIL MARK! $DE,$AA,$EB
+	+-----------+
+	!           ! inter-record gap, usually
+	!           ! contains sync nibbles.
+	+-----------+
+	!   SYNC    ! all $FF's
+	+-----------+
+	! DATA MARK ! $D5,$AA,$AD
+	!           !
+	+-----------+
+	!   DATA    !
+	!   FIELD   ! actual data nibbles
+	!           !
+	!342 NIBBLES!
+	! 256 BYTES !
+	!           !
+	!           !
+	+-----------+ checksum of data.
+	! CHECKSUM  ! EOR of all data nibbles.
+	+-----------+
+	!TRAIL MARK ! $DE,$AA,$EB
+	+-----------+
+	!           ! inter-record gap,
+	!           ! leading to next sector
+	'vvvvvvvvvvv'
+	
+	
+            SELF-SYNC FEATURE
+	       (requires 80column display)
+	
+	bbt
+	stream --> 0111111110111111110111111110111111110111111110111111110111111110
+	               !______!!______!!______!!______! !______! !______! !______!
+	               ^  FB      FD      FE   ^  FF       FF       FF       FF
+	               ^                       ^
+	               co-incidental           found sync, 8 bit bytes all ones
+	               entry point             tells software that data is properly
+	               with state-machine      framed to sync into data field.
+	               reading data.
+	
+	  11111110   32us to shift out 8 ones,
+	  36usec     then one extra shift pro-
+	 -------->   duces trailing zero.
+	shift right  Total 9 bits, zeroes act
+	             as frame for 8 bit sync
+	             word.
+	
+	TTe self sync feature allows the software to search the data coming from
+	the disk entering at any point. The program looks until it finds the sync
+	field.  Then it locks on and steps into the true data and address inform-
+	ation.  The bit pattern is then read in the proper sequence.
+	
+	
+Bibliography:
+	
+	  DISKETTE NIBBLIZING - dump from pro-
+	     gram by Gary Morris.
+	
+	  NIBBLE SUMMARY - from unsigned hand
+	     written sheet, presumably from
+	     Apple Computer, Inc.
+	
+	 SELF SYNC FEATURE - from unsigned
+	     hand written sheet, presumably
+	     from Apple Computer, Inc.
+	
+	          #         #         #
+	
+I hope this stuff helps.
+             Seymour
+         Stillman.joseph@rutgers
+-------
+

@@ -1,0 +1,110 @@
+;;; -*-MODE:LISP; Package:ZWEI -*-
+;;; ** (c) Copyright 1982 Massachusetts Institute of Technology **
+
+;; Query Replace doesn't move cursor to right places.  It seems to trash
+;; the bp also.  ^T doesn't work after you use it.
+;; qrep doesn't appear on mouse middle any more
+
+(DEFCOM COM-CORRECT-WORD-SPELLING
+	"Tries to correct the spelling of the current word in the buffer.
+Prints a list of possible correct spellings.  Mouse any word in the list to substitute
+it; type any key to abort."
+	(KM)
+  (LET ((HOST (CHAOS:UP-SPELL-HOST))
+	(ALPHABETIC-CASE-AFFECTS-STRING-COMPARISON NIL))
+    (COND ((NULL HOST) (BARF "Can't connect to a host with a spell server."))
+	  (T (MULTIPLE-VALUE-BIND (BP1 BP2) (SPELL-WORD-BPS)
+	       (LET ((WORD (STRING-INTERVAL BP1 BP2)))
+		 (TYPEIN-LINE "Checking spelling of /"~A/"." WORD)
+		 #+MIT (WITH-UNDO-SAVE ("Spelling correction" BP1 BP2 T)
+			 (CORRECT-SPELLING WORD))
+		 #-MIT (CORRECT-SPELLING WORD)
+		 DIS-TEXT))))))
+
+
+(DEFUN CORRECT-SPELLING (WORD)
+  "Given a word, ask the spell server to correct it.  Change the word in the buffer."
+  (LET ((RESULT (READ-FROM-STRING (CHAOS:CHECK-SPELLING-STRING WORD))))
+    (COND ((NULL RESULT) (TYPEIN-LINE "Didn't find it.") WORD)
+	  ((LISTP RESULT)			;word isn't spelled correctly
+	   (TYPEIN-LINE "Choices listed above.")
+	   (CHOOSE-AND-REPLACE-WORD WORD RESULT))
+	  ((eq result t) (TYPEIN-LINE "Found it.") WORD)
+	  (T
+	   (FERROR "An unparsable result ~A was obtained." RESULT)))))
+						
+
+;;eval when???
+(eval-when (load)
+(TV:ADD-TYPEOUT-ITEM-TYPE *TYPEOUT-COMMAND-ALIST* WORD-SPELLING "Replace"
+			  REPLACE-SPELLING T "Replace word with this one.")
+(TV:ADD-TYPEOUT-ITEM-TYPE *TYPEOUT-COMMAND-ALIST* WORD-SPELLING "Query Replace"
+			  QUERY-REPLACE-SPELLING NIL "Query replace whole buffer.")
+)
+
+(DEFUN CHOOSE-AND-REPLACE-WORD (OLD-WORD CHOICES)
+  (format *typeout-window* "Possible intended spellings for /"~A/" follow.
+Mouse the word you intended, or press any key to abort.~%~%" old-word)
+  (dolist (word choices)
+    ;; The second "~A" is necessary in case the word contains tildes.
+    (SEND *TYPEOUT-WINDOW* ':ITEM 'WORD-SPELLING word "~A" word)
+    (terpri *typeout-window*)))
+
+;This function is called if a spelling is moused.
+(defun REPLACE-SPELLING (new-word)
+    (REPLACE-CURRENT-WORD-WITH NEW-WORD))
+
+(defun query-replace-spelling (new-word)
+ "Query Replace the selected spelling from the beginning of the buffer."
+  (query-replace
+    (interval-first-bp *interval*)
+    (multiple-value-bind (bp1 bp2) (spell-word-bps)
+      (string-downcase (string-interval bp1 bp2)))
+    (string-downcase new-word)))
+    
+
+;This should already exist somewhere.
+(DEFUN REPLACE-CURRENT-WORD-WITH (REPLACEMENT)
+  (MULTIPLE-VALUE-BIND (BP1 BP2) (SPELL-WORD-BPS)
+    (LET (;(*CASE-REPLACE-P* T)
+	  (HERE (COPY-BP (POINT))))
+      (CASE-REPLACE BP1 BP2 (STRING-DOWNCASE REPLACEMENT))
+      (MOVE-TO-BP HERE)
+      (MUST-REDISPLAY *WINDOW* DIS-TEXT))))
+
+;So should this.
+(DEFUN SPELL-WORD-BPS ()
+  "Returns two values, the BP at the beginning and the end of the current word."
+  (LET* ((BP1 (FORWARD-WORD (FORWARD-WORD (FORWARD-CHAR (POINT) -1 T) 1 T) -1 T))
+	 (BP2 (FORWARD-WORD BP1 1 T)))
+    (IF (LOOKING-AT (FORWARD-CHAR BP1 -1 T) "'")	;Generalize?
+	(SETQ BP1 (FORWARD-WORD BP1 -1 T)))
+    (IF (LOOKING-AT BP2 "'")
+	(SETQ BP2 (FORWARD-WORD BP2 1 T)))
+    (VALUES BP1 BP2)))
+
+;;;Chaos stuff (need to be elsewhere or defined some other way).
+(DEFVAR CHAOS:*HOSTS-WITH-SPELL-SERVER* '(MIT-OZ MIT-EE MIT-XX)
+  "A list of hosts which support the spell protocol.")
+
+(DEFUN CHAOS:UP-SPELL-HOST ()
+  "Return any host that is up which supports the spell protocol, or nil if no host."
+  (let ((host (dolist (host chaos:*hosts-with-spell-server*)
+		(if (chaos:host-up host) (return host)))))
+    (cond (host host)
+	  (t nil))))
+
+(DEFUN CHAOS:CHECK-SPELLING-STRING (STRING)
+  "Ask a host about the spelling of each of the words in STRING.
+Returns a string representing a list with one element for each word of STRING. T means
+spelled correctly; NIL means not found, and a list contains suggested spellings."
+  (LET* ((CONN (CHAOS:CONNECT (CHAOS:UP-SPELL-HOST) "SPELL"))
+	 (stream (chaos:make-stream conn)))
+    (format stream string)
+    (PROCESS-WAIT "Dictionary" #'CHAOS:DATA-AVAILABLE CONN)
+    (LET* ((PKT (CHAOS:GET-NEXT-PKT CONN))
+	   (INFO (STRING-APPEND (CHAOS:PKT-STRING PKT)))) ;the data part of the packet
+      (CHAOS:RETURN-PKT PKT) 
+      (CHAOS:CLOSE-CONN CONN)
+      INFO)))
+

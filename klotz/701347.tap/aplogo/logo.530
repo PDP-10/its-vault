@@ -1,0 +1,10042 @@
+;-*-MIDAS-*-
+.NLIST SEQ
+.ENABL LC
+.TITLE APPLE-LOGO
+;
+;  LOGO Language Interpreter for the Apple-II Personal Microcomputer
+;
+;  Written and developed by Stephen L. Hain, Patrick G. Sobalvarro,
+;  and the M.I.T. LOGO Group, at the Massachusetts Institute of
+;  Technology.
+;
+;  Property of the M.I.T. Artificial Intelligence Laboratory,
+;  545 Technology Square, Cambridge, Massachusetts 02139.
+;  All rights reserved.
+;
+.PAGE
+.SBTTL	Assembly Data
+;	Page Zero Variables:
+LNIL	=0	;The NIL node
+PRECED	=4	;Current function's precedence
+NARGS	=5	;No. of arguments for current function
+EXPOUT	=6	;Output expected if nonzero
+OTPUTN	=7	;Number of outputs given
+EDSW	=8	;Edit mode if nonzero
+NUMSW	=9	;Line numbers used if nonzero
+DBUGSW	=10	;Debug mode if nonzero
+RUNFLG	=11	;Evaluating the RUN primitive if nonzero
+STPFLG	=12	;Stop executing current Ufun if nonzero
+DCOFLG	=13	;Return from current break-loop if nonzero
+FUNTYP	=14	;Typecode of current function
+UFRMAT	=15	;Format (List or Fpack) of current Ufun
+ERRFLG	=16	;Error code of last error
+RETADR	=17	;Holds stack pointer reset value for error recovery
+INDEV	=18	;Input device code (zero is Apple standard I/O)
+OUTDEV	=19	;Output device code (zero is Apple standard I/O)
+NNODES	=20	;Number of nodes allocated
+ERRRET	=22	;Holds program counter reset value for error recovery
+SP	=24	;Stack pointer
+VSP	=26	;Value-stack pointer
+ARG1	=28	;Primitive's first argument
+NARG1	=28	;Primitive's first argument (numerical - 4 bytes)
+ARG2	=30	;Primitive's second argument
+LINLTH	=31	;Input line length
+;
+SOBLST	=86	;Pointer to start of System Object List
+SOBTOP	=88	;Pointer to end of System Object List
+SARTOP	=90	;Pointer to end of System Array
+FRLIST	=92	;Pointer to start of Freelist
+TOKPTR	=94	;Token Pointer
+CURTOK	=96	;Curent Token pointer
+NEXTOK	=98	;Next Token pointer
+FUNCT	=100	;Points to current Function
+FRMGSM	=102	;Frame Generator Symbol (Number of pushed stack frames)
+FRAME	=104	;Pointer to current stack frame
+XFRAME	=106	;Pointer to end of current stack frame
+FBODY	=108	;Pointer to full body of current Ufun
+FBODY1	=110	;Current Ufun body or System index
+LINNUM	=112	;Current Ufun line number
+FPTR	=114	;Pointer to remainder of Ufun being executed
+GOPTR	=116	;Pointer to location of Ufun to GO to
+ULNEND	=118	;Pointer to end of current line of Fpack Ufun
+LEVNUM	=120	;Ufun nesting level
+NEST	=122	;EVAL nesting of current EVLINE
+TLLEVS	=124	;Number of tail recursions included in LEVNUM
+IFLEVL	=126	;IF nesting level
+EDTATM	=128	;Pointer to atom of Ufun currently being edited
+PODEFL	=130	;Default Ufun atom for PO
+MARK1	=132	;Garbage collector protected variable
+MARK2	=134	;		"
+MARK3	=136	;		"
+MARK4	=138	;		"
+MARK5	=140	;		"
+OBLIST	=142	;Pointer to Object List
+UNSUM	=144	;Unary_Sum pointer
+UNDIF	=146	;Unary_Difference pointer
+ILINE	=148	;Pointer to current or last command line
+EDBOD	=150	;Pointer to body of Ufun (Flist type) currently being edited
+CELPTR	=152	;Garbage collector protected variable
+AREA1	=154	;Pointer to g.c.-protected area of SIZE1 contiguous nodes
+AREA2	=156	;Pointer to g.c.-protected area of SIZE2 contiguous nodes
+SIZE1	=158	;Size of area pointed to by AREA1
+SIZE2	=160	;Size of area pointed to by AREA2
+ANSN	=162	;(First swapped) Temporary variable
+ANSN1	=163	;Temporary variable
+TEMPNH	=164	;	"
+TEMPN	=166	;	"
+TEMPN1	=168	;	"
+TEMPN2	=170	;	"
+TEMPN3	=172	;	"
+TEMPN4	=174	;	"
+TEMPN5	=176	;(Last swapped) Temporary variable
+ANSN2	=178	;Temporary variable
+ANSN3	=179	;	"
+ANSNX	=180	;	"
+TEMPN6	=181	;	"
+TEMPN7	=183	;	"
+TEMPN8	=185	;	"
+TEMPX1	=187	;	"
+TEMPX2	=189	;	"
+RANDOM	=237	;Random number
+MONFLG	=239	;Flag indicates Monitor mode (if non-zero)
+BANK4K	=240	;High-RAM 4K bank select flag (0=first, 1=second)
+PRDFLG	=241	;Indicates READ_LINE is executing, for CONS
+NARG2	=242	;Primitive's second argument (numerical - 4 bytes)
+.PAGE
+;	Monitor variables:
+CH	=36
+CV	=37
+BASLIN	=40
+BSLTMP	=42
+MODE	=49
+INVFLG	=50
+YSAV	=52
+YSAV1	=53
+CSWL	=54
+CSWH	=55
+KSWL	=56
+KSWH	=57
+PCL	=58
+PCH	=59
+A1L	=60
+A1H	=61
+A2L	=62
+A2H	=63
+A3L	=64
+A3H	=65
+A4L	=66
+A4H	=67
+A5L	=68
+A5H	=69
+ACC	=69
+XREG	=70
+YREG	=71
+STATUS	=72
+SPNT	=73
+RNDL	=78
+RNDH	=79
+.PAGE
+;	LOGO primitive pointers (page zero):
+ALL	=191
+COMMNT	=193	;Comment
+ER	=195
+ERASE	=197
+LELSE	=199	;Else
+LEND	=201	;End
+LFALSE	=203	;False
+LIF	=205	;If
+LPAR	=207	;(Left-parenthesis)
+LSTOP	=209	;Stop
+LTHEN	=211	;Then
+LTITLE	=213	;Title
+LTRUE	=215	;True
+NAMES	=217
+PO	=219
+POTS	=221
+PRNTOT	=223	;Printout
+PROCS	=225	;Procedures
+RPAR	=227	;(Right-parenthesis)
+TI	=229
+TITLES	=231
+INFSUM	=233
+INFDIF	=235
+.PAGE
+;	Type code constants:
+LIST	=0	;List
+ATOM	=1	;Atom (either Qatom, Datom, Latom)
+STRING	=2	;Regular linked-list
+FIX	=3	;Integer (GT2NUM requires that FIX < FLO)
+FLO	=4	;Floating point number
+SFUN	=5	;System Function
+UFUN	=6	;User Function
+SATOM	=7	;System atom
+QATOM	=8	;Quoted atom
+DATOM	=9	;Dotted atom
+LATOM	=10	;Label atom
+FPACK	=11	;Packed Ufun
+FLIST	=12	;Regular Ufun format
+;	Tokenizer constants:
+NEWLIN	=1	;Start of input line
+NEWLST	=2	;Start of sublist
+REGCEL	=3	;Regular linked cell
+;	General constants:
+STPKEY	=$07	;Stop-key character code (Control-G)
+PULCHR	=$10	;Re-enter last line typed (Control-P)
+LSTKEY	=$13	;Interrupt output listing (Control-S)
+PAUSKY	=$1A	;Pause-key character code (Control-Z)
+RPRMPT	=$3C	;REQUEST prompt ("<")
+EPRMPT	=$3E	;Edit-mode prompt character (">")
+QPRMPT	=$3F	;Regular prompt character (Question-mark)
+LBRAK	=$5E	;Left-bracket replacement character
+GCVST	=MARK1	;Start of Garbage Collecor protected variable area
+GCVEND	=CELPTR+2	;End of Garbage Collector protected variable area
+LININC	=10	;Default line number increment
+MONNUM	=15	;Number of Monitor commands
+RANDA	=805	;Random transform constant
+RANDC	=37	;Random transform constant
+WNDBTM	=24	;Monitor - Bottom of window (plus one)
+WNDTOP	=0	;Monitor - Top of window
+WNDWTH	=40	;Monitor - Window width
+;	Storage parameters:
+LINARY	=$0200		;Input line buffer (page 2)
+TMPNUM	=TEMPN5-ANSN+2	;Number of temporary bytes to swap
+TMPSTT	=ANSN		;Start of page-zero swapped temporaries
+TMPTAB	=$02FF		;Start of temporary storage area (page 3)
+EDBUF	=$2000		;Start of editor buffer
+EBFEND	=$3FFF		;End of edit buffer
+HIRES	=$2000		;Start of hires graphics area
+;	Mapped I/O locations:
+GETRM1	=$C08B	;Enable high RAM (with first 4K bank)
+GETRM2	=$C083	;Enable high RAM (with second 4K bank)
+KILRAM	=$C08A	;Deselect high RAM (enable Monitor/BASIC)
+KPFLAG	=$C000	;Keyboard input byte
+KPCLR	=$C010	;Keyboard clear strobe
+SPKR	=$C030	;Toggle speaker
+TXTSET	=$C051	;Set text display
+IOADR	=$C0	;Start of I/O ROM area
+;	Interrupt Vector areas:
+RSTVEC	=$FFFC	;Location of RESET vector
+IRQVEC	=$FFFE	;Location of IRQ vector
+NMIVEC	=$FFFA	;Location of NMI vector (BRK command)
+;	System vectors:
+USRADR	=$03F8	;User JMP location for ROM monitor
+SYSMON	=$FF59	;ROM monitor entry point
+.PAGE
+;	System Function Constants:
+ITHNGP	=1	;Thingp
+IWORD	=2
+IWORDP	=3
+IUNSUM	=4	;Unary_sum
+IUNDIF	=5	;Unary_difference
+IMAKE	=6
+IOTPUT	=7	;Output
+ISTOP	=8
+IPRINT	=9
+ITYPE	=10
+IDEFIN	=11	;Define
+IDEBUG	=12
+ICNTIN	=13	;Continue
+IPAUSE	=14
+IELSE	=15
+ISNTNC	=16	;Sentence
+IBOTH	=17
+IEITHR	=18	;Either
+ITHEN	=19
+INOT	=20
+ILPAR	=21	;(Left-parenthesis)
+IRPAR	=22	;(Right-parenthesis)
+IIF	=23
+IRUN	=24
+IGO	=25
+IBPT	=26	;.bpt
+IGDBYE	=27	;Goodbye
+IGCOLL	=28	;.gcoll
+INODES	=29	;.nodes
+IBTFST	=30	;Butfirst
+IFIRST	=31
+IBTLST	=32	;Butlast
+ILAST	=33
+ITO	=34
+IEDIT	=35
+IEND	=36
+ITEXT	=37
+IFORWD	=38	;Forward
+IBACK	=39
+IRIGHT	=40
+ILEFT	=41
+ILIST	=42
+ICS	=43
+IHOME	=44
+IPENUP	=45
+IPENDN	=46	;Pendown
+IEMPTP	=47
+ISNAP	=48
+IDISPL	=49	;Display
+IWPCLN	=50	;Wipeclean
+ITITLE	=51
+IFPUT	=52
+IPO	=53
+IALL	=54
+INAMES	=55
+IERASE	=56
+IREAD	=57
+IWRITE	=58
+IREQST	=59	;Request
+ITHING	=60
+ILINES	=61
+ISUM	=62
+IDIF	=63	;Difference
+IPROD	=64	;Product
+IQUOT	=65	;Quotient
+IGREAT	=66	;Greater
+ILESS	=67
+ICOMNT	=68	;Comment
+IEQUAL	=69
+ITRCBK	=70	;Traceback
+IPOTS	=71
+ITITLS	=72	;Titles
+IPROCS	=73	;Procedures
+IPEEK	=74
+IPOKE	=75
+INSUM	=76	;Infix Sum
+INDIF	=77	;Infix Difference
+INPROD	=78	;Infix Product
+INQUOT	=79	;Infix quotient
+INGRTR	=80	;Infix Greater
+INLESS	=81	;Infix Less
+INEQUL	=82	;Infix Equal
+ILPUT	=83
+IRANDM	=84	;Random
+ICTYI	=85
+ICURSR	=86	;Cursor
+IRNDMZ	=87	;Randomize
+ICALL	=88
+ILISTP	=89
+INMBRP	=90	;Numberp
+ICLINP	=91
+.PAGE
+;	Error Codes:
+XUOP	=1
+XEOL	=2
+XUDF	=3
+XHNV	=4
+XTMO	=5
+XNOP	=6
+XRPN	=7
+XIFX	=8
+XVNA	=9
+XTIP	=10
+XWTA	=11
+XUBL	=12
+XNTL	=13
+XNTF	=14
+XELS	=15
+XBRK	=16
+XLABEL	=17
+XTHN	=18
+XZAP	=19
+XLNF	=20
+XEDT	=21
+XDEF	=22
+XETL	=23
+XNED	=24
+XOPO	=25
+XARGTB	=26
+XTML	=27
+XTMS	=28
+XDBZ	=29
+XNWE	=30
+XLNTB	=31
+XILN	=32
+XOFLOW	=33
+XNDF	=34
+XCRSR	=35
+;
+XNSTOR	=0
+XNSTRN	=1
+XSTOP	=2
+.PAGE
+;	Storage Parameters and Map:
+;
+;	Miscellaneous:	Page 0 - Variables
+;			Page 1 - Processor Stack
+;			Page 2 - Line-array
+;			Page 3 - Temporary variable storage
+;			Pages 4,5,6,7 - Text/Color Graphics
+;
+;	MISC.:    $0000 - $07FF: $ 800 bytes (2K bytes)
+;	SARRAY:   $0800 - $0DFF: $ 600 bytes (1.5K characters)
+;	PDL:      $0E00 - $1BFF: $ E00 bytes (1.75K words)
+;	VPDL:     $1C00 - $1FFF: $ 400 bytes (0.5K words)
+;	HI-RES.:  $2000 - $3FFF: $2000 bytes (8K bytes)
+;	LOGO:     $4000 - $95FF: $5600 bytes (21.5K bytes)
+;	DOS:      $9600 - $BFFF: $2A00 bytes (10.5K bytes)
+;	I/O:      $C000 - $CFFF: $1000 bytes (4K bytes)
+;	BIGARRAY: $D000 - $F65F: $2660 bytes (2456. nodes)
+;	TYPBASE:  $F660 - $FFF7: $ 998 bytes
+;	UNUSED:   $FFF8 - $FFF9: $   2 bytes
+;	VECTORS:  $FFFA - $FFFF: $   6 bytes (3 vectors)
+;
+PGMSTT	=$4000		;Program starts after High-res. graphics storage
+BIGBAS	=$D000		;Nodespace beginning
+BBASX	=BIGBAS-4
+BIGLEN	=$2660		;Nodespace length
+SINODS	=BIGBAS+BIGLEN	;Nodespace end
+OFSET1	=$3400		;(BIGBAS/4)
+TYPBAS	=SINODS-OFSET1	;Typebase offset
+TYPLEN	=BIGLEN/4	;Typebase length
+TYPEND	=SINODS+TYPLEN	;Typebase end
+NODTST	=50		;Minimum free nodes for tokenizer
+NODLIM	=TYPLEN-NODTST	;Node allocation limit
+BASARY	=$800		;SARRAY beginning
+SARLEN	=$600		;SARRAY length
+PDLBAS	=BASARY+SARLEN	;PDL beginning
+PDLLEN	=$E00		;PDL length
+VPDLBA	=PDLBAS+PDLLEN	;VPDL beginning
+VPDLEN	=$400		;VPDL length
+ENDVPD	=VPDLBA+VPDLEN	;VPDL end
+PDLTST	=20		;Minimum PDL space before panicking
+VPDTST	=16		;Minimum VPDL space before panicking
+PDLLIM	=VPDLBA-PDLTST	;PDL test limit
+VPDLIM	=ENDVPD-VPDTST	;VPDL test limit
+.PAGE
+.SBTTL	Top Level
+.=PGMSTT
+;
+;Calling point for the LOGO Interpreter
+;
+LOGO:	SEI		;Disable interrupts
+	CLD		;Disable decimal mode
+	LDA GETRM1	;Select RAM read/write with first 4K bank
+	LDA GETRM1
+	LDA #MONBRK&$FF
+	STA IRQVEC
+	STA NMIVEC	;Interrupts cause a break to Monitor
+	LDA #MONBRK^
+	STA IRQVEC+1
+	STA NMIVEC+1
+	LDA #MONBRK&$FF	;?Vector to LOGO when debugged
+	STA RSTVEC	;RESET reinitializes LOGO
+	LDA #MONBRK^
+	STA RSTVEC+1
+	LDX #$00
+	TXS		;Initialize processor stack
+	STX BANK4K	;First 4K bank was selected
+	STX MONFLG	;Disable monitor mode
+	STX $00		;Define LNIL as $0000 at $0000
+	STX $01
+	STX $02
+	STX $03
+	JSR INITLZ
+	LDX #HELSTR&$FF
+	LDY #HELSTR^
+	JSR PRTSTR	;Types Hello-String
+	JSR BREAK1
+TOPLOP:	LDY #ILINE
+	JSR PRDLIN	;Get a line
+	TYA
+	BNE TOPLOP	;Y nonzero means not OK
+	LDX ILINE
+	LDA ILINE+1
+	BNE TPLP1
+	CPX #$00
+	BEQ TOPLOP	;Ignore if line is empty
+TPLP1:	STA TOKPTR+1
+	STX TOKPTR
+	LDA EDSW
+	BEQ EVLUAT	;Evaluate it if not in Edit mode
+	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN+1	;(CAR)
+	LDX #TEMPN
+	JSR GETTYP
+	LDY #$00	;(For EDLINE)
+	CMP #FIX
+	BEQ TOPEDL	;If there's a line number, add it to the procedure
+	LDA INDEV
+	BNE TOPLP1
+	LDA NUMSW
+	BNE EVLUAT	;(If INDEV = VDT and NUMBER_SWITCH <> 0)
+TOPLP1:	LDX TEMPN
+	LDY TEMPN+1
+	CPX POTS
+	BNE TOPLP2
+	CPY POTS+1
+	BEQ EVLUAT
+TOPLP2:	CPX LEND
+	BNE TOPLP3
+	CPY LEND+1
+	BEQ EVLUAT
+TOPLP3:	CPX PO
+	BNE TOPLP4
+	CPY PO+1
+	BEQ EVLUAT
+TOPLP4:	CPX PRNTOT
+	BNE TOPLP5
+	CPY PRNTOT+1
+	BEQ EVLUAT
+TOPLP5:	CPX LTITLE
+	BNE TOPLP6
+	CPY LTITLE+1
+	BEQ EVLUAT
+TOPLP6:	CPX ERASE
+	BNE TOPLP7
+	CPY ERASE+1
+	BEQ EVLUAT
+TOPLP7:	CPX ER
+	BNE TOPLIN
+	CPY ER+1
+	BEQ EVLUAT
+TOPLIN:	LDA #TOPLOP&$FF		;return to toploop on error
+	STA ERRRET
+	LDA #TOPLOP^
+	STA ERRRET+1
+	LDY #$00
+	LDX #ILINE
+	STX ANSN
+	LDA #FLIST
+	JSR CONS
+	JSR RSTERR
+	LDY #$01
+TOPEDL:	LDX #ILINE
+	JSR EDLINE
+	JMP TOPLOP
+.PAGE
+.SBTTL	Evaluator Routines
+;EVLUAT initializes the Evaluator variables, starts EVLINE.
+;
+EVLUAT:	LDA #PDLBAS&$FF
+	STA SP
+	LDA #PDLBAS^
+	STA SP+1	;SP := PDLBASE
+	LDA #VPDLBA&$FF
+	STA VSP
+	LDA #VPDLBA^
+	STA VSP+1	;VSP := VPDLBASE
+	LDA #$00
+	STA EXPOUT	;EXPECTED_OUTPUT := 0
+	STA RUNFLG	;RUN_FLAG := 0
+	STA STPFLG	;STOP_FLAG := 0
+	STA DCOFLG	;DONT_CONTINUE_FLAG := 0
+	STA ERRFLG	;ERROR_FLAG := 0
+	STA LEVNUM
+	STA LEVNUM+1	;LEVEL_NUMBER := 0
+	STA LINNUM
+	STA LINNUM+1	;LINE_NUMBER := 0
+	STA FRAME
+	STA FRAME+1	;FRAME := 0
+	STA XFRAME
+	STA XFRAME+1	;XFRAME := 0
+	STA UFRMAT	;UFORMAT := LIST
+	LDX #TOPLOP&$FF
+	LDY #TOPLOP^
+	JSR PUSH	;Top-level Return Address (TOPLOP)
+.PAGE
+;EVLINE called with TOKPTR pointing to line of code to execute.
+; Pushes IFLEVEL and EXPOUT and then resets them.
+;
+EVLINE:	JSR PSHTST
+	JSR VPSTST
+	LDX EXPOUT
+	JSR PUSH
+	LDX #IFLEVL
+	JSR PUSHP
+	LDA #$00
+	STA EXPOUT	;EXPECTED_OUTPUT := 0
+	STA IFLEVL	;IF_LEVEL := 0
+	STA IFLEVL+1
+	LDA TOKPTR
+	BNE EVLN1
+	LDA TOKPTR+1
+	BEQ EVLN1P
+EVLN1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN+1	;(GETTOK)
+	LDX #TEMPN
+	JSR GETTYP
+	CMP #LATOM
+	BNE EVLIN1
+	LDX #TOKPTR
+	JSR TTKADV
+;
+;EVLIN1 keeps calling EVLEXP until EOL.
+;
+EVLIN1:	LDA TOKPTR
+	BNE EVLN1A
+	LDA TOKPTR+1
+	BNE EVLN1A
+EVLN1P:	LDX #IFLEVL
+	JSR POP
+	JSR POPB
+	STA EXPOUT
+POPJ:	LDX #TEMPN
+	JSR POP
+	JMP (TEMPN)
+EVLN1A:	LDA STPFLG
+	BNE EVLN1P
+	LDX #EVLIN1&$FF
+	LDY #EVLIN1^
+	JSR PUSH	;PUSH (EVLIN1) Return Address
+;
+;EVLEXP calls EVAL with PRECED = 0. EVAL returns to EVEX1,
+;which restores old PRECED.
+;
+EVLEXP:	LDX PRECED
+	JSR PUSH	;Call PUSH (PRECEDENCE)
+	LDA #$00
+	STA PRECED	;PRECEDENCE := 0
+	LDX #EVEX1&$FF
+	LDY #EVEX1^
+	JSR PUSH	;Call PUSH (EV_EX_1)
+.PAGE
+;EVAL dispatches to either EVWRAP, PARLOP, UFUNCL, or SFUNCL.
+;All return eventually to EVWRAP.
+;
+EVAL:	LDX #CURTOK	;Push CURTOK and increment NEST if FRAME <> 0
+	JSR PUSHP
+	LDA FRAME
+	BNE XEVL1
+	LDA FRAME+1
+	BEQ XEVL2
+XEVL1:	INC NEST
+	BNE XEVL2
+	INC NEST+1
+XEVL2:	LDA TOKPTR+1
+	BNE XEVL3
+	JMP SCMMT1	;ERROR End-of-Line if EOL
+XEVL3:	LDY #$00	;Get CURTOK and NEXTOK
+	LDA (TOKPTR),Y
+	STA CURTOK
+	INY
+	LDA (TOKPTR),Y
+	STA CURTOK+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TTKADV
+	JSR GTNXTK
+	LDX #CURTOK
+	JSR GETTYP	;Dispatch off Type of CURTOK
+	CMP #LIST
+	BEQ XCASQ	;(If LIST)
+	CMP #LATOM
+	BEQ XCASL
+	CMP #QATOM
+	BEQ XCASQ
+	CMP #FIX
+	BEQ XCASQ
+	CMP #FLONUM
+	BEQ XCASQ
+	CMP #FLO
+	BEQ XCASQ
+	CMP #ATOM
+	BEQ XCASA
+	CMP #SATOM
+	BEQ XCASA
+XCASD:	LDY #CURTOK	;DATOM, so VPush it unless it's Novalue (then Error)
+	LDX #TEMPN
+	JSR GETVAL
+	LDX #TEMPN	;For VPUSHP in XCASQ1
+	LDA TEMPN+1
+	BNE XCASQ1
+	LDA TEMPN
+	BEQ XCASQ1
+	LDA CURTOK
+	AND #$FC
+	STA CURTOK
+	LDY #CURTOK
+	LDA #XHNV
+	JMP ERROR
+XCASL:	LDA #XLABEL	;ERROR, can't execute a label
+	JMP ERROR
+XCASQ:	LDA CURTOK	;QATOM, FIX, FLO, LIST: Just push it and set OTPUTN
+	AND #$FC	;Strip off last two bits
+	STA CURTOK
+	LDX #CURTOK
+XCASQ1:	JSR VPUSHP	;VPUSH (CURRENT_TOKEN)
+	LDA #$01
+	STA OTPUTN
+	JMP EVWRAP
+XCASA:	LDX #CURTOK	;ATOM, SATOM: It's some sort of Function
+	LDA #FUNCT
+	JSR GETFUN
+	STA FUNTYP
+	LDA FUNCT+1
+	BNE XCASA1
+	LDY #CURTOK
+	LDA #XUDF
+	JMP ERROR	;Error if GETFUN couldn't find it
+XCASA1:	LDA FUNTYP
+	LDX #FUNCT
+	JSR INFIXP
+	BCC XCASA2
+	CMP #INSUM
+	BNE XCASA3
+	LDX UNSUM
+	LDY UNSUM+1
+	JMP XCASA4
+XCASA5:	LDY #CURTOK
+	LDA #XIFX
+	JMP ERROR
+XCASA3:	CMP #INDIF
+	BNE XCASA5
+	LDX UNDIF
+	LDY UNDIF+1
+XCASA4:	STX CURTOK
+	STY CURTOK+1
+	LDX #CURTOK
+	LDA #FUNCT
+	JSR GETFUN
+	STA FUNTYP
+XCASA2:	LDA FUNTYP	;It should be a UFUN or SFUN
+	CMP #UFUN
+	BEQ XCASFN
+	CMP #SFUN
+	BEQ XCASFN
+	JSR SYSBUG
+XCASFN:	LDX PRECED
+	JSR PUSH
+	LDY FUNTYP
+	LDX #FUNCT
+	JSR GETPRC
+	STA PRECED
+	LDA FUNTYP
+	LDX #FUNCT
+	JSR GETNGS
+	BPL XCASF1
+	EOR #$FF	;NARGS := - NARGS - 1
+XCASF1:	STA NARGS
+	LDX #EVAL1&$FF
+	LDY #EVAL1^
+	JSR PUSH
+.PAGE
+ARGLOP:	LDA NARGS	;ARGLOP gets the args for a function
+	BNE ARGLP1
+	JMP POPJ	;Exit if no args to be gotten
+ARGLP1:	LDX NARGS
+	STX ANSN	;AL1 will push this
+	JSR PUSH
+	LDX #FUNCT
+	JSR PUSHP
+	LDX FUNTYP
+	JSR PUSH
+	LDX EXPOUT
+	JSR PUSH
+	LDX #IFLEVL
+	JSR PUSHP
+;
+AL1:	JSR GTNXTK
+	LDX #NEXTOK
+	JSR PUSHP
+	LDX ANSN
+	JSR PUSH
+	LDX PRECED
+	JSR PUSH
+	LDX #$00
+	STX IFLEVL
+	STX IFLEVL+1
+	INX
+	STX EXPOUT
+	LDX #AL2&$FF
+	LDY #AL2^
+	JSR PUSH
+	JMP EVAL
+;
+AL2:	JSR POPB
+	STA PRECED
+	JSR POPB
+	STA ANSN
+	LDX #NEXTOK
+	JSR POP
+	LDA OTPUTN
+	BNE AL2A
+	JMP VAL1R	;Error if no output received
+AL2A:	DEC ANSN
+	BNE AL1		;Get another arg if not done
+	LDX #IFLEVL
+	JSR POP
+	JSR POPB
+	STA EXPOUT
+	JSR POPB
+	STA FUNTYP
+	LDX #FUNCT
+	JSR POP
+	JSR POPB
+	STA NARGS
+	JMP POPJ
+;
+EVEX1:	JSR POPB
+	STA PRECED
+	JMP POPJ
+.PAGE
+PARLOP:	LDX #NEXTOK	;Executed when an LPAR is encountered
+	LDA #FUNCT
+	JSR GETFUN
+	STA FUNTYP
+	LDA FUNCT+1
+	BEQ PARLP4
+PARLP1:	LDA FUNTYP
+	LDX #FUNCT
+	JSR GETNGS
+	STA NARGS
+PARLP4:	LDA NARGS
+	BMI PARLP3
+	LDX EXPOUT
+	JSR PUSH
+	LDX #IFLEVL
+	JSR PUSHP
+	LDX #$00
+	STX IFLEVL	;IF_LEVEL := 0
+	STX IFLEVL+1
+	INX
+	STX EXPOUT
+	LDX #PLOP1&$FF
+	LDY #PLOP1^
+	JSR PUSH
+	JMP EVLEXP
+PARLP3:	LDY FUNTYP
+	LDX #FUNCT
+	JSR GETPRC
+	STA PRECED
+	LDA NEXTOK
+	STA CURTOK
+	LDA NEXTOK+1
+	STA CURTOK+1	;CURRENT_TOKEN := NEXT_TOKEN
+	LDX #TOKPTR
+	JSR TTKADV
+	LDA #$00
+	STA NARGS	;NARGS := 0
+	LDX #FUNCT
+	JSR PUSHP
+	LDX FUNTYP
+	JSR PUSH
+.PAGE
+VARGLP:	JSR GTNXTK
+	LDA NEXTOK
+	CMP RPAR
+	BNE VRGLP1
+	LDA NEXTOK+1
+	CMP RPAR+1
+	BNE VRGLP1
+	JSR POPB	;Call POP (FUNTYPE)
+	STA FUNTYP
+	LDX #FUNCT
+	JSR POP	
+	LDX #TOKPTR
+	JSR TTKADV
+	LDA NARGS
+	EOR #$FF
+	STA NARGS	;NARGS := - NARGS - 1
+	JMP FNCAL1
+VRGLP1:	LDX NARGS
+	JSR PUSH
+	LDX #NEXTOK
+	JSR PUSHP
+	LDX EXPOUT
+	JSR PUSH
+	LDX #IFLEVL
+	JSR PUSHP
+	LDX #$00
+	STX IFLEVL	;IF_LEVEL := 0
+	STX IFLEVL+1
+	INX
+	STX EXPOUT
+	LDX PRECED
+	JSR PUSH
+	LDX #VAL1&$FF
+	LDY #VAL1^
+	JSR PUSH
+	JMP EVAL
+.PAGE
+VAL1:	JSR POPB
+	STA PRECED
+	LDX #IFLEVL
+	JSR POP
+	JSR POPB
+	STA EXPOUT
+	LDX #NEXTOK
+	JSR POP
+	JSR POPB
+	STA NARGS
+	LDA OTPUTN
+	BEQ VAL1R
+	CLC
+	LDA NARGS
+	ADC OTPUTN
+	STA NARGS
+	JMP VARGLP
+VAL1R:	LDA #XNOP
+	LDY #NEXTOK
+	JMP ERROR
+;
+GTNXTK:	LDY #$00
+	LDA (TOKPTR),Y
+	STA NEXTOK
+	INY
+	LDA (TOKPTR),Y
+	STA NEXTOK+1	;(GETTOK)
+	RTS
+.PAGE
+;PLOP1 cleans up after a parenthesized expression.
+;
+PLOP1:	LDX #IFLEVL
+	JSR POP
+	JSR POPB
+	STA EXPOUT
+	LDA TOKPTR
+	BNE PLOP1A
+	LDA TOKPTR+1
+	BNE PLOP1A
+	JMP SCMMT1	;Error if EOL
+PLOP1A:	JSR GTNXTK
+	LDA NEXTOK
+	CMP RPAR	;Next token must be an RPAR, else Error
+	BNE PLOP1B
+	LDA NEXTOK+1
+	CMP RPAR+1
+	BNE PLOP1B
+	LDX #TOKPTR	;Everything OK, get the next token and exit
+	JSR TTKADV
+	JMP POPJ
+PLOP1B:	LDA #XTIP
+	JMP ERROR
+;
+RUNHAN:	LDX UFRMAT
+	JSR PUSH
+	LDX #ULNEND
+	JSR PUSHP
+	LDX #TOKPTR
+	JSR VPUSHP
+	LDA ARG1
+	STA TOKPTR
+	LDA ARG1+1
+	STA TOKPTR+1
+	LDX RUNFLG
+	JSR PUSH
+	LDX #$00
+	STX UFRMAT
+	INX
+	STX RUNFLG
+	LDX #RH1&$FF
+	LDY #RH1^
+	JSR PUSH
+	JMP EVLINE
+;
+RH1:	JSR POPB
+	STA RUNFLG
+	LDX #TOKPTR
+	JSR VPOP
+	LDX #ULNEND
+	JSR POP
+	JSR POPB
+	STA UFRMAT
+	JMP POPJ
+.PAGE
+SREAD1:	LDA INDEV	;If INDEV <> WFILE or EOF of Workspace, goto SREAD2
+	BEQ SREAD2
+	JSR EOF
+	BNE SREAD2
+	LDY #ILINE
+	JSR PRDLIN	;Read a line. If error, reset & go to SREAD2
+	TYA
+	BEQ SRD1A	;Y zero means OK
+	LDA #$00
+	STA ERRFLG
+SREAD2:	JSR CLOSEW	;Close Workspace file
+	LDA #$00
+	STA INDEV	;INDEV := VDT
+	STA OTPUTN	;OUTPUTN := 0
+	JMP POPJ
+SRD1A:	LDA ILINE
+	STA TOKPTR
+	LDA ILINE+1
+	STA TOKPTR+1
+	LDA EDSW
+	BNE SRD1B
+	JMP SRD1E
+SRD1B:	LDY #$00
+	LDA (ILINE),Y
+	STA TEMPN
+	INY
+	LDA (ILINE),Y
+	STA TEMPN+1	;(CAR)
+	LDX #TEMPN
+	JSR GETTYP
+	LDY #$00	;(For EDLINE)
+	CMP #FIX
+	BEQ SRDEDL
+SRD1C:	LDA INDEV	;EVLINE if INDEV = VDT and NUMSW <> 0, or if TEMPN =
+	BNE SRD1D	; POTS, END, PO, PRINTOUT, TITLE, ERASE, ER, or TI.
+	LDA NUMSW
+	BNE SRD1E
+SRD1D:	LDX TEMPN
+	LDY TEMPN+1
+	CPX POTS
+	BNE SRD1D1
+	CPY POTS+1
+	BEQ SRD1E
+SRD1D1:	CPX LEND
+	BNE SRD1D2
+	CPY LEND+1
+	BEQ SRD1E
+SRD1D2:	CPX PO
+	BNE SRD1D3
+	CPY PO+1
+	BEQ SRD1E
+SRD1D3:	CPX PRNTOT
+	BNE SRD1D4
+	CPY PRNTOT+1
+	BEQ SRD1E
+SRD1D4:	CPX LTITLE
+	BNE SRD1D5
+	CPY LTITLE+1
+	BEQ SRD1E
+SRD1D5:	CPX ERASE
+	BNE SRD1D6
+	CPY ERASE+1
+	BEQ SRD1E
+SRD1D6:	CPX ER
+	BNE SRD1D7
+	CPY ER+1
+	BEQ SRD1E
+SRD1D7:	CPX TI
+	BNE SRD1F
+	CPY TI+1
+	BNE SRD1F
+SRD1E:	LDX #SREAD1&$FF
+	LDY #SREAD1^
+	JSR PUSH
+	JMP EVLINE
+SRD1F:	LDA #SREAD1&$FF
+	STA ERRRET
+	LDA #SREAD1^
+	STA ERRRET
+	LDY #$00
+	LDX #ILINE
+	STX ANSN
+	LDA #FLIST
+	JSR CONS
+	JSR RSTERR
+	LDY #$01
+SRDEDL:	LDX #ILINE
+	JSR EDLINE
+	JMP SREAD1
+.PAGE
+EVWRAP:	LDA TOKPTR+1
+	BEQ EVRETN
+	LDA OTPUTN
+	BEQ EVRETN
+	LDA STPFLG
+	BNE EVRETN
+	LDY #$00
+	LDA (TOKPTR),Y
+	STA CURTOK
+	INY
+	LDA (TOKPTR),Y
+	STA CURTOK+1	;(GETTOK)
+	LDA CURTOK
+	CMP RPAR
+	BNE EVW2
+	LDA CURTOK+1
+	CMP RPAR+1
+	BEQ EVRETN
+EVW2:	LDX #CURTOK
+	LDA #FUNCT
+	JSR GETFUN
+	STA FUNTYP
+	LDX #FUNCT
+	JSR INFIXP
+	BCC EVRETN
+	LDY FUNTYP
+	LDX #FUNCT
+	JSR GETPRC
+	STA ANSN2
+	CMP PRECED
+	BCC EVRETN
+	BEQ EVRETN
+	LDX #TOKPTR
+	JSR TTKADV
+	JSR GTNXTK
+	LDX #NEXTOK
+	JSR PUSHP
+	LDX #FUNCT
+	JSR PUSHP
+	LDX FUNTYP
+	JSR PUSH
+	LDX EXPOUT
+	JSR PUSH
+	LDX #IFLEVL
+	JSR PUSHP
+	LDX PRECED
+	JSR PUSH
+	LDA #$01
+	STA EXPOUT
+	LDA ANSN2
+	STA PRECED
+	LDX #EW1&$FF
+	LDY #EW1^
+	JSR PUSH
+	JMP EVAL
+;
+EVRETN:	LDA FRAME
+	BNE EVRTN1
+	LDA FRAME+1
+	BEQ EVRET1
+EVRTN1:	DEC NEST
+	BPL EVRET1
+	DEC NEST+1
+EVRET1:	LDA OTPUTN
+	BEQ EVRET2
+	LDA EXPOUT
+	BNE EVRET2
+	LDA STPFLG
+	BNE EVRET2
+	LDA RUNFLG
+	BNE EVRET2
+	LDX #NEXTOK
+	JSR VPOP
+	LDY #NEXTOK
+	LDA #XUOP
+	JMP ERROR
+EVRET2:	LDX #CURTOK
+	JSR POP
+	JMP POPJ
+.PAGE
+;EW1 pops everything EVWRAP pushed, checks for output (error if none),
+;then goes to FUNCAL with NARGS = 2.
+;
+EW1:	JSR POPB
+	STA PRECED
+	LDX #IFLEVL
+	JSR POP
+	JSR POPB
+	STA EXPOUT
+	JSR POPB
+	STA FUNTYP
+	LDX #FUNCT
+	JSR POP
+	LDX #NEXTOK
+	JSR POP
+	LDA OTPUTN
+	BNE EW1A
+	JMP VAL1R	;(ERROR XNOP,NEXTOK)
+EW1A:	LDA #$02
+	STA NARGS	;NARGS := 2
+	BNE FUNCAL	;(Always)
+;
+EVAL1:	JSR POPB	;Now that we have the args, get the old PRECED
+	STA PRECED	; back and do the function
+;
+;FUNCAL calls either SFUNCL (with FBODY1 = Funct. #) or UFUNCL (with FBODY1
+; pointing to text). Both return to EVWRAP. (FNCAL1 is same, except U&SFNCL
+; don't return to EVWRAP).
+;
+FUNCAL:	LDX #EVWRAP&$FF
+	LDY #EVWRAP^
+	JSR PUSH
+FNCAL1:	LDA FUNTYP
+	CMP #SFUN
+	BEQ FUN1
+	CMP #UFUN
+	BEQ FUN2
+	JSR SYSBUG
+FUN2:	LDY #$02	;UFUN, get text pointer
+	LDA (FUNCT),Y
+	STA FBODY1
+	INY
+	LDA (FUNCT),Y
+	STA FBODY1+1	;(CDR)
+	JMP XUFNCL
+FUN1:	LDY #$02	;SFUN, get Function # from Sarray
+	LDA (FUNCT),Y	;FBODY1 := SARRAY[FUNCT + SA_SINDEX] (SA_SINDEX = 2)
+	STA FBODY1
+.PAGE
+XSFNCL:	LDA #$00
+	STA TEMPN+1
+	LDA FBODY1
+	ASL A
+	ROL TEMPN+1
+	STA TEMPN
+	LDA #SYSTAB&$FF
+	ADC TEMPN
+	STA TEMPN
+	LDA TEMPN+1
+	ADC #SYSTAB^
+	STA TEMPN+1
+	LDY #$00
+	LDA (TEMPN),Y
+	STA TEMPNH
+	INY
+	LDA (TEMPN),Y
+	STA TEMPNH+1	;(CAR)
+	JMP (TEMPNH)	;Execute the routine
+;
+;FBODY1 contains a one-byte index to a table of pointers to system routines
+;The table starts at SYSTAB, and the index is multiplied by two for indexing
+;the sixteen-bit addresses. Adresses in the table are stored low byte first,
+;high byte next.
+;
+;For CS, HOME, PENDOWN, PENUP, and WIPECLEAN, pointers all point to DO0A25
+;FORWARD, BACK, RIGHT, LEFT, SPIN, MOVE, and DISPLAY to DO1A25
+;For THEN, pointer points to XXSFR1
+;For RPAR, pointer points to XXSFR2
+;For LPAR, pointer points to PARLOP
+;For ALL, NAMES, TITLES, and PROCEDURES, pointers all point to XXSFR3
+;
+XXSFR1:	LDA #XTHN
+	JMP ERROR
+XXSFR2:	LDA #XRPN
+	JMP ERROR
+XXSFR3:	LDY #CURTOK
+	LDA #XOPO
+	JMP ERROR
+.PAGE
+XUFNCL:	LDY #FPTR
+	LDX #TEMPN
+	JSR LINPEK
+	JSR PSHTST
+	LDX #ULNEND
+	JSR PUSHP
+	LDX UFRMAT
+	JSR PUSH
+	LDX #FBODY
+	JSR PUSHP
+	LDX #FPTR
+	JSR PUSHP
+	LDX RUNFLG
+	JSR PUSH
+	LDA #$00
+	STA STPFLG
+	STA RUNFLG
+	STA GOPTR
+	STA GOPTR+1	;GO_PTR := LNIL (0)
+	STA TEMPN1
+	STA TEMPN1+1	;TEMP := LNIL (0)
+	LDA FBODY1
+	STA FBODY
+	STA FPTR
+	LDA FBODY1+1
+	STA FBODY+1
+	STA FPTR+1
+	LDA NEST
+	BNE XUFN1
+	LDA NEST+1
+	BNE XUFN1
+	LDA LEVNUM
+	BNE XUFN2
+	LDA LEVNUM+1
+	BEQ XUFN1
+XUFN2:	LDA TEMPN
+	BNE XUFN3
+	LDA TEMPN+1
+	BNE XUFN3
+	LDA TOKPTR
+	BNE XUFN5
+	LDA TOKPTR+1
+	BNE XUFN5
+	LDA LSTOP
+	STA TEMPN1
+	LDA LSTOP+1
+	STA TEMPN1+1
+	JMP XUFN1
+XUFN3:	LDA TOKPTR
+	BNE XUFN5
+	LDA TOKPTR+1
+	BEQ XUFN1
+XUFN5:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN1
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN1+1	;(GETTOK)
+XUFN1:	LDX #FBODY
+	JSR GETTYP
+	STA UFRMAT
+	LDA TEMPN1
+	CMP LSTOP
+	BNE XUFN6
+	LDA TEMPN1+1
+	CMP LSTOP+1
+	BNE XUFN6
+	LDA XFRAME
+	STA SP
+	LDA XFRAME+1
+	STA SP+1
+	JMP XTAIL
+XUFN6:	INC FRMGSM
+	BNE XUFN6A
+	INC FRMGSM+1
+XUFN6A:	LDX FRAME
+	LDY FRAME+1
+	LDA SP
+	STA FRAME
+	LDA SP+1
+	STA FRAME+1	;FRAME points to PREV_FRAME
+	JSR PUSH
+	LDX #XFRAME
+	JSR PUSHP
+	LDX UFRMAT
+	JSR PUSH
+	LDX #CURTOK
+	JSR PUSHP
+	LDX #NEST
+	JSR PUSHP
+	LDX #LINNUM
+	JSR PUSHP
+	LDX #TOKPTR
+	JSR PUSHP
+	LDX NARGS
+	INX
+	JSR PUSH	;PUSH (NARGS+1)
+	LDX #TLLEVS
+	JSR PUSHP
+	LDY #$00
+	LDA (FUNCT),Y
+	TAX
+	INY
+	LDA (FUNCT),Y
+	TAY		;(GET_FFRAME)
+	JSR PUSH
+	LDX FUNCT
+	LDY FUNCT+1
+	INX
+	BNE XUFN6B
+	INY
+XUFN6B:	JSR PUSH	;PUSH (FUNCT+1)
+	LDY #$01
+	STY TLLEVS
+	DEY
+	STY LINNUM
+	STY LINNUM+1
+	STY TLLEVS+1
+	DEY
+	STY NEST
+	STY NEST+1
+	INC LEVNUM
+	BNE XUFN6C
+	INC LEVNUM+1
+XUFN6C:	INY
+	LDA FRMGSM
+	STA (FUNCT),Y
+	INY
+	LDA FRMGSM+1
+	STA (FUNCT),Y	;(PUT_FFRAME)
+	JSR STPTR1
+	LDY #FBODY
+	LDX #TEMPN1	;TEMPN1 gets ARGLIST
+	JSR GTTULN
+XUFNW:	LDA TEMPN1
+	BNE XUFNW1
+	LDA TEMPN1+1
+	BEQ XUFNWE
+XUFNW1:	JSR PTVTST
+	LDY #$00
+	LDA (TEMPN1),Y
+	STA TEMPN2	;TEMPN2 is VARNAM
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN2+1	;(GETTOK)
+	LDX #TEMPN1
+	JSR TTKADV
+	LDY #TEMPN2
+	LDX #TEMPN	;TEMPN is TEMP1
+	JSR GETVAL
+	LDX #TEMPN
+	JSR PUSHP
+	LDY #$00
+	LDA (TEMPN5),Y	;TEMPN5 is POINTER
+	STA TEMPN
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN+1	;(GETBAR)
+	JSR PTRDEC
+	LDX #TEMPN
+	LDY #TEMPN2
+	JSR PUTVAL
+	LDX #TEMPN2
+	JSR PUSHP
+	JMP XUFNW
+XUFNWE:	LDA SP
+	STA XFRAME	;XFRAME points to location after last binding pair
+	LDA SP+1
+	STA XFRAME+1
+	JSR INCVSP
+.PAGE
+;UF1 does a line of the procedure.
+;
+UF1:	LDA GOPTR
+	BNE UF1A
+	LDA GOPTR+1
+	BNE UF1A
+	LDX #FPTR
+	JSR ULNADV
+	JMP UF1C
+UF1A:	LDA GOPTR	;GOPTR <> NIL, so FPTR := GOPTR, reset GOPTR.
+	STA FPTR
+	LDA GOPTR+1
+	STA FPTR+1
+	LDA #$00
+	STA GOPTR
+	STA GOPTR+1
+UF1C:	LDA STPFLG
+	BNE UF2A
+	LDA FPTR
+	BNE UF1D
+	LDA FPTR+1
+	BEQ UF2
+UF1D:	LDY #FPTR
+	LDX #TOKPTR
+	JSR GTTULN
+	LDY #$00
+	LDA (TOKPTR),Y
+	STA LINNUM
+	INY
+	LDA (TOKPTR),Y
+	STA LINNUM+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TTKADV
+	LDX #UF1&$FF
+	LDY #UF1^
+	JSR PUSH
+	JMP EVLINE
+;
+;End of a procedure.
+;
+UF2:	STA OTPUTN
+UF2A:	SEC
+	LDA LEVNUM
+	SBC TLLEVS
+	STA LEVNUM
+	LDA LEVNUM+1
+	SBC TLLEVS+1
+	STA LEVNUM+1
+	LDA #$00
+	STA STPFLG
+	JSR POPFRM
+	JSR POPB
+	STA RUNFLG
+	LDX #FPTR
+	JSR POP
+	LDX #FBODY
+	JSR POP
+	JSR POPB
+	STA UFRMAT
+	LDX #ULNEND
+	JSR POP
+	JMP POPJ
+.PAGE
+ERROR1:	LDX #$00
+	STX RUNFLG
+	LDA ERRFLG
+	STX ERRFLG
+	CMP #XZAP
+	BEQ PPTTP
+	LDX LEVNUM
+	BNE ERR1A
+	LDX LEVNUM
+	BEQ PPTTP
+ERR1A:	LDY DBUGSW
+	BNE ERR1B
+	CMP #XBRK
+	BEQ ERR1B
+PPTTP:	LDA FRAME
+	BNE PPTT1
+	LDA FRAME+1
+	BEQ PPTT2
+PPTT1:	JSR RSTBND
+	LDY #$02	;(SF_XFRAME = 2.)
+	LDA (FRAME),Y
+	STA XFRAME
+	INY
+	LDA (FRAME),Y
+	STA XFRAME+1	;(GETBAR)
+	LDY #$00	;(SF_PREVIOUS_FRAME = 0)
+	LDA (FRAME),Y
+	TAX
+	INY
+	LDA (FRAME),Y
+	STA FRAME+1	;(GETBAR)
+	STX FRAME
+	JMP PPTTP
+PPTT2:	LDA #$00
+	STA LEVNUM
+	STA LEVNUM+1
+	LDA ERRFLG
+	CMP #XZAP
+	BNE JTOP
+	LDA ANSN3
+	CMP #XNSTRN
+	BNE JTOP
+	LDA #VPDLBA&$FF
+	STA VSP		;If error was "out-of-nodes",
+	LDA #VPDLBA^	;reset VPDL, do a garbage collect,
+	STA VSP+1	;and check remaining nodes. If low,
+	JSR GARCOL	;ask user to delete something.
+	LDA NNODES+1
+	CMP #NODLIM^
+	BCC JTOP
+	BNE NWARN
+	LDA NNODES
+	CMP #NODLIM&$FF
+	BCS NWARN
+JTOP:	JMP TOPLOP
+NWARN:	JSR BREAK1
+	LDX #WRNMSG&$FF
+	LDY #WRNMSG^	;"Please delete something"
+	JSR PRTSTR
+	JSR BREAK1
+ERR1B:	LDA #$00
+	STA EXPOUT	;(EXPOUT := 0)
+	CLC
+	LDA XFRAME
+	ADC #$02	;Don't pop the top return address
+	STA SP		;(RESET_EVAL)
+	LDA XFRAME+1
+	ADC #$00
+	STA SP+1
+.PAGE
+ERROR2:	LDA DCOFLG
+	BEQ ERR2A
+	LDA #$00
+	STA STPFLG
+	STA DCOFLG
+	STA TOKPTR
+	STA TOKPTR+1
+ERR2A1:	LDY #$04	;(SF_FORMAT = 4.)
+	LDA (FRAME),Y
+	STA UFRMAT	;(GETBAR)
+	JMP POPJ
+ERR2A:	LDA STPFLG
+	BNE ERR2A1	;Zap out of EVLINE without resetting stuff.
+	LDA #'L		;Both flags = 0, it's a Pause.
+	JSR TPCHR	;Type an "L"
+	LDX #LEVNUM
+	JSR TYPFIX
+	LDY #TOKPTR
+	JSR PRDLIN	;Get a line
+	TYA
+	BEQ ERR2A2	;Y zero means OK
+	JMP ERROR1
+ERR2A2:	LDX #ERROR2&$FF
+	LDY #ERROR2^
+	JSR PUSH
+	LDA #LIST
+	STA UFRMAT
+	JMP EVLINE
+.PAGE
+XTAIL:	LDX #$00
+	STX LINNUM
+	STX LINNUM+1
+	DEX
+	STX NEST
+	STX NEST+1
+	INC LEVNUM
+	BNE XTAIL1
+	INC LEVNUM+1
+XTAIL1:	INC TLLEVS
+	BNE XTAIL2
+	INC TLLEVS+1
+XTAIL2:	JSR STPTR1	;POINTER is TEMPN1
+	LDY #$0E	;SF_NUMBER_BINDINGS (14.)
+	LDA (FRAME),Y
+	STA TEMPN3	;BINDINGS
+	LDY #FBODY
+	LDX #TEMPN2	;ARGLIST
+	JSR GTTULN	;GET_ULINE (ARG_LIST,FBODY,TRUE)
+	LDY #$04	;(SF_FORMAT = 4.)
+	LDA UFRMAT
+	STA (FRAME),Y	;(PUTBAR)
+	LDY #$06	;(SF_UFUN = 6.)
+	LDA CURTOK
+	STA (FRAME),Y
+	INY
+	LDA CURTOK+1
+	STA (FRAME),Y	;(PUTBAR)
+	INY
+	LDY #$00
+	LDA (FUNCT),Y
+	STA TEMPN1
+	INY
+	LDA (FUNCT),Y
+	STA TEMPN1+1	;(GET_FFRAME)
+	LDA TEMPN1
+	CMP FRMGSM
+	BNE XTALWB
+	LDA TEMPN1+1
+	CMP FRMGSM+1
+	BNE XTALWB
+XTALWA:	LDA TEMPN2
+	BNE XTALW1
+	LDA TEMPN2+1
+	BEQ XTLWAE
+XTALW1:	JSR PTVTST
+	LDY #$00
+	LDA (TEMPN2),Y
+	STA TEMPN4	;VAR_NAME
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN4+1	;(GETTOK)
+	LDX #TEMPN2
+	JSR TTKADV
+	LDY #$00
+	LDA (TEMPN5),Y
+	STA TEMPN1
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN1+1	;(GETBAR)
+	JSR PTRDEC
+	LDX #TEMPN1
+	LDY #TEMPN4
+	JSR PUTVAL
+	JMP XTALWA
+XTLWAE:	LDY #$0E	;(SF_NUMBER_BINDINGS = 14.)
+	LDA TEMPN3
+	STA (FRAME),Y
+	JMP XTAIL4
+XTALWB:	LDA TEMPN2
+	BNE XTALW2
+	LDA TEMPN2
+	BEQ XTLWBE
+XTALW2:	JSR PTVTST
+	LDY #$00
+	LDA (TEMPN2),Y
+	STA TEMPN4
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN4+1	;(GETTOK)
+	LDX #TEMPN2
+	JSR TTKADV
+	LDY #TEMPN4
+	LDX #TEMPN1
+	JSR GETVAL
+	LDX #TEMPN1
+	JSR PUSHP
+	LDY #$00
+	LDA (TEMPN5),Y
+	STA TEMPN1
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN1+1	;(GETBAR)
+	JSR PTRDEC
+	LDX #TEMPN1
+	LDY #TEMPN4
+	JSR PUTVAL
+	LDX #TEMPN4
+	JSR PUSHP
+	JMP XTALWB
+XTLWBE:	LDY #$00
+	LDA (FUNCT),Y
+	STA TEMPN1
+	INY
+	LDA (FUNCT),Y
+	STA TEMPN1+1	;(GET_FFRAME)
+	LDX #TEMPN1
+	JSR PUSHP
+	LDX FUNCT
+	LDY FUNCT+1
+	INX
+	BNE XTAIL5
+	INY
+XTAIL5:	JSR PUSH	;PUSH (FUNCT+1)
+	LDY #$00
+	LDA FRMGSM
+	STA (FUNCT),Y
+	INY
+	LDA FRMGSM+1
+	STA (FUNCT),Y	;(PUT_FFRAME)
+	LDY #$0E
+	SEC		;Carry added in (BINDINGS + NARGS + 1)
+	LDA TEMPN3
+	ADC NARGS
+	STA (FRAME),Y
+	LDA SP
+	STA XFRAME
+	LDA SP+1
+	STA XFRAME+1	;XFRAME := SP (right above last binding pair)
+XTAIL4:	JSR INCVSP
+	JMP UF1
+.PAGE
+STPTR1:	LDA NARGS
+	ASL A
+	STA TEMPNH
+	SEC
+	LDA VSP
+	SBC TEMPNH
+	STA TEMPN5
+	LDA VSP+1
+	SBC #$00
+	STA TEMPN5+1	;POINTR := VSP - (NARGS * 2)
+	RTS
+;
+PTVTST:	LDA VSP+1
+	CMP TEMPN5+1
+	BNE SBHAK1
+	LDA VSP
+	CMP TEMPN5
+	BNE SBHAK1
+PTVBUG:	JSR SYSBUG	;Error if POINTER = VSP
+;
+PTRDEC:	CLC
+	LDA TEMPN5
+	ADC #$02
+	STA TEMPN5
+	BCC SBHAK1
+	INC TEMPN5+1	;POINTR := POINTR + 2
+SBHAK1:	RTS
+;
+INCVSP:	LDA NARGS
+	ASL A
+	STA TEMPNH
+	SEC
+	LDA VSP
+	SBC TEMPNH
+	STA VSP
+	BCS INCVE
+	DEC VSP+1	;VSP := VSP - NARGS * 2
+INCVE:	RTS
+;
+;End of Evaluator Dispatches and Subroutines.
+.PAGE
+.SBTTL	Reader and Tokenizer
+READLN:	STY TEMPX2	;Input line pointer location
+	BNE REDLN1	;(Always)
+PRDLIN:	STY TEMPX2
+	LDA INDEV
+	BNE READLN	;Don't type prompt if not Screen output
+	LDA EDSW
+	BNE PRD2
+	LDA #QPRMPT	;Reqular prompt
+	BNE PRD3
+PRD2:	LDA #EPRMPT	;Edit-mode prompt
+PRD3:	JSR TPCHR
+;
+REDLN1:	LDA #$00
+	STA TEMPN8	;List-nesting counter
+	STA CELPTR
+	STA CELPTR+1
+	INC PRDFLG
+	LDX TEMPX2
+	STA $00,X	;Initialize ANS to Lnil
+	STA $01,X
+	STA TEMPN8+1	;Character buffer pointer
+	LDA #RDL1&$FF	;Error return address
+	STA ERRRET
+	LDA #RDL1^
+	STA ERRRET+1
+	TSX
+	STX RETADR
+	LDA #NEWLIN
+	STA TEMPX2+1	;Current cell type
+	JSR GETLN	;Get a line into the Line buffer
+	STX TEMPN7
+RDLNW:	LDA TEMPN8+1	;Loop processes line, token by token
+	CMP TEMPN7
+	BNE TGTTOK	;Process the next token
+RDLNWE:	LDA TEMPN8	;Done, close all lists
+	BEQ RDL1A
+RDL1A1:	LDA OUTDEV
+	BNE RDL1A2
+	LDA #']		;Close the list (if Screen output)
+RDL1A2:	JSR TPCHR
+	LDX #TEMPN1
+	JSR POP		;Discard pushed list pointers
+	DEC TEMPN8	;Decrement list nesting counter
+	BNE RDL1A1
+	JSR BREAK1
+RDL1A:	LDY #$00	;Y zero means OK
+RDL1B:	LDA #$00
+	STA CELPTR
+	STA CELPTR+1
+	STA PRDFLG
+RSTERR:	LDX #$00	;General reset-error routine
+	STX RETADR
+	LDX #ERROR1&$FF
+	STX ERRRET
+	LDX #ERROR1^
+	STX ERRRET+1
+	RTS
+RDL1:	LDY #$01	;Y nonzero means error
+	BNE RDL1B	;(Always)
+TGTTOK:	LDA #$00
+	STA ANSN3	;No typecode yet (for SLFDLP)
+	STA TEMPN7+1	;Funny-pname if non-zero
+	STA TEMPN4+1	;Indicates quoted atom if non-zero
+	LDX TEMPN8+1
+TGT1:	LDA LINARY,X
+	CMP #$20
+	BNE TGT2
+	INX
+	CPX TEMPN7
+	BNE TGT1	;Skip spaces
+	BEQ RDLNWE
+TGT2:	STX TEMPN8+1
+	CMP #']
+	BEQ TKRBR
+	PHA
+	JSR ALLSTC
+	PLA
+	CMP #'[
+	BEQ TKLBR
+	JSR SLFDLP
+	BCC TKNDL
+	STA TEMPN5
+	INC TEMPN8+1
+	LDX #$00
+	STX TEMPN5+1
+	LDY #TEMPN5	;Cons up a pname
+	LDA #TEMPN6
+	STA ANSN
+	LDA #STRING
+	JSR CONS
+	LDA #ATOM
+	STA ANSN3
+	JMP ADDTOK
+TKLBR:	INC TEMPN8	;Start list - increment list nesting counter
+	INC TEMPN8+1	;Skip to next character
+	LDX #CELPTR
+	JSR PUSHP	;Push the list-pointer cell
+	LDA #NEWLST
+	STA TEMPX2+1	;Next cell allocated will be New-list type
+	JMP RDLNW	;Continue processing line
+TKRBR:	DEC TEMPN8	;End list - decrement list nesting counter
+	BMI TKRBR1	;Error if unbalanced brackets
+	INC TEMPN8+1	;Skip to next character
+	LDX #CELPTR
+	JSR POP		;Pop list pointer
+	LDA #REGCEL
+	STA TEMPX2+1
+	JMP RDLNW	;Continue processing line
+TKRBR1:	LDA #$00
+	STA OUTDEV	;Set I/O to Keyboard and Screen
+	STA INDEV
+	LDX #RDRER2&$FF
+	LDY #RDRER2^
+	JSR PRTSTR	;Print "You have mismatched brackets" error
+	JSR BREAK1
+	JMP RDL1	;Error escape
+TKNDL:	CMP #'"
+	BNE TGT3A
+	INC TEMPN4+1	;Quoted atom
+	INC TEMPN8+1	;Skip to next character
+	LDA #QATOM
+	STA ANSN3
+	JMP TGT3B1	;Check for funny-pname
+TGT3A:	CMP #$27	;(Single Quote)
+	BNE TGT3B
+	INC TEMPN8+1	;Skip to next character
+	INC TEMPN7+1	;Token is a funny_pname
+TKAORL:	LDA #ATOM	;Token is an Atom or Label
+	STA ANSN3
+	JMP TKATOM	;Tokenize it
+TGT3B:	CMP #':
+	BNE TKAORL
+	INC TEMPN8+1	;Dotted atom, skip to next character
+	LDA #DATOM
+	STA ANSN3
+TGT3B1:	LDX TEMPN8+1
+	LDA LINARY,X
+	CMP #$27
+	BNE TKATOM
+	INC TEMPN7+1	;Token is funny-pname
+	INC TEMPN8+1	;Skip to next character
+TKATOM:	LDX TEMPN8+1
+	CPX TEMPN7	;Check for empty word at end-of-line
+	BEQ EMPTWD
+	LDA TEMPN7+1
+	BEQ TKATM2
+	JMP NTFIX	;Funny_pname, not fixnum then
+TKATM2:	LDA LINARY,X
+	CMP #$20	;Check for empty word inside line
+	BNE TKATM1
+EMTWD1:	INC TEMPN8+1	;Skip space if necessary
+EMPTWD:	LDA #$00	;Empty word, link Lnil node onto input line
+	STA TEMPN6
+	STA TEMPN6+1
+	JMP ADDTOK	;Link up token and continue
+TKATM1:	LDA #$00
+	STA TEMPN6	;Attempt to compute fixnum value
+	STA TEMPN6+1
+ATM1:	STX TEMPN5	;Save temporary character pointer
+	CPX TEMPN7
+	BEQ ATM2	;End of line encountered, must be fixnum
+	LDA LINARY,X
+	JSR SLFDLP
+	BCS ATM2	;Self delimiter encountered, must be fixnum
+	JSR DIGITP	;?CHECK FOR FLONUM - DECIMAL PT., E OR N
+	BCC NTFIX	;Not a digit, no fixnum
+	ASL TEMPN6	;Multiply value by 10.
+	ROL TEMPN6+1
+	BCS NTFIX	;Not a fixnum if value overflow
+	LDX TEMPN6	;?TWO MORE BYTES FOR FIXNUM
+	LDY TEMPN6+1	;?MAKE IT A FLONUM IF NECESSARY
+	ASL TEMPN6
+	ROL TEMPN6+1
+	BCS NTFIX
+	ASL TEMPN6
+	ROL TEMPN6+1
+	BCS NTFIX
+	TXA
+	ADC TEMPN6
+	STA TEMPN6
+	TYA
+	ADC TEMPN6+1
+	BCS NTFIX
+	STA TEMPN6+1
+	LDX TEMPN5
+	LDA LINARY,X	;Add value of current digit to subtotal
+	SBC #$2F	;(Carry is clear)
+	CLC
+	ADC TEMPN6
+	STA TEMPN6
+	LDA TEMPN6+1
+	ADC #$00
+	BMI NTFIX
+	BCS NTFIX
+	STA TEMPN6+1
+	INX		;Get next digit
+	JMP ATM1
+ATM2:	STX TEMPN8+1	;Fixnum - set character pointer to after fixnum
+	LDX #$00	;?FIXNUM HIGH-WORD
+	LDY #TEMPN6
+	STY ANSN
+	LDA #FIX
+	JSR CONS	;Cons a fixnum cell with the value in it
+	LDY #$00
+	LDA TEMPN6
+	STA (CELPTR),Y	;Link the cell on to the input line
+	INY
+	LDA TEMPN6+1
+	STA (CELPTR),Y
+	JMP RDLNW	;Continue processing line
+NTFIX:	LDX #TEMPX1	;Not a fixnum - cons up a pname (original pointer)
+	LDA #$00
+	STA ANSNX	;Indicates end of pname if non-zero
+	PHA		;First time around, push zero
+	BEQ NXTCHS	;(Always)
+NXTTWO:	LDA ANSNX	;Next two characters
+	BNE ADDTOK	;Link up token if end of pname
+	LDA #$02
+	PHA		;Not first time around, push 2
+	LDX #TEMPN5	;Next pointer
+NXTCHS:	STX ANSN
+	LDX TEMPN8+1
+	CPX TEMPN7
+	BEQ ADDTK1	;Finish token (end of line), even no. chars.
+	LDA LINARY,X
+	STA TEMPN1	;First character in pair
+	JSR SLFDLP
+	BCS ADDTK2	;Finish token (delimiter hit), even no. chars.
+	INX		;Skip to next character
+	CPX TEMPN7
+	BEQ FINTK1	;Finish token (end of line), odd no. chars.
+	LDA LINARY,X
+	STA TEMPN1+1	;Second character in pair
+	JSR SLFDLP
+	BCS FINTK1	;Finish token (delimiter hit), odd no. chars.
+	INX
+	BCC CNSSTR	;(Always) Cons new pair on to pname string
+FINTK1:	LDA #$00
+	STA TEMPN1+1	;Odd no. chars. in pname, zero last character
+	INC ANSNX	;Indicates end of pname
+CNSSTR:	STX TEMPN8+1	;Skip the last character (if not delimiter)
+	LDY #TEMPN1
+	LDX #$00
+	LDA #STRING
+	JSR CONS	;Cons up the new pname pair
+	PLA
+	TAY		;0 first time, 2 otherwise
+	BNE NTFRST
+	LDA TEMPX1
+	STA (CELPTR),Y	;(Linking garbage-collect-protects it)
+	TAX
+	INY
+	LDA TEMPX1+1
+	STA (CELPTR),Y
+	STA TEMPN6+1
+	STX TEMPN6	;Atom pointer
+	JMP NXTTWO	;Continue making the pname
+NTFRST:	LDA TEMPN5	;Link cell onto pname string
+	TAX
+	STA (TEMPX1),Y
+	INY
+	LDA TEMPN5+1
+	STA (TEMPX1),Y	;(RPLACD)
+	STA TEMPX1+1
+	STX TEMPX1
+	JMP NXTTWO	;Continue making the pname
+ADDTK2:	STX TEMPN8+1	;In case colon or quote skipped
+ADDTK1:	PLA		;Pop chain indicator if loop exit
+ADDTOK:	LDX #TEMPN6
+	LDY #TEMPX1
+	JSR INTERN	;Intern atom
+ATM12B:	LDA ANSN3
+	CMP #ATOM
+	BEQ ATM12A
+	LDX #TEMPX1
+	JSR PUTTYP	;Give atom a type if not Atom
+ATM12A:	LDY #$00
+	LDA TEMPX1
+	STA (CELPTR),Y	;Link atom onto input line
+	INY
+	LDA TEMPX1+1
+	STA (CELPTR),Y
+	LDA TEMPN7+1
+	BEQ NXTE
+	LDX #TEMPX1
+	JSR PTSPNM	;Put-strange-pname if funny-pname indicated
+NXTE:	JMP RDLNW	;Continue processing line
+.PAGE
+ALLSTC:	LDA #TEMPN	;Allocate a new list cell
+	STA ANSN
+	LDA #$00
+	TAX
+	TAY
+	JSR CONS	;(Type list)
+	LDY #$00
+	LDA TEMPX2+1
+	CMP #NEWLIN
+	BNE ALSTC1
+	LDX TEMPX2	;New line, ANS pointer points to cell
+	LDA TEMPN
+	STA $00,X
+	LDA TEMPN+1
+	STA $01,X
+	BNE ALSTC3	;(Always)
+ALSTC1:	CMP #NEWLST
+	BEQ ALSTC4	;For new-list, rplaca onto input line
+	INY		;Regular cell, link onto input line
+	INY
+ALSTC4:	LDA TEMPN
+	STA (CELPTR),Y	;Rplaca or Rplacd for new-list or regular-cell
+	INY
+	LDA TEMPN+1
+	STA (CELPTR),Y
+ALSTC3:	LDA TEMPN
+	STA CELPTR	;New input line end pointer
+	LDA TEMPN+1
+	STA CELPTR+1
+	LDA #REGCEL
+	STA TEMPX2+1	;Next cell allocated will be regular-cell
+	RTS
+.PAGE
+SLFDLP:	LDY TEMPN7+1	;Checks for self-delimiter
+	BEQ SLF2	;Not funny-pname
+	CMP #$27	;If funny-pname, look for quote
+	BNE DIGN	;Not delimiter if no quote
+	INX
+	LDA LINARY,X
+	CMP #$27	;Look for pair of quotes
+	BEQ DIGN	;If pair, skip over one, not delimiter
+	JMP DIGY	;If no pair, the quote is a delimiter, skip it
+SLF2:	LDY TEMPN4+1	;Check for quoted atom
+	BEQ SLF1
+	CMP #$20	;Quoted atoms can be terminated by a space,
+	BEQ DIGY
+	CMP #']		;or a closing bracket,
+	BNE DIGN
+	CMP #')		;or a closing parenthesis.
+	BNE DIGN
+	BEQ DIGY
+SLF1:	LDY ANSN3	;Check for type Atom
+	CPY #ATOM
+	BNE SLF3
+	CMP #':		;If Atom, check for colon (for Label atom)
+	BNE SLF3
+	INX		;If colon, skip over it and change type to Latom
+	LDY #LATOM
+	STY ANSN3
+	JMP DIGY
+SLF3:	CMP #$20	;Compare character to all delimiters
+	BEQ DIGY
+	CMP #'<
+	BEQ DIGY
+	CMP #'>
+	BEQ DIGY
+	CMP #'=
+	BEQ DIGY
+	CMP #$3B	;(Semicolon)
+	BEQ DIGY
+	CMP #')
+	BEQ DIGY
+	CMP #'(
+	BEQ DIGY
+	CMP #'+
+	BEQ DIGY
+	CMP #'-
+	BEQ DIGY
+	CMP #'*
+	BEQ DIGY
+	CMP #'/
+	BEQ DIGY
+	CMP #']
+	BEQ DIGY
+	CMP #'[
+	BNE DIGN
+DIGY:	SEC		;Carry set means true
+	RTS
+;
+DIGITP:	CMP #':		;Checks to see if character is a digit (0-9)
+	BCC DIGP1
+DIGN:	CLC		;Carry clear means not true
+	RTS
+DIGP1:	CMP #'0		;(Sets carry correctly)
+	RTS
+.PAGE
+EDLINE:	STX ANSN1
+	LDA $00,X		;pointer to line
+	STA TEMPNH		;gets stored in TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDA #PTLN2&$FF		;error will be "out of storage"
+	STA ERRRET		;Error return pointer.
+	LDA #PTLN2^
+	STA ERRRET+1
+	TSX
+	STX RETADR		;Save EDLINE's return address
+	CPY #$00
+	BNE GETHIG		;Y nonzero for default line number
+	LDA (TEMPNH),Y
+	STA TEMPN4		;TEMPN4 is the line number
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN4+1		;(car line)
+EDLN1:	DEY
+	LDA (TEMPN4),Y
+	TAX
+	INY
+	LDA (TEMPN4),Y
+	BMI LINERR
+	BNE EDLN2
+	CPX #$00
+	BEQ LINERR
+EDLN2:	STA TEMPN4+1		;(caar line), that is,
+	STX TEMPN4		;actual line #
+	JMP EDL1
+LINERR:	LDA #XILN		;"Illegal Line Number"
+	JMP ERROR
+GETHIG:	LDA #$00
+	STA TEMPN4
+	STA TEMPN4+1
+	LDY #$02		;get body pointer
+	LDA (EDBOD),Y		;skip args
+	STA TEMPN3		;TEMPN3 is BODY ptr.
+	INY
+	LDA (EDBOD),Y
+	STA TEMPN3+1		;(cdr body)
+GTHW:	LDA TEMPN3		;if it ain't LNIL,
+	BNE GTH1		;take the cdr again
+	LDA TEMPN3+1
+	BEQ GTHE
+GTH1:	LDY #$00
+	LDA (TEMPN3),Y
+	STA TEMPN2		;TEMPN2 is Current Line
+	INY			;(car line) - put pointer
+	LDA (TEMPN3),Y
+	STA TEMPN2+1		;to line num in TEMPN2
+	INY
+	LDA (TEMPN3),Y
+	TAX			;get (cdr body)
+	INY
+	LDA (TEMPN3),Y
+	STA TEMPN3+1
+	STX TEMPN3
+	LDY #$00
+	LDA (TEMPN2),Y
+	TAX
+	INY			;(car line) -- this one
+	LDA (TEMPN2),Y		;gets actual line number
+	STA TEMPN2+1
+	STX TEMPN2
+	LDA TEMPN4+1		;old greatest line #
+	CMP TEMPN2+1		;new line #
+	BCC GTH3		;old < new - replace
+	BNE GTHW		;old > new, go back for next
+GTHCNT:	LDA TEMPN4
+	CMP TEMPN2
+	BCS GTHW		;old > new -- just go back
+GTH3:	LDA TEMPN2		;replace old highest line #
+	STA TEMPN4		;with new highest line number
+	LDA TEMPN2+1
+	STA TEMPN4+1
+	JMP GTHW		;look for more
+EDLERR:	LDA #XLNTB		;"Line number too big"
+	JMP ERROR
+GTHE:	CLC
+	LDA TEMPN4
+	ADC #LININC		;make default line number
+	STA TEMPN4
+	BCC EDL1
+	INC TEMPN4+1
+	BEQ EDLERR
+EDL1:	LDY #$00		;place line # in car of line
+	LDA TEMPN4
+	STA (TEMPNH),Y
+	INY
+	LDA TEMPN4+1
+	STA (TEMPNH),Y		;(RPLACA)
+	LDA #FLIST
+	LDX ANSN1
+	JSR PUTTYP
+	LDX ANSN1		;POINTER
+	LDY #TEMPN4		;NUMBER
+.PAGE
+PUTLIN:	STX ANSN2	;POINTER (Y has NUMBER) -  Add line to body
+	LDX #EDBOD
+	LDA #TEMPN2	;Line to be gotten
+	JSR FNDLIN
+	BCC PTLN1	;Branch if not found
+	LDX ANSN2
+	LDY #$00
+	LDA $00,X
+	STA (TEMPN2),Y
+	INY
+	LDA $01,X
+	STA (TEMPN2),Y	;(RPLACA)
+	RTS
+PTLN1:	LDY #$02
+	LDA (TEMPN2),Y
+	STA TEMPN3
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN3+1	;(CDR)
+	LDY ANSN2
+	LDX #TEMPN3
+	STX ANSN
+	LDA #LIST
+	JSR CONS
+	LDY #$02
+	LDA TEMPN3
+	STA (TEMPN2),Y
+	INY
+	LDA TEMPN3+1
+	STA (TEMPN2),Y	;(RPLACD)
+	JMP RSTERR
+PTLN2:	JSR BREAK1
+	JSR ZPC1	;"Out of Storage" Error
+	JMP BREAK1
+.PAGE
+.SBTTL	Initializations
+INITLZ:	LDA #$00
+	STA NUMSW
+	STA DBUGSW
+	STA EDSW
+	STA EDBOD
+	STA EDBOD+1	;EDIT_BODY := LNIL (0)
+	STA INDEV	;INDEV := VDT
+	STA OUTDEV	;OUTDEV := VDT
+	STA NNODES	;Node allocation counter
+	STA NNODES+1
+	JSR RESETT	;Clear screen, etc.
+	JSR CLRMRK	;Reset G.C. Array (Typebase bits)
+	LDA #BASARY&$FF
+	STA TEMPN
+	LDA #BASARY^
+	STA TEMPN+1
+CLRLP1:	LDA #$00	;Clear the SARRAY, 4 at a time
+	TAY
+	STA (TEMPN),Y
+	INY
+	STA (TEMPN),Y
+	INY
+	STA (TEMPN),Y
+	INY
+	STA (TEMPN),Y
+	CLC
+	LDA TEMPN
+	ADC #$04
+	STA TEMPN
+	BCC ADHAK4
+	INC TEMPN+1
+ADHAK4:	LDA TEMPN
+	CMP #PDLBAS&$FF	;PDL starts right after S_ARRAY
+	BNE CLRLP1
+	LDA TEMPN+1
+	CMP #PDLBAS^
+	BNE CLRLP1
+.PAGE
+REINIT:	LDX #$00
+	STX FRMGSM+1
+	STX PODEFL
+	STX PODEFL+1
+	INX
+	STX FRMGSM
+	LDA #BASARY&$FF
+	STA SARTOP
+	LDA #BASARY^
+	STA SARTOP+1
+	LDA #PDLBAS&$FF
+	STA SP
+	LDA #PDLBAS^
+	STA SP+1
+	LDA #VPDLBA&$FF
+	STA VSP
+	LDA #VPDLBA^
+	STA VSP+1
+	LDA #BIGBAS&$FF	;(FIRST_NODE)
+	STA SOBLST
+	STA SOBTOP
+	LDA #BIGBAS^
+	STA SOBLST+1	;SOBLIST := FIRST_NODE
+	STA SOBTOP+1	;SOBTOP is SOBPTR for now
+	LDA #PRMTAB&$FF	;Points to first byte of Primitive-table
+	STA TEMPN
+	LDA #PRMTAB^
+	STA TEMPN+1
+SOBLP1:	JSR SOBST1
+	LDA TEMPN+1
+	CMP #VPRMTB^
+	BNE SOBLP1
+	LDA TEMPN
+	CMP #VPRMTB&$FF
+	BNE SOBLP1
+	SEC
+	LDA SOBTOP
+	SBC #$08
+	STA TEMPN1	;TEMPN1 is SOBTOP - 8, for comparison
+	LDA SOBTOP+1
+	SBC #$00
+	STA TEMPN1+1
+SBVLP1:	LDY #$00
+	LDA (TEMPN),Y
+	STA ANSN	;ANSN is INDEX constant
+	INY
+	LDA (TEMPN),Y
+	STA ANSN1	;ANSN1 is Pointer to Primitive's pointer
+	INY
+	LDA (TEMPN),Y
+	STA ANSN3	;ANSN3 is INSTANCE counter
+	CLC
+	LDA TEMPN
+	ADC #$03
+	STA TEMPN
+	BCC ADHAK8
+	INC TEMPN+1
+ADHAK8:	LDA #BBASX&$FF
+	STA TEMPN2	;TEMPN2 is temporary VARNAM pointer
+	LDA #BBASX^
+	STA TEMPN2+1
+SBVRW:	LDA TEMPN1+1
+	CMP TEMPN2+1
+	BNE SBVRW1
+	LDA TEMPN1
+	CMP TEMPN2
+	BNE SBVRW1
+	JSR SYSBUG
+SBVRW1:	CLC
+	LDA TEMPN2
+	ADC #$04
+	STA TEMPN2
+	BCC ADHAK9
+	INC TEMPN2+1
+ADHAK9:	LDY #$02
+	LDA (TEMPN2),Y
+	STA TEMPNH
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPNH+1	;(CDR)
+	DEY
+	LDA (TEMPNH),Y
+	CMP ANSN
+	BNE SBVRW
+	DEC ANSN3
+	BNE SBVRW
+SBVRWE:	LDX ANSN1
+	LDA TEMPN2	;Put TEMPN2 in the right variable
+	STA $00,X
+	LDA TEMPN2+1
+	STA $01,X
+	LDA TEMPN+1
+	CMP #VPRMTE^
+	BNE SBVLPJ
+	LDA TEMPN
+	CMP #VPRMTE&$FF
+	BEQ SBVLL1
+SBVLPJ:	JMP SBVLP1
+SBVLL1:	CLC
+	LDA SOBTOP
+	STA FRLIST
+	ADC #$04
+	STA TEMPN
+	LDA SOBTOP+1
+	STA FRLIST+1
+	ADC #$00
+	STA TEMPN+1
+	LDY #$02
+	LDA #$00
+	STA (SOBTOP),Y
+	INY
+	STA (SOBTOP),Y	;RPLACD (SOBTOP,LNIL)
+	DEY
+RINLP2:	LDA FRLIST
+	STA (TEMPN),Y
+	INY
+	LDA FRLIST+1
+	STA (TEMPN),Y	;(RPLACD)
+	DEY
+	CLC
+	LDA TEMPN
+	STA FRLIST
+	ADC #$04
+	STA TEMPN
+	LDA TEMPN+1
+	STA FRLIST+1
+	ADC #$00
+	STA TEMPN+1
+	CMP #SINODS^	;(Ptr. to byte after last node)
+	BNE RINLP2
+	LDA TEMPN
+	CMP #SINODS&$FF
+	BNE RINLP2
+	LDX #$00
+	STX TEMPN1+1
+	INX
+	STX TEMPN1	;Set to Novalue for MKSFUN
+	LDX #UNSUM
+	LDA #IUNSUM
+	JSR MKSFUN
+	LDX #UNDIF
+	LDA #IUNDIF
+	JSR MKSFUN
+	LDA #$00	;(LNIL)
+	STA MARK1
+	STA MARK2
+	STA MARK3
+	STA MARK4
+	STA MARK5
+	STA CELPTR
+	STA OBLIST
+	STA MARK1+1	;MARK1 := LNIL
+	STA MARK2+1	;MARK2 := LNIL
+	STA MARK3+1	;MARK3 := LNIL
+	STA MARK4+1	;MARK4 := LNIL
+	STA MARK5+1	;MARK5 := LNIL
+	STA CELPTR+1	;CELL_PTR := LNIL
+	STA OBLIST+1	;OBLIST := LNIL
+	STA SIZE1
+	STA SIZE2
+	STA SIZE1+1	;SIZE1 := 0
+	STA SIZE2+1	;SIZE2 := 0
+	LDA #'U
+	STA TEMPN2
+	LDA #'E
+	STA TEMPN2+1
+	LDX #$00
+	LDY #TEMPN2
+	LDA #TEMPN3
+	STA ANSN
+	LDA #STRING
+	JSR CONS	;"UE" of TRUE
+	LDA #'T
+	STA TEMPN2
+	LDA #'R
+	STA TEMPN2+1
+	LDY #TEMPN2
+	LDX #TEMPN3
+	STX ANSN
+	LDA #STRING
+	JSR CONS	;"TR" of TRUE
+	LDX #TEMPN3
+	LDA #LTRUE
+	STA ANSN2
+	JSR INTRNX
+	LDX #$00
+	STX TEMPN2+1
+	LDA #'E
+	STA TEMPN2
+	LDY #TEMPN2
+	LDA #TEMPN3
+	STA ANSN
+	LDA #STRING
+	JSR CONS	;"E" of FALSE
+	LDA #'L
+	STA TEMPN2
+	LDA #'S
+	STA TEMPN2+1
+	LDY #TEMPN2
+	LDX #TEMPN3
+	STX ANSN
+	LDA #STRING
+	JSR CONS	;"LS" of FALSE
+	LDA #'F
+	STA TEMPN2
+	LDA #'A
+	STA TEMPN2+1
+	LDY #TEMPN2
+	LDX #TEMPN3
+	STX ANSN
+	LDA #STRING
+	JSR CONS	;"FA" of FALSE
+	LDX #TEMPN3
+	LDA #LFALSE
+	STA ANSN2
+	JMP INTRNX
+.PAGE
+SOBST1:	LDY #$01
+	TYA
+	DEY
+	STA (SOBTOP),Y
+	TYA
+	INY
+	STA (SOBTOP),Y	;(RPLACA)
+	INY
+	LDA SARTOP
+	STA (SOBTOP),Y
+	INY
+	LDA SARTOP+1
+	STA (SOBTOP),Y	;(RPLACD)
+	LDA #SATOM
+	LDX #SOBTOP
+	JSR PUTTYP
+	LDY #$00
+	LDA (TEMPN),Y
+	STA (SARTOP),Y
+	INY
+	LDA (TEMPN),Y
+	STA (SARTOP),Y
+	INY
+	LDA (TEMPN),Y
+	STA (SARTOP),Y
+SBST1A:	INY
+	LDA (TEMPN),Y
+	STA (SARTOP),Y
+	CMP #$20	;See if the last byte was transferred
+	BNE SBST1A	;Yes.
+	LDA #$00
+	STA (SARTOP),Y
+	INY
+	CLC
+	TYA
+	ADC SARTOP
+	STA SARTOP
+	BCC ADHAK5
+	INC SARTOP+1
+ADHAK5:	CLC
+	TYA
+	ADC TEMPN
+	STA TEMPN
+	BCC ADHAK6
+	INC TEMPN+1
+ADHAK6:	CLC
+	LDA SOBTOP
+	ADC #$04
+	STA SOBTOP
+	BCC ADHAK7
+	INC SOBTOP+1
+ADHAK7:	INC NNODES
+	BCC ADHK7A
+	INC NNODES+1
+ADHK7A:	RTS
+.PAGE
+MKSFUN:	LDY #$02
+	STA (SARTOP),Y
+	DEY
+	LDA #$08	;(PREC = 8)
+	STA (SARTOP),Y
+	TYA		;(NARGS = 1)
+	DEY
+	STA (SARTOP),Y
+	TYA
+	LDY #$03
+	STA (SARTOP),Y
+	STX ANSN
+	LDX #SARTOP
+	LDY #TEMPN1	;TEMPN1 Set to Novalue by the calling procedure
+	LDA #SATOM
+	JSR CONS
+	CLC
+	LDA SARTOP
+	ADC #$04
+	STA SARTOP
+	BCC ADHK11
+	INC SARTOP+1
+ADHK11:	RTS
+.PAGE
+.SBTTL	Miscellaneous and Evaluator Utility Routines
+;
+;SYSBUG prints an error message and exits.
+;
+SYSBUG:	PHA
+	TXA
+	PHA
+	TYA
+	PHA
+	LDA #$00
+	STA OUTDEV
+	LDX #LBUG1&$FF
+	LDY #LBUG1^
+	JSR PRTSTR	;Print "LOGO BUG!"
+	JSR BREAK1
+	PLA
+	TAY
+	PLA
+	TAX
+	PLA
+	BRK
+;
+POPFRM:	JSR RSTBND
+	LDX #TLLEVS
+	JSR POP
+	SEC
+	LDA SP
+	SBC #$02	;Skip SF_NUMBER_BINDINGS
+	STA SP
+	BCS PPFM2
+	DEC SP+1
+PPFM2:	LDX #TOKPTR
+	JSR POP
+	LDX #LINNUM
+	JSR POP
+	LDX #NEST
+	JSR POP
+	LDX #CURTOK
+	JSR POP
+	JSR POPB
+	STA UFRMAT
+	LDX #XFRAME
+	JSR POP
+	LDX #FRAME
+	JMP POP
+.PAGE
+;PUSHP is given the location of a page-zero variable in X,
+;and pushes the contents of the variable onto the LOGO stack.
+;
+PUSHP:	LDY #$00
+	LDA $00,X
+	STA (SP),Y
+	INY
+	LDA $01,X
+	STA (SP),Y
+	CLC
+	LDA SP
+	ADC #$02
+	STA SP
+	BCC PSHP1
+	INC SP+1
+PSHP1:	RTS
+;
+;PUSH pushes onto the stack the sixteen-bit value in the X and Y registers.
+;
+PUSH:	TYA
+	LDY #$01
+	STA (SP),Y
+	DEY
+	TXA
+	STA (SP),Y
+	CLC
+	LDA SP
+	ADC #$02
+	STA SP
+	BCC PSHP2
+	INC SP+1
+PSHP2:	RTS
+;
+;VPUSHP is given the address of a page-zero variable in X,
+;and pushes the contents of that variable onto the Value stack.
+;
+VPUSHP:	LDY #$00
+	LDA $00,X
+	STA (VSP),Y
+	INY
+	LDA $01,X
+	STA (VSP),Y
+	CLC
+	LDA VSP
+	ADC #$02
+	STA VSP
+	BCC VPSH1
+	INC VSP+1
+VPSH1:	RTS
+.PAGE
+;POP pops a value off of the LOGO stack and into the page-zero variable
+;whose address is in X.
+;
+POP:	SEC
+	LDA SP
+	SBC #$02
+	STA SP
+	BCS POP1
+	DEC SP+1
+POP1:	LDY #$00
+	LDA (SP),Y
+	STA $00,X
+	INY
+	LDA (SP),Y
+	STA $01,X
+	RTS
+;
+;VPOP pops a value off of the Value stack and into the page-zero variable
+;whose address is in X.
+;
+VPOP:	SEC
+	LDA VSP
+	SBC #$02
+	STA VSP
+	BCS VPOP1
+	DEC VSP+1
+VPOP1:	LDY #$00
+	LDA (VSP),Y
+	STA $00,X
+	INY
+	LDA (VSP),Y
+	STA $01,X
+	RTS
+;
+;POPB pops a one-byte value off of the LOGO stack and returns with it in A.
+;
+POPB:	SEC
+	LDA SP
+	SBC #$02
+	STA SP
+	BCS POPB1
+	DEC SP+1
+POPB1:	LDY #$00
+	LDA (SP),Y
+	RTS
+.PAGE
+;PSHTST tests to see if the LOGO stack test limit has been exceeded,
+;and gives an error if so.
+;
+PSHTST:	LDA #PDLLIM^
+	CMP SP+1
+	BCC PSHTZ
+	BNE PSHTE
+	LDA #PDLLIM&$FF
+	CMP SP
+	BCC PSHTZ
+PSHTE:	JMP STPPEK
+PSHTZ:	LDA #PDLBAS&$FF
+	STA SP
+	LDA #PDLBAS^
+	STA SP+1	;Reset the stack for reader/tokenizer
+	JMP VPSHTZ
+;
+;VPSTST tests to see if the Value stack test limit has been exceeded,
+;and gives an error if so.
+;
+VPSTST:	LDA #VPDLIM^
+	CMP VSP+1
+	BCC VPSHTZ
+	BNE VPSHTE
+	LDA #VPDLIM&$FF
+	CMP VSP
+	BCC VPSHTZ
+VPSHTE:	RTS
+VPSHTZ:	LDX #XNSTOR	;(No Vpdl) "No storage left" zapcode
+	LDA #XZAP
+	JMP ERROR
+.PAGE
+GETVAL:	LDA $00,Y	;Get value into X's pointer from Y's pointer
+	AND #$FC	;Strip off last two bits
+	STA TEMPNH
+	LDA $01,Y
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+	STA $00,X
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X	;(CAR)
+	RTS
+;
+PUTVAL:	LDA $00,Y
+	AND #$FC
+	STA TEMPNH
+	LDA $01,Y
+	STA TEMPNH+1
+	LDY #$00
+	LDA $00,X
+	STA (TEMPNH),Y
+	INY
+	LDA $01,X
+	STA (TEMPNH),Y	;(RPLACA)
+	RTS
+;
+;GETPRC returns the precedence (in A) of the function in Y,
+;given the funtype in X.
+;
+GETPRC:	LDA #$05	;Assume Ufun, precedence 5
+	CPY #UFUN
+	BEQ GPRCU
+	CPY #SFUN
+	BEQ GPRCS
+	JSR SYSBUG
+GPRCS:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$01
+	LDA (TEMPNH),Y
+GPRCU:	RTS
+.PAGE
+;CONS creates a new node from the freelist. X points to the Cdr,
+;Y to the Car, ANSN to the node's pointer, and A holds the typecode.
+;
+CONS:	PHA		;Save type - ANS is ANSN
+	STY TEMPNH	;TEMPNH.L is XCAR
+	STX TEMPNH+1	;TEMPNH.H is XCDR
+	LDA PRDFLG
+	BEQ CONST1	;Don't check limit for READ_LINE callers
+	LDA FRLIST+1
+	BNE CONS2
+	BEQ CONSG
+CONST1:	LDA NNODES+1
+	CMP #NODLIM^
+	BCC CONS2
+	BNE CONSG
+	LDA NNODES
+	CMP #NODLIM&$FF
+	BCC CONS2
+CONSG:	LDX TEMPNH
+	JSR VPUSHP	;VPUSHP Xcar
+	LDX TEMPNH+1
+	JSR VPUSHP	;VPUSHP Xcdr
+	JSR GARCOL
+	SEC		;Reset the VPDL
+	LDA VSP
+	SBC #$04
+	STA VSP
+	BCS CONSG1
+	DEC VSP+1
+CONSG1:	LDA PRDFLG
+	BEQ CONST2
+	LDA FRLIST+1
+	BNE CONS2
+	BEQ CONSR
+CONST2:	LDA NNODES+1
+	CMP #NODLIM^
+	BCC CONS2
+	BNE CONSR
+	LDA NNODES
+	CMP #NODLIM&$FF
+	BCC CONS2
+CONSR:	LDX #XNSTRN	;Error "No storage left" (No nodes)
+	LDA #XZAP
+	JMP ERROR
+CONS2:	INC NNODES
+	BNE CONS2A
+	INC NNODES+1	;Increment node counter
+CONS2A:	LDY #$00
+	LDX TEMPNH
+	LDA $00,X
+	STA (FRLIST),Y
+	INY
+	LDA $01,X
+	STA (FRLIST),Y	;(RPLACA)
+	INY
+	LDX TEMPNH+1
+	LDA (FRLIST),Y
+	PHA
+	LDA $00,X
+	STA (FRLIST),Y
+	INY
+	LDA (FRLIST),Y
+	PHA
+	LDA $01,X
+	STA (FRLIST),Y	;(RPLACD)
+	LDX ANSN
+	LDA FRLIST
+	STA $00,X
+	LDA FRLIST+1
+	STA $01,X
+	PLA
+	STA FRLIST+1
+	PLA
+	STA FRLIST
+	PLA		;GET TYPE
+;
+PUTTYP:	CMP #LATOM+1
+	BCS PUTTP2
+	CMP #QATOM
+	BCC PUTTP2
+	SBC #$07
+	CLC
+	ADC $00,X
+	STA $00,X
+PUTTPE:	RTS
+PUTTP2:	LDY $01,X
+	BEQ PUTTPE
+	STY TEMPNH+1
+	LDY $00,X
+	STY TEMPNH
+	TAX
+	JSR TYPACS
+	TXA
+	STA (TEMPNH),Y
+PRTS:	RTS
+.PAGE
+;STPPEK is the polling routine for user interrupts.
+;
+STPPEK:	JSR TSTCHR
+	BMI PRTS
+	CMP #STPKEY
+	BEQ STPPK1
+	CMP #PAUSKY
+	BEQ STPPKZ
+	CMP #LSTKEY
+	BEQ PRTS
+	RTS		;?Put a character in the buffer
+STPPKZ:	LDA #XBRK
+	JMP ERROR
+STPPK1:	LDX #ERROR1&$FF
+	LDY #ERROR1^
+	JSR PUSH
+	LDX #XSTOP	;Stop_key Zapcode
+	LDA #XZAP
+	JMP ERROR
+;
+PTSPNM:	LDA $00,X
+	AND #$FC
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	DEY
+	LDA (TEMPNH),Y
+	ORA #$01
+	STA (TEMPNH),Y
+CONSE:	RTS
+.PAGE
+GETNGS:	CMP #UFUN
+	BEQ GTNG1
+	CMP #SFUN
+	BEQ GTNG2
+	JSR SYSBUG
+GTNG1:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$04
+	LDA (TEMPNH),Y	;(GETBAR)
+	RTS
+GTNG2:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+GTNGE:	RTS
+.PAGE
+;PRTSTR prints the Ascii string whose address is in the X and Y registers.
+;The string is terminated with a 0.
+;
+PRTSTR:	STX TEMPNH
+	STY TEMPNH+1
+	LDY #$00
+PTSTR1:	LDA (TEMPNH),Y
+	BEQ GTNGE
+	JSR TPCHR
+	INY
+	JMP PTSTR1
+;
+INFIXP:	CMP #SFUN
+	BNE IFP1
+	LDA $01,X
+	BNE IFP2
+IFP1:	CLC		;Not infix
+	RTS
+IFP2:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	CMP #INSUM
+	BEQ IFP3
+	CMP #INDIF
+	BEQ IFP3
+	CMP #INPROD
+	BEQ IFP3
+	CMP #INQUOT
+	BEQ IFP3
+	CMP #INGRTR
+	BEQ IFP3
+	CMP #INLESS
+	BEQ IFP3
+	CMP #INEQUL
+	BNE IFP1
+IFP3:	SEC		;Infix.
+	RTS		;Return with proper index in A
+.PAGE
+FNDLIN:	STA ANSN	;LINE returned
+	STY ANSN1	;NUMBER looked for
+	LDA $00,X
+	STA TEMPN	;TEMPN is LAST_LINE
+	LDA $01,X
+	STA TEMPN+1
+	LDX ANSN
+	LDY #$02
+	LDA (TEMPN),Y
+	STA $00,X
+	INY
+	LDA (TEMPN),Y
+	STA $01,X	;(CDR)
+FDLNW:	LDX ANSN
+	LDA $00,X
+	BNE FDLNW1
+	LDA $01,X
+	BEQ FDLNWE
+FDLNW1:	LDX ANSN
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+	STA TEMPN1	;TEMPN1 is incremental ptr.
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN1+1	;(CAR)
+	DEY
+	LDA (TEMPN1),Y
+	TAX
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN1+1
+	STX TEMPN1	;(GETBAR)
+	LDX ANSN1
+	LDA TEMPN1+1
+	CMP $01,X
+	BCC FDLNW3
+	BNE FDLNWE
+	LDA TEMPN1
+	CMP $00,X
+	BEQ FDLNWF
+	BCS FDLNWE
+FDLNW3:	LDX ANSN
+	LDA $00,X
+	STA TEMPN
+	LDA $01,X
+	STA TEMPN+1
+	LDY #$02
+	LDA (TEMPN),Y
+	STA $00,X
+	INY
+	LDA (TEMPN),Y
+	STA $01,X	;(CDR)
+	JMP FDLNW
+FDLNWE:	LDX ANSN
+	LDA TEMPN
+	STA $00,X
+	LDA TEMPN+1
+	STA $01,X
+	CLC		;Clear Carry means Not Found
+	RTS
+FDLNWF:	SEC		;Set Carry means Found
+	RTS
+.PAGE
+LINPEK:	LDA $00,Y
+	STA TEMPNH	;BODY
+	LDA $01,Y
+	STA TEMPNH+1
+	LDY #$02
+	LDA UFRMAT
+	BEQ LPK1
+	CMP #FPACK
+	BEQ LPK2
+	JSR SYSBUG
+LPK2:	INY
+	INY
+LPK1:	LDA (TEMPNH),Y
+	STA $00,X
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X	;(CDR or GETBAR)
+	RTS
+.PAGE
+TTKADV:	JSR TFKADV
+	LDA TEMPNH
+	CMP COMMNT
+	BNE TTKE
+	LDA TEMPNH+1
+	CMP COMMNT+1
+	BNE TTKE
+	LDA #$00
+	STA $00,X
+	STA $01,X
+TTKE:	RTS
+;
+TFKADV:	LDA UFRMAT
+	CMP #LIST
+	BEQ TFK1
+	CMP #FPACK
+	BEQ TFK2
+	JSR SYSBUG
+TFK1:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	STA $00,X
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X	;(CDR)
+	JMP TFK3
+TFK2:	CLC
+	LDA $00,X
+	ADC #$02
+	STA $00,X
+	LDA $01,X
+	ADC #$00
+	STA $01,X
+	CMP ULNEND+1
+	BNE TFK3
+	LDA $00,X
+	CMP ULNEND
+	BNE TFK3
+	LDA #$00
+	STA $00,X
+	STA $01,X
+	RTS
+TFK3:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+	PHA
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	PLA
+	STA TEMPNH	;(GETTOK)
+	RTS
+.PAGE
+GTFULN:	LDA $00,Y
+	STA TEMPNH
+	LDA $01,Y
+	STA TEMPNH+1	;BODY
+	LDY #$00
+	LDA (TEMPNH),Y
+	STA $00,X
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X	;(CAR or GETBAR)
+	LDA UFRMAT
+	BEQ GTFR
+	CMP #FPACK
+	BEQ GTF2
+	JSR SYSBUG
+GTF2:	INY
+	LDA (TEMPNH),Y
+	STA ULNEND
+	INY
+	LDA (TEMPNH),Y
+	STA ULNEND+1	;(GETBAR)
+	LDA $00,X
+	CMP ULNEND
+	BNE GTFR
+	LDA $01,X
+	CMP ULNEND+1
+	BEQ FLLIN
+GTFR:	RTS
+;
+GTTULN:	JSR GTFULN
+	LDA $00,X
+	BNE GTT1
+	LDA $01,X
+	BEQ GTFR
+GTT1:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+	CMP COMMNT
+	BNE GTFR
+	INY
+	LDA (TEMPNH),Y
+	CMP COMMNT+1
+	BNE GTFR
+FLLIN:	LDA #$00
+	STA $00,X
+	STA $01,X
+	RTS
+.PAGE
+GETLEN:	LDA $00,Y
+	STA TEMPNH	;LIST
+	LDA $01,Y
+	STA TEMPNH+1
+	LDA #$00
+	STA $00,X	;NARGS
+	STA $01,X
+GLENW:	LDA TEMPNH
+	BNE GLENW1
+	LDA TEMPNH+1
+	BEQ GTFR
+GLENW1:	LDY #$00
+	LDA (TEMPNH),Y
+	STA TEMPN
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN+1	;(CAR)
+	INY
+	LDA (TEMPNH),Y
+	PHA
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	PLA
+	STA TEMPNH	;(CDR)
+	LDA TEMPN
+	CMP COMMNT
+	BNE GLENW2
+	LDA TEMPN+1
+	CMP COMMNT+1
+	BEQ GTFR
+GLENW2:	INC $00,X
+	BNE GLENW
+	INC $01,X
+	JMP GLENW
+.PAGE
+UNFUNC:	STX ANSN
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	LDY #$00
+	LDA #$01
+	STA (TEMPNH),Y
+	TYA
+	INY
+	STA (TEMPNH),Y	;(RPLACA)
+	RTS
+.PAGE
+GETFUN:	STA ANSN	;Save ANS_FUNCT pointer
+	LDA $00,X
+	STA TEMPN	;Get OBJECT pointer
+	LDA $01,X
+	STA TEMPN+1
+	JSR GETTYP
+	LDX ANSN
+	LDY #$02
+	CMP #ATOM
+	BEQ GTFN1
+	CMP #SATOM
+	BEQ GTFN2
+	LDA #$00
+	STA $01,X
+	RTS
+GTFN1:	LDA (TEMPN),Y
+	PHA
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN+1
+	PLA
+	STA TEMPN
+	LDY #$00
+	LDA (TEMPN),Y
+	PHA
+	INY
+	LDA (TEMPN),Y
+	STA $01,X
+	PLA
+	STA $00,X	;(CAR)
+	LDA #UFUN
+	RTS
+GTFN2:	LDA (TEMPN),Y
+	STA $00,X
+	INY
+	LDA (TEMPN),Y
+	STA $01,X	;(CDR)
+	LDA #SFUN
+	RTS
+.PAGE
+DELETE:	STX ANSN	;ANSN points to NUMBER
+	LDA EDBOD
+	STA TEMPN	;TEMPN is LASTLINE
+	LDA EDBOD+1
+	STA TEMPN+1
+	LDY #$02
+	LDA (TEMPN),Y
+	STA TEMPN1	;TEMPN1 is LINE
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN1+1	;(CDR)
+DLTW:	LDA TEMPN1
+	BNE DLTW2
+	LDA TEMPN1+1
+	BEQ DLTWE
+DLTW2:	LDY #$00
+	LDA (TEMPN1),Y
+	STA TEMPNH	;TEMPNH is TEMP
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPNH+1	;(CAR)
+	DEY
+	LDA (TEMPNH),Y
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CAR)
+	LDX ANSN
+	CMP $01,X
+	BCC DLTW1
+	BNE DLTWE
+	LDA TEMPNH
+	CMP $00,X
+	BEQ DLTWF
+	BCS DLTWE
+DLTW1:	LDA TEMPN1
+	STA TEMPN
+	LDA TEMPN1+1
+	STA TEMPN+1
+	LDY #$02
+	LDA (TEMPN1),Y
+	TAX
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN1+1
+	STX TEMPN1	;(CDR)
+	JMP DLTW
+DLTWF:	LDY #$02
+	LDA (TEMPN1),Y
+	STA TEMPNH
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPNH+1	;(CDR)
+	DEY
+	LDA TEMPNH
+	STA (TEMPN),Y
+	INY
+	LDA TEMPNH+1
+	STA (TEMPN),Y	;(RPLACD)
+DLTWE:	RTS
+.PAGE
+ULNADV:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1	;BODY
+	LDY #$02
+	LDA UFRMAT
+	BEQ ULDV1
+	CMP #FPACK
+	BEQ ULDV2
+	JSR SYSBUG
+ULDV1:	LDA (TEMPNH),Y
+	PHA
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X
+	PLA
+	STA $00,X	;(CDR)
+	RTS
+ULDV2:	INY
+	INY
+	LDA (TEMPNH),Y
+	PHA
+	INY
+	LDA (TEMPNH),Y	;(GETBAR)
+	BNE ULDV3
+	PLA
+	BNE ULDV3A
+	STA $00,X
+	STA $01,X
+	RTS
+ULDV3:	PLA
+ULDV3A:	CLC
+	LDA $00,X
+	ADC #$02
+	STA $00,X
+	BCC ADHK13
+	INC $01,X
+ADHK13:	RTS
+.PAGE
+RSTBND:	LDA XFRAME
+	STA SP
+	LDA XFRAME+1
+	STA SP+1
+	LDY #$0E	;(SF_NUMBER_BINDINGS = 14.)
+	LDA (FRAME),Y
+	BEQ RSTBWE
+	STA ANSN	;(GETBAR)
+RSTBW:	LDX #TEMPN1
+	JSR POP
+	LDX #TEMPN
+	JSR POP
+	LDX #TEMPN
+	LDY #TEMPN1
+	JSR PUTVAL
+	DEC ANSN
+	BNE RSTBW
+RSTBWE:	RTS
+.PAGE
+OTPFX1:	LDA #TEMPN	;Output a two-byte fixnum value (Y is ptr.)
+	STA ANSN
+	LDX #$00
+	LDA #FIX
+	JSR CONS
+	LDX #TEMPN
+	JSR VPUSHP
+	LDA #$01
+	STA OTPUTN
+	JMP POPJ
+;
+OTPFLO:	LDA #FLO
+	BNE OTPNUM	;(Always)
+OTPFIX:	LDA #FIX
+OTPNUM:	PHA		;Save type
+	LDX #TEMPN	;Entered with type (Fix/Flo) in A
+	STX ANSN
+	TYA
+	TAX
+	INY
+	INY
+	PLA		;Retrieve type
+	JSR CONS
+	LDX #TEMPN
+	JSR VPUSHP
+	LDA #$01
+	STA OTPUTN
+	JMP POPJ
+;
+PUTFUN:	STY ANSN
+	STX ANSN1
+	JSR GETTYP
+	CMP #SATOM
+	BEQ PTFN1
+	CMP #ATOM
+	BEQ PTFN2
+	JSR SYSBUG
+PTFN1:	LDY ANSN1
+	JSR PTRYOK
+	LDA #XUBL
+	JMP ERROR
+PTFN2:	LDX ANSN1
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	LDX ANSN
+	LDY #$00
+	LDA $00,X
+	STA (TEMPNH),Y
+	INY
+	LDA $01,X
+	STA (TEMPNH),Y	;(RPLACA)
+	RTS
+.PAGE
+;Gets two numerical arguments. Coerces one to Real if not same type.
+;Returns with carry set if Flonum results.
+GT2NUM:	LDX #NARG2
+	JSR VPOP
+	LDX #NARG1
+	JSR VPOP
+	LDX #NARG1
+	JSR GETNUM	;GETNUM returns carry clear if argument non-numerical
+	BCC GTFX2A
+	STA ANSN3	;Save first type
+	LDX #NARG2
+	JSR GETNUM
+	BCC GTFX2C
+	CMP ANSN3
+	BNE GT2NM1
+	CMP #FLONUM	;(Sets carry if Flonum)
+	RTS
+GT2NM1:	LDX #NARG1	;Assume ARG1 is the integer
+	CMP #FIX
+	BNE GT2NM2
+	LDX #NARG2	;Nope, it was ARG2
+GT2NM1:	JSR XFLOAT	;Convert to floating pt.
+	SEC
+	RTS
+GTFX2A:	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+GTFX2C:	JMP SFPT1	;(ERROR XWTA,ARG2,CURTOK)
+;
+;Gets a numerical argument. Returns with carry set if flonum.
+GT1NUM:	LDX #NARG1
+	JSR VPOP
+	LDX #NARG1
+	JSR GETNUM
+	BCC GTFX2A
+	CMP #FLONUM	;(Sets carry if Flonum)
+GTNRTS:	RTS
+;
+;Gets a numerical argument, changes to integer if Real.
+;Give an error if high bytes not zero.?
+GT1FIX:	LDX #NARG1
+	JSR VPOP
+	LDX #NARG1
+	JSR GETNUM
+	BCC GTFX2A
+	CMP #FIX
+	BEQ GTNRTS
+	LDX #NARG1
+	JMP XINT
+;
+;Gets two numerical arguments, changes either or both to integer if Real.
+;Gives an error if either arg. has high bytes non-zero.?
+GT2FIX:	LDX #NARG2
+	JSR VPOP
+	LDX #NARG1
+	JSR VPOP
+	LDX #NARG1
+	JSR GETNUM
+	BCC GTFX2A
+	CMP #FIX
+	BEQ GT2FX1
+	LDX #NARG1
+	JSR XINT
+GT2FX1:	LDX #NARG2
+	JSR GETNUM
+	BCC GTFX2C
+	CMP #FIX
+	BEQ GTNRTS
+	LDX #NARG2
+	JMP XINT
+;
+;Gets a numerical argument if possible. Returns with carry clear if successful.
+;Returns with type of argument (Fix/Flo) in A.
+GETNUM:	STX ANSN1	;Address of argument
+	JSR GETTYP
+	LDX ANSN1
+	CMP #ATOM
+	BEQ ATMTXX
+	CMP #FIX
+	BEQ GTFX2
+	CMP #FLO
+	BEQ GTFX2
+	CLC		;Carry clear means argument not OK
+	RTS
+GTFX2:	PHA		;Save type
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+	STA $00,X
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X
+	PLA		;Retrieve type
+	SEC		;Carry set means argument OK
+RTSA1:	RTS
+.PAGE
+;Convert an atom to a Fixnum or Flonum if possible. Sets the carry
+;if successful. Returns type of number (Fix/Flo) in A.?
+;
+ATMTFX:	STX ANSN1	;ANSN1 points to argument
+ATMTXX:	LDY #TEMPN4	;TEMPN4 becomes PNAME (Entry point for GETNUM)
+	JSR GETPNM
+	LDA TEMPN4+1
+	BNE ATMT1
+ATMT4F:	CLC		;Carry clear means argument not a number
+	RTS
+ATMT1:	LDY #$01
+	LDA (TEMPN4),Y
+	STA TEMPN5+1
+	DEY
+	STY TEMPN6	;TEMPN6 is NUMBER, initialize to 0
+	STY TEMPN6+1
+	STY ANSN2	;ANSN2 is SIGN
+	LDA (TEMPN4),Y
+	STA TEMPN5	;(CAR) a pair of digits to TEMPN5
+	CMP #'-
+	BNE ATMT3
+	INC ANSN2	;ANSN2 is SIGN
+	BNE ATMT4A	;(Always)
+ATMT3:	JSR GOBDIG
+ATMT4:	LDA TEMPN4+1
+	BEQ ATMT4E
+ATMT4A:	LDY #$02
+	LDA (TEMPN4),Y
+	TAX
+	INY
+	LDA (TEMPN4),Y
+	STA TEMPN4+1
+	STX TEMPN4	;(CDR) PNAME to next two characters
+	LDA TEMPN5+1
+	BEQ ATMT4
+	JSR GOBDIG
+	LDA TEMPN4+1
+	BEQ ATMT4E
+	LDY #$01
+	LDA (TEMPN4),Y
+	STA TEMPN5+1
+	DEY
+	LDA (TEMPN4),Y	;(CAR) next two characters
+	JSR GOBDIG
+	JMP ATMT4
+ATMT4E:	LDA ANSN2
+	BEQ ATMT5
+	LDX #TEMPN6
+	JSR COMPL	;?DIFFERENT FOR FLONUM
+ATMT5:	LDX ANSN1	;ANSN1 is argument pointer
+	LDA TEMPN6	;TEMPN6 is NUMBER
+	STA $00,X
+	LDA TEMPN6+1
+	STA $01,X
+	SEC		;Carry set means argument is a number
+	RTS
+.PAGE
+GOBDIG:	CMP #':		;Next character after "9"
+	BCS GOBF	;?CHECK FOR FLONUM - DECIMAL PT., E OR N
+	SBC #'/		;Character before "0" (because borrow is set here)
+	BCC GOBF
+	TAY
+	ASL TEMPN6
+	ROL TEMPN6+1	;NUMBER := NUMBER * 2
+	BCS GOBF	;?OVERFLOW MEANS FLONUM
+	LDA TEMPN6
+	STA TEMPNH
+	LDA TEMPN6+1
+	STA TEMPNH+1
+	ASL TEMPNH
+	ROL TEMPNH+1
+	BCS GOBF
+	ASL TEMPNH
+	ROL TEMPNH+1
+	BCS GOBF
+	LDA TEMPNH
+	ADC TEMPN6
+	STA TEMPN6
+	LDA TEMPNH+1
+	ADC TEMPN6+1
+	STA TEMPN6+1	;NUMBER := NUMBER * 10.
+	BCS GOBF
+	TYA
+	ADC TEMPN6	;NUMBER := NUMBER + Digit
+	STA TEMPN6
+	LDA TEMPN6+1
+	ADC #$00
+	STA TEMPN6+1
+	BCS GOBF
+	BPL HKCR2
+GOBF:	CLC		;Carry clear means argument non-numeric
+	PLA		;Return back past ATMTFX
+	PLA
+HKCR2:	RTS
+.PAGE
+GETPNM:	STY TEMPN1+1	;TEMPN1.H is returned PNAME pointer
+	STX TEMPN1	;TEMPN1.L is ATOMM pointer
+	LDA $00,X
+	AND #$FC
+	STA $00,X
+	JSR GETTYP
+	LDY TEMPN1
+	LDX $00,Y
+	STX TEMPNH	;TEMPNH becomes ATOMM
+	LDX $01,Y
+	STX TEMPNH+1
+	LDY #$02
+	CMP #ATOM
+	BEQ GTPN1
+	CMP #SATOM
+	BEQ GTPN2
+	JSR SYSBUG
+GTPN1:	LDA (TEMPNH),Y	;(Y is $02)
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	LDX TEMPN1+1
+	DEY
+	LDA (TEMPNH),Y
+	PHA
+	INY
+	LDA (TEMPNH),Y
+	STA $01,X
+	PLA
+	TAY		;(CDR)
+	AND #$FE
+	STA $00,X
+	TYA
+	AND #$01
+RTS1A:	RTS
+GTPN2:	LDA #$00
+	STA MARK1
+	STA MARK1+1
+	LDA (TEMPNH),Y	;(Y is $02)
+	STA TEMPN	;TEMPN is INDEX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN+1	;(CDR)
+	LDA SP
+	STA TEMPN2	;TEMPN2 is TEMP
+	LDA SP+1
+	STA TEMPN2+1
+	LDY #$03
+GTPNW:	LDA (TEMPN),Y	;Gets INDEX + 3 (SA_PNAME)
+	BEQ GTPNWE
+	STY TEMPN1	;TEMPN1.L is INDEX offset
+	JSR PSHTST
+	LDY TEMPN1
+	LDA (TEMPN),Y
+	TAX
+	INY
+	LDA (TEMPN),Y
+	PHA
+	INY
+	STY TEMPN1
+	TAY
+	JSR PUSH
+	PLA
+	BNE GTPNW
+GTPNWE:	LDA TEMPN2
+	CMP SP
+	BNE GTPNW1
+	LDA TEMPN2+1
+	CMP SP+1
+	BEQ GTPNWF
+GTPNW1:	LDX #TEMPN3
+	JSR POP
+	LDX #MARK1
+	LDY #TEMPN3
+	STX ANSN
+	LDA #STRING
+	JSR CONS
+	JMP GTPNWE
+GTPNWF:	LDX TEMPN1+1	;ANS pointer
+	LDA MARK1
+	STA $00,X
+	LDA MARK1+1
+	STA $01,X
+	LDA #$00
+	STA MARK1
+	STA MARK1+1
+RTSA2X:	RTS
+.PAGE
+SKPPTH:	LDA TOKPTR
+	BNE SKPP1
+	LDA TOKPTR+1
+	BEQ RTSA2X
+SKPP1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TTKADV
+	LDA TEMPN
+	CMP LPAR
+	BNE RTSA2X
+	LDA TEMPN+1
+	CMP LPAR+1
+	BNE RTSA2X
+	LDA #$01
+	STA ANSN	;ANSN is PAREN_COUNTER
+SKPPW:	LDA ANSN
+	BEQ RTSA2X
+	LDA TOKPTR
+	BNE SKPPW1
+	LDA TOKPTR+1
+	BEQ RTSA2X
+SKPPW1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TTKADV
+	LDX TEMPN
+	LDY TEMPN+1
+	CPX LPAR
+	BNE SKPPW2
+	CPY LPAR+1
+	BNE SKPPW2
+	INC ANSN
+	JMP SKPPW
+SKPPW2:	CPX RPAR
+	BNE SKPPW
+	CPY RPAR+1
+	BNE SKPPW
+	DEC ANSN
+	JMP SKPPW
+.PAGE
+EXIFSC:	STX ANSN1	;ANSN1 is ANS
+	LDA IFLEVL
+	STA TEMPN1	;TEMPN2 is IF_COUNTER
+	LDA IFLEVL+1
+	STA TEMPN1+1
+EXFW:	LDA TEMPN1+1
+	CMP IFLEVL+1
+	BCC EXFWE
+	BNE EXFWA1
+	LDA TEMPN1
+	CMP IFLEVL
+	BCS EXFWA1
+EXFWE:	SEC
+	LDA IFLEVL
+	SBC #$01
+	STA IFLEVL
+	BCS EXFWR
+	DEC IFLEVL+1
+EXFWR:	RTS
+EXFWA1:	LDA TOKPTR
+	BNE EXFW1
+	LDA TOKPTR+1
+	BEQ EXFWE
+EXFW1:	LDY #$00
+	LDX ANSN1
+	LDA (TOKPTR),Y
+	STA $00,X
+	INY
+	LDA (TOKPTR),Y
+	STA $01,X	;(GETTOK)
+	TAY
+	LDA $00,X
+	TAX
+	CPX LIF
+	BNE EXFW2
+	CPY LIF+1
+	BNE EXFW2
+	INC TEMPN1
+	BNE EXIFWB
+	INC TEMPN1+1
+EXIFWB:	LDX #TOKPTR
+	JSR TTKADV
+	JMP EXFW
+EXFW2:	CPX LELSE
+	BNE EXFW3
+	CPY LELSE+1
+	BNE EXFW3
+	SEC
+	LDA TEMPN1
+	SBC #$01
+	STA TEMPN1
+	BCS EXFWC
+	DEC TEMPN1+1
+EXFWC:	LDA TEMPN1+1
+	CMP IFLEVL+1
+	BCC EXFWE
+	BNE EXFWD
+	LDA TEMPN1
+	CMP IFLEVL
+	BCC EXFWE
+EXFWD:	LDX #TOKPTR
+	JSR TTKADV
+	JMP EXFWA1
+EXFW3:	CPX RPAR
+	BNE EXFW4
+	CPY RPAR+1
+	BEQ EXFWE
+EXFW4:	JSR SKPPTH
+	JMP EXFW
+.PAGE
+EDTSTP:	LDA #$00
+	STA OTPUTN
+	LDA EDSW
+	BNE EDTSR1
+	LDA LEVNUM
+	BNE EDTSR2
+	LDA LEVNUM+1
+	BNE EDTSR2
+	LDA TOKPTR+1
+	BEQ EDTSR3
+	LDY #$00
+	LDA (TOKPTR),Y
+	STA ARG1
+	INY
+	LDA (TOKPTR),Y
+	STA ARG1+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TFKADV
+	LDX #ARG1
+	JSR GETTYP
+	CMP #SATOM
+	BEQ EDTSR4
+	CMP #ATOM
+	BNE EDTSR5
+	LDA #$01
+	STA EDSW
+	LDA ARG1
+	STA EDTATM
+	STA PODEFL
+	LDA ARG1+1
+	STA EDTATM+1
+	STA PODEFL+1
+RTS2:	RTS
+EDTSR1:	LDY #EDTATM
+	LDA #XEDT
+	JMP ERROR
+EDTSR2:	JMP STTLR2	;(ERROR XETL)
+EDTSR3:	JMP SCMMT1	;(ERROR XEOL)
+EDTSR4:	JMP SPO5S	;(ERROR XUBL,ARG1)
+EDTSR5:	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+.PAGE
+;Tries to find a block of (Y) contiguous free words in nodespace.
+;If successful, return the start addr in (X). If not, return LNIL.
+;
+GETWDS:	STX ANSN		;ANSN is ans
+	STY ANSN1		;ANSN1 is size
+	LDA #$00
+	STA $00,X		;zero ans
+	STA $01,X
+	LDA $00,Y
+	BNE GW1A
+	LDA $01,Y
+	BEQ RTS2		;If size=0, just return with ANS = 0
+GW1A:	JSR GW1			;try once
+	LDX ANSN
+	LDA $00,X
+	BNE RTS2		;if found something,
+	LDA $01,X		;quit.
+	BNE RTS2		;otherwise, try again
+	JSR GARCOL		;after a GC
+;
+GW1:	LDA #$00
+	STA TEMPN		;Zero lastptr (TEMPN)
+	STA TEMPN+1
+	STA TEMPN4
+	STA TEMPN4+1		;and lastptr1 (TEMPN4)
+	LDA FRLIST		;init ptr (TEMPN1) and
+	STA TEMPN1		;ptr1 (TEMPN3) to freelist
+	STA TEMPN3
+	LDA FRLIST+1
+	STA TEMPN1+1
+	STA TEMPN3+1
+GW1W:	LDX ANSN
+	LDA $00,X		;if ans neq LNIL, done
+	BNE GWRTS		;cuz found something
+	LDA $01,X
+	BEQ GW1WA
+GWRTS:	LDX ANSN1
+	CLC
+	LDA NNODES
+	ADC $00,X
+	STA NNODES		;Adjust allocation pointer
+	LDA NNODES+1
+	ADC $01,X
+	STA NNODES+1
+	RTS
+GW1WA:	LDA TEMPN1		;if ptr1 = LNIL, done
+	BNE GW1W1		;cuz been thru whole
+	LDA TEMPN1+1		;freelist, found nothing
+	BEQ RTS2
+GW1W1:	LDA #$00
+	STA TEMPN2		;sofar (TEMPN2) := 0
+	STA TEMPN2+1
+	STA ANSN2		;contig (ANSN2) := 0 (T)
+GW1X:	LDX ANSN1
+	LDA TEMPN2+1
+	CMP $01,X
+	BCC GW1X2		;if sofar >= size, go if2
+	BNE GWIF2
+	LDA TEMPN2
+	CMP $00,X
+	BCS GWIF2
+	LDA ANSN2		;if contig = false, go else
+	BNE GWELSE
+	LDA TEMPN3
+	BNE GW1X2		;if ptr1 = LNIL, goto else
+	LDA TEMPN3+1
+	BEQ GWELSE
+GW1X2:	CLC
+	LDA TEMPN2
+	ADC #$02		;sofar := sofar + 2
+	STA TEMPN2
+	BCC GW1X3
+	INC TEMPN2+1
+GW1X3:	LDY #$02
+	LDA (TEMPN3),Y
+	STA TEMPNH		;temp (TEMPNH) := (cdr ptr1)
+	INY
+	LDA (TEMPN3),Y
+	STA TEMPNH+1		;(CDR)
+	CLC
+	LDA TEMPNH		;add 4 to temp and see if
+	ADC #$04		;result is = ptr1
+	TAX
+	LDA TEMPNH+1
+	ADC #$00
+	CMP TEMPN3+1
+	BNE NCNTIG
+	CPX TEMPN3
+	BEQ CONTIG		;if so, contig := 1 (false)
+NCNTIG:	INC ANSN2
+CONTIG:	LDA TEMPN3
+	STA TEMPN4		;lastptr1 := ptr1
+	LDA TEMPN3+1
+	STA TEMPN4+1
+	LDA TEMPNH
+	STA TEMPN3		;ptr1 := temp
+	LDA TEMPNH+1
+	STA TEMPN3+1
+	JMP GW1X		;round the while loop
+GWIF2:	LDA TEMPN		;if lastptr = LNIL,
+	BNE GWIF3		;freelist := ptr1
+	LDA TEMPN+1
+	BNE GWIF3
+	LDA TEMPN3
+	STA FRLIST		;freelist := ptr1
+	LDA TEMPN3+1
+	STA FRLIST+1
+	JMP GWIF4
+GWIF3:	LDY #$02		;else (rplacd lasptr ptr1)
+	LDA TEMPN3
+	STA (TEMPN),Y
+	INY
+	LDA TEMPN3+1
+	STA (TEMPN),Y		;(rplacd)
+GWIF4:	LDX ANSN
+	LDA TEMPN4
+	STA $00,X		;ans := lastptr1
+	LDA TEMPN4+1
+	STA $01,X
+	JMP GW1W		;back to top
+GWELSE:	LDA TEMPN3
+	STA TEMPN1		;ptr := ptr1
+	LDA TEMPN3+1
+	STA TEMPN1+1
+	LDA TEMPN4
+	STA TEMPN		;lastptr := lastptr1
+	LDA TEMPN4+1
+	STA TEMPN+1
+	JMP GW1W		;back to top
+.PAGE
+STUFF:	STA ANSN3		;try to associate the function (ATOM)
+	STX ANSNX		;definition with the name (BODY).
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1		;TEMPNH is BODY
+	LDY #$00
+	LDA (TEMPNH),Y
+	STA TEMPN7
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN7+1	;(CAR) to LINE
+	LDX #TEMPX2	;TEMPX2 becomes NARGS
+	LDY #TEMPN7
+	JSR GETLEN
+	LDA #$00
+	STA TEMPN6	;TEMPN6 is SIZE
+	STA TEMPN6+1
+	LDX ANSNX
+	LDA $00,X
+	STA TEMPNH	;TEMPNH is BODY
+	LDA $01,X
+	STA TEMPNH+1
+GTSZW:	LDA TEMPNH
+	BNE GTSZW1
+	LDA TEMPNH+1
+	BEQ GTSZND
+GTSZW1:	LDY #$00
+	LDA (TEMPNH),Y
+	STA TEMPN
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN+1	;(CAR) to LINE (GETSIZ local)
+	INY
+	LDA (TEMPNH),Y
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+GTSZX:	LDA TEMPN
+	BNE GTSZX1
+	LDA TEMPN+1
+	BEQ GTSZW
+GTSZX1:	INC TEMPN6
+	BNE GTSZX2
+	INC TEMPN6+1
+GTSZX2:	LDY #$02
+	LDA (TEMPN),Y
+	TAX
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN+1
+	STX TEMPN	;(CDR)
+	JMP GTSZX
+GTSZND:	LDX #TEMPN5	;TEMPN5 becomes PTR
+	LDY #TEMPN6	;SIZE
+	JSR GETWDS
+	LDA TEMPN5
+	BNE STFF1
+	LDA TEMPN5+1
+	BNE STFF1
+STFFA:	LDA #TEMPX2
+	LDY ANSNX
+	LDX ANSN3
+	JMP PTFTXT	;PUT_FTEXT (FUNATOM, BODY, NARGS) (X,Y,A)
+STFF1:	LDA TEMPN5
+	STA AREA1
+	LDA TEMPN5+1
+	STA AREA1+1
+	LDA TEMPN6
+	STA SIZE1
+	LDA TEMPN6+1
+	STA SIZE1+1
+	LDX #TEMPN6
+	LDY ANSNX	;BODY
+	JSR GETLEN
+	CLC
+	LDA TEMPN6
+	ADC #$02
+	STA TEMPN6
+	BCC ADHK55
+	INC TEMPN6+1
+ADHK55:	LDX #TEMPX1	;TEMPX1 becomes INDEX
+	LDY #TEMPN6
+	JSR GETWDS
+	LDA TEMPX1
+	BNE STFF2
+	LDA TEMPX1+1
+	BNE STFF2
+	STA SIZE1
+	STA SIZE1+1
+	JMP STFFA
+STFF2:	LDA TEMPX1
+	STA AREA2
+	STA TEMPN1	;TEMPN1 is INDEX1
+	LDA TEMPX1+1
+	STA AREA2+1
+	STA TEMPN1+1
+	CLC
+	LDA TEMPN6
+	ADC #$02
+	STA SIZE2
+	LDA TEMPN6+1
+	ADC #$00
+	STA SIZE2+1
+	LDX ANSNX
+	LDA $00,X
+	STA TEMPNH	;TEMPNH is BODY
+	LDA $01,X
+	STA TEMPNH+1
+STFFW:	LDA TEMPNH
+	BNE STFFW1
+	LDA TEMPNH+1
+	BEQ STFFWE
+STFFW1:	LDY #$00
+	LDA TEMPN5	;PTR
+	STA (TEMPN1),Y
+	INY
+	LDA TEMPN5+1
+	STA (TEMPN1),Y	;(PUTBAR)
+	CLC
+	LDA TEMPN1
+	ADC #$02
+	STA TEMPN1
+	BCC STFFX
+	INC TEMPN1+1
+STFFX:	LDA TEMPN7	;LINE
+	BNE STFFX1
+	LDA TEMPN7+1
+	BEQ STFFXE
+STFFX1:	LDY #$00
+	LDA (TEMPN7),Y
+	STA TEMPN3	;TEMPN3 is TOKEN
+	INY
+	LDA (TEMPN7),Y
+	STA TEMPN3+1	;(CAR)
+	INY
+	LDA (TEMPN7),Y
+	TAX
+	INY
+	LDA (TEMPN7),Y
+	STA TEMPN7+1
+	STX TEMPN7	;(CDR)
+	LDY #$00
+	LDA TEMPN3
+	STA (TEMPN5),Y
+	INY
+	LDA TEMPN3+1
+	STA (TEMPN5),Y	;(PUTBAR)
+	CLC
+	LDA TEMPN5
+	ADC #$02
+	STA TEMPN5
+	BCC STFFX
+	INC TEMPN5+1
+	JMP STFFX
+STFFXE:	LDY #$03
+	LDA (TEMPNH),Y
+	TAX
+	DEY
+	LDA (TEMPNH),Y
+	STA TEMPNH	;(CDR)
+	STX TEMPNH+1
+	DEY
+	LDA (TEMPNH),Y
+	STA TEMPN7+1
+	DEY
+	LDA (TEMPNH),Y
+	STA TEMPN7	;(CAR)
+	JMP STFFW
+STFFWE:	LDY #$00
+	LDA TEMPN5
+	STA (TEMPN1),Y	;TEMPN1 is INDEX1
+	INY
+	LDA TEMPN5+1
+	STA (TEMPN1),Y	;(PUTBAR)
+	INY
+	LDA #$00
+	STA (TEMPN1),Y
+	INY
+	STA (TEMPN1),Y	;(PUTBAR)
+	LDX #TEMPX1	;INDEX
+	LDA #FPACK
+	JSR PUTTYP
+	LDA #TEMPX2
+	LDY #TEMPX1
+	LDX ANSN3
+	JSR PTFTXT	;(X,Y,A)
+	LDA #$00
+	STA SIZE1
+	STA SIZE1+1
+	STA SIZE2
+	STA SIZE2+1
+RTS3:	RTS
+.PAGE
+TYPACS:	LSR TEMPNH+1
+	ROR TEMPNH
+	LSR TEMPNH+1
+	ROR TEMPNH
+	CLC
+	LDA TEMPNH
+	ADC #TYPBAS&$FF
+	STA TEMPNH
+	LDA TEMPNH+1
+	ADC #TYPBAS^
+	STA TEMPNH+1
+	LDY #$00
+	LDA (TEMPNH),Y
+	RTS
+;
+GETTYP:	LDA $01,X
+	BEQ GETTPE
+GETTP1:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	JSR TYPACS
+	CMP #ATOM
+	BEQ GETTP4
+	CMP #SATOM
+	BNE GETTPE
+GETTP4:	TAY
+	LDA $00,X
+	AND #$03
+	BEQ GETTPF
+	CLC
+	ADC #$07
+GETTPE:	RTS
+GETTPF:	TYA
+	RTS
+.PAGE
+PTFTXT:	STY ANSNX	;FUNTEXT
+	STA ANSN3	;NARGS
+	STX TEMPN7	;ATOMM
+	JSR GETTYP
+	CMP #SATOM
+	BEQ PTFTX1
+	CMP #ATOM
+	BEQ PTFTX2
+	JSR SYSBUG
+PTFTX1:	LDY TEMPN7
+	LDA #XUBL
+	JMP ERROR
+PTFTX2:	LDX TEMPN7
+	LDA $00,X
+	STA TEMPNH	;TEMPNH is ATOMM
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	STA TEMPN5	;TEMPN5 is CELL
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN5+1	;(CDR)
+	LDY #$00
+	LDA (TEMPN5),Y
+	STA TEMPN6	;TEMPN6 is FUNCT
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN6+1	;(CAR)
+	BNE PTFTX3
+	LDX ANSNX	;FUNTEXT ptr.
+	LDA $00,X
+	STA MARK1
+	LDA $01,X
+	STA MARK1+1
+	LDA #$04
+	STA TEMPN8
+	LDA #$00
+	STA TEMPN8+1
+	LDY #TEMPN8
+	LDX #TEMPN6
+	JSR GETWDS
+	LDY #$00
+	LDA TEMPN6	;FUNCT
+	BEQ PTFER
+	STA (TEMPN5),Y	;CELL
+	INY
+	LDA TEMPN6+1
+	STA (TEMPN5),Y	;(RPLACA)
+	LDX #TEMPN6
+	LDA #UFUN
+	JSR PUTTYP
+	LDY #$06
+	LDX TEMPN7	;ATOMM
+	LDA $00,X
+	STA (TEMPN6),Y
+	INY
+	LDA $01,X
+	STA (TEMPN6),Y	;(PUTBAR)
+	LDA #$00
+	STA MARK1
+	STA MARK1+1
+PTFTX3:	LDY #$00
+	TYA
+	STA (TEMPN6),Y
+	INY
+	STA (TEMPN6),Y	;(PUTBAR)
+	INY
+	LDX ANSNX
+	LDA $00,X	;FUNTEXT
+	STA (TEMPN6),Y
+	INY
+	LDA $01,X
+	STA (TEMPN6),Y	;(PUTBAR)
+	INY
+	LDX ANSN3	;NARGS
+	LDA $00,X
+	STA (TEMPN6),Y
+	INY
+	LDA $01,X
+	STA (TEMPN6),Y	;(PUTBAR)
+PTFTXE:	RTS
+PTFER:	JMP CONSR	;(No Nodes, most likely) "No storage left" zapcode
+.PAGE
+UNSTUF:	STA ANSN2	;ANSN2 is TEXTP
+	STY ANSN1	;ANSN1 is BODY ptr. (X is FUN ptr.)
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	STA TEMPN1	;TEMPN1 is INDEX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN1+1	;(CDR)
+	LDX #TEMPN1
+	JSR GETTYP
+	CMP #LIST
+	BEQ USTF1
+	CMP #FPACK
+	BEQ USTF2
+	JSR SYSBUG
+USTF1:	LDX ANSN1
+	LDA TEMPN1
+	STA $00,X
+	LDA TEMPN1+1
+	STA $01,X
+USTFE1:	RTS
+USTF2:	LDA #$00
+	STA MARK1
+	STA MARK1+1
+	LDA SP
+	STA TEMPN4	;TEMPN4 is STACK
+	LDA SP+1
+	STA TEMPN4+1
+USTFW2:	LDY #$00
+	LDA (TEMPN1),Y
+	STA TEMPN2	;TEMPN2 is PTR
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN2+1	;(GETBAR)
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN3	;TEMPN3 is ENDPTR
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN3+1	;(GETBAR)
+USTFW:	LDA TEMPN3
+	BNE USTFW1
+	LDA TEMPN3+1
+	BEQ USTFWE
+USTFW1:	JSR PSHTST
+	LDX #TEMPN2
+	JSR PUSHP
+	CLC
+	LDA TEMPN1
+	ADC #$02
+	STA TEMPN1
+	BCC USTFW2
+	INC TEMPN1+1
+	JMP USTFW2
+USTFWE:	LDA TEMPN2
+	STA TEMPN3
+	LDA TEMPN2+1
+	STA TEMPN3+1
+USTFX:	LDA TEMPN4
+	CMP SP
+	BNE USTFX1
+	LDA TEMPN4+1
+	CMP SP+1
+	BEQ USTFXE
+USTFX1:	LDX #TEMPN2
+	JSR POP
+	LDA #$00
+	STA MARK2
+	STA MARK2+1
+USTFY:	LDA TEMPN3
+	CMP TEMPN2
+	BNE USTFY1
+	LDA TEMPN3+1
+	CMP TEMPN2+1
+	BEQ USTFYE
+USTFY1:	SEC
+	LDA TEMPN3
+	SBC #$02
+	STA TEMPN3
+	BCS USTFY2
+	DEC TEMPN3+1
+USTFY2:	LDY #$00
+	LDA (TEMPN3),Y
+	STA TEMPN
+	INY
+	LDA (TEMPN3),Y
+	STA TEMPN+1	;(GETBAR)
+	LDA #LIST
+	LDX #MARK2
+	STX ANSN
+	LDY #TEMPN
+	JSR CONS
+	JMP USTFY
+USTFYE:	LDX #MARK2
+	LDA TEMPN4
+	CMP SP
+	BNE USTFX2
+	LDA TEMPN4+1
+	CMP SP+1
+	BNE USTFX2
+	LDA #LIST
+	JSR PUTTYP
+	JMP USTFX3
+USTFX2:	LDA #FLIST
+	JSR PUTTYP
+	LDA ANSN2
+	BEQ USTFX3
+	LDY #$02
+	LDA (MARK2),Y
+	TAX
+	INY
+	LDA (MARK2),Y
+	STA MARK2+1
+	STX MARK2	;(CDR)
+USTFX3:	LDX #MARK1
+	STX ANSN
+	LDY #MARK2
+	LDA #LIST
+	JSR CONS
+	JMP USTFWE
+USTFXE:	LDX ANSN1	;BODY
+	LDA MARK1
+	STA $00,X
+	LDA MARK1+1
+	STA $01,X
+	LDA #$00
+	STA MARK1
+	STA MARK2
+	STA MARK1+1
+	STA MARK2+1
+USTFE:	RTS
+.PAGE
+DEFUN:	STX ANSN1	;ANSN1 is LISTT
+	STY ANSN2	;ANSN2 is ATOMM
+	LDA $01,X
+	BNE DEFUN1
+	LDX ANSN2
+	JMP UNFUNC
+DEFUN1:	JSR VPUSHP
+	LDA #$00
+	STA TEMPN4	;TEMPN4 is NUMBER
+	STA TEMPN4+1
+	LDA VSP
+	STA TEMPN1	;TEMPN1 is PTR
+	LDA VSP+1
+	STA TEMPN1+1
+	LDX ANSN1
+	LDA $00,X
+	STA TEMPN
+	LDA $01,X
+	STA TEMPN+1
+	LDY #$00
+	LDA (TEMPN),Y
+	STA TEMPN2
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN2+1	;(CAR)
+	LDX #TEMPN2
+	JSR VPUSHP
+	LDY #$02
+	LDA (TEMPN),Y
+	STA TEMPN2	;TEMPN2 is TLIST
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN2+1	;(CDR)
+DEFUNW:	LDA TEMPN2+1
+	BEQ DEFNWE
+DEFNW1:	LDY #$00
+	LDA (TEMPN2),Y
+	STA TEMPN3	;TEMPN3 is T1
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN3+1	;(CAR)
+	LDX #TEMPN3
+	JSR GETTYP
+	CMP #LIST
+	BNE DEFNER
+	LDX #TEMPN3
+	STX ANSN
+	LDY #TEMPN4
+	LDA #FLIST
+	JSR CONS
+	LDX #TEMPN3
+	JSR VPUSHP
+	LDY #$02
+	LDA (TEMPN2),Y
+	TAX
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN2+1
+	STX TEMPN2	;(CDR)
+	CLC
+	LDA TEMPN4
+	ADC #LININC
+	STA TEMPN4
+	BCC DEFUNW
+	INC TEMPN4+1
+	JMP DEFUNW
+DEFNWE:	LDA #$00
+	LDX ANSN1	;LISTT
+	STA $00,X
+	STA $01,X
+DEFUNX:	LDA TEMPN1
+	CMP VSP
+	BNE DEFNX1
+	LDA TEMPN1+1
+	CMP VSP+1
+	BEQ DEFNXE
+DEFNX1:	LDX #TEMPN3
+	JSR VPOP
+	LDX ANSN1
+	STX ANSN
+	LDY #TEMPN3
+	LDA #LIST
+	JSR CONS
+	JMP DEFUNX
+DEFNXE:	LDX ANSN1
+	LDA ANSN2
+	JMP STUFF
+DEFNER:	LDX ANSN1
+	JMP STTLR4	;(ERROR XWTA,CURTOK)
+.PAGE
+INTERN:	STX ANSN1	;ANSN1 IS STRING PTR.
+	STY ANSN2	;ANSN2 IS ANS PTR.
+	JSR VPUSHP
+	LDA OBLIST	;OBFIND starts
+	STA TEMPN4
+	LDA OBLIST+1
+	STA TEMPN4+1	;TEMPN4 IS OB_PTR
+OBFW:	LDA TEMPN4
+	BNE OBFW1
+	LDA TEMPN4+1
+	BEQ OBFNFE
+OBFW1:	LDY #$00
+	LDX ANSN2
+	LDA (TEMPN4),Y
+	STA $00,X
+	INY
+	LDA (TEMPN4),Y
+	STA $01,X	;(CAR) TO ANS
+	LDY #TEMPN5	;TEMPN5 IS PNAME
+	JSR GETPNM
+	LDX ANSN1	;MATCH2 starts (STRING1 IS TEMPN5)
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1	;TEMPNH IS STRING2
+MTC2W:	LDA TEMPNH
+	BNE MTC2W1
+	LDA TEMPNH+1
+	BNE MTC2W1
+MTC2WA:	LDA TEMPN5
+	BNE OBFNF	;IF STRING2 IS 0 AND STRING1 ISN'T, NOT FOUND
+	LDA TEMPN5+1
+	BNE OBFNF
+	LDX #TEMPN5
+	JMP VPOP	;Pop the Vpushed string
+MTC2W1:	LDY #$00
+	LDA (TEMPNH),Y
+	CMP (TEMPN5),Y
+	BNE OBFNF
+	INY
+	LDA (TEMPNH),Y
+	CMP (TEMPN5),Y
+	BNE OBFNF
+	INY
+	LDA (TEMPNH),Y
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	DEY
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CDR)
+	JMP MTC2W	;TRY NEXT TWO CHARACTERS
+OBFNF:	LDY #$02	;TRY NEXT OBLIST OBJECT
+	LDA (TEMPN4),Y	;(OB_PTR)
+	TAX
+	INY
+	LDA (TEMPN4),Y
+	STA TEMPN4+1
+	STX TEMPN4	;(CDR)
+	JMP OBFW
+OBFNFE:	LDX ANSN1	;IT'S NOT ON THE OBLIST
+	JSR VPOP	;GET STRING BACK
+	LDA SOBLST	;SOBFIND starts
+	LDX ANSN2	;ANS BECOMES SOBLIST POINTER
+	STA $00,X
+	LDA SOBLST+1
+	STA $01,X
+SBFW:	LDX ANSN2	;OBJECT POINTER
+SBFWX:	LDA $00,X
+	CMP SOBTOP
+	BNE SBFW1
+	LDA $01,X
+	CMP SOBTOP+1
+	BNE SBFW1
+SBFWEN:	LDX ANSN1	;STRING
+INTRNX:	LDY #$00	;Not found anywhere
+	STY TEMPN1+1
+	INY
+	STY TEMPN1
+	LDA ANSN2
+	STA ANSN
+	LDY #TEMPN1	;(NOVALUE)
+	LDA #LIST
+	JSR CONS
+	LDA ANSN2
+	STA ANSN	;(ANS)
+	TAX
+	LDY #TEMPN1	;(NOVALUE)
+	LDA #ATOM
+	JSR CONS
+	LDA #LIST
+	LDX #OBLIST
+	STX ANSN
+	LDY ANSN2	;ANS
+	JMP CONS
+SBFW1:	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1
+	LDY #$02
+	LDA (TEMPNH),Y
+	INY
+	CLC
+	ADC #$03
+	STA TEMPN2	;TEMPN2 IS SOBNAME
+	LDA (TEMPNH),Y
+	ADC #$00
+	STA TEMPN2+1	;(CDR)
+	LDX ANSN1	;ANSN1 POINTS TO STRING
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1	;TEMPNH BECOMES PNAME
+MTC1W:	LDA TEMPNH
+	BNE MTC1W1
+	LDA TEMPNH+1
+	BEQ SBFNF
+MTC1W1:	LDY #$00
+	LDA (TEMPNH),Y
+	STA TEMPN	;TEMPN IS TEMP
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN+1	;(CAR)
+	DEY
+	LDA (TEMPN2),Y
+	CMP TEMPN
+	BNE SBFNF
+	INC TEMPN2
+	BNE ADHK21
+	INC TEMPN2+1
+ADHK21:	LDA (TEMPN2),Y
+	CMP TEMPN+1
+	BNE SBFNF
+	LDY #$02
+	LDA (TEMPNH),Y	;TEMPNH IS PNAME
+	TAX
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	LDY #$00
+	LDA (TEMPN2),Y
+	BEQ MTC1WF
+	INC TEMPN2
+	BNE MTC1WE
+	INC TEMPN2+1
+MTC1WE:	LDA TEMPNH
+	BNE MTC1W1
+	LDA TEMPNH+1
+	BNE MTC1W1
+	LDA (TEMPN2),Y
+	BNE SBFNF
+MTC1WF:	RTS
+SBFNF:	CLC		;NOT THIS SOBLIST OBJECT
+	LDX ANSN2	;ANS
+	LDA $00,X
+	ADC #$04
+	STA $00,X
+	BCC SBFWJ
+	INC $01,X
+SBFWJ:	JMP SBFWX
+.PAGE
+;Note - the only temporary variables which can be passed to ERROR
+;as pointers are TEMPN6, TEMPN7, TEMPX1, and TEMPX2. PTRXOK and
+;PTRYOK insure that the X or Y args point to safe temporaries.
+;
+PTRXOK:	LDA $00,X
+	STA TEMPX2
+	LDA $01,X
+	STA TEMPX2+1
+	LDX #TEMPX2
+	RTS
+;
+PTRYOK:	LDA $00,Y
+	STA TEMPX2
+	LDA $01,Y
+	STA TEMPX2+1
+	LDY #TEMPX2
+	RTS
+;
+ERROR:	STA ERRFLG
+	STA ANSN2
+	ASL ANSN2	;Error pointers are stored two bytes apart
+	STX ANSN3
+	STY ANSN1
+	LDX #$00
+	STX INDEV
+	STX OUTDEV
+	LDX RETADR
+	TXS		;Restore all necessary return addresses
+	CMP #XZAP
+	BEQ ERRZ1
+	CMP #XARGTB
+	BEQ ERRZ2
+	CLC		;The Error-table holds pointers to the error-strings
+	LDA #ERRTBL&$FF
+	ADC ANSN2
+	STA TEMPN8
+	LDA #ERRTBL^
+	ADC #$00
+	STA TEMPN8+1
+	LDY #$00
+	LDA (TEMPN8),Y
+	TAX
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPN8+1
+	STX TEMPN8
+ERRW:	LDY #$00
+	LDA (TEMPN8),Y
+	BEQ ERRW2
+	CMP #$FF
+	BEQ ERRWE
+	CMP #$01
+	BEQ ERRW1
+	JSR TPCHR
+	JMP ERRW4
+ERRZ1:	JSR ZAPMSG
+	JMP ERRWE
+ERRZ2:	LDX ANSN3
+	JSR TYPFIX
+	LDX #ERRM4&$FF
+	LDY #ERRM4^
+	JSR PRTSTR
+	LDA #$00
+	LDY ANSN1
+	JSR LTYPE
+	JMP ERRWE
+ERRW1:	LDY ANSN3
+	BNE ERRW3	;(Always)
+ERRW2:	LDY ANSN1
+ERRW3:	LDA #$00
+	JSR LTYPE
+ERRW4:	INC TEMPN8
+	BNE ERRW
+	INC TEMPN8+1
+	JMP ERRW
+ERRWE:	LDA LEVNUM
+	BNE ERRWE1
+	LDA LEVNUM+1
+	BEQ ERR1
+ERRWE1:	JSR BREAK1
+	LDX #ERRM1&$FF
+	LDY #ERRM1^
+	JSR PRTSTR
+	LDX #LEVNUM
+	JSR TYPFIX
+	LDX #ERRM2&$FF
+	LDY #ERRM2^
+	JSR PRTSTR
+	LDX #LINNUM
+	JSR TYPFIX
+	LDX #ERRM3&$FF
+	LDY #ERRM3^
+	JSR PRTSTR
+	LDY #$06	;(SF_UFUN = 6.)
+	LDA (FRAME),Y
+	STA TEMPN8
+	INY
+	LDA (FRAME),Y
+	STA TEMPN8+1	;(CAR)
+	LDA #$00
+	LDY #TEMPN8
+	JSR LTYPE
+ERR1:	JSR BREAK1
+	LDA ERRRET
+	LDY ERRRET+1
+	JSR RSTERR
+	STA TEMPNH
+	STY TEMPNH+1
+	JMP (TEMPNH)
+.PAGE
+;ZAPMSG is a special case of ERROR, for error XZAP. It displays the
+;appropriate error message.
+;
+ZAPMSG:	JSR BREAK1
+	LDA ANSN3
+	CMP #XNSTRN
+	BEQ ZPC1
+	CMP #XNSTOR
+	BEQ ZPC1
+	CMP #XSTOP
+	BEQ ZPC2
+	JSR SYSBUG
+ZPC1:	LDX #ZPMSG1&$FF
+	LDY #ZPMSG1^	;"No Storage Left!"
+	JSR PRTSTR
+	JMP BREAK1
+ZPC2:	LDX #ZPMSG2&$FF
+	LDY #ZPMSG2^	;"Stopped!"
+	JSR PRTSTR
+	JMP BREAK1
+.PAGE
+.SBTTL	Garbage Collector
+GARCOL:	TSX
+	STX RETADR
+	LDA #GCLERR&$FF
+	STA ERRRET
+	LDA #GCLERR^
+	STA ERRRET+1
+	JSR SWAPT1
+	LDA SOBLST
+	STA TEMPN3	;TEMPN3 is INDEX
+	LDA SOBLST+1
+	STA TEMPN3+1
+GCLP2:	LDX #TEMPN3
+	JSR MARK
+	CLC
+	LDA TEMPN3
+	ADC #$04
+	STA TEMPN3
+	BCC GCLP2A
+	INC TEMPN3+1
+GCLP2A:	LDA TEMPN3
+	CMP SOBTOP
+	BNE GCLP2
+	LDA TEMPN3+1
+	CMP SOBTOP+1
+	BNE GCLP2
+	LDA #VPDLBA&$FF
+	STA TEMPN3
+	LDA #VPDLBA^
+	STA TEMPN3+1
+GCLP3:	LDA TEMPN3
+	CMP VSP
+	BNE GCLP3X
+	LDA TEMPN3+1
+	CMP VSP+1
+	BEQ GCLP3A
+GCLP3X:	LDY #$00
+	LDA (TEMPN3),Y
+	STA TEMPN
+	INY
+	LDA (TEMPN3),Y
+	STA TEMPN+1	;(GETBAR)
+	JSR MARKX	;Expects TEMPN as node
+	CLC
+	LDA TEMPN3
+	ADC #$02
+	STA TEMPN3
+	BCC GCLP3
+	INC TEMPN3+1
+	JMP GCLP3
+GCLP3A:	LDA FRAME
+	STA TEMPN3	;TEMPN4 is FRAMEPTR
+	LDA FRAME+1
+	STA TEMPN3+1
+GCLP4:	LDA TEMPN3
+	BNE GCLP4A
+	LDA TEMPN3+1
+	BEQ GCOL1
+GCLP4A:	LDY #$0E	;(SF_NUMBER_BINDINGS = 14.)
+	LDA (TEMPN3),Y
+	BEQ GCLP5E
+	STA ANSN1	;ANSN1 is NARGS
+	CLC
+	LDA TEMPN3
+	ADC #$12	;PTR1 points to first binding pair
+	STA TEMPN4	;TEMPN4 is PTR1
+	LDA TEMPN3+1
+	ADC #$00
+	STA TEMPN4+1
+GCLP5:	LDY #$02
+	LDA (TEMPN4),Y
+	ROR A
+	BCS GCLP5A
+	LDY #$00
+	LDA (TEMPN4),Y
+	STA TEMPN
+	INY
+	LDA (TEMPN4),Y
+	STA TEMPN+1
+	JSR MARKX	;Expects TEMPN as node
+GCLP5A:	CLC
+	LDA TEMPN4
+	ADC #$04
+	STA TEMPN4
+	BCC GCLP5B
+	INC TEMPN4+1
+GCLP5B:	DEC ANSN1
+	BNE GCLP5
+GCLP5E:	LDY #$00	;(SF_PREVIOUS_FRAME)
+	LDA (TEMPN3),Y
+	TAX
+	INY
+	LDA (TEMPN3),Y
+	STA TEMPN3+1
+	STX TEMPN3	;(GETBAR)
+	JMP GCLP4
+GCOL1:	LDA #GCVST	;Mark all G.C.-protected variables
+	STA ANSN1
+GCOL1L:	LDX ANSN1
+	JSR MARK
+	INC ANSN1
+	INC ANSN1
+	LDA ANSN1
+	CMP #GCVEND
+	BNE GCOL1L
+	LDX #SIZE1
+	LDY #AREA1
+	JSR MARKA
+	LDX #SIZE2
+	LDY #AREA2
+	JSR MARKA
+	LDA #$00
+	STA FRLIST
+	STA FRLIST+1
+	STA NNODES
+	STA NNODES+1
+	LDA #BIGBAS&$FF
+	STA TEMPNH
+	LDA #BIGBAS^
+	STA TEMPNH+1	;Nodespace pointer
+	LDA #SINODS&$FF
+	STA TEMPN
+	LDA #SINODS^
+	STA TEMPN+1	;Typebase pointer
+GCLP6:	LDY #$00
+	LDA (TEMPN),Y
+	ROL A		;Type bit
+	BCS GCLP6C
+	LDY #$02
+	LDA FRLIST
+	STA (TEMPNH),Y
+	INY
+	LDA FRLIST+1
+	STA (TEMPNH),Y	;(RPLACD)
+	LDA TEMPNH
+	STA FRLIST
+	LDA TEMPNH+1
+	STA FRLIST+1
+	JMP GCLP6F
+GCLP6C:	INC NNODES
+	BNE GCLP6F
+	INC NNODES+1
+GCLP6F:	CLC
+	LDA TEMPNH
+	ADC #$04
+	STA TEMPNH
+	BCC GCLP6D
+	INC TEMPNH+1
+GCLP6D:	INC TEMPN
+	BNE GCLP6E
+	INC TEMPN+1
+GCLP6E:	LDA TEMPN
+	CMP #TYPEND&$FF
+	BNE GCLP6
+	LDA TEMPN+1
+	CMP #TYPEND^
+	BNE GCLP6
+	JSR CLRMRK
+	JSR SWAPT2
+	JMP RSTERR
+GCLERR:	LDA #$00
+	STA FRLIST
+	STA FRLIST+1
+	JSR CLRMRK
+	JSR SWAPT2
+	JMP ERROR1
+.PAGE
+CLRMRK:	LDA #SINODS&$FF
+	STA TEMPNH
+	LDA #SINODS^
+	STA TEMPNH+1	;TEMPN is pointer to Typebase
+	LDY #$00
+GCLP1:	LDA (TEMPNH),Y
+	AND #$7F	;Set Mark bit to 0 (False)
+	STA (TEMPNH),Y
+	INC TEMPNH
+	BNE GCLP1A
+	INC TEMPNH+1
+GCLP1A:	LDA TEMPNH
+	CMP #TYPEND&$FF
+	BNE GCLP1
+	LDA TEMPNH+1
+	CMP #TYPEND^
+	BNE GCLP1
+MRKRTS:	RTS
+;
+MARKA:	LDA $00,X
+	STA TEMPN
+	LDA $01,X
+	STA TEMPN+1	;TEMPN is SIZE
+	LDA $00,Y
+	STA TEMPNH
+	LDA $01,Y
+	STA TEMPNH+1
+	JSR TYPACS	;TEMPNH becomes address of typecodes
+MRKAW:	LDA TEMPN+1
+	BMI MRKRTS
+	BNE MRKAW1
+	LDA TEMPN
+	BEQ MRKRTS
+MRKAW1:	LDA (TEMPNH),Y
+	ORA #$80	;Mark the word
+	STA (TEMPNH),Y
+	INC TEMPNH
+	BNE MRKAW2
+	INC TEMPNH+1
+MRKAW2:	SEC
+	LDA TEMPN
+	SBC #$01
+	STA TEMPN
+	BCS MRKAW
+	DEC TEMPN+1
+	JMP MRKAW
+.PAGE
+MARK:	LDA $00,X
+	STA TEMPN
+	LDA $01,X
+	STA TEMPN+1	;TEMPN is INDEX
+MARKX:	LDX #$FF
+	LDY #$FF
+	JSR PUSH
+MRKW:	LDA #$FF
+	CMP TEMPN
+	BNE MRKW1
+	CMP TEMPN+1
+	BEQ MRKRTS
+MRKW1:	LDA TEMPN+1
+	BEQ MRKW3
+	STA TEMPNH+1
+	LDA TEMPN
+	STA TEMPNH
+	JSR TYPACS
+	STA ANSN
+	ROL A
+	BCC MRKW2
+MRKW3:	JSR PSHTST
+	LDX #TEMPN
+	JSR POP
+	JMP MRKW
+MRKW2:	LDA ANSN
+	ORA #$80
+	STA (TEMPNH),Y
+	AND #$7F
+	CMP #LIST
+	BEQ MRKCL
+	CMP #STRING
+	BEQ MRKCF
+	CMP #FIX
+	BEQ MRKW3
+	CMP #FLO
+	BEQ MRKW3
+	CMP #FLIST
+	BEQ MRKCF
+	CMP #UFUN
+	BEQ MRKCU
+	CMP #SATOM
+	BEQ MRKCS
+	CMP #ATOM
+	BEQ MRKCL
+	CMP #DATOM
+	BEQ MRKCL
+	CMP #LATOM
+	BEQ MRKCL
+	CMP #QATOM
+	BEQ MRKCL
+	CMP #FPACK
+	BEQ MRKCP
+	JSR SYSBUG
+MRKCF:	LDY #$02
+MRKCN:	LDA (TEMPN),Y
+	TAX
+	INY
+	LDA (TEMPN),Y
+	BEQ MRKW3
+	TAY
+MRKCF1:	JSR PUSH
+	JMP MRKW3
+MRKCS:	LDY #$00
+	JMP MRKCN
+MRKCL:	LDA TEMPN
+	AND #$FC
+	STA TEMPN
+	LDY #$00
+	LDA (TEMPN),Y
+	TAX
+	INY
+	LDA (TEMPN),Y
+	BEQ MRKCF
+	TAY
+MRKCL1:	JSR PUSH
+	JMP MRKCF
+MRKCU:	CLC
+	LDA TEMPN
+	ADC #$04
+	STA TEMPNH
+	LDA TEMPN+1
+	ADC #$00
+	STA TEMPNH+1
+	JSR TYPACS
+	ORA #$80
+	STA (TEMPNH),Y
+	JMP MRKCF
+MRKCP:	LDY #$01
+	STY ANSN	;ANSN is FIRSTLINE
+	DEY
+MRKCP1:	LDA (TEMPN),Y
+	STA TEMPN1	;TEMPN1 is LINE
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN1+1	;(GETBAR)
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN2	;TEMPN2 is LINE_END
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN2+1	;(GETBAR)
+MRKPW:	LDA TEMPN2+1
+	BNE MRKPW1
+	CLC
+	LDA TEMPN
+	ADC #$02
+	STA TEMPNH
+	LDA TEMPN+1
+	ADC #$00
+	STA TEMPNH+1
+	JSR TYPACS
+	ORA #$80
+	STA (TEMPNH),Y
+	JMP MRKW3
+MRKPW1:	CLC
+	LDA TEMPN
+	ADC #$02
+	STA TEMPNH
+	LDA TEMPN+1
+	ADC #$00
+	STA TEMPNH+1
+	JSR TYPACS
+	ORA #$80
+	STA (TEMPNH),Y
+	LDA TEMPN1
+	STA TEMPNH
+	LDA TEMPN1+1
+	STA TEMPNH+1
+	JSR TYPACS
+	ORA #$80
+	STA (TEMPNH),Y
+	LDA ANSN
+	BNE MRKPW2
+	CLC
+	LDA TEMPN1
+	ADC #$02
+	STA TEMPN1
+	BCC MRKPW2
+	INC TEMPN1+1
+MRKPW2:	LDA #$00
+	STA ANSN
+MRKPX:	LDA TEMPN1
+	CMP TEMPN2
+	BNE MRKPX1
+	LDA TEMPN1+1
+	CMP TEMPN2+1
+	BEQ MRKPXE
+MRKPX1:	LDA TEMPN1
+	STA TEMPNH
+	LDA TEMPN1+1
+	STA TEMPNH+1
+	JSR TYPACS
+	ORA #$80
+	STA (TEMPNH),Y
+	LDA (TEMPN1),Y
+	TAX
+	INY
+	LDA (TEMPN1),Y
+	TAY
+	JSR PUSH
+	JSR PSHTST
+	CLC
+	LDA TEMPN1
+	ADC #$02
+	STA TEMPN1
+	BCC MRKPX
+	INC TEMPN1+1
+	JMP MRKPX
+MRKPXE:	CLC
+	LDA TEMPN
+	ADC #$02
+	STA TEMPN
+	BCC MRKPW4
+	INC TEMPN+1
+MRKPW4:	JMP MRKCP1
+.PAGE
+SWAPT1:	LDY #TMPNUM
+	LDX #TMPSTT
+SWPLP1:	LDA $00,X
+	STA TMPTAB,Y
+	INX
+	DEY
+	BNE SWPLP1
+	RTS
+;
+SWAPT2:	LDY #TMPNUM
+	LDX #TMPSTT
+SWPLP2:	LDA TMPTAB,Y
+	STA $00,X
+	INX
+	DEY
+	BNE SWPLP2
+	RTS
+.PAGE
+MAKPNM:	STY ANSN2	;ANS
+	STX ANSN1	;ARG
+	JSR GETTYP
+	CMP #ATOM
+	BEQ MKPN1
+	CMP #SATOM
+	BEQ MKPN1
+	CMP #FIX
+	BEQ MKPN2
+	CMP #FLO
+	BNE MKPNR
+	JMP MKPN3
+MKPNR:	LDX ANSN1
+	JMP STTLR4	;(ERROR XWTA,CURTOK)
+MKPN1:	LDX ANSN1
+	LDY ANSN2
+	JMP GETPNM
+MKPN2:	LDX ANSN1
+	LDA $00,X
+	STA TEMPN2
+	LDA $01,X
+	STA TEMPN2+1
+	LDY #$00
+	LDA (TEMPN2),Y
+	TAX
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN2+1
+	STX TEMPN2	;(CAR)
+	TXA
+	BNE MKPN2A
+	LDA TEMPN2+1
+	BNE MKPN2A
+	TAX
+	STX TEMPN3+1
+	LDA #'0
+	STA TEMPN3
+	LDY #TEMPN3
+	LDA ANSN2
+	STA ANSN
+	LDA #STRING
+	JMP CONS
+MKPN2A:	LDA #$00
+	STA ANSN
+	STA ANSN3
+	LDA TEMPN2+1
+	BPL MKPN2B
+	LDX #TEMPN2
+	JSR COMPL
+	INC ANSN3	;ANSN3 is SIGN
+	INC ANSN	;ANSN is DIGITS
+MKPN2B:	LDX #$00
+	STX TEMPN+1	;Divisor for XDIVID
+	JSR VPUSHP	;(LNIL)
+	LDA TEMPN2
+	STA TEMPN3
+	LDA TEMPN2+1
+	STA TEMPN3+1
+	LDA #$0A
+	STA TEMPN
+MKPNR1:	INC ANSN
+	LDX #TEMPN3
+	JSR XDIVID
+	LDA TEMPN3
+	BNE MKPNR1
+	LDA TEMPN3+1
+	BNE MKPNR1
+	LDA ANSN
+	ROR A
+	BCS MKPNR2
+	LDA #$00
+	STA TEMPN3
+	LDX #TEMPN2
+	JSR XDIVID
+	STA TEMPN3+1
+MKPNR2:	SEC
+	LDA VSP
+	SBC #$02
+	STA TEMPN4
+	LDA VSP+1
+	SBC #$00
+	STA TEMPN4+1
+	LDA TEMPN2
+	BNE MKPNR3
+	LDA TEMPN2+1
+	BNE MKPNR3
+	LDA ANSN3
+	BNE MKPNR4
+	JSR SYSBUG
+MKPNR4:	LDA #'-
+	STA TEMPN3
+	JSR MKPNAD
+	JMP MKPNR5
+MKPNR3:	LDX #TEMPN2
+	JSR XDIVID
+	STA TEMPN3
+	JSR MKPNAD
+	LDA TEMPN2
+	BNE MKPNR5
+	LDA TEMPN2+1
+	BNE MKPNR5
+	LDA ANSN3
+	BEQ MKPNR5
+	JSR SYSBUG
+MKPNR5:	LDX #TEMPN2
+	JSR XDIVID
+	STA TEMPN3+1
+	LDA #$00
+	STA TEMPN3
+	LDA TEMPN2
+	BNE MKPNR2
+	LDA TEMPN2+1
+	BNE MKPNR2
+MKPNR6:	LDX ANSN2
+	JMP VPOP
+MKPN3:	NOP		;?<MAKE AN ATOM OUT OF A FLONUM>
+;
+MKPNAD:	LDX ANSN2
+	LDY #$00
+	LDA (TEMPN4),Y
+	STA $00,X
+	INY
+	LDA (TEMPN4),Y
+	STA $01,X	;(GETBAR)
+MKPND1:	STX ANSN
+	LDY #TEMPN3
+	LDA #STRING
+	JSR CONS
+	LDY #$00
+	LDA $00,X
+	STA (TEMPN4),Y
+	INY
+	LDA $01,X
+	STA (TEMPN4),Y	;(PUTBAR)
+	RTS
+.PAGE
+LTYPE:	LDX $00,Y
+	STX TEMPN5
+	LDX $01,Y
+	STX TEMPN5+1	;THING
+	STA TEMPN4	;TOPLEVELP
+	LDX #LTPRTS&$FF
+	LDY #LTPRTS^
+	JSR PUSH
+PRTHNG:	LDX #TEMPN5
+	JSR GETTYP
+	CMP #LIST
+	BEQ LTPLS
+	CMP #ATOM
+	BEQ LTPA
+	CMP #SATOM
+	BEQ LTPS
+	CMP #DATOM
+	BEQ LTPD
+	CMP #QATOM
+	BEQ LTPQ
+	CMP #LATOM
+	BEQ LTPL
+	PHA		;Assuming Fix or Flo, save typecode
+	LDY #$00	;and prep. for TYPFIX/FLO
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CAR)
+	LDX #TEMPN5
+	PLA
+	CMP #FIX
+	BEQ LTPF
+	CMP #FLO
+	BEQ LTPF1
+	JSR SYSBUG
+LTPQ:	LDA #'"
+	BNE LTPD1	;(Always)
+LTPD:	LDA #':
+LTPD1:	JSR TPCHR
+LTPA:	JSR TYPATM
+	JMP POPJ
+LTPS:	JSR TPSATM
+	JMP POPJ
+LTPL:	JSR TYPATM
+	LDA #':
+	JSR TPCHR
+	JMP POPJ
+LTPF:	JSR TPBFIX
+	JMP POPJ
+LTPF1:	JSR TYPFLO
+	JMP POPJ
+LTPLS:	LDA #$01
+	STA TEMPN4+1	;NOSPACE
+	LDA TEMPN4	;TOPLEVELP
+	BNE PLSTLP
+	LDA #'[
+	JSR TPCHR
+PLSTLP:	JSR PSHTST
+	LDA TEMPN5+1
+	BNE PLLP1
+	LDA TEMPN4	;TOPLEVELP
+	BNE PLLP2
+	STA TEMPN4+1	;Print a space after Sublists
+	LDA #']
+	JSR TPCHR
+PLLP2:	JMP POPJ
+PLLP1:	LDA TEMPN4+1	;NOSPACE
+	BNE PLLP1A
+	LDA #$20	;(Space)
+	JSR TPCHR
+PLLP1A:	LDX #TEMPN5
+	JSR PUSHP
+	LDX TEMPN4
+	JSR PUSH
+	LDY #$00
+	STY TEMPN4
+	STY TEMPN4+1
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CAR)
+	LDX #TPP1&$FF
+	LDY #TPP1^
+	JSR PUSH
+	JMP PRTHNG
+TPP1:	JSR POPB
+	STA TEMPN4
+	LDX #TEMPN5
+	JSR POP
+	LDY #$02
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CDR)
+	JMP PLSTLP
+.PAGE
+TYPATM:	LDA TEMPN5
+	AND #$FC
+	STA TEMPN5
+	LDX #TEMPN5
+	LDY #TEMPN5
+	JSR GETPNM
+	LDX OUTDEV
+	BNE TPATM1
+	LDA #$00
+TPATM1:	STA ANSN
+	BEQ TPATMW
+	LDA #$27	;(Single Quote)
+	JSR TPCHR
+TPATMW:	LDA TEMPN5
+	BNE TPTMW1
+	LDA TEMPN5+1
+	BEQ TPTMWE
+TPTMW1:	LDY #$00
+	LDA (TEMPN5),Y
+	STA TEMPNH
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPNH+1	;(CAR)
+	INY
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CDR)
+	LDA TEMPNH
+	JSR TPCHR
+	LDA TEMPNH+1
+	BEQ TPATMW
+	JSR TPCHR
+	JMP TPATMW
+TPTMWE:	LDA ANSN
+	BEQ LTPRTS
+	LDA #$27	;(Single Quote)
+	JMP TPCHR
+.PAGE
+TPSATM:	LDY #$02
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CDR)
+	LDY #$03
+TPSTMW:	LDA (TEMPN5),Y
+	BEQ LTPRTS
+	STY ANSN
+	JSR TPCHR
+	LDY ANSN
+	INY
+	JMP TPSTMW
+LTPRTS:	RTS
+;
+TYPFIX:	LDA $00,X
+	STA TEMPN2
+	LDA $01,X
+	STA TEMPN2+1	;TEMPN2 is the number to type
+	BPL TYPNM1
+	LDX #TEMPN2
+	JSR COMPL
+	LDA #'-
+	JSR TPCHR
+TYPNM1:	LDA #$00
+	STA ANSN	;ANSN is digit counter
+	STA TEMPN+1
+	LDA #$0A	;Divisor for XDIVID
+	STA TEMPN
+TYPNMR:	LDX #TEMPN2
+	JSR XDIVID	;Divide number by ten and get remainder
+	PHA		;Push remainder digit
+	INC ANSN	;Increment digit counter
+	LDA TEMPN2
+	BNE TYPNMR
+	LDA TEMPN2+1
+	BNE TYPNMR
+TYPNMF:	PLA		;Pop a digit
+	JSR TPCHR	;Type it
+	DEC ANSN
+	BNE TYPNMF
+RTSA2:	RTS
+.PAGE
+TPBFIX:	NOP	;?TYPE FOUR BYTE FIXNUM, LIKE TYPFIX
+.PAGE
+TYPFLO:	NOP	;?<TYPE OUT A FLONUM, LIKE TYPFIX>
+.PAGE
+;Changes the argument in (X) from Fixnum to Flonum.?
+;
+XFLOAT:	RTS
+;
+;Changes the argument in (X) from Flonum to Fixnum.
+;Gives an error if not possible (under/overflow).?
+;
+XINT:	RTS
+;
+;Complements the floating pt. number in (X) if possible.
+;
+XFCOMP:	RTS
+.PAGE
+;Floating Point routines (Copyright 1977 by Apple Computer Inc.):
+;
+ADD:	CLC		;Clear carry
+	LDX #$02	;Index for 3-byte add
+ADD1:	LDA M1,X
+	ADC M2,X	;Add abyte of Mant2 to Mant1
+	STA M1,X
+	DEX		;Index to next more signif. byte
+	BPL ADD1	;Loop until done
+	RTS		;Return
+MD1:	ASL SIGN	;Clear LSB of Sign
+	JSR ABSWAP	;Abs. val. of M1, then swap with M2
+ABSWAP:	BIT M1		;Is Mant1 negative...
+	BPL ABSWP1	;No, swap with Mant2 and return
+	JSR PCOMPL	;Yes, complement it.
+	INC SIGN	;Increment sign, complementing LSB
+ABSWP1:	SEC		;Set carry for return to MUL/DIV
+SWAP:	LDX #$04	;Index for 4-byte swap
+SWAP1:	STY E-1,X
+	LDA X1-1,X	;Swap a byte of Exp/Mant1 with
+	LDY X2-1,X	;Exp/Mant2 and leave a copy of
+	STY X1-1,X	;Mant1 in E (3 bytes). E+3 is used.
+	STA X2-1,X
+	DEX		;Advance index to next byte
+	BNE SWAP1	;Loop until done
+	RTS		;Return
+FLOAT:	LDA #$8E	;Init Exp1 to 14,
+	STA X1		;then normalize to floating pt.
+NORM1:	LDA M1		;High-order Mant1 byte
+	CMP #$C0	;Are Upper two bits unequal...
+	BMI RTS1	;Yes, return with Mant1 normalized.
+	DEC X1		;Decrement X1
+	ASL M1+2
+	ROL M1+1	;Shift Mant1 3 bytes left
+	ROL M1
+NORM:	LDA X1		;Is Exp1 zero...
+	BNE NORM1	;No, continue normalizing.
+RTS1:	RTS		;Return
+FSUB:	JSR FCOMPL	;Complement Mant1, clears carry unless 0
+SWPALN:	JSR ALNSWP	;Right shift Mant1 or swap
+FADD:	LDA X2
+	CMP X1		;Compare Exp1 with Exp2
+	BNE SWPALN	;If unequal, swap addends or align mantissas
+	JSR ADD		;Add aligned mantissas
+ADDEND:	BVC NORM	;No overflow, normalize result
+	BVS RTLOG	;Overflow - shift M1 right, carry into Sign
+ALNSWP:	BCC SWAP	;Swap if carry clear, else shift right arith.
+RTAR:	LDA M1		;Sign of M1 into carry for
+	ASL A		;right arith. shift
+RTLOG:	INC X1		;Increment X1 to adjust for right shift
+	BEQ OVFL	;Exp1 out of range
+RTLOG1:	LDX #$FA	;Index for 6 byte right shift
+ROR1:	ROR E+3,X
+	INX		;Next byte of shift
+	BNE ROR1	;Loop until done
+	RTS		;Return
+FMUL:	JSR MD1		;Absolute value of Mant1, Mant2.
+	ADC X1		;Add Exp1 to Exp2 for product Exp
+	JSR MD2		;Check product exp. and prepare for multiply
+	CLC		;Clear carry for first bit
+MUL1:	JSR RTLOG1	;M1 and E right (product and multiplier)
+	BCC MUL2	;If carry clear, skip partial product
+	JSR ADD		;Add multiplicand to product
+MUL2:	DEY		;Next multiply iteration
+	BPL MUL1	;Loop until done
+MDEND:	LSR SIGN	;Test Sign LSB
+NORMX:	BCC NORM	;If even, normalize product, else complement
+FCOMPL:	SEC		;Set carry for subtract
+	LDX #$03	;Index for 3-byte subtract
+COMPL1:	LDA #$00	;Clear A
+	SBC X1,X	;Subtract byte of Exp1
+	STA X1,X	;Restore it
+	DEX		;Next more significant byte
+	BNE COMPL1	;Loop until done
+	BEQ ADDEND	;Normalize (or shift right if overflow)
+FDIV:	JSR MD1		;Take abs. val. of Mant1, Mant2
+	SBC X1		;Subtract Exp1 from Exp2
+	JSR MD2		;Save as quotient exp.
+DIV1:	SEC		;Set carry for subtract
+	LDX #$02	;Index for 3-byte subtraction
+DIV2:	LDA M2,X
+	SBC E,X		;Subtract a byte of E from Mant2
+	PHA		;Save on stack
+	DEX		;Next more significant byte
+	BPL DIV2	;Loop until done
+	LDX #$FD	;Index for 3-byte conditional move
+DIV3:	PLA		;Pull byte of difference off stack
+	BCC DIV4	;If M2 smaller than E then don't restore M2
+	STA M2+3,X
+DIV4:	INX		;Next less significant byte
+	BNE DIV3	;Loop until done
+	ROL M1+2
+	ROL M1+1	;Roll quotient left, carry into LSB
+	ROL M1
+	ASL M2+2
+	ROL M2+1	;Shift dividend left
+	ROL M2
+	BCS OVFL	;Overflow is due to un-normalized divisor
+	DEY		;Next divide iteration
+	BNE DIV1	;Loop until done 23 iterations
+	BEQ MDEND	;Normalize quotient and correct sign
+MD2:	STX M1+2
+	STX M1+1	;Clear Mant1 (3 bytes) for MUL/DIV
+	STX M1
+	BCS OVCHK	;If calculation set carry, check for overflow
+	BMI MD3		;If negative, then no undeflow
+	PLA		;Pop one return level
+	PLA
+	BCC NORMX	;Clear X1 and return
+MD3:	EOR #$80	;Complement sign bit of exponent
+	STA X1		;Store it.
+	LDY #$17	;Count 24 (MUL) or 23 (DIV) iterations
+	RTS		;Return
+OVCHK:	BPL MD3		;If positive exponent, then no overflow.
+OVFL:	NOP		;Arithmetic overflow error (underflow?)
+FIX1:	JSR RTAR
+FFIX:	LDA X1
+	BPL UNDFL
+	CMP #$8E
+	BNE FIX1
+	BIT M1
+	BPL FIXRTS
+	LDA M1+2
+	BEQ FIXRTS
+	INC M1+1
+	BNE FIXRTS
+	INC M1
+FIXRTS:	RTS
+UNDFL:	LDA #$00
+	STA M1
+	STA M1+1
+	RTS
+.PAGE
+.SBTTL	Monitor Routines
+BREAK1:	LDA #$0D
+	JMP TPCHR
+;
+OPENW:	RTS		;?Open the Workspace file, initialize it for writing
+;
+CLOSEW:	RTS		;?Close the Workspace file
+;
+EOF:	RTS		;?Return True or False depending on EOF of file
+;
+RESETW:	RTS		;?Open Workspace file for reading
+;
+RESETT:	JSR SETVID
+	JSR SETKBD
+	JSR SETTXT
+	JSR SETNRM
+	JMP HOME
+;
+TPCHR:	PHA
+	LDA OUTDEV
+	BNE TPCHR1
+	PLA
+	JMP (CSWL)
+TPCHR1:	PLA
+	RTS		;?Output character to device
+.PAGE
+;Modified Monitor for Apple-LOGO
+;
+SCRN2:	BCC RTMSKZ
+	LSR A
+	LSR A
+	LSR A
+	LSR A
+RTMSKZ:	AND #$0F
+	RTS
+;
+PRNTYX:	TYA
+PRNTAX:	JSR PRBYTE
+PRNTX:	TXA
+	JMP PRBYTE
+;
+INSDS1:	LDX PCL
+	LDY PCH
+	JSR PRYX2
+;
+PRBLNK:	LDX #$03
+PRBL2:	LDA #$20
+PRBL3:	JSR TPCHR
+	DEX
+	BNE PRBL2
+	RTS
+.PAGE
+MONBRK:	PHA
+	LDA GETRM1
+	LDA GETRM1
+	LDA #$00
+	STA BANK4K
+	JSR SETNRM
+	JSR SETVID
+	JSR SETKBD
+	PLA
+	PLP
+	JSR SAVE
+	PLA
+	STA PCL
+	PLA
+	STA PCH
+	LDA #$01
+	STA MONFLG
+OLDBRK:	JSR INSDS1
+	JSR RGDSP1
+MON:	CLD
+	JSR BELL
+MONZ:	JSR BREAK1
+	LDA #'*
+	JSR TPCHR
+	JSR GETLN
+	JSR ZMODE
+NXTITM:	JSR GETNMB
+	STY YSAV
+	LDY #MONNUM
+CHRSRC:	DEY
+	BMI MON
+	CMP CHRTBL,Y
+	BNE CHRSRC
+	JSR TOSUB
+	LDY YSAV
+	JMP NXTITM
+.PAGE
+DIG:	LDX #$03
+	ASL A
+	ASL A
+	ASL A
+	ASL A
+NXTBIT:	ASL A
+	ROL A2L
+	ROL A2H
+	DEX
+	BPL NXTBIT
+NXTBAS:	LDA MODE
+	BNE NXTBS2
+	LDA A2H,X
+	STA A1H,X
+	STA A3H,X
+NXTBS2:	INX
+	BEQ NXTBAS
+	BNE NXTCHR
+GETNMB:	LDX #$00
+	STX A2L
+	STX A2H
+NXTCHR:	LDA LINARY,Y
+	INY
+	CMP #'0
+	BCC NTDIG
+	CMP #':
+	BCC DIG
+	CMP #'A
+	BCC NTDIG
+	CMP #'G
+	BCS NTDIG
+	ADC #$09
+	BNE DIG		;(Always)
+;
+TOSUB:	TYA
+	ASL A
+	TAY
+	LDA SUBTBL,Y
+	STA BSLTMP
+	INY
+	LDA SUBTBL,Y
+	STA BSLTMP+1
+	LDA MODE
+	JSR ZMODE
+	JMP (BSLTMP)
+;
+ZMODE:	LDY #$00
+	STY MODE
+NTDIG:	RTS
+.PAGE
+REGDSP:	JSR BREAK1
+RGDSP1:	LDA #ACC
+	STA A3L
+	LDA #ACC^
+	STA A3H
+	LDX #$FB
+RDSP1:	LDA #$20
+	JSR TPCHR
+	LDA RTBL-$FB,X
+	JSR TPCHR
+	LDA #'=
+	JSR TPCHR
+	LDA ACC+5,X
+	JSR PRBYTE
+	INX
+	BMI RDSP1
+	RTS
+;
+NXTA4:	INC A4L
+	BNE NXTA1
+	INC A4H
+NXTA1:	LDA A1L
+	CMP A2L
+	LDA A1H
+	SBC A2H
+	INC A1L
+	BNE RTS4B
+	INC A1H
+RTS4B:	RTS
+;
+PRA1:	LDY A1H
+	LDX A1L
+PRYX2:	JSR BREAK1
+	JSR PRNTYX
+	LDY #$00
+	LDA #'-
+	JMP TPCHR
+.PAGE
+XAM8:	LDA A1L
+	ORA #$07
+	STA A2L
+	LDA A1H
+	STA A2H
+MD8CHK:	LDA A1L
+	AND #$07
+	BNE DATAOT
+XAM:	JSR PRA1
+DATAOT:	LDA #$20
+	JSR TPCHR
+	LDA (A1L),Y
+	JSR PRBYTE
+	JSR NXTA1
+	BCC MD8CHK
+RTS4C:	RTS
+;
+PRBYTE:	PHA
+	LSR A
+	LSR A
+	LSR A
+	LSR A
+	JSR PRHEXZ
+	PLA
+PRHEX:	AND #$0F
+PRHEXZ:	CLC
+	ADC #'0
+	CMP #':
+	BCC PRHEXC
+	ADC #$06
+PRHEXC:	JMP TPCHR
+;
+BL1:	DEC YSAV
+	BEQ XAM8
+BLANK:	DEX
+	BNE SETMDZ
+	CMP #':
+	BNE XAM
+STOR:	STA MODE
+	LDA A2L
+	STA (A3L),Y
+	INC A3L
+	BNE RTS5
+	INC A3H
+RTS5:	RTS
+;
+SETMOD:	LDY YSAV
+	LDA LINARY-1,Y
+SETMDZ:	STA MODE
+	RTS
+.PAGE
+LT:	LDX #$01
+LT2:	LDA A2L,X
+	STA A4L,X
+	STA A5L,X
+	DEX
+	BPL LT2
+	RTS
+;
+MOVE:	LDA (A1L),Y
+	STA (A4L),Y
+	JSR NXTA4
+	BCC MOVE
+	RTS
+;
+VFY:	LDA (A1L),Y
+	CMP (A4L),Y
+	BEQ VFYOK
+	JSR PRA1
+	LDA (A1L),Y
+	JSR PRBYTE
+	LDA #$20
+	JSR TPCHR
+	LDA #'(
+	JSR TPCHR
+	LDA (A4L),Y
+	JSR PRBYTE
+	LDA #')
+	JSR TPCHR
+VFYOK:	JSR NXTA4
+	BCC VFY
+	RTS
+;
+A1PC:	TXA
+	BEQ A1PCRT
+A1PCLP:	LDA A1L,X
+	STA PCL,X
+	DEX
+	BPL A1PCLP
+A1PCRT:	RTS
+;
+SETINV:	LDY #$7F
+	BNE SETIFL
+SETNRM:	LDY #$FF
+SETIFL:	STY INVFLG
+	RTS
+.PAGE
+SETKBD:	LDA #$00
+	STA A2L
+INPRT:	LDY #KEYIN&$FF
+	LDA #KEYIN^
+	LDX #KSWL
+	BNE IOPRT	;(Always)
+SETVID:	LDA #$00
+	STA A2L
+OUTPRT:	LDY #COUT&$FF
+	LDA #COUT^
+	LDX #CSWL
+IOPRT:	STA $01,X
+	LDA A2L
+	AND #$0F
+	BEQ IOPRT1
+	ORA #IOADR^
+	STA $01,X
+	LDY #$00
+IOPRT1:	STY $00,X
+	RTS
+
+
+;
+GO:	JSR A1PC
+	JSR RESTOR
+	LDA #$00
+	STA MONFLG
+	JMP (PCL)
+;
+BSWTCH:	LDA BANK4K
+	BNE BSW1
+	INC BANK4K
+	LDA GETRM2
+	LDA GETRM2
+	LDA #'2
+	JSR TPCHR
+	JMP BREAK1
+BSW1:	DEC BANK4K
+	LDA GETRM1
+	LDA GETRM1
+	LDA #'1
+	JSR TPCHR
+	JMP BREAK1
+;
+REGZ:	JMP REGDSP
+.PAGE
+XMON:	LDA KILRAM
+	LDA #$4C	;(JMP instruction code)
+	STA USRADR
+	LDA #MONBRK&$FF
+	STA USRADR+1
+	LDA #MONBRK^
+	STA USRADR+2
+	JMP SYSMON	;User can re-enter this monitor with control-Y
+;
+CRMON:	JSR BL1
+	PLA
+	PLA
+	JMP MONZ
+;
+RESTOR:	LDA STATUS
+	PHA
+	LDA A5H
+RESTR1:	LDX XREG
+	LDY YREG
+	PLP
+	RTS
+;
+SAVE:	STA ACC
+SAV1:	STX XREG
+	STY YREG
+	PHP
+	PLA
+	STA STATUS
+	TSX
+	STX SPNT
+	CLD
+	RTS
+.PAGE
+;HOME - Home the cursor and clear the screen
+;
+HOME:	LDA #WNDTOP
+	STA CV
+	LDY #$00
+	STY CH
+	BEQ CLEOP1	;(always branches)
+;
+;CLREOP - Clear to end-of-page
+;
+CLREOP:	LDY CH
+	LDA CV
+CLEOP1:	PHA
+	JSR BCALCA
+	JSR CLEOL1
+	LDY #$00
+	PLA
+	ADC #$00
+	CMP #WNDBTM
+	BCC CLEOP1
+	BCS BCALC
+;
+;COUT - Output the character in A to the screen
+;
+COUT:	PHA
+	STY YSAV1
+	JSR COUT1
+	PLA
+	LDY YSAV1
+	RTS
+;
+BELL:	LDA #$40
+	JSR WAIT
+	LDY #$C0
+BELL1:	LDA #$0C
+	JSR WAIT
+	LDA SPKR
+	DEY
+	BNE BELL1
+	RTS
+.PAGE
+COUT1:	CMP #$0D
+	BEQ CROUT
+	ORA #$80	;Assume non-flashing first
+	AND INVFLG	;Flash or Invert if set
+	CMP #$E0
+	BCC COUTZ
+	AND #$DF	;Make it uppercase
+COUTZ:	LDY CH
+	STA (BASLIN),Y
+	INC CH		;Advance Horizontally
+	LDA CH
+	CMP #WNDWTH
+	BCC BCALCR
+CR:	LDA #$00
+	STA CH
+LF:	INC CV
+	LDA CV
+	CMP #WNDBTM
+	BCC BCALCA	;Finish if scrolling unnecessary
+	DEC CV
+SCROLL:	LDA #WNDTOP
+	PHA
+	JSR BCALCA
+SCRL1:	LDA BASLIN
+	STA BSLTMP
+	LDA BASLIN+1
+	STA BSLTMP+1
+	LDY #WNDWTH-1
+	PLA
+	ADC #$01
+	CMP #WNDBTM
+	BCS SCRL3
+	PHA
+	JSR BCALCA
+SCRL2:	LDA (BASLIN),Y	;Shift a line up one, character by character
+	STA (BSLTMP),Y
+	DEY
+	BPL SCRL2	;Next character
+	BMI SCRL1	;Next line
+SCRL3:	LDY #$00
+	JSR CLEOL1	;Clear the bottom line, then calculate new base
+.PAGE
+BCALC:	LDA CV
+BCALCA:	PHA
+	LSR A
+	AND #$03
+	ORA #$04
+	STA BASLIN+1
+	PLA
+	AND #$18
+	BCC BCALC2
+	ADC #$7F
+BCALC2:	STA BASLIN
+	ASL A
+	ASL A
+	ORA BASLIN
+	STA BASLIN
+BCALCR:	RTS
+;
+;CLREOL - Clear to end-of-line
+;
+CLREOL:	LDY CH
+CLEOL1:	LDA #$A0	;(Space, non-flashing, non-inverted)
+CLEOL2:	STA (BASLIN),Y
+	INY
+	CPY #WNDWTH
+	BCC CLEOL2
+	RTS
+;
+;CROUT - Output a Carriage return; suppress output if necessary
+;
+CROUT:	JSR CLREOL
+	JSR TSTCHR
+	BMI CR
+	CPY #LSTKEY
+	BNE CR
+	BIT KPFLAG
+	JSR RWAIT
+	JMP CR
+;
+RDKEY:	LDA INDEV
+	BNE KEYIND
+	JMP (KSWL)
+KEYIND:	RTS		;?Get a character from the input device
+;
+KEYIN:	INC RNDL
+	BNE KEYIN1
+	INC RNDH
+KEYIN1:	JSR TSTCH1
+	BMI KEYIN
+KRTS:	RTS
+.PAGE
+TSTCHR:	LDA INDEV
+	BNE TSTC1
+	LDA KSWH
+	CMP #IOADR
+	BEQ TSTC2
+TSTCH1:	BIT KPFLAG
+	BPL KNONE
+	LDA KPFLAG
+	BIT KPCLR
+	AND #$7F
+	RTS
+KNONE:	LDA #$FF	;Return negative if no character
+	RTS
+TSTC1:	JMP KNONE	;Return $FF if no char. from input device, else A=char.
+TSTC2:	JMP KNONE	;Return $FF if no char. from input card, else A=char.
+;
+;SETTXT - Set text mode
+;
+SETTXT:	LDA TXTSET
+	LDA #WNDBTM-1
+	STA CV
+	JMP BCALCA
+.PAGE
+;GETLN - Gets a line of input from the keyboard. Looks for LOGO interrupt
+; characters, and recognizes the left-bracket alias character. Returns
+; number of characters (not including terminator) in X.
+;
+GETLN:	LDX #$00	;X is LINARY index
+NEXTC:	LDA OUTDEV
+	BNE NEXTC1	;No flashing cursor if non-Apple output
+	LDA CSWH
+	CMP #IOADR
+	BEQ NEXTC1	;No flashing cursor if non-screen output
+	LDY CH
+	LDA (BASLIN),Y
+	PHA
+	AND #$7F
+	ORA #$40
+	STA (BASLIN),Y	;Make cursor position flash
+	JSR RDKEY
+	STA BSLTMP
+	PLA
+	STA (BASLIN),Y
+	LDA BSLTMP
+	JMP GETLN1
+NEXTC1:	JSR RDKEY	;Get an ascii value from keyboard
+	STA BSLTMP
+GETLN1:	CMP #$15	;(Forward arrow)
+	BNE GTLN1C
+	LDA LINARY,X	;Get character under cursor
+	BNE GTLN2A	;(0 becomes space)
+	LDA #$20
+	JMP GTLN2A
+GTLN1C:	CMP #$08	;(Back arrow)
+	BEQ BCKSPC
+	CMP #PULCHR	;(Pull back last line)
+	BNE GTLN1D
+PREVLN:	TXA
+	BNE NEXTC	;done if not at beginning of line
+PRVLN1:	LDA LINARY,X	;get char from line-array
+	CMP #$0D
+	BEQ NEXTC	;done if null char
+NEXTCX:	JSR TPCHR	;output char to screen
+	INX		;next char
+	JMP PRVLN1
+BCKSPC:	TXA
+	BEQ NEXTC
+	DEC CH
+	DEX
+	JMP NEXTC
+NOTCR:	JSR TPCHR	;Echo character
+	CPX #$F8
+	BCC GETLN3
+	JSR BELL
+GETLN3:	INX
+	BNE NEXTC
+CANCEL:	LDA #'\
+	JSR TPCHR
+	JMP GETLN
+GTLN1D:	CMP #$18	;(Cancel line)
+	BEQ CANCEL
+	CMP #LBRAK
+	BNE GTLN1A
+	LDA #'[
+	BNE GTLN2A	;(Always)
+GTLN1A:	LDA MONFLG
+	BNE GTLN1B	;Don't check for interrupt characters if in monitor
+	LDA BSLTMP
+	CMP #STPKEY
+	BEQ GTLNR1
+	CMP #PAUSKY
+	BEQ GTLNR2
+GTLN1B:	LDA BSLTMP
+GTLN2A:	STA LINARY,X
+	CMP #$0D	;(Carriage return)
+	BNE NOTCR
+	JMP BREAK1
+GTLNR1:	JMP STPPK1
+;
+RWAIT:	JSR RDKEY
+	CMP #STPKEY
+	BEQ GTLNR1
+	CMP #PAUSKY
+	BNE WRTS
+GTLNR2:	JMP STPPKZ
+;
+WAIT:	SEC
+WAIT1:	PHA
+WAIT2:	SBC #$01
+	BNE WAIT2
+	PLA
+	SBC #$01
+	BNE WAIT1
+WRTS:	RTS
+.PAGE
+.SBTTL	System Functions
+;	Arithmetic Functions: ?AIN'T GONNA WORK ON 4-BYTE FIXNUMS:
+;		SSUM,SDIF,SPROD,SDIVID,SGRTR,SLESS
+SUNDIF:	LDA INFDIF
+	STA CURTOK	;(For possible error message in GT1NUM)
+	LDA INFDIF+1
+	STA CURTOK+1
+	JSR GT1NUM
+	BCS SNDIF2
+	LDA NARG1
+	BNE SNDIF1
+	LDA NARG1+1
+	BNE SNDIF1
+	LDA NARG1+2
+	BNE SNDIF1
+	LDA NARG1+3
+	CMP #$80	;Can't complement -32768
+	BEQ ROFLOW
+SNDIF1:	LDX #NARG1
+	JSR COMPL
+	LDY #NARG1
+	JMP OTPFIX
+SNDIF2:	LDX #NARG1
+	JSR XFCOMP
+	LDY #NARG1
+	JMP OTPFLO
+;
+SSUM:	JSR GT2NUM
+;?	BCS <FLONUM ADDITION>
+	CLC
+	LDA NARG1
+	ADC NARG2
+	STA TEMPN1
+	LDA NARG1+1
+	ADC NARG2+1
+	STA TEMPN1+1
+	LDA NARG1+1
+	EOR NARG2+1
+	BMI SSUMOK	;Different signs, never an overflow
+	LDA NARG1+1
+	EOR TEMPN1+1
+	BPL SSUMOK	;Overflow if result not same sign as one argument
+ROFLOW:	LDA #XOFLOW
+	JMP ERROR
+SSUMOK:	LDY #TEMPN1
+	JMP OTPFIX
+;
+SDIF:	JSR GT2NUM
+;?	BCS <FLONUM DIFFERENCE>
+	SEC
+	LDA NARG1
+	SBC NARG2
+	STA TEMPN1
+	LDA NARG1+1
+	SBC NARG2+1
+	STA TEMPN1+1
+	LDA NARG1+1
+	EOR NARG2+1
+	BPL SSUMOK	;Same signs, never an overflow
+	LDA NARG1+1
+	EOR TEMPN1+1
+	BMI ROFLOW	;Different signs, overflow
+	BPL SSUMOK	;(Always)
+.PAGE
+SPROD:	JSR GT2NUM
+;?	BCS <FLONUM PRODUCT>
+	LDA NARG1+1
+	EOR NARG2+1
+	STA ANSN
+	LDA NARG1+1
+	BPL SPRD1
+	LDX #NARG1
+	JSR COMPL
+SPRD1:	LDA NARG2+1
+	BPL SPRD2
+	LDX #NARG2
+	JSR COMPL
+SPRD2:	LDA #$00
+	STA TEMPN1
+	STA TEMPN1+1
+	LDY #$10	;Bit counter
+MUL2:	LSR NARG2+1
+	ROR NARG2
+	BCC MUL4
+	CLC
+MUL3:	LDA TEMPN1	;Add multiplicand (NARG1) to partial product (TEMPN1)
+	ADC NARG1
+	STA TEMPN1
+	LDA TEMPN1+1
+	ADC NARG1+1
+	STA TEMPN1+1
+	BMI ROFLOW
+	BCS ROFLOW
+MUL4:	ASL NARG1
+	ROL NARG1+1
+MUL4A:	DEY
+	BNE MUL2	;Next bit
+	LDA ANSN
+	BPL MULEND
+	LDX #TEMPN1
+	JSR COMPL
+MULEND:	LDY #TEMPN1
+	JMP OTPFIX
+.PAGE
+SDIVID:	JSR GT2NUM
+;?	BCS <FLONUM DIVIDE>
+	LDA NARG2
+	BNE SDVD1
+	LDA NARG2+1
+	BNE SDVD1
+	LDA #XDBZ
+	JMP ERROR
+SDVD1:	LDA NARG1
+	BNE SDVD1A
+	LDA NARG1+1
+	BNE SDVD1A
+	LDY #NARG1
+	JMP OTPFIX	;Answer is zero if numerator is zero
+SDVD1A:	LDA #$00
+	STA ANSN	;SIGN
+	LDA NARG1+1
+	BPL SDVD2
+	LDX #NARG1
+	JSR COMPL
+	INC ANSN
+SDVD2:	LDA NARG2+1
+	BPL SDVD3
+	LDX #NARG2
+	JSR COMPL
+	LDA ANSN
+	EOR #$01
+	STA ANSN
+SDVD3:	LDA NARG2
+	STA TEMPN
+	LDA NARG2+1
+	STA TEMPN+1	;Divisor for XDIVID
+	LDX #NARG1
+	JSR XDIVID
+	LDA ANSN
+	BEQ SDVD4
+	LDX #NARG1
+	JSR COMPL
+SDVD4:	LDY #NARG1
+	JMP OTPFIX
+;
+SUNSUM:	LDA INFSUM
+	STA CURTOK	;(For possible error message in GT1NUM)
+	LDA INFSUM+1
+	STA CURTOK+1
+	JSR GT1NUM
+	LDY #NARG1
+	BCS SNSM1
+	JMP OTPFIX
+SNSM1:	JMP OTPFLO
+;
+COMPL:	LDA $00,X	;Complement and increment X pointer
+	EOR #$FF
+	STA $00,X
+	LDA $01,X
+	EOR #$FF
+	STA $01,X
+	LDA $02,X
+	EOR #$FF
+	STA $02,X
+	LDA $03,X
+	EOR #$FF
+	STA $03,X
+	INC $00,X
+	BNE COMPLR
+	INC $01,X
+	BNE COMPLR
+	INC $02,X
+	BNE COMPLR
+	INC $03,X
+COMPLR:	RTS
+.PAGE
+;Fast and clean division routine; assumes positive numbers.
+;Dividend in 00,X and 01,X; divisor in TEMPX1 and TEMPX1+1;
+;Quotient is placed in TEMPNH and TEMPNH+1, remainder left in
+;00,X and 01,X.
+;
+XDIVID:	LDA TEMPN		;save divisor
+	PHA
+	LDA TEMPN+1
+	PHA
+	LDY #$00		;zero quotient
+	STY TEMPNH
+	STY TEMPNH+1
+	STY TEMPN1+1
+	INY
+	STY TEMPN1		;initialize bit-holder
+NORM:	ASL TEMPN1		;normalize the divisor...
+	ROL TEMPN1+1
+	ASL TEMPN
+	ROL TEMPN+1		;and the bitholder
+	BPL NORM		;to the left side
+SHFT:	LSR TEMPN1+1		;then back 'em off one
+	ROR TEMPN1
+	LSR TEMPN+1
+	ROR TEMPN
+	LDA TEMPN1
+	BNE DV2			;if bitholder is zero, done
+	LDA TEMPN1+1
+	BEQ DONE	
+DV2:	SEC			;subtract dividend from divisor
+	LDA 00,X
+	SBC TEMPN
+	TAY
+	LDA 01,X
+	SBC TEMPN+1
+	BCC SHFT		;if borrow, don't save remainder
+	STY 00,X		;or add to result
+	STA 01,X
+	CLC
+	LDA TEMPNH		;add bitholder to result
+	ADC TEMPN1
+	STA TEMPNH
+	LDA TEMPNH+1
+	ADC TEMPN1+1
+	STA TEMPNH+1
+	JMP SHFT
+DONE:	PLA
+	STA TEMPN+1		;and divisor
+	PLA
+	STA TEMPN
+	LDA $00,X		;quotient is left in (X), low byte of
+	LDY TEMPNH		;remainder + '0 is left in A
+	STY $00,X
+	LDY TEMPNH+1
+	STY $01,X
+	CLC
+	ADC #'0
+	RTS
+.PAGE
+;	Boolean Functions:
+;
+SGRTR:	JSR GT2NUM
+;?SGRTRX:	BCS <FLONUM COMPARE>
+SGRTRX:	LDA NARG1+1
+	BMI SGRTRM
+	LDA NARG2+1
+	BMI JTRU	;POS > NEG
+SGRTRP:	LDA NARG2+1
+	CMP NARG1+1
+	BCC JTRU
+	BNE JFLS
+	LDA NARG2
+	CMP NARG1
+	BCC JTRU
+JFLS:	JMP VPLFLS
+SGRTRM:	LDA NARG2+1
+	BPL JFLS	;NEG not > POS
+	AND #$7F	;Both negative, strip sign bit and compare
+	STA NARG2+1
+	LDA NARG1+1
+	AND #$7F
+	STA NARG1+1
+	JMP SGRTRP
+JTRU:	JMP VPLTRU
+;
+SLESS:	JSR GT2NUM
+	LDX NARG1	;Switch the args and call S_GREATER
+	LDY NARG1+1
+	LDA NARG2
+	STX NARG2
+	STA NARG1
+	LDA NARG2+1
+	STY NARG2+1
+	STA NARG1+1
+	JMP SGRTRX
+;
+SNOT:	LDX #ARG1
+	JSR GTBOOL
+	LDA #$01
+	STA OTPUTN
+	CPY #$00
+	BNE VPLTRU
+	JMP VPLFLS
+.PAGE
+SBOTH:	LDX #ARG2
+	JSR GTBOOL
+	STY ANSN1
+	LDX #ARG1
+	JSR GTBOOL
+	LDA #$01
+	STA OTPUTN
+	CPY #$00
+	BNE VPLFLS
+	LDA ANSN1
+	BNE VPLFLS
+	JMP VPLTRU
+;
+SEITHR:	LDX #ARG2
+	JSR GTBOOL
+	STY ANSN1
+	LDX #ARG1
+	JSR GTBOOL
+	LDA #$01
+	STA OTPUTN
+	CPY #$00
+	BEQ VPLTRU
+	LDA ANSN1
+	BEQ VPLTRU
+	JMP VPLFLS
+.PAGE
+GTBOOL:	STX ANSN
+	JSR VPOP
+	LDX ANSN
+	LDA $00,X
+	LDY #$00
+	CMP LTRUE
+	BNE GTBL1
+	LDA $01,X
+	CMP LTRUE+1
+	BNE GTBL1
+SERR:	RTS
+GTBL1:	INY
+	LDA $00,X
+	CMP LFALSE
+	BNE GTBL2
+	LDA $01,X
+	CMP LFALSE+1
+	BEQ SERR
+GTBL2:	LDY ANSN
+	JSR PTRYOK
+	LDA #XNTF
+	JMP ERROR
+;
+VPLTRU:	LDX #LTRUE
+	JSR VPUSHP
+	JMP POPJ
+;
+VPLFLS:	LDX #LFALSE
+	JSR VPUSHP
+	JMP POPJ
+.PAGE
+;	List Manipulation Functions:
+;
+GTLSTC:	STX ANSN
+	LDA $00,X
+	STA TEMPNH
+	LDA $01,X
+	STA TEMPNH+1	;PTR
+	LDY #$02
+GTLC2:	LDA (TEMPNH),Y
+	TAX
+	BEQ GTLC3
+	INY
+	LDA (TEMPNH),Y
+GTLC2A:	STA TEMPNH+1
+	STX TEMPNH	;(CDR)
+	DEY
+	JMP GTLC2
+GTLC3:	INY
+	LDA (TEMPNH),Y
+	BNE GTLC2A
+	LDX ANSN
+	LDA TEMPNH
+	STA $00,X
+	LDA TEMPNH+1
+	STA $01,X
+	RTS
+;
+SFPUT:	LDX #ARG2
+	JSR VPOP
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG2
+	JSR GETTYP
+	CMP #LIST
+	BNE SFPT1
+	LDX #ARG2
+	LDY #ARG1
+	STY ANSN
+	JSR CONS
+	JMP OTPRG1
+SFPT1:	LDX #ARG2
+	LDY #CURTOK
+	LDA #XWTA
+	JMP ERROR
+.PAGE
+SLPUT:	LDX #ARG2
+	JSR VPOP
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG2
+	JSR GETTYP
+	CMP #LIST
+	BNE SFPT1
+	LDA ARG1+1
+	BNE SLPUT1
+	LDA #ARG1
+	STA ANSN
+	LDY #ARG2
+	LDA #$00	;(Type LIST)
+	TAX
+	JSR CONS
+	JMP OTPRG1
+SLPUT1:	LDA ARG2
+	BNE SLPUT2
+	LDA ARG2+1
+	BNE SLPUT2
+	LDA #ARG1
+	STA ANSN
+	TAY
+	LDX #$00
+	TXA
+	JSR CONS
+	JMP OTPRG1
+SLPUT2:	LDA ARG1
+	STA MARK2	;Protect the last element
+	LDA ARG1+1
+	STA MARK2+1
+	LDA ARG2
+	STA MARK3	;Protect the original list (or what's left of it)
+	LDA ARG2+1
+	STA MARK3+1
+	LDY #$00
+	LDA (MARK3),Y
+	STA TEMPN1
+	INY
+	LDA (MARK3),Y
+	STA TEMPN1+1	;(CAR) First element
+	INY
+	LDA (MARK3),Y
+	TAX
+	INY
+	LDA (MARK3),Y
+	STA MARK3+1
+	STX MARK3	;(CDR)
+	LDA #MARK1	;Pointer to start of new list
+	STA ANSN
+	LDX #$00
+	TXA
+	LDY #TEMPN1
+	JSR CONS
+	LDA MARK1
+	STA TEMPN2	;Pointer to newest node
+	LDA MARK1+1
+	STA TEMPN2+1
+SLPTW:	LDA MARK3	;Make a new list, element by element
+	BNE SLPTW1
+	LDA MARK3+1
+	BEQ SLPT2
+SLPTW1:	LDY #$00
+	LDA (MARK3),Y
+	STA TEMPN1	;Get an element
+	INY
+	LDA (MARK3),Y
+	STA TEMPN1+1	;(CAR)
+	INY
+	LDA (MARK3),Y
+	TAX
+	INY
+	LDA (MARK3),Y
+	STA MARK3+1
+	STX MARK3	;(CDR) Advance element pointer
+	LDA #TEMPN	;New pointer to newest node
+	STA ANSN
+	LDX #$00
+	TXA
+	LDY #TEMPN1
+	JSR CONS
+	LDY #$02
+	LDA TEMPN
+	STA (TEMPN2),Y	;Pointer to last node
+	TAX
+	INY
+	LDA TEMPN+1
+	STA (TEMPN2),Y	;(CDR) Link new node onto list
+	STA TEMPN2+1
+	STX TEMPN2
+	JMP SLPTW
+SLPT2:	LDA #TEMPN
+	STA ANSN
+	LDX #$00
+	TXA
+	LDY #ARG1
+	JSR CONS	;Get a pointer to first argument
+	LDY #$02
+	LDA TEMPN
+	STA (TEMPN2),Y
+	INY
+	LDA TEMPN+1
+	STA (TEMPN2),Y	;(RPLACD) Link final node on
+	JMP SSN2	;MARK1 points to our new list
+.PAGE
+SSNTNC:	LDA NARGS
+	BPL SSN1
+	EOR #$FF	;NARGS := - NARGS - 1
+	STA NARGS
+SSN1:	LDA #$00
+	STA MARK1
+	STA MARK1+1
+SSNW:	LDA NARGS
+	BNE SSNWA
+SSN2:	LDA MARK1
+	STA ARG1
+	LDA MARK1+1
+	STA ARG1+1
+	LDA #$00
+	STA MARK1
+	STA MARK2
+	STA MARK3
+	STA MARK1+1
+	STA MARK2+1
+	STA MARK3+1
+	JMP OTPRG1
+SSNWA:	LDX #MARK2
+	JSR VPOP
+	LDX #MARK2
+	JSR GETTYP
+	CMP #LIST
+	BEQ SSNW1
+	LDX #MARK1
+	STX ANSN
+	LDY #MARK2
+	LDA #LIST
+	JSR CONS
+	JMP SSNW2
+SSNW1:	LDA VSP
+	STA TEMPN1
+	LDA VSP+1
+	STA TEMPN1+1
+	LDA #SSNERR&$FF
+	STA ERRRET
+	LDA #SSNERR^
+	STA ERRRET+1
+	TSX
+	STX RETADR	;Save all necessary return addresses
+SSNX:	LDA MARK2
+	BNE SSNX1
+	LDA MARK2+1
+	BEQ SSNY
+SSNX1:	LDY #$00
+	LDA (MARK2),Y
+	STA MARK3
+	INY
+	LDA (MARK2),Y
+	STA MARK3+1	;(CAR)
+	INY
+	LDA (MARK2),Y
+	TAX
+	INY
+	LDA (MARK2),Y
+	STA MARK2+1
+	STX MARK2	;(CDR)
+	LDX #MARK3
+	JSR VPUSHP
+	JMP SSNX
+SSNY:	LDA TEMPN1
+	CMP VSP
+	BNE SSNY1
+	LDA TEMPN1+1
+	CMP VSP+1
+	BEQ SSNW2
+SSNY1:	LDX #MARK3
+	JSR VPOP
+	LDX #MARK1
+	STX ANSN
+	LDY #MARK3
+	LDA #LIST
+	JSR CONS
+	JMP SSNY
+SSNERR:	LDA TEMPN1
+	STA VSP
+	LDA TEMPN1+1
+	STA VSP+1
+	JMP ERROR1
+SSNW2:	DEC NARGS
+	JMP SSNW
+.PAGE
+;	Miscellaneous Functions:
+;
+SMAKE:	LDX #ARG2
+	JSR VPOP
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BEQ SMAKE1
+	CMP #SATOM
+	BNE SMAKE2
+SMAKE1:	LDX #ARG2
+	LDY #ARG1
+	JSR PUTVAL
+	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+SMAKE2:	LDX #ARG1
+	LDY #CURTOK
+	LDA #XWTA
+	JMP ERROR
+;
+SOUTPT:	LDA LEVNUM
+	BNE SOTPT2
+	LDA LEVNUM+1
+	BEQ SOTPT1
+SOTPT2:	LDA #$01
+	STA STPFLG
+	STA OTPUTN
+	JMP POPJ
+SOTPT1:	LDY #CURTOK
+	LDA #XNTL
+	JMP ERROR
+.PAGE
+SSTOP:	LDA LEVNUM
+	BNE SSTOP1
+	LDA LEVNUM+1
+	BEQ SOTPT1
+SSTOP1:	LDX #$00
+	STX OTPUTN
+	INX
+	STX STPFLG
+	JMP POPJ
+;
+SCOMMT:	LDA #$00
+	STA TOKPTR
+	STA TOKPTR+1
+	STA OTPUTN
+	LDA EXPOUT
+	BNE SCMMT1
+	JMP POPJ
+SCMMT1:	LDA #XEOL
+	JMP ERROR
+.PAGE
+SDEBUG:	LDA #'O
+	JSR TPCHR
+	LDA #$00
+	STA OTPUTN
+	CMP DBUGSW
+	BNE SDBG1
+	INC DBUGSW
+	LDA #'N
+	JSR TPCHR
+	JSR BREAK1
+	JMP POPJ
+SDBG1:	STA DBUGSW
+	LDA #'F
+	JSR TPCHR
+	LDA #'F
+	JSR TPCHR
+	JSR BREAK1
+	JMP POPJ
+;
+SLINES:	LDX #$00
+	STX OTPUTN
+	LDA NUMSW
+	BNE SLINS1
+	INC NUMSW
+	LDX #NMMSG1&$FF	;"USE LINE NUMBERS"
+	LDY #NMMSG1^
+	JSR PRTSTR
+	JSR BREAK1
+	JMP POPJ
+SLINS1:	STX NUMSW
+	LDX #NMMSG2&$FF	;"NO LINE NUMBERS"
+	LDY #NMMSG2^
+	JSR PRTSTR
+	JSR BREAK1
+	JMP POPJ
+;
+SCNTIN:	LDX #$00
+	STX OTPUTN
+	INX
+	STX STPFLG
+	STX DCOFLG
+	JMP POPJ
+.PAGE
+SIF:	INC IFLEVL
+	BNE SIFA
+	INC IFLEVL+1
+SIFA:	LDA #$00
+	STA OTPUTN
+	JSR GTNXTK
+	LDA NEXTOK
+	CMP LTHEN
+	BNE SIF1
+	LDA NEXTOK+1
+	CMP LTHEN+1
+	BNE SIF1
+	LDX #TOKPTR
+	JSR TTKADV
+SIF1:	LDX #ARG1
+	JSR GTBOOL
+	CPY #$00
+	BNE SIF2
+SIF3A:	JMP POPJ
+SIF2:	LDX #NEXTOK
+	JSR EXIFSC
+	LDA TOKPTR
+	BNE SIF3
+	LDA TOKPTR+1
+	BEQ SIF3A
+SIF3:	LDA NEXTOK
+	CMP LELSE
+	BNE SIF3A
+	LDA NEXTOK+1
+	CMP LELSE+1
+	BNE SIF3A
+	LDX #TOKPTR
+	JSR TTKADV
+	JMP POPJ
+.PAGE
+SELSE:	SEC
+	LDA IFLEVL
+	SBC #$01
+	STA IFLEVL
+	LDA IFLEVL+1
+	SBC #$00
+	STA IFLEVL+1
+	BCC SELSE1
+	LDA #$00
+	STA OTPUTN
+	LDA IFLEVL
+	BNE SELSE2
+	LDA IFLEVL+1
+	BNE SELSE2
+	STA TOKPTR
+	STA TOKPTR+1
+	JMP POPJ
+SELSE2:	LDX #TEMPN2
+	JSR EXIFSC
+	JMP POPJ
+SELSE1:	LDA #XELS
+	JMP ERROR
+.PAGE
+SGO:	JSR STPPEK
+	LDA #$00
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BEQ SGO1
+	CMP #SATOM
+	BEQ SGO1
+	JMP SRUN1
+SGO1:	LDA #LATOM
+	LDX #ARG1
+	JSR PUTTYP
+	LDA FBODY
+	STA GOPTR
+	LDA FBODY+1
+	STA GOPTR+1
+	LDX #GOPTR
+	JSR ULNADV
+SGOW:	LDA GOPTR
+	BNE SGOW1
+	LDA GOPTR+1
+	BEQ SGOR
+SGOW1:	LDX #TEMPN1
+	LDY #GOPTR
+	JSR GTTULN
+	LDY #$00
+	LDA (TEMPN1),Y
+	STA TEMPN
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN+1	;(GETTOK)
+	LDX #TEMPN1
+	JSR TTKADV
+	LDY #$00
+	LDA (TEMPN1),Y
+	TAX
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN1+1
+	STX TEMPN1	;(GETTOK)
+	LDA ARG1
+	CMP TEMPN1
+	BNE SGOW2
+	LDA ARG1+1
+	CMP TEMPN1+1
+	BEQ SGOE1
+SGOW2:	LDX #GOPTR
+	JSR ULNADV
+	JMP SGOW
+SGOE1:	LDA TEMPN
+	STA LINNUM
+	LDA TEMPN+1
+	STA LINNUM+1
+	JMP POPJ
+SGOR:	LDY #ARG1
+	LDA #XLNF
+	JMP ERROR
+.PAGE
+SRUN:	JSR STPPEK
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BNE SRUN1
+	JMP RUNHAN
+SRUN1:	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+;
+STHING:	LDX #ARG2
+	JSR VPOP
+	LDX #ARG2
+	JSR GETTYP
+	CMP #ATOM
+	BEQ STH1
+	CMP #SATOM
+	BEQ STH1
+	LDX #ARG2
+	JMP STLR4A
+STH1:	LDX #ARG1
+	LDY #ARG2
+	JSR GETVAL
+	LDA ARG1+1
+	BNE STH2
+	LDA ARG1
+	BEQ STH2
+	LDY #ARG2
+	LDA #XHNV
+	JMP ERROR
+STH2:	JMP OTPRG1
+;
+SPTHNG:	LDA #$01
+	STA OTPUTN
+	LDX #ARG2
+	JSR VPOP
+	LDX #ARG2
+	JSR GETTYP
+	CMP #ATOM
+	BEQ SPTH1
+	CMP #SATOM
+	BEQ SPTH1
+SPTH2:	JMP VPLFLS
+SPTH1:	LDX #ARG1
+	LDY #ARG2
+	JSR GETVAL
+	LDA ARG1+1
+	BNE SPTH3
+	LDA ARG1
+	BNE SPTH2
+SPTH3:	JMP VPLTRU
+.PAGE
+SPWRDP:	LDA #$01
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BEQ SPTH3
+	CMP #SATOM
+	BEQ SPTH3
+	CMP #FIX
+	BEQ SPTH3
+	CMP #FLO
+	BEQ SPTH3
+	JMP VPLFLS
+;
+SNODES:	SEC
+	LDA #TYPLEN&$FF
+	SBC NNODES
+	STA TEMPN1
+	LDA #TYPLEN^
+	SBC NNODES+1
+	STA TEMPN1+1
+	LDY #TEMPN1
+	JMP OTPFX1
+;
+SREQU:	LDA #RPRMPT
+	JSR TPCHR
+	LDY #ARG1
+	JSR READLN
+	TYA
+	BEQ OTPRG1	;Y zero means OK
+	JMP ERROR1
+OTPRG1:	LDA #$01
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPUSHP
+	JMP POPJ
+;
+SGCOLL:	JSR GARCOL
+	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+.PAGE
+STITLE:	LDA EDSW
+	BEQ STTLR1
+	LDA LEVNUM
+	BNE STTLR2
+	LDA LEVNUM+1
+	BNE STTLR2
+	LDA TOKPTR
+	BNE STTL1
+	LDA TOKPTR+1
+	BNE STTL1
+	STA OTPUTN
+	JMP POPJ
+STTLR1:	LDA #XNED
+	JMP ERROR
+STTLR2:	LDA #XETL
+	JMP ERROR
+STTLR3:	LDY #TEMPN3
+	JSR PTRYOK
+	LDA #XUBL
+	JMP ERROR
+STTLR4:	JSR PTRXOK
+STLR4A:	LDY #CURTOK
+	LDA #XWTA
+	JMP ERROR
+STTL1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN3	;(ATOMM)
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN3+1	;(CAR)
+	INY
+	LDA (TOKPTR),Y
+	TAX
+	INY
+	LDA (TOKPTR),Y
+	STA TOKPTR+1
+	STA TEMPN1+1	;(ARGLIST)
+	STX TOKPTR	;(CDR)
+	STX TEMPN1
+	LDX #TEMPN3
+	JSR GETTYP
+	CMP #SATOM
+	BEQ STTLR3
+	CMP #ATOM
+	BNE STTLR4
+	LDA TEMPN3
+	CMP EDTATM
+	BNE STTL2
+	LDA TEMPN3+1
+	CMP EDTATM+1
+	BEQ STTL3
+STTL2:	LDX #EDTATM
+	LDA #TEMPN2	;(FUN)
+	JSR GETFUN
+	LDX #EDTATM
+	JSR UNFUNC
+	LDA TEMPN3
+	STA EDTATM
+	STA PODEFL
+	LDA TEMPN3+1
+	STA EDTATM+1
+	STA PODEFL+1
+	LDY #TEMPN2
+	LDX #EDTATM
+	JSR PUTFUN
+STTL3:	LDA #$00
+	STA ANSN1
+STTLW:	LDA TOKPTR
+	BNE STTLW1
+	LDA TOKPTR+1
+	BEQ STTLWE
+STTLW1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPN
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPN+1	;(CAR)
+	INY
+	LDA (TOKPTR),Y
+	TAX
+	INY
+	LDA (TOKPTR),Y
+	STA TOKPTR+1
+	STX TOKPTR	;(CDR)
+	LDA TEMPN
+	CMP COMMNT
+	BNE STTLW2
+	LDA TEMPN+1
+	CMP COMMNT+1
+	BEQ STTLW
+STTLW2:	LDX #TEMPN
+	JSR GETTYP
+	CMP #ATOM
+	BEQ STTLW3
+	CMP #SATOM
+	BEQ STTLW3
+	JSR EXTEDT
+	LDX #TEMPN
+	JMP STTLR4
+STTLW3:	INC ANSN1
+	JMP STTLW
+STTLWE:	LDY #$00
+	STY TOKPTR
+	STY TOKPTR+1
+	STY OTPUTN
+	LDA TEMPN1
+	STA (EDBOD),Y
+	INY
+	LDA TEMPN1+1
+	STA (EDBOD),Y	;(RPLACA)
+	LDX #EDTATM
+	LDA #TEMPN1
+	JSR GETFUN
+	LDY #$04
+	LDA ANSN1
+	STA (TEMPN1),Y	;(PUTNGS)
+	JMP POPJ
+.PAGE
+SREAD:	LDA INDEV
+	BNE SERR4
+	INC INDEV
+	JSR RESETW
+	JMP SREAD1
+SERR4:	JMP POPJ
+;
+SPRINT:	LDX #ARG1
+	JSR VPOP
+	LDY #ARG1
+	LDA #$01
+	JSR LTYPE
+	JSR BREAK1
+SPRNT1:	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+;
+STYPE:	LDX #ARG1
+	JSR VPOP
+	LDY #ARG1
+	LDA #$01
+	JSR LTYPE
+	JMP SPRNT1
+.PAGE
+SDEFIN:	LDX #ARG2
+	JSR VPOP
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BNE SDFNR1
+	LDX #ARG2
+	JSR GETTYP
+	CMP #LIST
+	BNE SDFNR2
+	LDY #$00
+	LDA (ARG2),Y
+	STA TEMPN
+	INY
+	LDA (ARG2),Y
+	STA TEMPN+1	;(CAR)
+	LDX #TEMPN
+	JSR GETTYP
+	CMP #LIST
+	BNE SDFNR2
+	LDY #ARG1
+	LDX #ARG2
+	JSR DEFUN
+	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+SDFNR1:	JMP SMAKE2
+SDFNR2:	JMP SFPT1
+.PAGE
+STEXT:	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BNE SDFNR1
+	LDX #ARG1
+	LDA #TEMPN5	;FUN is TEMPN5
+	JSR GETFUN
+	LDA TEMPN5+1
+	BNE STEXT1
+	STA TEMPN6	;BODY is TEMPN6
+	STA TEMPN6+1
+	JMP STEXT3
+STEXT1:	LDY #$02
+	LDA (TEMPN5),Y
+	STA TEMPN6
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN6+1	;(CDR)
+	LDX #TEMPN6
+	JSR GETTYP
+	CMP #LIST
+	BEQ STXT1A
+	CMP #FPACK
+	BEQ STXT1B
+	JSR SYSBUG
+STXT1B:	LDY #TEMPN6
+	LDX #TEMPN5
+	LDA #$01
+	JSR UNSTUF
+	JMP STEXT3
+STXT1A:	LDA TEMPN6
+	STA TEMPN5
+	LDA TEMPN6+1
+	STA TEMPN5+1
+	LDA VSP
+	STA TEMPN1	;TEMPN1 is STACK
+	LDA VSP+1
+	STA TEMPN1+1
+	LDY #$00
+	LDA (TEMPN5),Y
+	STA TEMPN2	;TEMPN2 is LINE
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN2+1	;(CAR)
+	INY
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CDR)
+	LDX #TEMPN2
+	JSR VPUSHP
+STXTW:	LDA TEMPN5+1
+	BEQ STXTWE
+	LDY #$00
+	LDA (TEMPN5),Y
+	STA TEMPN2
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN2+1	;(CAR)
+	INY
+	LDA (TEMPN5),Y
+	TAX
+	INY
+	LDA (TEMPN5),Y
+	STA TEMPN5+1
+	STX TEMPN5	;(CDR)
+	DEY
+	LDA (TEMPN2),Y
+	TAX
+	INY
+	LDA (TEMPN2),Y
+	STA TEMPN2+1
+	STX TEMPN2	;(CDR)
+	LDX #TEMPN2
+	JSR VPUSHP
+	JMP STXTW
+STXTWE:	LDA #$00
+	STA MARK1
+	STA MARK1+1
+STXTX:	LDA TEMPN1
+	CMP VSP
+	BNE STXTX1
+	LDA TEMPN1+1
+	CMP VSP+1
+	BEQ STXTXE
+STXTX1:	LDX #TEMPN2
+	JSR VPOP
+	LDX #MARK1
+	STX ANSN
+	LDY #TEMPN2
+	LDA #LIST
+	JSR CONS
+	JMP STXTX
+STXTXE:	LDA MARK1
+	STA TEMPN6
+	LDA MARK1+1
+	STA TEMPN6+1
+	LDA #$00
+	STA MARK1
+	STA MARK1+1
+STEXT3:	LDX #TEMPN6
+	JSR VPUSHP
+	LDA #$01
+	STA OTPUTN
+	JMP POPJ
+SDFNRR:	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+.PAGE
+SFIRST:	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BEQ SFRST1
+	CMP #ATOM
+	BEQ SFRST2
+	CMP #SATOM
+	BEQ SFRST2
+	CMP #FIX
+	BEQ SFRST2
+	CMP #FLO
+	BEQ SFRST2
+	BNE SDFNRR	;(Always)
+SFRST1:	LDY #$00
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CAR)
+	JMP OTPRG1
+SFRST2:	LDA ARG1
+	BNE SFRST3
+	LDA ARG1+1
+	BEQ SDFNRR
+SFRST3:	LDY #TEMPN6	;TEMPN6 is TEMP
+	LDX #ARG1
+	JSR MAKPNM
+	LDY #$00
+	LDA (TEMPN6),Y
+	TAX
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN6+1
+	STX TEMPN6	;(CAR)
+	STX TEMPN5
+	LDX #$00
+	STX TEMPN5+1
+	LDA #TEMPN6
+	STA ANSN
+	LDY #TEMPN5
+	LDA #STRING
+	JSR CONS
+	LDY #ARG1
+	LDX #TEMPN6
+	JSR INTERN
+	JMP OTPRG1
+.PAGE
+SLAST:	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BEQ SLST1
+	CMP #ATOM
+	BEQ SLST2
+	CMP #SATOM
+	BEQ SLST2
+	CMP #FIX
+	BEQ SLST2
+	CMP #FLO
+	BEQ SLST2
+	JMP SDFNR1
+SLST1:	LDX #ARG1
+	JSR GTLSTC
+	LDY #$00
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CAR)
+	JMP OTPRG1
+SLST2:	LDY #ARG2
+	LDX #ARG1
+	JSR MAKPNM
+	LDX #ARG2
+	JSR GTLSTC
+	LDY #$01
+	LDA (ARG2),Y
+	BEQ SLST3
+	STA TEMPN	;(CAR)
+	DEY
+	STY TEMPN+1
+	LDA #ARG2
+	STA ANSN
+	LDX #$00
+	LDY #TEMPN
+	LDA #STRING
+	JSR CONS
+SLST3:	LDX #ARG2
+	LDY #ARG1
+	JSR INTERN
+	JMP OTPRG1
+.PAGE
+SBPT:	BRK		;Enter Monitor
+	NOP
+	NOP
+	LDA #$00	;Monitor "G" command re-enters here
+	STA OTPUTN
+	JMP POPJ
+;
+SEQUAL:	LDA LTRUE
+	STA TEMPN7	;TEMPN7 is PRED
+	LDA LTRUE+1
+	STA TEMPN7+1
+	LDX #ARG2
+	JSR VPOP
+	LDX #ARG1
+	JSR VPOP
+	LDA #$01
+	STA OTPUTN
+	LDA SP
+	STA TEMPN8
+	LDA SP+1
+	STA TEMPN8+1
+	LDX #SEQEND&$FF
+	LDY #SEQEND^
+	JSR PUSH
+.PAGE
+EQ:	LDX #ARG2
+	JSR GETTYP
+	STA ANSN	;TEMP1
+	LDX #ARG1
+	JSR GETTYP
+	STA ANSN1	;TYP1
+	CMP #LIST
+	BEQ EQL
+	CMP #FIX
+	BEQ EQF
+	CMP #FLO
+	BEQ EQFL
+	CMP #ATOM
+	BEQ EQA
+EQO:	LDA ANSN1
+	CMP ANSN
+	BNE EQFF
+EQO1:	LDA ARG1
+	CMP ARG2
+	BNE EQFF
+	LDA ARG1+1
+	CMP ARG2+1
+	BEQ EQPOP
+EQFF:	LDA LFALSE
+	STA TEMPN7	;PRED
+	LDA LFALSE+1
+	STA TEMPN7+1
+	JMP SEQEND
+EQPOP:	JMP POPJ
+EQL:	LDA ANSN
+	CMP #LIST
+	BNE EQFF
+	JMP EQLIST
+EQF:	LDY #$00	;?CAR TO GET FIXNUM WON'T WORK
+	LDA (ARG1),Y	;?ALSO COMPARISON MUST BE 4 BYTES
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CAR)
+	LDX #ARG2
+	JSR GETNUM	;?TYPE IN A
+EQAA:	BCC EQFF
+	JMP EQO1
+EQFL:	NOP		;?FLONUM IN ARG1
+EQA:	LDA ANSN
+	CMP #FIX	;?FLONUMS TOO
+	BNE EQO
+	LDY #$00
+	LDA (ARG2),Y
+	TAX
+	INY
+	LDA (ARG2),Y
+	STA ARG2+1
+	STX ARG2	;(CAR)
+	LDX #ARG1
+	JSR GETNUM
+	JMP EQAA
+EQLIST:	LDA ARG1
+	BNE EQLST1
+	LDA ARG1+1
+	BNE EQLST1
+	LDA ARG2
+	BNE EQFF
+	LDA ARG2+1
+	BNE EQFF
+	JMP POPJ
+EQLST1:	LDA ARG2
+	BNE EQLST2
+	LDA ARG2+1
+	BEQ EQFF
+EQLST2:	LDX #ARG1
+	JSR PUSHP
+	LDX #ARG2
+	JSR PUSHP
+	LDY #$00
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CAR)
+	DEY
+	LDA (ARG2),Y
+	TAX
+	INY
+	LDA (ARG2),Y
+	STA ARG2+1
+	STX ARG2	;(CAR)
+	JSR PSHTST
+	LDX #EL1&$FF
+	LDY #EL1^
+	JSR PUSH
+	JMP EQ
+EL1:	LDX #ARG2
+	JSR POP
+	LDX #ARG1
+	JSR POP
+	LDY #$02
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CDR)
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BNE EL1R
+	LDY #$02
+	LDA (ARG2),Y
+	TAX
+	INY
+	LDA (ARG2),Y
+	STA ARG2+1
+	STX ARG2	;(CDR)
+	LDX #ARG2
+	JSR GETTYP
+	CMP #LIST
+	BNE EL1R
+	JMP EQLIST
+EL1R:	JSR SYSBUG
+SEQEND:	LDX #TEMPN7	;PRED
+	JSR VPUSHP
+	LDA TEMPN8
+	STA SP
+	LDA TEMPN8+1
+	STA SP+1
+	JMP POPJ
+.PAGE
+STO:	JSR EDTSTP
+	LDA #TEMPX2	;FUN is TEMPX2
+	LDX #ARG1
+	JSR GETFUN
+	LDA #STOERR&$FF
+	STA ERRRET	;Error return pointer
+	LDA #STOERR^
+	STA ERRRET+1
+	TSX
+	STX RETADR	;Save all necessary return addresses
+	LDA TEMPX2+1
+	BEQ STO1
+	LDA #XDEF
+	LDY #ARG1
+	JMP ERROR
+STO1:	LDA TOKPTR
+	STA MARK1
+	LDA TOKPTR+1
+	STA MARK1+1
+	LDA #$00
+	STA NARGS
+STOW:	LDA TOKPTR+1
+	BNE STOW1
+	LDA TOKPTR
+	BEQ STOWE
+STOW1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA TEMPX2	;TEMPN1 is TOKEN
+	INY
+	LDA (TOKPTR),Y
+	STA TEMPX2+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TFKADV
+	LDA TEMPX2
+	CMP COMMNT
+	BNE STOW2
+	LDA TEMPX2+1
+	CMP COMMNT+1
+	BEQ STOWE
+STOW2:	LDX #TEMPX2
+	JSR GETTYP
+	CMP #ATOM
+	BEQ STOW3
+	CMP #SATOM
+	BEQ STOW3
+	LDX #TEMPX2
+	JMP STLR4A
+STOW3:	INC NARGS
+	JMP STOW
+STOWE:	LDX #$00
+	STX TOKPTR
+	STX TOKPTR+1
+	STX TEMPX1+1
+	LDA #EDBOD
+	STA ANSN
+	TXA
+	LDY #MARK1
+	JSR CONS
+	LDY #EDBOD
+	LDX #EDTATM
+	LDA NARGS
+	STA TEMPX1
+	LDA #TEMPX1
+	JSR PTFTXT
+	JSR RSTERR
+	JMP POPJ
+STOERR:	JSR EXTEDT
+	JMP ERROR1
+.PAGE
+EXTEDT:	LDA #$00
+	STA EDSW
+	STA OTPUTN
+	STA EDBOD
+	STA EDTATM
+	STA EDBOD+1
+	STA EDTATM+1
+RTS9:	RTS
+;
+SEDIT:	JSR EDTSTP
+	LDA #TEMPN5	;FUN
+	LDX #ARG1
+	JSR GETFUN
+	LDA #STOERR&$FF
+	STA ERRRET
+	LDA #STOERR^
+	STA ERRRET+1
+	TSX
+	STX RETADR	;Save all necessary return addresses
+	LDA TEMPN5+1
+	BNE SEDIT1
+	LDA #XUDF
+	LDY #ARG1
+	JMP ERROR
+SEDIT1:	LDA #$00
+	LDX #TEMPN5
+	LDY #EDBOD
+	JSR UNSTUF
+	LDY #$00
+	LDA (EDBOD),Y
+	STA TEMPN1	;ARGS
+	INY
+	LDA (EDBOD),Y
+	STA TEMPN1+1	;(CAR)
+	LDX #TEMPX1
+	LDY #TEMPN1
+	JSR GETLEN
+	LDA #TEMPX1
+	LDY #EDBOD
+	LDX #ARG1
+	JSR PTFTXT
+	JSR RSTERR
+	JMP POPJ
+.PAGE
+SEND:	LDA EDSW
+	BNE SEND1	;if edit switch off, give
+	JMP STTLR1	;(ERROR XNED)
+SEND1:	LDA LEVNUM	;if not at top level, complain.
+	BNE SENDR
+	LDA LEVNUM+1
+	BNE SENDR
+	LDA #EDTATM
+	LDX #EDBOD
+	JSR STUFF	;try to put the function def together
+	LDA OUTDEV
+	BNE SEND2
+	LDA #$00
+	LDY #EDTATM
+	JSR LTYPE
+	LDX #SENDM&$FF	;" DEFINED"
+	LDY #SENDM^
+	JSR PRTSTR
+	JSR BREAK1
+SEND2:	JSR EXTEDT
+	JMP POPJ
+SENDR:	JMP STTLR2	;(ERROR XETL)
+.PAGE
+SPO:	LDA #$00
+	STA OTPUTN
+	LDA TOKPTR
+	BNE SPO1
+	LDA TOKPTR+1
+	BNE SPO1
+	LDA PODEFL
+	BNE SPO1A
+	LDA PODEFL+1
+	BNE SPO1A
+	JMP POPJ
+SPO1:	LDY #$00
+	LDA (TOKPTR),Y
+	STA ARG1
+	INY
+	LDA (TOKPTR),Y
+	STA ARG1+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TTKADV
+	LDX ARG1
+	LDY ARG1+1
+	CPX ALL
+	BNE SPO2
+	CPY ALL+1
+	BNE SPO2
+	LDA #$01
+	JSR POFUNS
+SPON:	LDA #$01
+	JSR PONAMS
+	JMP POPJ
+SPO2:	CPX NAMES
+	BNE SPO3
+	CPY NAMES+1
+	BEQ SPON
+SPO3:	CPX TITLES
+	BNE SPO4
+	CPY TITLES+1
+	BNE SPO4
+SPOTS:	LDA #$00
+	STA OTPUTN
+	JSR POFUNS
+	JMP POPJ
+SPO4:	CPX PROCS
+	BNE SPO5
+	CPY PROCS+1
+	BNE SPO5
+	LDA #$01
+	JSR POFUNS
+	JMP POPJ
+SPO5:	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BEQ SPO5A
+	CMP #SATOM
+	BEQ SPO5S
+	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+SPO5S:	LDY #ARG1
+	LDA #XUBL
+	JMP ERROR
+SPO5A:	LDA ARG1
+	STA PODEFL
+	LDA ARG1+1
+	STA PODEFL+1
+SPO1A:	LDX #PODEFL
+	LDA #TEMPN1
+	JSR GETFUN
+	LDA TEMPN1+1
+	BEQ PFERR
+	LDX #$01
+	LDA #PODEFL
+	JSR POTEXT
+	JMP POPJ
+PFERR:	LDY #PODEFL
+	LDA #XNDF
+	JMP ERROR
+.PAGE
+PONAMS:	LDA OBLIST
+	STA TEMPN8
+	LDA OBLIST+1
+	STA TEMPN8+1	;TEMPN8 is OBLIST pointer
+PONW1:	LDA TEMPN8
+	BNE PONW1A	;See if done
+	LDA TEMPN8+1
+	BEQ PONW1E
+PONW1A:	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPN6	;Get name pointer
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPN6+1	;(CAR)
+	INY
+	LDA (TEMPN8),Y
+	TAX
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPN8+1
+	STX TEMPN8	;(CDR) to next OBLIST object
+	JSR PON1	;Print the name and value
+	JMP PONW1
+PONW1E:	LDA SOBLST
+	STA TEMPN6	;TEMPN6 is SOBLIST pointer
+	LDA SOBLST+1
+	STA TEMPN6+1
+PONW2:	LDA TEMPN6
+	CMP SOBTOP
+	BNE PONW2A	;See if done
+	LDA TEMPN6+1
+	CMP SOBTOP+1
+	BNE PONW2A
+PONRTS:	RTS
+PONW2A:	JSR PON1	;Print the name and value
+	CLC
+	LDA TEMPN6
+	ADC #$04
+	STA TEMPN6
+	BCC PONW2
+	INC TEMPN6+1
+	JMP PONW2
+.PAGE
+PON1:	LDX #TEMPN7	;TEMPN7 is value
+	LDY #TEMPN6	;TEMPN6 is NAME
+	JSR GETVAL
+	LDA TEMPN7+1
+	BNE PON1A
+	LDA TEMPN7
+	BNE PONRTS	;Skip if NOVALUE
+PON1A:	LDA OUTDEV
+	BNE PON1B	;Use "MAKE" if not screen output
+	LDA #'"
+	JSR TPCHR
+	LDA #$00
+	LDY #TEMPN6
+	JSR LTYPE
+	LDX #PNMSG1&$FF		;"IS "
+	LDY #PNMSG1^
+	JSR PRTSTR
+	LDA #$00
+	LDY #TEMPN7
+	JSR LTYPE
+	JMP BREAK1
+PON1B:	LDX #PNMSG2&$FF		;"MAKE "
+	LDY #PNMSG2^
+	JSR PRTSTR
+	LDA #$00
+	LDY #TEMPN6
+	JSR LTYPE
+	LDA #$20
+	JSR TPCHR
+	LDX #TEMPN7
+	JSR GETTYP
+	CMP #ATOM
+	BNE PON1C
+	LDA #'"
+	JSR TPCHR
+PON1C:	LDA #$00
+	LDY #TEMPN7
+	JSR LTYPE
+	JMP BREAK1
+.PAGE
+POFUNS:	STA ANSN2	;ANSN2 is FULL
+	LDA OBLIST
+	STA TEMPX2	;TEMPN7 is OBLIST pointer
+	LDA OBLIST+1
+	STA TEMPX2+1
+POFNSW:	LDA TEMPX2+1
+	BNE PFNSW1
+	LDA TEMPX2
+	BNE PFNSW1
+PFRTS:	RTS
+PFNSW1:	LDY #$03
+	LDA (TEMPX2),Y
+	PHA
+	DEY
+	LDA (TEMPX2),Y
+	PHA
+	DEY
+	LDA (TEMPX2),Y
+	TAX
+	DEY
+	LDA (TEMPX2),Y
+	STA TEMPX2
+	STX TEMPX2+1
+	LDA #TEMPX2
+	JSR PTEXTX
+	PLA
+	STA TEMPX2
+	PLA
+	STA TEMPX2+1
+	JMP POFNSW
+.PAGE
+POTEXT:	STX ANSN2	;ANSN2 is FULL
+PTEXTX:	STA ANSN1	;Save ATOMM (Entry point for POFUNS)
+	TAX
+	LDA #TEMPN6	;TEMPN6 becomes FUN
+	JSR GETFUN
+	LDA TEMPN6+1
+	BEQ PTXRTS
+	LDX #TOMSG&$FF	;"TO "
+	LDY #TOMSG^
+	JSR PRTSTR
+	LDY ANSN1	;Retrieve ATOMM
+	LDA #$00
+	JSR LTYPE	;Print the title
+	LDY #$02
+	LDA (TEMPN6),Y
+	TAX
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN6+1
+	STX TEMPN6	;(CDR)
+	LDX #TEMPN6
+	JSR GETTYP
+	CMP #LIST
+	BEQ POTXTL
+	CMP #FPACK
+	BNE PTXERR
+	JMP POTXTF
+PTXERR:	JSR SYSBUG
+POTXTL:	LDY #$00
+	LDA (TEMPN6),Y
+	STA TEMPN8	;TEMPN8 is LINE
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN8+1	;(CAR)
+	INY
+	LDA (TEMPN6),Y
+	TAX
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN6+1
+	STX TEMPN6	;(CDR)
+PTXLW:	LDA TEMPN8
+	BNE PTXLW1
+	LDA TEMPN8+1
+	BEQ PTXLWE
+PTXLW1:	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPX1
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPX1+1	;(CAR)
+	INY
+	LDA (TEMPN8),Y
+	TAX
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPN8+1
+	STX TEMPN8
+	LDA #$20	;(Space)
+	JSR TPCHR
+	LDA #$00
+	LDY #TEMPX1
+	JSR LTYPE
+	JMP PTXLW
+PTXLWE:	JSR BREAK1
+	LDA ANSN2	;FULL
+	BNE PTXLX
+PTXRTS:	RTS
+PTXLX:	LDA TEMPN6
+	BNE PTXLX1
+	LDA TEMPN6+1
+	BNE PTXLX1
+PTXEND:	LDX #ENDMSG&$FF
+	LDY #ENDMSG^
+	JSR PRTSTR
+	JMP BREAK1
+PTXLX1:	LDY #$00
+	LDA (TEMPN6),Y
+	STA TEMPN8
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN8+1	;(CAR)
+	INY
+	LDA (TEMPN6),Y
+	TAX
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN6+1
+	STX TEMPN6	;(CDR)
+	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPX1
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPX1+1	;(CAR)
+	INY
+	LDA (TEMPN8),Y
+	TAX
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPN8+1
+	STX TEMPN8	;(CDR)
+	LDA OUTDEV
+	BEQ PTXLX2
+	LDA NUMSW
+	BEQ PTXLY
+PTXLX2:	LDX #TEMPX1
+	JSR TYPFIX
+PTXLY:	LDA TEMPN8
+	BNE PTXLY1
+	LDA TEMPN8+1
+	BEQ PTXLYE
+PTXLY1:	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPX1
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPX1+1	;(CAR)
+	INY
+	LDA (TEMPN8),Y
+	TAX
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPN8+1
+	STX TEMPN8
+	LDA #$20	;(Space)
+	JSR TPCHR
+	LDA #$00
+	LDY #TEMPX1
+	JSR LTYPE
+	JMP PTXLY
+PTXLYE:	JSR BREAK1
+	JMP PTXLX
+POTXTF:	LDY #$00
+	LDA (TEMPN6),Y
+	STA TEMPN8	;TEMPN8 is PTR
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN8+1	;(GETBAR)
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN7	;TEMPN7 is ENDPTR
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN7+1	;(GETBAR)
+	CLC
+	LDA TEMPN6
+	ADC #$02
+	STA TEMPN6
+	BCC PTXFW
+	INC TEMPN6+1
+PTXFW:	LDA TEMPN7
+	CMP TEMPN8
+	BNE PTXFW1
+	LDA TEMPN7+1
+	CMP TEMPN8+1
+	BEQ PTXFWE
+PTXFW1:	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPX1
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPX1+1	;(GETBAR)
+	CLC
+	LDA TEMPN8
+	ADC #$02
+	STA TEMPN8
+	BCC PTXFW2
+	INC TEMPN8+1
+PTXFW2:	LDA #$20
+	JSR TPCHR
+	LDA #$00
+	LDY #TEMPX1
+	JSR LTYPE
+	JMP PTXFW
+PTXFWE:	JSR BREAK1
+	LDA ANSN2
+	BNE PTXFX
+	RTS
+PTXFX:	LDA TEMPN7
+	BNE PTXFX1
+	LDA TEMPN7+1
+	BNE PTXFX1
+	JMP PTXEND
+PTXFX1:	LDA TEMPN7
+	STA TEMPN8
+	LDA TEMPN7+1
+	STA TEMPN8+1
+	LDY #$02
+	LDA (TEMPN6),Y
+	STA TEMPN7
+	INY
+	LDA (TEMPN6),Y
+	STA TEMPN7+1	;(GETBAR)
+	CLC
+	LDA TEMPN6
+	ADC #$02
+	STA TEMPN6
+	BCC PTXFX2
+	INC TEMPN6+1
+PTXFX2:	LDA TEMPN7
+	BNE PTXFX3
+	LDA TEMPN7+1
+	BNE PTXFX3
+	JMP PTXEND
+PTXFX3:	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPX1
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPX1+1	;(GETBAR)
+	CLC
+	LDA TEMPN8
+	ADC #$02
+	STA TEMPN8
+	BCC PTXFX4
+	INC TEMPN8+1
+PTXFX4:	LDA OUTDEV
+	BEQ PTXFX5
+	LDA NUMSW
+	BEQ PTXFY
+PTXFX5:	LDX #TEMPX1
+	JSR TYPFIX
+PTXFY:	LDA TEMPN7
+	CMP TEMPN8
+	BNE PTXFY1
+	LDA TEMPN7+1
+	CMP TEMPN8+1
+	BEQ PTXFYE
+PTXFY1:	LDY #$00
+	LDA (TEMPN8),Y
+	STA TEMPX1
+	INY
+	LDA (TEMPN8),Y
+	STA TEMPX1+1	;(GETBAR)
+	CLC
+	LDA TEMPN8
+	ADC #$02
+	STA TEMPN8
+	BCC PTXFY2
+	INC TEMPN8+1
+PTXFY2:	LDA #$20
+	JSR TPCHR
+	LDA #$00
+	LDY #TEMPX1
+	JSR LTYPE
+	JMP PTXFY
+PTXFYE:	JSR BREAK1
+	JMP PTXFX
+.PAGE
+STRCBK:	LDA FRAME
+	BNE TCBK1
+	LDA FRAME+1
+	BNE TCBK1
+	LDX #TBMSG1&$FF
+	LDY #TBMSG1^
+	JSR PRTSTR
+	JMP TCBKWE
+TCBK1:	LDX #TBMSG2&$FF
+	LDY #TBMSG2^
+	JSR PRTSTR
+	LDA #$01
+	STA ANSN1	;ANSN1 is FIRST
+	LDA FRAME
+	STA TEMPX1	;TEMPX1 is FR
+	LDA FRAME+1
+	STA TEMPX1+1
+	LDA XFRAME
+	STA TEMPX2	;TEMPX2 is XFR
+	LDA XFRAME+1
+	STA TEMPX2+1
+TCBKW:	LDA TEMPX1
+	BNE TCBKW1
+	LDA TEMPX1+1
+	BNE TCBKW1
+	JMP TCBKWE
+TCBKW1:	CLC
+	LDA TEMPX1
+	ADC #$12	;(SF_BINDINGS = 18.)
+	STA TEMPN6	;TEMPN6 is PTR
+	LDA TEMPX1+1
+	ADC #$00
+	STA TEMPN6+1
+	SEC
+	LDA TEMPX2
+	SBC #$02	;PTR1 (TEMPN7) points to top binding (name)
+	STA TEMPN7
+	LDA TEMPX2+1
+	SBC #$00
+	STA TEMPN7+1
+TCBKX:	LDA TEMPN7+1
+	CMP TEMPN6+1
+	BCC TCBKXE
+	BNE TCBKX1
+	LDA TEMPN7
+	CMP TEMPN6
+	BCC TCBKXE
+TCBKX1:	LDY #$00
+	LDA (TEMPN7),Y
+	STA TEMPNH
+	INY
+	LDA (TEMPN7),Y
+	STA TEMPNH+1	;(GETBAR)
+	LDA TEMPNH
+	ROR A
+	BCC TCBKX2
+	LDA ANSN1
+	BNE TCBKX3
+	LDA #',
+	JSR TPCHR
+	LDA #$20
+	JSR TPCHR
+	JMP TCBKX4
+TCBKX3:	DEC ANSN1
+TCBKX4:	LDY #$05
+	LDA (TEMPNH),Y
+	STA TEMPN8
+	INY
+	LDA (TEMPNH),Y
+	STA TEMPN8+1	;(GETBAR)
+	LDA #$00
+	LDY #TEMPN8
+	JSR LTYPE
+TCBKX2:	SEC
+	LDA TEMPN7
+	SBC #$04
+	STA TEMPN7
+	BCS TCBKX
+	DEC TEMPN7+1
+	JMP TCBKX
+TCBKXE:	LDY #$03	;(SF_XFRAME = 2.)
+	LDA (TEMPX1),Y
+	STA TEMPX2+1
+	DEY
+	LDA (TEMPX1),Y
+	STA TEMPX2	;(GETBAR)
+	DEY		;(SF_PREV_FRAME = 0)
+	LDA (TEMPX1),Y
+	TAX
+	DEY
+	LDA (TEMPX1),Y
+	STA TEMPX1
+	STX TEMPX1+1	;(GETBAR)
+	JMP TCBKW
+TCBKWE:	JSR BREAK1
+	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+.PAGE
+SWRITE:	LDA #$01
+	STA OUTDEV
+	JSR OPENW
+	LDA #$01
+	JSR POFUNS
+	JSR PONAMS
+	JSR CLOSEW
+	LDA #$00
+	STA OUTDEV
+	STA OTPUTN
+	JMP POPJ
+.PAGE
+SERASE:	LDA TOKPTR
+	BNE SERAS1
+	LDA TOKPTR+1
+	BNE SERAS1
+	JMP SCMMT1	;(ERROR XEOL)
+SERAS1:	LDY #$00
+	STY OTPUTN
+	LDA (TOKPTR),Y
+	STA ARG1
+	INY
+	LDA (TOKPTR),Y
+	STA ARG1+1	;(GETTOK)
+	LDX #TOKPTR
+	JSR TTKADV
+	LDA EDSW
+	BNE SERASB
+	LDX ARG1
+	LDY ARG1+1
+	CPX ALL
+	BNE ECMP2
+	CPY ALL+1
+	BNE ECMP2
+	JSR REINIT
+	JMP TOPLOP
+ECMP2:	CPX NAMES
+	BNE ECMP3
+	CPY NAMES+1
+	BNE ECMP3
+	JSR ERNAMS
+	JMP POPJ
+ECMP3:	CPX TITLES
+	BNE ECMP4
+	CPY TITLES+1
+	BEQ SERPS
+ECMP4:	CPX PROCS
+	BNE SERAP
+	CPY PROCS+1
+	BNE SERAP
+SERPS:	JSR ERPROS
+	JMP POPJ
+SERAP:	LDX #ARG1
+	JSR GETTYP
+	CMP #ATOM
+	BNE SERAR1
+	LDX #ARG1
+	JSR UNFUNC
+	JMP POPJ
+SERAR1:	CMP #FIX
+	BNE SERAR2
+	JMP STTLR1	;(ERROR XNED)
+SERAR2:	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+SERASB:	LDX #ARG1
+	JSR GETTYP
+	CMP #FIX
+	BNE SERAR3
+	LDY #$00
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CAR)
+	LDX #ARG1
+	JSR DELETE
+	JMP POPJ
+SERAR3:	LDA #XNWE
+	JMP ERROR
+;
+ERPROS:	LDA OBLIST
+	STA TEMPN
+	LDA OBLIST+1
+	STA TEMPN+1
+ERPRSW:	LDA TEMPN
+	BNE ERPRW1
+	LDA TEMPN+1
+	BEQ RTS30
+ERPRW1:	LDY #$00
+	LDA (TEMPN),Y
+	STA TEMPN1
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN1+1	;(CAR)
+	INY
+	LDA (TEMPN),Y
+	TAX
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN+1
+	STX TEMPN	;(CDR)
+	LDX #TEMPN1
+	JSR UNFUNC
+	JMP ERPRSW
+RTS30:	RTS
+.PAGE
+ERNAMS:	LDA OBLIST
+	STA TEMPN
+	LDA OBLIST+1
+	STA TEMPN+1	;TEMPN is OBLIST pointer
+	LDX #$00
+	STX TEMPN1+1	;TEMPN1 is NOVALUE
+	INX
+	STX TEMPN1
+ERNMSW:	LDA TEMPN
+	BNE ERNMW1
+	LDA TEMPN+1
+	BEQ ERNMWE
+ERNMW1:	LDY #$00
+	LDA (TEMPN),Y
+	STA TEMPN2	;TEMPN2 is NAME
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN2+1	;(CAR)
+	INY
+	LDA (TEMPN),Y
+	TAX
+	INY
+	LDA (TEMPN),Y
+	STA TEMPN+1
+	STX TEMPN	;(CDR)
+	LDX #TEMPN1
+	LDY #TEMPN2
+	JSR PUTVAL
+	JMP ERNMSW
+ERNMWE:	LDA SOBLST
+	STA TEMPN
+	LDA SOBLST+1
+	STA TEMPN+1
+ERNMX:	LDA TEMPN
+	CMP SOBTOP
+	BNE ERNMX1
+	LDA TEMPN+1
+	CMP SOBTOP+1
+	BEQ RTS30
+ERNMX1:	LDX #TEMPN1
+	LDY #TEMPN
+	JSR PUTVAL
+	CLC
+	LDA TEMPN
+	ADC #$04
+	STA TEMPN
+	BCC ERNMX
+	INC TEMPN+1
+	JMP ERNMX
+.PAGE
+SBTFST:	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BEQ SBFL
+	CMP #SATOM
+	BEQ SBFA
+	CMP #ATOM
+	BEQ SBFA
+	CMP #FIX
+	BEQ SBFA
+	CMP #FLO
+	BEQ SBFA
+SBFR:	JMP SMAKE2	;(ERROR XWTA,ARG1,CURTOK)
+SBFL:	LDA ARG1+1
+	BEQ SBFR
+	LDY #$02
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1	;(CDR)
+	JMP OTPRG1
+SBFA:	LDX #ARG1
+	LDY #ARG2	;ARG2 is OLD_PTR
+	JSR MAKPNM
+	LDX #ARG2
+	JSR VPUSHP
+	LDY #$00
+	STY ANSN1
+	LDA (ARG2),Y
+	STA TEMPN1	;TEMPN1 is OLD_CAR
+	INY
+	LDA (ARG2),Y
+	STA TEMPN1+1	;(CAR)
+	BNE SBFA1A
+	LDA TEMPN1
+	BEQ SBFR
+SBFA1:	LDA TEMPN1+1
+	BEQ SBFB
+SBFA1A:	LDX #$00
+	LDA TEMPN1+1
+	STA TEMPN1
+	STX TEMPN1+1
+	LDY #TEMPN1
+	LDA #TEMPN2
+	STA ANSN
+	TXA		;(LIST)
+	JSR CONS
+	LDA ANSN1
+	BNE SBFC
+	LDX #TEMPN2
+	JSR VPUSHP
+	INC ANSN1	;BEG_OF_PNAME
+	BNE SBFC1	;(Always)
+SBFC:	LDY #$02
+	LDA TEMPN2
+	STA (TEMPN),Y	;TEMPN is NEW_PTR
+	INY
+	LDA TEMPN2+1
+	STA (TEMPN),Y	;(RPLACD)
+SBFC1:	LDA TEMPN2
+	STA TEMPN
+	LDA TEMPN2+1
+	STA TEMPN+1
+SBFB:	LDY #$02
+	LDA (ARG2),Y
+	TAX
+	INY
+	LDA (ARG2),Y
+	STX ARG2
+	STA ARG2+1	;(CDR)
+	BEQ SBFD
+SBFB1:	LDA TEMPN1
+	TAX
+	LDY #$00
+	LDA (ARG2),Y
+	STA TEMPN1	;(OLD_CAR)
+	INY
+	LDA (ARG2),Y
+	STA TEMPN1+1	;(CAR)
+	DEY
+	TXA
+	STA (TEMPN),Y
+	INY
+	LDA TEMPN1
+	STA (TEMPN),Y
+	JMP SBFA1
+SBFD:	LDX #ARG2
+	JSR VPOP
+	LDA ANSN1
+	BNE SBFD1
+	LDA #$00
+	STA ARG2
+	STA ARG2+1
+	BEQ SBFD2	;(Always)
+SBFD1:	LDX #ARG1	;(OLD_CAR, discard)
+	JSR VPOP
+SBFD2:	LDX #ARG2
+	LDY #ARG1
+	JSR INTERN
+	JMP OTPRG1
+.PAGE
+SPEEK:	JSR GT1FIX
+	LDY #$00
+	LDA (NARG1),Y
+	STA NARG1
+	STY NARG1+1
+	LDY #NARG1
+	JMP OTPFX1
+;
+SPOKE:	JSR GT2FIX	;First argument is location
+	LDY #$00
+	STY OTPUTN
+	LDA NARG2
+	STA (NARG1),Y
+	JMP POPJ
+;
+SCLSCR:	JSR HOME
+	LDA #$00
+	STA OTPUTN
+SRET1:	JMP POPJ
+;
+SRANDM:	LDA #$00
+	STA TEMPN1
+	STA TEMPN1+1
+	LDA #RANDA&$FF
+	STA TEMPNH
+	LDA #RANDA^
+	STA TEMPNH+1
+	LDY #$10
+RMUL2:	LSR RANDOM+1
+	ROR RANDOM
+	BCC RMUL4
+	CLC
+RMUL3:	LDA TEMPN1
+	ADC TEMPNH
+	STA TEMPN1
+	LDA TEMPN1+1
+	ADC TEMPNH+1
+	STA TEMPN1+1
+RMUL4:	ASL TEMPNH
+	ROL TEMPNH+1
+	DEY
+	BNE RMUL2
+	CLC
+	LDA TEMPN1
+	ADC #RANDC&$FF
+	STA RANDOM
+	LDA TEMPN1+1
+	ADC #RANDC^
+	STA RANDOM+1
+	LDY #RANDOM
+	JMP OTPFX1
+.PAGE
+SRNDMZ:	LDA RNDL
+	STA RANDOM
+	LDA RNDH
+	STA RANDOM+1
+	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+;
+SCTYI:	LDA #$00
+	STA ARG1+1	;Returns 255. if no key hit yet
+SCTYI1:	JSR TSTCHR
+	CMP #STPKEY
+	BEQ SCTYR1
+	CMP #PAUSKY
+	BEQ SCTYR2
+	CMP #LSTKEY
+	BEQ SCTYR3
+	STA ARG1
+	LDY #ARG1
+	JMP OTPFX1
+SCTYR1:	JMP STPPK1
+SCTYR2:	JMP STPPKZ
+SCTYR3:	JSR RWAIT
+	JMP SCTYI1
+;
+SCURSR:	JSR GT2FIX
+	LDA NARG1+1	;Horizontal position 0 - 39.
+	BNE SCRSR1
+	STA OTPUTN
+	LDA #WNDWTH-1
+	CMP NARG1
+	BCC SCRSR1
+	LDA NARG2+1	;Vertical position 0 - 23.
+	BNE SCRSR1
+	LDA #WNDBTM-1
+	CMP NARG2
+	BCC SCRSR1
+	LDA NARG1
+	STA CH
+	LDA NARG2
+	STA CV
+	JSR BCALCA
+	JMP POPJ
+SCRSR1:	LDA #XCRSR	;"Position off of screen"
+	JMP ERROR
+.PAGE
+SCALLR	=SCALL1-1
+;
+SCALL:	JSR GT1FIX
+	LDA #$00
+	STA OTPUTN	;Assume no output
+	LDA #SCALLR^
+	PHA		;Push return address for RTS
+	LDA #SCALLR&$FF
+	PHA
+	JMP (NARG1)
+SCALL1:	JMP POPJ
+.PAGE
+SWORD:	LDA NARGS
+	BPL SWRD1
+	EOR #$FF
+	STA NARGS
+SWRD1:	LDA #$00
+	STA MARK5
+	STA MARK5+1
+	LDA NARGS
+	ASL A
+	STA ANSNX
+	SEC
+	LDA VSP
+	SBC ANSNX
+	STA TEMPN6
+	LDA VSP+1
+	SBC #$00
+	STA TEMPN6+1
+SWRDW:	LDA NARGS
+	BEQ SWRD2
+	LDY #$00
+	LDA (TEMPN6),Y
+	STA MARK3
+	INY
+	LDA (TEMPN6),Y
+	STA MARK3+1
+	CLC
+	LDA TEMPN6
+	ADC #$02
+	STA TEMPN6
+	BCC SWRDW1
+	INC TEMPN6
+SWRDW1:	DEC NARGS
+	LDY #MARK4
+	LDX #MARK3
+	JSR MAKPNM
+	LDA MARK4+1
+	BEQ SWRDW
+	JSR CONCAT	;MARK5 := (Concatenate MARK5 MARK4)
+	JMP SWRDW
+SWRD2:	SEC
+	LDA VSP
+	SBC ANSNX
+	STA VSP
+	BCS SWRD3
+	DEC VSP+1
+SWRD3:	LDX #MARK5
+	LDY #ARG1
+	JSR INTERN
+	LDA #$00
+	STA MARK3
+	STA MARK3+1
+	STA MARK4
+	STA MARK4+1
+	STA MARK5
+	STA MARK5+1
+	JMP OTPRG1
+.PAGE
+CONCAT:	LDA MARK5+1
+	BNE CNCT1
+	LDA MARK4	;MARK5 is Lnil, so make
+	LDX MARK4+1	;MARK5 a copy of second word and return
+	LDY #MARK5
+	JMP COPY
+CNCT1:	LDA MARK5
+	LDX MARK5+1
+	LDY #TEMPN3	;Make TEMPN3 a copy of MARK5
+	JSR COPY
+	LDA TEMPN3
+	STA TEMPN4	;Save the first word's pointer in TEMPN4
+	LDA TEMPN3+1
+	STA TEMPN4+1
+	LDX #TEMPN3	;Get the last cell of first word (TEMPN3)
+	JSR GTLSTC
+	LDY #$01
+	LDA (TEMPN3),Y
+	BEQ CNCODD
+	LDA MARK4	;Even no. chars. in first word
+	LDX MARK4+1
+	LDY #TEMPN5	;Make TEMPN5 a copy of second word
+	JSR COPY
+	LDY #$02
+	LDA TEMPN5
+	STA (TEMPN3),Y	;Link second word onto first
+	INY
+	LDA TEMPN5+1
+	STA (TEMPN3),Y
+CNCTWE:	LDA TEMPN4	;Restore pointer to new word
+	STA MARK5
+	LDA TEMPN4+1
+	STA MARK5+1
+	RTS
+CNCODD:	LDY #$00	;Odd no. chars. in first word
+	STY TEMPN1+1
+	LDA (MARK4),Y	;Get first char. of second word
+	INY
+	STA (TEMPN3),Y	;Append it to end of first word
+	LDA (MARK4),Y
+	STA TEMPN1	;TEMPN1 holds second char. of second word
+CNCTW:	LDA MARK4+1
+	BEQ CNCTWE
+	LDY #$02
+	LDA (MARK4),Y
+	TAX
+	INY
+	LDA (MARK4),Y
+	STA MARK4+1	;Advance second word char-ptr
+	STX MARK4
+	LDA TEMPN1	;If even-numbered char. of second word nil, exit
+	BEQ CNCTWE	;(already appended odd-numbered char. preceeding)
+	LDA MARK4+1
+	BNE CNCTW1
+	STA TEMPN1+1	;Zero last character (because odd no.)
+	BEQ CNCTW2	;(Always) Just add last char. if end of second word
+CNCTW1:	LDY #$00
+	LDA (MARK4),Y
+	STA TEMPN1+1	;Get odd-numbered (3,5,...) char.
+	INY
+	LDA (MARK4),Y
+	STA ANSN1	;Get next even-numbered (4,6,...) char.
+CNCTW2:	LDA #TEMPN
+	STA ANSN
+	LDY #TEMPN1
+	LDA #$00
+	TAX
+	JSR CONS	;Cons new cell
+	LDY #$02
+	LDA TEMPN
+	STA (TEMPN3),Y
+	TAX
+	INY
+	LDA TEMPN+1
+	STA (TEMPN3),Y	;Append to new word
+	STA TEMPN3+1
+	STX TEMPN3	;New new-word end pointer
+	LDA ANSN1
+	STA TEMPN1	;Last even char. becomes new odd char.
+	JMP CNCTW
+.PAGE
+COPY:	STY ANSN1	;Y is STR1
+	STA TEMPN1	;Make (ANSN1) point to a copy of (vAX)
+	STX TEMPN1+1
+	BNE COPY1
+	STA $00,Y	;If (vAX) is Lnil, make (ANSN1) Lnil
+	STA $00,Y
+	RTS
+COPY1:	STY ANSN	;Cons up an empty cell
+	LDA #$00
+	TAX
+	TAY
+	JSR CONS
+	LDX ANSN1
+	JSR VPUSHP	;Vpush forming string
+COPYW:	LDX ANSN1
+	LDA $00,X
+	STA TEMPN2
+	LDA $01,X
+	STA TEMPN2+1	;TEMPN2 points to empty last cell of copy
+	LDY #$00
+	LDA (TEMPN1),Y
+	STA (TEMPN2),Y	;Copy two characters into cell
+	INY
+	LDA (TEMPN1),Y
+	STA (TEMPN2),Y
+	INY
+	LDA (TEMPN1),Y
+	TAX
+	INY
+	LDA (TEMPN1),Y
+	STA TEMPN1+1	;Advance char-ptr of original
+	STX TEMPN1
+	TAX
+	BEQ COPYWE	;Exit if end of original
+	LDA #TEMPN
+	STA ANSN
+	LDA #$00
+	TAX
+	TAY
+	JSR CONS	;Cons a new cell
+	LDY #$02
+	LDX ANSN1
+	LDA TEMPN
+	STA (TEMPN2),Y
+	STA $00,X
+	INY
+	LDA TEMPN+1
+	STA (TEMPN2),Y	;Link new cell on to end of copy
+	STA $01,X	;Advance copy's last-cell ptr
+	JMP COPYW
+COPYWE:	LDX ANSN1	;Vpop copy's beginning pointer
+	JMP VPOP
+.PAGE
+SBTLST:	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BEQ BTLSTL
+	CMP #ATOM
+	BEQ BTLSTA
+	CMP #SATOM
+	BEQ BTLSTA
+	CMP #FIX
+	BEQ BTLSTA
+	CMP #FLO
+	BEQ BTLSTA
+BTLSTR:	JMP SMAKE2
+BTLSTA:	LDY #TEMPN5
+	LDX #ARG1
+	JSR MAKPNM
+	LDA #ATOM
+	STA ANSN2
+	LDY #$00
+	LDA (TEMPN5),Y
+	BEQ BTLSTR
+	LDA TEMPN5
+	STA ARG1
+	LDA TEMPN5+1
+	STA ARG1+1
+	JMP BTLSTX
+BTLSTL:	STA ANSN2
+	LDA ARG1+1
+	BEQ BTLSTR
+BTLSTX:	LDA #$00
+	STA ANSN1	;NEW_LIST
+	LDX #ARG1
+	JSR VPUSHP
+BTLSW:	LDY #$03
+	LDA (ARG1),Y
+	BEQ BTLSWE
+	LDY #$00
+	LDA (ARG1),Y
+	STA TEMPN1	;TEMP_CAR
+	INY
+	LDA (ARG1),Y
+	STA TEMPN1+1
+	LDA #TEMPN	;TEMP
+	STA ANSN
+	LDY #TEMPN1
+	LDA #$00
+	TAX
+	JSR CONS
+	LDA ANSN2
+	CMP #ATOM
+	BNE BTLSW1
+	LDX #TEMPN
+	LDA #STRING
+	JSR PUTTYP
+BTLSW1:	LDA ANSN1
+	BNE BTLSW2
+	LDX #TEMPN
+	JSR VPUSHP
+	LDX TEMPN
+	LDA TEMPN+1
+	INC ANSN1
+	BNE BTLSW3	;(Always)
+BTLSW2:	LDY #$02
+	LDA TEMPN
+	STA (TEMPN2),Y
+	TAX
+	INY
+	LDA TEMPN+1
+	STA (TEMPN2),Y
+BTLSW3:	STA TEMPN2+1
+	STX TEMPN2
+	LDY #$02
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1
+	JMP BTLSW
+BTLSWE:	LDA ANSN2
+	CMP #LIST
+	BNE BTLWE1
+	LDA ANSN1
+	BNE BTLWL1
+	LDA #$00
+	STA ARG1
+	STA ARG1+1
+	BEQ BTLWL2	;(Always)
+BTLWL1:	LDX #ARG1
+	JSR VPOP
+BTLWL2:	LDX #TEMPN1
+	JSR VPOP
+	JMP OTPRG1
+BTLWE1:	LDY #$00
+	LDA (ARG1),Y
+	STA TEMPN1
+	INY
+	LDA (ARG1),Y
+	STA TEMPN1+1
+	BEQ BTLWE2
+	LDA #TEMPN
+	STA ANSN
+	LDA #$00
+	TAX
+	STA TEMPN1+1
+	LDY #TEMPN1
+	JSR CONS
+	LDA ANSN1
+	BNE BTLWE3
+	LDA TEMPN
+	STA ARG1
+	LDA TEMPN+1
+	STA ARG1+1
+	JMP BTLWE5
+BTLWE3:	LDY #$02
+	LDA TEMPN
+	STA (TEMPN2),Y
+	INY
+	LDA TEMPN+1
+	STA (TEMPN2),Y
+	JMP BTLWE4
+BTLWE2:	LDA ANSN1
+	BNE BTLWE4
+	LDA #$00
+	STA ARG1
+	STA ARG1+1
+	BEQ BTLWE5	;(Always)
+BTLWE4:	LDX #ARG1
+	JSR VPOP
+BTLWE5:	LDX #TEMPN
+	JSR VPOP
+	LDY #ARG2
+	LDX #ARG1
+	JSR INTERN
+	LDX #ARG2
+	JSR VPUSHP
+	LDA #$01
+	STA OTPUTN
+	JMP POPJ
+.PAGE
+SLISTP:	LDA #$01
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BNE NTLST
+YESLST:	JMP VPLTRU
+NTLST:	JMP VPLFLS
+;
+SNMBRP:	LDA #$01
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #FIX	;ALSO FLONUMS
+	BEQ YESLST
+	CMP #ATOM
+	BNE NTLST
+	LDX #ARG1
+	JSR ATMTFX
+	BCS YESLST
+	BCC NTLST
+.PAGE
+SEMPTP:	LDA #$01
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPOP
+	LDX #ARG1
+	JSR GETTYP
+	CMP #LIST
+	BEQ SEMPT1
+	CMP #ATOM
+	BNE NTLST
+	LDY #$02
+	LDA (ARG1),Y
+	TAX
+	INY
+	LDA (ARG1),Y
+	STA ARG1+1
+	STX ARG1
+	LDA (ARG1),Y
+	BNE NTLST
+	BEQ YESLST
+SEMPT1:	LDA ARG1+1
+	BNE NTLST
+	BEQ YESLST
+.PAGE
+SLIST:	LDA NARGS
+	BPL SLIST1
+	EOR #$FF
+	STA NARGS
+SLIST1:	LDA #MARK1
+	STA ANSN
+	LDA #$00
+	STA MARK1
+	STA MARK1+1
+	LDA NARGS
+	BEQ SLSTWE
+SLISTW:	LDX #MARK2
+	JSR VPOP
+	LDX #MARK1
+	STX ANSN
+	LDY #MARK2
+	LDA #$00	;(Type LIST)
+	JSR CONS
+	DEC NARGS
+	BNE SLISTW
+SLSTWE:	LDA MARK1
+	STA ARG1
+	LDA MARK1+1
+	STA ARG1+1
+	LDA #$00
+	STA MARK1
+	STA MARK1+1
+	STA MARK2
+	STA MARK2+1
+	JMP OTPRG1
+;
+SCLINP:	LDA #$00	;?Clear entire input buffer when implemented
+	STA OTPUTN
+	BIT KPCLR
+	JMP POPJ
+.PAGE
+;	Not yet implemented (Graphics):
+;
+DO0A25:	LDA #$00
+	STA OTPUTN
+	JMP POPJ
+;
+DO1A25:	LDA #$00
+	STA OTPUTN
+	LDX #ARG1
+	JSR VPOP
+	JMP POPJ
+;
+;	End of program portion.
+.PAGE
+.SBTTL	System Tables
+;	System Function address table:
+SYSTAB=.-2
+	.ADDR	SPTHNG
+	.ADDR	SWORD
+	.ADDR	SPWRDP
+	.ADDR	SUNSUM
+	.ADDR	SUNDIF
+	.ADDR	SMAKE
+	.ADDR	SOUTPT
+	.ADDR	SSTOP
+	.ADDR	SPRINT
+	.ADDR	STYPE
+	.ADDR	SDEFIN
+	.ADDR	SDEBUG
+	.ADDR	SCNTIN
+	.ADDR	STPPKZ
+	.ADDR	SELSE
+	.ADDR	SSNTNC
+	.ADDR	SBOTH
+	.ADDR	SEITHR
+	.ADDR	XXSFR1	;Then
+	.ADDR	SNOT
+	.ADDR	PARLOP	;Left-parenthesis
+	.ADDR	XXSFR2	;Right-parenthesis
+	.ADDR	SIF
+	.ADDR	SRUN
+	.ADDR	SGO
+	.ADDR	SBPT
+	.ADDR	LOGO	;Goodbye
+	.ADDR	SGCOLL
+	.ADDR	SNODES
+	.ADDR	SBTFST
+	.ADDR	SFIRST
+	.ADDR	SBTLST
+	.ADDR	SLAST
+	.ADDR	STO
+	.ADDR	SEDIT
+	.ADDR	SEND
+	.ADDR	STEXT
+	.ADDR	DO1A25	;Forward
+	.ADDR	DO1A25	;Back
+	.ADDR	DO1A25	;Right
+	.ADDR	DO1A25	;Left
+	.ADDR	SLIST
+	.ADDR	SCLSCR
+	.ADDR	DO0A25	;Home
+	.ADDR	DO0A25	;Penup
+	.ADDR	DO0A25	;Pendown
+	.ADDR	SEMPTP
+	.ADDR	DO1A25	;Snap
+	.ADDR	DO1A25	;Display
+	.ADDR	DO0A25	;Wipeclean
+	.ADDR	STITLE
+	.ADDR	SFPUT
+	.ADDR	SPO
+	.ADDR	XXSFR3	;All
+	.ADDR	XXSFR3	;Names
+	.ADDR	SERASE
+	.ADDR	SREAD
+	.ADDR	SWRITE
+	.ADDR	SREQU
+	.ADDR	STHING
+	.ADDR	SLINES
+	.ADDR	SSUM
+	.ADDR	SDIF
+	.ADDR	SPROD
+	.ADDR	SDIVID
+	.ADDR	SGRTR
+	.ADDR	SLESS
+	.ADDR	SCOMMT
+	.ADDR	SEQUAL
+	.ADDR	STRCBK
+	.ADDR	SPOTS
+	.ADDR	XXSFR3	;Titles
+	.ADDR	XXSFR3	;Procedures
+	.ADDR	SPEEK
+	.ADDR	SPOKE
+	.ADDR	SSUM
+	.ADDR	SDIF
+	.ADDR	SPROD
+	.ADDR	SDIVID
+	.ADDR	SGRTR
+	.ADDR	SLESS
+	.ADDR	SEQUAL
+	.ADDR	SLPUT
+	.ADDR	SRANDM
+	.ADDR	SCTYI
+	.ADDR	SCURSR
+	.ADDR	SRNDMZ
+	.ADDR	SCALL
+	.ADDR	SLISTP
+	.ADDR	SNMBRP
+	.ADDR	SCLINP
+.PAGE
+;	Error-string address table:
+ERRTBL=.-2
+	.ADDR	XXUOP
+	.ADDR	XXEOL
+	.ADDR	XXUDF
+	.ADDR	XXHNV
+	.ADDR	XXTMO
+	.ADDR	XXNOP
+	.ADDR	XXRPN
+	.ADDR	XXIFX
+	.ADDR	XXVNA
+	.ADDR	XXTIP
+	.ADDR	XXWTA
+	.ADDR	XXUBL
+	.ADDR	XXNTL
+	.ADDR	XXNTF
+	.ADDR	XXELS
+	.ADDR	XXBRK
+	.ADDR	XXLABE
+	.ADDR	XXTHN
+	.ADDR	0
+	.ADDR	XXLNF
+	.ADDR	XXEDT
+	.ADDR	XXDEF
+	.ADDR	XXETL
+	.ADDR	XXNED
+	.ADDR	XXOPO
+	.ADDR	0
+	.ADDR	XXTML
+	.ADDR	XXTMS
+	.ADDR	XXDBZ
+	.ADDR	XXNWE
+	.ADDR	XXLNTB
+	.ADDR	XXILN
+	.ADDR	XXOFLO
+	.ADDR	XXNDF
+	.ADDR	XXCRSR
+.PAGE
+;	Error Messages:
+XXUOP:	.ASCII "You don't say what to do with "
+	$00
+	$FF
+XXEOL:	.ASCII "Unexpected end of line"
+	$FF
+XXUDF:	.ASCII "You haven't told me how to "
+	$00
+	$FF
+XXHNV:	$00
+	.ASCII " has no value"
+	$FF
+XXTMO:	$00
+	.ASCII " output too many things"
+	$FF
+XXNOP:	$00
+	.ASCII " didn't output"
+	$FF
+XXRPN:	.ASCII "Unexpected )"
+	$FF
+XXIFX:	.ASCII "There's nothing before the "
+	$00
+	$FF
+XXVNA:	.ASCII "You need ( )'s around "
+	$00
+	$FF
+XXTIP:	.ASCII "Too much inside parenthesis"
+	$FF
+XXWTA:	$00
+	.ASCII " doesn't like "
+	$01
+	.ASCII " as input"
+	$FF
+XXUBL:	$00
+	.ASCII " is used by LOGO"
+	$FF
+XXNTL:	$00
+	.ASCII " should only be called inside a procedure"
+	$FF
+XXNTF:	$00
+	.ASCII " was given instead of TRUE or FALSE"
+	$FF
+XXELS:	.ASCII "ELSE is out of place"
+	$FF
+XXBRK:	.ASCII "I was told to pause"
+	$FF
+XXLABE:	.ASCII "There's a label in the middle of a line"
+	$FF
+XXTHN:	.ASCII "THEN is out of place"
+	$FF
+XXLNF:	.ASCII "I can't find the label "
+	$00
+	$FF
+XXEDT:	.ASCII "You're already editing "
+	$00
+	$FF
+XXDEF:	$00
+	.ASCII " is already defined"
+	$FF
+XXETL:	.ASCII "You can only edit at top level"
+	$FF
+XXNED:	.ASCII "You're not in Edit mode"
+	$FF
+XXOPO:	.ASCII "You can only say "
+	$00
+	.ASCII " to PO, ER, etc."
+	$FF
+XXTML:	.ASCII "Too many display commands"
+	$FF
+XXTMS:	.ASCII "Too much snapped"
+	$FF
+XXDBZ:	.ASCII "You tried to divide by zero"
+	$FF
+XXNWE:	.ASCII "You can't do that while in Edit mode"
+	$FF
+XXLNTB:	.ASCII "Line number too big"
+	$FF
+XXILN:	.ASCII "Illegal line number"
+	$FF
+XXOFLO:	.ASCII "Arithmetic overflow"
+	$FF
+XXNDF:	$00
+	.ASCII " is not defined"
+	$FF
+XXCRSR:	.ASCII "Cursor coordinates off of screen"
+	$FF
+.PAGE
+;	Primitive table:
+PRMTAB:	0
+	0
+	IALL
+	.ASCII "ALL "
+	1
+	0
+	IBACK
+	.ASCII "BACK "
+	1
+	5
+	IBTFST
+	.ASCII "BF "
+	1
+	0
+	IBACK
+	.ASCII "BK "
+	1
+	5
+	IBTLST
+	.ASCII "BL "
+	2
+	1
+	IBOTH
+	.ASCII "BOTH "
+	1
+	5
+	IBTFST
+	.ASCII "BUTFIRST "
+	1
+	5
+	IBTLST
+	.ASCII "BUTLAST "
+	0
+	0
+	ICLINP
+	.ASCII "CLEARINPUT "
+	0
+	0
+	ICS
+	.ASCII "CLEARSCREEN "
+	0
+	0
+	ICNTIN
+	.ASCII "CO "
+	0
+	0
+	ICNTIN
+	.ASCII "CONTINUE "
+	0
+	0
+	ICS
+	.ASCII "CS "
+	2
+	5
+	ICURSR
+	.ASCII "CURSOR "
+	2
+	0
+	IDEFIN
+	.ASCII "DE "
+	0
+	0
+	IDEBUG
+	.ASCII "DEBUG "
+	2
+	0
+	IDEFIN
+	.ASCII "DEFINE "
+	2
+	6
+	IDIF
+	.ASCII "DIFFERENCE "
+	1
+	0
+	IDISPL
+	.ASCII "DISPLAY "
+	0
+	0
+	IEDIT
+	.ASCII "ED "
+	0
+	0
+	IEDIT
+	.ASCII "EDIT "
+	2
+	1
+	IEITHR
+	.ASCII "EITHER "
+	0
+	1
+	IELSE
+	.ASCII "ELSE "
+	1
+	5
+	IEMPTP
+	.ASCII "EMPTY? "
+	0
+	0
+	IEND
+	.ASCII "END "
+	2
+	3
+	IEQUAL
+	.ASCII "EQUAL? "
+	0
+	0
+	IERASE
+	.ASCII "ER "
+	0
+	0
+	IERASE
+	.ASCII "ERASE "
+	1
+	0
+	IFORWD
+	.ASCII "FD "
+	1
+	5
+	IFIRST
+	.ASCII "FIRST "
+	1
+	0
+	IFORWD
+	.ASCII "FORWARD "
+	2
+	0
+	IFPUT
+	.ASCII "FPUT "
+	1
+	0
+	IGO
+	.ASCII "GO "
+	0
+	0
+	IGDBYE
+	.ASCII "GOODBYE "
+	2
+	4
+	IGREAT
+	.ASCII "GREATER? "
+	0
+	0
+	IHOME
+	.ASCII "HOME "
+	1
+	0
+	IIF
+	.ASCII "IF "
+	1
+	5
+	ILAST
+	.ASCII "LAST "
+	1
+	0
+	ILEFT
+	.ASCII "LEFT "
+	2
+	4
+	ILESS
+	.ASCII "LESS? "
+	0
+	0
+	ILINES
+	.ASCII "LINES "
+	-3
+	5
+	ILIST
+	.ASCII "LIST "
+	1
+	5
+	ILISTP
+	.ASCII "LIST? "
+	2
+	0
+	ILPUT
+	.ASCII "LPUT "
+	1
+	0
+	ILEFT
+	.ASCII "LT "
+	2
+	0
+	IMAKE
+	.ASCII "MAKE "
+	0
+	0
+	INAMES
+	.ASCII "NAMES "
+	1
+	2
+	INOT
+	.ASCII "NOT "
+	1
+	5
+	INMBRP
+	.ASCII "NUMBER? "
+	1
+	0
+	IOTPUT
+	.ASCII "OP "
+	1
+	0
+	IOTPUT
+	.ASCII "OUTPUT "
+	0
+	0
+	IPAUSE
+	.ASCII "PAUSE "
+	0
+	0
+	IPENDN
+	.ASCII "PD "
+	0
+	0
+	IPENDN
+	.ASCII "PENDOWN "
+	0
+	0
+	IPENUP
+	.ASCII "PENUP "
+	0
+	0
+	IPO
+	.ASCII "PO "
+	0
+	0
+	IPOTS
+	.ASCII "POTS "
+	1
+	0
+	IPRINT
+	.ASCII "PR "
+	1
+	0
+	IPRINT
+	.ASCII "PRINT "
+	1
+	5
+	ITYPE
+	.ASCII "PRINT1 "
+	0
+	0
+	IPO
+	.ASCII "PRINTOUT "
+	0
+	0
+	IPROCS
+	.ASCII "PROCEDURES "
+	2
+	7
+	IPROD
+	.ASCII "PRODUCT "
+	0
+	0
+	IPENUP
+	.ASCII "PU "
+	2
+	7
+	IQUOT
+	.ASCII "QUOTIENT "
+	0
+	0
+	IRANDM
+	.ASCII "RANDOM "
+	0
+	0
+	IRNDMZ
+	.ASCII "RANDOMIZE "
+	0
+	0
+	ICTYI
+	.ASCII "RC "
+	0
+	0
+	IREAD
+	.ASCII "READ "
+	0
+	0
+	ICTYI
+	.ASCII "READCHARACTER "
+	0
+	0
+	IREQST
+	.ASCII "REQUEST "
+	1
+	0
+	IRIGHT
+	.ASCII "RIGHT "
+	0
+	0
+	IREQST
+	.ASCII "RQ "
+	1
+	0
+	IRIGHT
+	.ASCII "RT "
+	1
+	0
+	IRUN
+	.ASCII "RUN "
+	-3
+	5
+	ISNTNC
+	.ASCII "SE "
+	-3
+	5
+	ISNTNC
+	.ASCII "SENTENCE "
+	0
+	5
+	ISNAP
+	.ASCII "SNAP "
+	0
+	0
+	ISTOP
+	.ASCII "STOP "
+	2
+	6
+	ISUM
+	.ASCII "SUM "
+	0
+	0
+	ITRCBK
+	.ASCII "TB "
+	1
+	5
+	ITEXT
+	.ASCII "TEXT "
+	0
+	0
+	ITHEN
+	.ASCII "THEN "
+	1
+	5
+	ITHING
+	.ASCII "THING "
+	1
+	5
+	ITHNGP
+	.ASCII "THINGP "
+	0
+	0
+	ITITLE
+	.ASCII "TI "
+	0
+	0
+	ITITLE
+	.ASCII "TITLE "
+	0
+	0
+	ITITLS
+	.ASCII "TITLES "
+	0
+	0
+	ITO
+	.ASCII "TO "
+	0
+	0
+	ITRCBK
+	.ASCII "TRACEBACK "
+	0
+	0
+	IWPCLN
+	.ASCII "WC "
+	0
+	0
+	IWPCLN
+	.ASCII "WIPECLEAN "
+	-3
+	5
+	IWORD
+	.ASCII "WORD "
+	1
+	5
+	IWORDP
+	.ASCII "WORD? "
+	0
+	0
+	IWRITE
+	.ASCII "WRITE "
+	0
+	0
+	ILPAR
+	.ASCII "( "
+	0
+	0
+	IRPAR
+	.ASCII ") "
+	2
+	7
+	INPROD
+	.ASCII "* "
+	2
+	6
+	INSUM
+	.ASCII "+ "
+	2
+	6
+	INDIF
+	.ASCII "- "
+	0
+	0
+	IBPT
+	.ASCII ".BPT "
+	1
+	5
+	ICALL
+	.ASCII ".CALL "
+	2
+	0
+	IPOKE
+	.ASCII ".DEPOSIT "
+	1
+	0
+	IPEEK
+	.ASCII ".EXAMINE "
+	0
+	0
+	IGCOLL
+	.ASCII ".GCOLL "
+	0
+	0
+	INODES
+	.ASCII ".NODES "
+	2
+	7
+	INQUOT
+	.ASCII "/ "
+	0
+	0
+	ICOMNT
+	.ASCII "; "
+	2
+	4
+	INLESS
+	.ASCII "< "
+	2
+	3
+	INEQUL
+	.ASCII "= "
+	2
+	4
+	INGRTR
+	.ASCII "> "
+.PAGE
+;	V-Primitive table:
+VPRMTB:	INSUM
+	INFSUM
+	1
+	INDIF
+	INFDIF
+	1
+	ILPAR
+	LPAR
+	1
+	IRPAR
+	RPAR
+	1
+	IIF
+	LIF
+	1
+	IELSE
+	LELSE
+	1
+	ITHEN
+	LTHEN
+	1
+	INAMES
+	NAMES
+	1
+	IALL
+	ALL
+	1
+	ITITLS
+	TITLES
+	1
+	IPROCS
+	PROCS
+	1
+	IEND
+	LEND
+	1
+	IPO
+	PO
+	1
+	IPO
+	PRNTOT
+	2
+	IPOTS
+	POTS
+	1
+	IERASE
+	ER
+	1
+	IERASE
+	ERASE
+	2
+	ITITLE
+	TI
+	1
+	ITITLE
+	LTITLE
+	2
+	ISTOP
+	LSTOP
+	1
+	ICOMNT
+	COMMNT
+	1
+VPRMTE=.
+.PAGE
+;	Miscellaneous text strings:
+HELSTR:	.ASCII "Welcome to LOGO!"
+	$00
+LBUG1:	.ASCII "LOGO bug; exiting..."
+	$00
+NMMSG1:	.ASCII "Use line numbers"
+	$00
+NMMSG2:	.ASCII "No line numbers"
+	$00
+RDRER1:	.ASCII "Reader error: Too many sublists"
+	$00
+RDRER2:	.ASCII "You have mismatched brackets"
+	$00
+ZPMSG1:	.ASCII "No storage left!"
+	$00
+ZPMSG2:	.ASCII "Stopped!"
+	$00
+WRNMSG:	.ASCII "Please ERASE something:"
+	$00
+ERRM1:	.ASCII "At level "
+	$00
+ERRM2:	.ASCII " in line "
+	$00
+ERRM3:	.ASCII " of "
+	$00
+ERRM4:	.ASCII " is too big for "
+	$00
+SENDM:	.ASCII " defined"
+	$00
+PNMSG1:	.ASCII " is "
+	$00
+PNMSG2:	.ASCII "MAKE "
+	$00
+TBMSG1:	.ASCII "We're now at top-level."
+	$00
+TBMSG2:	.ASCII "We're currently inside "
+	$00
+TOMSG:	.ASCII "TO "
+	$00
+ENDMSG:	.ASCII "END"
+	$00
+.PAGE
+;	Monitor data:
+;
+CHRTBL:	.ASCII "VM<NIG S:."
+	$05	;^E
+	$0D	;(Carriage-return)
+	$10	;^P
+	$0B	;^K
+	$02	;^B
+;
+SUBTBL:	.ADDR	VFY
+	.ADDR	MOVE
+	.ADDR	LT
+	.ADDR	SETNRM
+	.ADDR	SETINV
+	.ADDR	GO
+	.ADDR	BLANK
+	.ADDR	BSWTCH
+	.ADDR	SETMOD
+	.ADDR	SETMOD
+	.ADDR	REGZ
+	.ADDR	CRMON
+	.ADDR	OUTPRT
+	.ADDR	INPRT
+	.ADDR	XMON
+;
+RTBL:	.ASCII "AXYPS"
+;
+.END

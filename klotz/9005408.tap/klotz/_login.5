@@ -1,0 +1,143 @@
+
+: General DDT variable settings. 
+..GENJFL/0
+..CONFRM/0
+..CLOBRF/-1
+..DELWARN/2
+..MORWARN/0
+..C.ZPRT/0
+..LINKP/-1
+..PRMMCH/1
+..prompt/340000,,52
+:DDTSYM BYERUN/-1
+
+: Dispatch for terminal location, type. 
+
+:DDTSYM TTYTYP/
+:IF N q&<%TYSTY+%TYDIL+%TYRLM>
+ (:DDTSYM TCTYP/
+   :IF N q-%TNSFW
+    (: Outside TTY line. 
+      :JUMP OTTY )
+   :ELSE
+    (: Must be on a supdup. 
+      :JUMP SUPDUP ))
+:ELSE
+ (: Hardwired local line. 
+   :JUMP LOCTTY )
+
+:TAG ROLM
+:Rolm terminal switch.
+:TAG OTTY
+: Probable outside tty types and locations.
+
+:--AAA?--
+:IF MORE 0
+ (:TCTYP AAA PAGE 60
+   :JUMP REST )
+
+:--H19?--
+:IF MORE 0
+ (:TCTYP H19
+   :JUMP REST )
+
+:--TRS-80?--
+:IF MORE 0
+ (:tctyp vt52 width 31 page 16
+   :ttyloc 86 Norfolk
+   :jump rest )
+
+:--Decwriter?--
+:IF MORE 0
+ (:TCTYP LA36 QUERY
+   :What is your temporal location?  -*->
+   :INLINE  :TTYLOC
+   :JUMP REST )
+
+:--Techtronix?--
+:IF MORE 0
+(:TCTYP TEK QUERY
+  :Where are you?->
+  :INLINE   :TTYLOC
+  :JUMP REST )
+
+:TERPRI
+:What is your location?->
+:INLINE   :TTYLOC
+:Please briefly describe your terminal.->
+:INLINE :TCTYP
+:JUMP REST
+
+:TAG SUPDUP
+: Most likely Chaos net from Plasma. 
+:TCTYP QUERY
+:JUMP REST
+
+:TAG LOCTTY
+: Local tty have there tctyp set already. 
+
+: except on T36, which may be off. 
+
+:DDTSYM TTYNUM/
+:IF E Q-36
+ (:-Engine room at PLASMA (TELERAY)-
+   :IF MORE 0
+   (:TTYLOC PLASMA: Engine Room. 38-248
+     :TCTYP QUERY T1061 -%TOLID -%TPCBS
+     :JUMP REST )
+  )
+
+:TAG REST
+:  Pretty pictures. 
+:CLEAR
+
+:******************************************************
+:TERPRI
+:*
+:DATE
+:Welcome to ITS   "Many are folded but few are broken."
+:TERPRI
+:******************************************************
+:TERPRI
+:USERS
+
+: Functions conditional on user name. 
+
+:DDTSYM XUNAME/ 
+:DDTSYM XUNAME/ 
+:IF E Q-1'KLOTZ
+ (:self
+   confrm/-1
+   belcnt/1
+   nfvrbs/0
+   sndflg/-1
+   dirfn1/1'NAME1
+   dirfn2/0
+   :KILL  
+    *:(cmds);ts *,dsk:klotz;ts cmd
+   :nfdir (cmds);
+   :TERPRI
+   :Hi Leigh.
+   :JUMP PSTEND )
+
+:JUMP LUSER
+:TAG LUSER
+..GENJFL/0
+..CLOBRF/-1
+..DELWARN/3
+..C.ZPRT/0
+..LINKP/0
+..sendrp/-2
+..MORWARN/1
+:TERPRI
+:Who are you?
+:TERPRI
+:JUMP ENDING
+:TAG ENDING
+
+:MSGS *
+
+:tag PSTEND
+:EXISTS .FOO. >
+=
+:vk

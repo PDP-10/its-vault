@@ -1,0 +1,53 @@
+What kind of dividing line should we draw between the logo interpreter
+and the graphics interpreter?  Do we want to worry about sticking some
+other device on it, something dumber than the atari, or something
+totally different, like a floor turtle?
+
+If we stick something dumber, we'll want to have logo do the endpoint
+calculation, and just support draw-line messages.  I think maybe that we
+should support maintain the whole turtle state on the atari, and support
+FORWARD, BACK, LEFT, RIGHT, SETX, SETY, SETXY, SETHEADING, PENUP,
+PENDOWN, HT, and ST.  We should have it return values for XCOR, YCOR,
+HEADING, PENSTATE, and TURTLE.SHOWN.STATE.
+
+I think the Atari should do all of SETX, SETY and SETXY because the
+interpreter shouldn't have to ask for XCOR or YCOR in order to set the
+other.
+----------
+FOO! floating point or integer?  The problem is that the atari
+has these bcd floating point routines, but we can get more pz
+vars if we don't use them.
+I guess if we want to have things like FD 1.5 work, then we need
+to have our own floating-point routines in the atari.
+----------
+Another issue is that of line editing.  If we have the Atari do line
+editing, then we have to have a mode in which plain TYIs and TYIPEEKs
+may be done.  Suppose you type "FF<delete>OO". The Logo should see
+"FOO" if it is for a request or top-level readline, but should get
+"F" "F" "<delete>" "O" "O".
+
+One solution is to buffer up characters and then do the line editing
+on them if Logo asks for a full line.  This is yukky.
+
+Another is to have the rubout key and the two arrow keys reserved,
+so that they don't ever get sent to Logo.  This means that
+we can do line editing on the Atari, and let Logo have whatever
+is in the character buffer (which is changed by the rubout and arrow
+keys) when it asks for a full line, and let it have whatever is on
+top when it asks for a character.  I think this is the right idea.  It
+seems strange to have the interpreter handle line editing.  I don't
+want to use atari's editor, but I guess it's ok for a start.
+----------
+I don't know if that's right or not, but what I'm doing now
+is just having the KBD interrupt process buffer up characters
+and letting logo have them when it asks for them, without editing.
+----------
+We need a command for setting the display list.  But it can't do
+it dumbly; we have to let the command put the new code somewhere
+where the display list isn't, and then switch the display list
+pointer.  This means storage management for the display list.
+Yuk. Alternatively, we could turn off dl hacking and load over
+the old one.  This is simpler, but might cause flicker. Will
+we be switching rapidly between display lists?  We might want
+to have multiple display lists, and allow fast switching between
+them.

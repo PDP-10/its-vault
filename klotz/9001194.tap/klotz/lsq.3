@@ -1,0 +1,62 @@
+;;; -*- Mode: LISP; Package: (LSQ); Syntax: Zetalisp -*-
+
+
+;;; Least-Squares curve fitting
+;;; adapted from DPH adapted from TLP
+
+;;; Data Structures
+(defmacro lsq-point-x (point)
+  `(car ,point))
+
+(defmacro lsq-point-y (point)
+  `(cadr ,point))
+
+(defstruct (xy-sum-record :list)
+  (sum-count 0.)
+  (sum-x 0.0)
+  (sum-y 0.0)
+  (sum-xx 0.0)
+  (sum-xy 0.0)
+  (sum-yy 0.0))
+
+;; Call this function with the points, a list of X,Y lists.
+(defun line-fit (points &optional (fit-function 'line-fit-y))
+  ;; Call with line-fit-x, line-fit-y or nil to pick the better.
+  ;; usually you want line-fit-y.
+  (if (not (null (cdr (cl:remove-duplicates points))))	;need at least two points to fit line
+      (let ((sums (make-xy-sum-record)))
+	(dolist (pt points)
+	  (let ((x (lsq-point-x pt))
+		(y (lsq-point-y pt)))
+	    (incf (sum-count sums))
+	    (incf (sum-x sums) x)
+	    (incf (sum-y sums) y)
+	    (incf (sum-xx sums) (* x x))
+	    (incf (sum-xy sums) (* x y))
+	    (incf (sum-yy sums) (* y y))))
+	(if (null fit-function)
+	    (let ((l-x (line-fit-x sums))
+		  (l-y (line-fit-y sums)))
+	      (if (> (car l-x) (car l-y))
+		  (list 'line-fit-x l-x)
+		  (list 'line-fit-y l-y)))
+	    (funcall fit-function sums)))))
+
+(defun line-fit-x (sums)
+  (let ((det (- (* (sum-count sums) (sum-yy sums)) (* (sum-y sums) (sum-y sums)))))
+    (if (> (abs det) 0.1)
+	(let* ((b (// (- (* (sum-x sums) (sum-yy sums)) (* (sum-y sums) (sum-xy sums))) det))
+	       (m (// (- (* (sum-count sums) (sum-xy sums))
+			 (* (sum-x sums) (sum-y sums))) det)))
+	  (list (abs det) m b))
+	'(0))))
+
+(defun line-fit-y (sums)
+  (let ((det (- (* (sum-count sums) (sum-xx sums)) (* (sum-x sums) (sum-x sums)))))
+    (if (> (abs det) 0.1)
+	(let* ((b (// (- (* (sum-y sums) (sum-xx sums)) (* (sum-x sums) (sum-xy sums))) det))
+	       (m (// (- (* (sum-count sums) (sum-xy sums))
+			 (* (sum-y sums) (sum-x sums))) det)))
+	  (list (abs det) m b))
+	'(0))))
+

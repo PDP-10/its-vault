@@ -1,0 +1,73 @@
+;-*- Mode:MIDAS -*-
+
+title	SHOWQ - Show me COMSAT's queue
+
+x=0		 		;Super temporary.
+a=1				;General 
+b=2				; purpose 
+c=3				; utility 
+d=4				; registers.
+t=10				;temporary.
+tt=11		   		;temporary, T+1.
+char=12		   		;character being manipulated.
+count=13	   		;count into string.
+bp=14		   		;byte pointer.
+p=17		   		;stack pointer.
+
+pdllen==100			;Stack length.
+
+jcllen==2000.			;Max length of message text (10K bytes).
+
+dsko==1				;Disk ouptut channel.
+
+define syscal op,args
+	.call [setz ? sixbit/op/ ? args ((setz))]
+termin
+
+call=pushj p,
+ret=popj p,
+save==push p,
+rest==pop p,
+
+;; Type out an ascii string.
+define type ch,&string
+	movei t,<.length string>
+	move tt,[440700,,[ascii string]]
+	syscal siot,[%climm,,ch ? tt ? t]
+	 .lose %lsfil
+termin
+
+
+go:	move p,[-pdllen,,pdl]		;Init the stack.
+	syscal open,[%clbit,,<.uao> ? %climm,,dsko
+		    [sixbit /dsk/]
+	            [sixbit /_shwq_/]
+		    [sixbit /output/]
+		    [sixbit /.mail./]]
+	  .lose %lsfil
+	type dsko,/FROM-JOB:SHOWQ
+SENT-BY:CSTACY
+AUTHOR:CSTACY
+HEADER-FORCE:ITS
+RCPT:(FILE [DSK:CSTACY;QUEUE >] (R-OPTION SMALL-CLI))
+ATTRIBUTE:(SPECIAL-REQ SHOW-Q)
+TEXT;0
+/
+	setz a,				;Number of attempts at submitting.
+submit:	aos a
+	syscal renmwo,[%clbit,,<.uao> ? %climm,,dsko
+			[sixbit /mail/] ? [sixbit /1/]]
+	 jrst [	cail a,120.		;Try for about 2 minutes maximum.
+		 .value [asciz /:Could not submit request!
+:KILL
+/]
+		movei t,30.*1
+		.sleep t,
+		jrst submit ]
+fini:	.close dsko,
+	.logout 1,
+
+
+pdl:	block pdllen			;The Stack.
+
+end go

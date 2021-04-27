@@ -1,0 +1,379 @@
+% -*- Mode: TeX -*-
+% This is a LaTeX file
+% This is 6.821 Fall-87 Handout #44
+\documentstyle[11pt,6821]{article}
+
+\handout{$44$}{3 November 1987}
+\handouttitle{Types $I'$}
+
+\input{6821-macros}
+
+\begin{body}
+
+\centerline{\sc [Handout \#39 updates highlighted via bars in the margins]}
+
+\section*{Introduction}
+
+In short, a type is a description of a value.  Another way of viewing
+types is that they are approximations of values.  For example, \code{NUM} can
+be viewed as an approximation of the value of \code{1}, and \code{BOOL} can be
+viewed as an approximation of the value of \code{\#t}.
+
+Types provide us with a way of describing the structure of a program.
+For example, types can be used to describe the contents of variables,
+the results of expressions, and the input-output behavior of
+procedures.  Later in the term we will see how types can be used to
+describe large program modules and their relationships to one another.
+
+A program that cannot be described with a type is said to contain a
+``type error" or to not be ``well typed".  The set of well-typed
+programs is a subset of all of the programs that are syntactically
+well formed.  Programs that are well-typed are guaranteed not to
+contain certain classes of errors (\eg a procedure call with the
+wrong number of arguments).
+
+The three primitive base types that we will include (for now) in our
+type system are \code{NUM, BOOL,} and \code{SYMBOL}.  The \code{THE}
+form will be used to state type invariants, as in:
+
+\begin{verbatim}
+   (THE NUM 1)
+   (THE SYMBOL 'yow!)
+\end{verbatim}
+
+The type of a procedure describes the types of its inputs (if any) and
+the type of its result.  For example, the procedure \code{test-sum}
+
+\begin{verbatim}
+   (DEFINE test-sum
+     (LAMBDA (p a b)
+       (IF p (+ a b) a)))
+\end{verbatim}
+
+\noindent has type \code{(PROC (BOOL NUM NUM) NUM)} indicating that it
+takes a boolean and two numbers, and returns a number.
+
+\newpage
+
+Our type system is flexible enough to cope with procedures that take
+procedures as arguments, procedures that return procedures as results,
+and procedures that do both.  For example, \code{higher-order}
+
+\begin{verbatim}
+   (DEFINE higher-order
+     (LAMBDA (p)
+       (LAMBDA (x)
+         (IF (> x 0) (p x) x))))
+\end{verbatim}
+
+\noindent has type \code{(PROC ((PROC (NUM) NUM)) (PROC (NUM) NUM))}.
+Thus, the expression
+
+\begin{verbatim}
+   (higher-order 1+)
+\end{verbatim}
+
+\noindent has type \code{(PROC (NUM) NUM)}, as does the expression:
+
+\begin{verbatim}
+   (higher-order (higher-order 1+))
+\end{verbatim}
+
+Our knowledge of types tells us that this expression is a procedure
+that maps numbers to numbers, but it does not tell us anything about
+the function it denotes.  Upon careful examination one can determine
+that the procedure returned will increment numbers greater than \code{0}
+by \code{2}, and return all other numbers.
+
+Types provide us with an invaluable tool in understanding higher-order
+procedures because they provide us with a way of describing procedure
+values.  Without such a tool it is difficult to understand complicated
+procedure values.
+
+
+\section*{ONEOFs}
+
+We introduce tagged unions in the form of \code{ONEOF}s.  The purpose of
+\code{ONEOF} values is to allow us to describe a value that may have
+different types.  For example, imagine we wished to write a procedure
+that would take either a number or a boolean as its first parmeter.
+This sort of flexibility is not possible in our present framework.
+\code{ONEOF}s make this flexibility possible.
+
+A \code{ONEOF} value has two components: a \code{tag} and a
+\code{value}.  The tag of a \code{ONEOF} describes the type of value
+that it holds.  The type of a \code{ONEOF} describes its possible tags
+and the types of their corresponding values.  For example, the following
+is the type of a \code{ONEOF} value:
+
+\begin{verbatim}
+   (ONEOF (constant NUM) (polynomial (LISTOF NUM)))
+\end{verbatim}
+
+\noindent Note that the \code{tag}s of a \code{ONEOF} type must all be
+syntactically distinct.
+
+\newpage
+
+A value that has the above type will either contain a value with type
+\code{NUM} or value with type \code{(LISTOF NUM)}. In order to use a value
+of this type, we introduce the \code{TAGCASE} special form:
+
+\begin{verbatim}
+   (TAGCASE x
+     (constant (1+ x))
+     (polynomial (eval-poly x 0))
+     (ELSE 0))
+\end{verbatim}
+
+The \code{TAGCASE} special form ``looks inside'' a \code{ONEOF} variable
+and determines its tag. If there is a clause in the \code{TAGCASE} form
+that matches the tag of the \code{ONEOF} value, then the expression that
+corresponds to the clause is evaluated with the variable bound to the
+value component of the \code{ONEOF} value. If no clause matches, then
+the value of the \code{TAGCASE} special form is the value of the
+\code{ELSE} clause.
+
+If a \code{TAGCASE} form does not have an \code{ELSE} clause then the
+\code{TAGCASE} form must exhaustively handle all tags that are present in
+the type of the \code{ONEOF} value. Furthermore, all the clauses in a
+\code{TAGCASE} must produce the same type of value.
+
+The special form \code{(ONE type tag value)} is used to create
+\code{ONEOF} values.  For example,
+
+\begin{verbatim}
+   (ONE (ONEOF (constant NUM) (polynomial (LISTOF NUM)))
+        constant 1))
+\end{verbatim}
+
+A value of \code{ONEOF} type \code{t1} can be used where a \code{ONEOF} of
+type \code{t2} is expected iff the set of tags in \code{t1} is a subset of the
+set of tags in \code{t2}, and each tag in \code{t1} is associated with the
+same type in \code{t2}. In this case, we say that type \code{t1} is a {\it
+subtype} of type \code{t2}.
+
+\section*{Polymorphism}
+
+The type system that we have described so far is not powerful enough for
+many purposes because certain very important and useful functions cannot
+be assigned types within its framework.  The simplest example of such a
+function is the identity function:
+
+\begin{verbatim}
+   (LAMBDA (x) x)
+\end{verbatim}
+
+\noindent This function can be viewed as having an infinite number of possible types,
+including: 
+   
+\begin{verbatim}
+   (PROC (BOOL) BOOL)
+   (PROC (INT) INT)
+   (PROC ((PROC (INT) INT)) (PROC (INT) INT))
+   ... et cetera ad infinitum ...
+\end{verbatim}
+
+Unfortunately, our type system cannot describe a procedure that has more
+than one possible type assignment.  Type systems with this limitation
+are known as {\it monomorphic} type systems --- ``mono'' because they
+can describe only a single type assignment for procedures.
+
+Thus, in a monomorphic type system a separate identity procedure with
+precisely the same implementation must be written for each type; a
+tiresome task that is forced upon us by the inadequate power of the
+type system.  There are many other general purpose procedures like
+the identity function that make this a very serious problem.  This
+problem is present not only in our type system; the primary
+limitations of languages such as PASCAL and PL/I stem from their
+monomorphic type systems.
+
+In order to solve this problem we introduce polymorphism into our
+type system.  Polymorphism allows types to be passed as special sorts
+of parameters to procedures, which provides the flexiblity we need to
+represent the procedures that a monomorphic type system cannot describe.
+
+A type parameter is introduced with the special form \code{PLAMBDA}.
+Further, the \code{LAMBDA} syntax is altered to require type
+declarations for formal parameters.  For example, the polymorphic
+identity function is written as:
+
+\begin{verbatim}
+   (DEFINE identity (PLAMBDA (t) (LAMBDA ((x t)) x)))
+\end{verbatim}
+
+\noindent The \code{POLY} introduces the type variable \code{t} that
+describes the input and output type of \code{identity}.
+
+In order to use \code{identity} we must first provide it with a type, a
+process we will call {\it projection}.  Projection is accomplished with
+the special form \code{PROJ}.  For example:
+
+\begin{verbatim}
+   (THE (PROC (INT) INT) (PROJ identity INT))
+   (THE (PROC (BOOL) BOOL) (PROJ identity BOOL))
+   (THE (PROC (SYMBOL) SYMBOL) (PROJ identity SYMBOL))
+\end{verbatim}
+
+\noindent We must use \code{PROJ} to select the type we wish for \code{identity}
+before we can use \code{identity}.
+
+What then is the type of \code{identity} before it is projected onto a
+specific type?  Its type is represented by introducing \code{POLY} in
+the type domain:
+
+\begin{verbatim}
+   (THE (POLY (t) (PROC (t) t)) identity)
+\end{verbatim}
+
+
+\section*{Type Functions}
+
+Another separate idea is the notion of functions in the type domain.  A
+type function takes one or more types as parameters, and returns a type
+(or another type function) as a result.  Consider the following:
+
+\begin{verbatim}
+   (DEFINE-TYPE ident-type (TLAMBDA (t) (PROC (t) t)))
+   (THE (ident-type INT) (PROJ identity INT))
+\end{verbatim}
+
+\noindent The expression \code{(ident-type INT)} is reduced to
+\code{(PROC~(INT)~INT)}.  Thus, application in the type domain is
+accomplished with a syntactic construct that looks like application in
+the expression domain.
+
+For example, imagine that we wished to create a type function that would
+take a single type argument \code{t} and create the type \code{(PAIROF NUM
+t)}.  This would be accomplished with:
+
+\begin{verbatim}
+   (DEFINE-TYPE our-type-fn (TLAMBDA (t) (PAIROF NUM t)))
+\end{verbatim}
+
+\noindent We can now use \code{our-type-fn} to create types, such as:
+
+\begin{verbatim}
+   (THE (our-type-fn BOOL) (CONS 1 #f))
+\end{verbatim}
+
+Type functions are very useful because they provide abstraction in
+the type domain, much as \code{LAMBDA} provides abstraction in the
+expression domain.
+
+
+\section*{Recursive Types}
+
+The next major topic that we will consider is recursion in types.
+Recursion in types arises when we consider values that are recursive.
+For example, algebraic expressions are naturally recursive as shown by
+the following type definition:
+
+\begin{verbatim}
+   (DEFINE-TYPE expression (RECTYPE e 
+     (ONEOF (constant NUM)
+            (variable SYMBOL)
+            (sum (PAIROF e e))
+            (product (PAIROF e e)))))
+\end{verbatim}
+
+\noindent The \code{sum} and \code{product} variants need recursion because sums
+and products are defined in terms of expressions in order to gain the
+ability to describe sums of products, products of sums, sums of sums of
+products, and so on.
+
+The type expression \code{RECTYPE} was used in the above example to
+introduce recursion.  The general form of \code{RECTYPE} is
+
+\begin{verbatim}
+   (RECTYPE v t)
+\end{verbatim}
+
+\noindent where variable \code{v} is defined to be the type \code{t}.
+
+The equivalence of recursive types is an interesting issue.  Consider
+the following types:
+
+\begin{verbatim}
+   (RECTYPE k (PAIROF NUM k))
+   (RECTYPE k (PAIROF NUM (PAIROF NUM k)))
+\end{verbatim}
+
+\noindent These two types are equivalent in the sense that the second
+type is simply the first type ``unwound" once.  We define the limit of a
+recursive type \code{t} to be the infinite type generated when
+\code{t}'s component recursive types are completely unwound.  It is now
+possible to define recursive type equivalence in terms of the limits of
+types.  Two recursive types \code{t1} and \code{t2} are equivalent if
+they have the same limit.
+
+Using \code{RECTYPE}, we can create a type framework for pairs and
+lists.  In order to unify lists and pairs so that we can assign a single
+type to \code{CONS, CAR,} and \code{CDR}, we will define \code{listof,
+pairof,} and \code{null} as:
+
+\begin{verbatim}
+   (DEFINE-TYPE listof (TLAMBDA (t) (RECTYPE k (pairof t k))))
+   (DEFINE-TYPE pairof (TLAMBDA (t1 t2) (ONEOF (empty UNIT)
+                                             (full (BINARY t1 t2)))))
+   (DEFINE-TYPE null (ONEOF (empty UNIT)))
+\end{verbatim}
+
+\noindent Note that we have introduced a new type \code{BINARY} to
+represent a pair that cannot be \code{empty}.  The only value that has
+type \code{UNIT} is \code{\#u}, thus we can define \code{nil} to be the
+distinguished object of type \code{null} as follows:
+
+\begin{verbatim}
+   (DEFINE nil (ONE null empty #u))
+\end{verbatim}
+
+We can now give single type assignments to \code{CONS, CAR,} and
+\code{CDR}:
+
+\begin{verbatim}
+   (THE (POLY (t1 t2) (PROC (t1 t2) (pairof t1 t2))) CONS)
+   (THE (POLY (t1 t2) (PROC ((pairof t1 t2)) t1)) CAR)
+   (THE (POLY (t1 t2) (PROC ((pairof t1 t2)) t2)) CDR)
+\end{verbatim}
+
+\noindent We will assume that the projection of \code{CONS, CAR,} and
+\code{CDR} onto the appropriate types will be handled automatically.
+
+Note that \code{pairof} includes a \code{ONEOF}.  Thus \code{null} is
+compatible with \code{pairof}, and \code{null} is compatible with
+\code{listof}.  This means that a finite type such as \code{(pairof t
+null)} is compatible with the type \code{(listof t)}.
+
+Here are some examples using our new type framework:
+
+\begin{verbatim}
+   (THE (pairof NUM (pairof NUM null)) (cons 1 (cons 2 nil)))
+   (THE (listof NUM) nil)
+   (THE (listof NUM) (cons 1 (cons 2 nil)))
+\end{verbatim}
+
+
+\noindent The grammar that we have developed is as follows:
+
+\begin{verbatim}
+   E ::= K | I | (IF E E E) | ... old favorites
+       | (THE T E)
+       | (ONE T tag E) | (TAGCASE I (tag E)+ [(ELSE E)])
+       | (LAMBDA ((I T)*) E) | (E E*)
+       | (PLAMBDA (T+) E) | (PROJ E T+)
+       | (DEFINE-TYPE I T) 
+
+   T ::= NUM | BOOL | SYMBOL | UNIT | (PROC (T*) T)
+       | (ONEOF (tag T)+)
+       | (POLY (T+) T)
+       | (TLAMBDA (T+) T) | (T T+)
+       | (RECTYPE I T)
+       | (LISTOF T) | (PAIROF T T) | (BINARY T T) | NULL
+\end{verbatim}
+
+\newpage
+
+
+
+\end{body}

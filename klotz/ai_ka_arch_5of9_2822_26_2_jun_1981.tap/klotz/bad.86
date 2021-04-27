@@ -1,0 +1,166 @@
+;-*-Lisp-*-
+(setq base 10.
+      ibase 10.)
+(defun mapnth (num lst)					;this function
+       (cond ((null lst) nil)				;returns a list of the
+	     (t (cons (nth (1- num) (car lst))		;numth member
+		      (mapnth num (cdr lst))))))	;of every
+							;member list of lst
+
+(array law t 28. 344.)
+
+(setq out (open '|ai:klotz;good | 'out))
+
+(setq in (open '|ai:klotz;lawdat >| 'read))
+
+(defun mapout (lst num outfil)
+       (do ((lst1 (mapnth num lst) (cdr lst1)))
+	   ((null lst1) (princ '|Done, boss.|)
+			(terpri))
+	   (print (car lst1) outfil)))
+
+(defun ubermapout (lst from to outfil)
+       (do ((n from (1+ n)))
+	   ((= n (1+ to)) (princ "ALL done, boss.")
+			  (terpri))
+	   (tyo 12. outfil)				;12. is ^L
+	   (mapout lst n outfil)))
+
+;maps the data from file into the array "array". It assumes that the
+;file contains a series of lists, each of the length of the first
+;dimension of the array, and fills the array with them until they run
+;out. (better not be too many of them or an out-of-array-bounds
+;error).
+
+(defun mapuberarray (file uberarray)
+       (do ((lst (read file 'done) (read file 'done))
+	    (y 0 (1+ y)))
+	   ((eq lst 'done) (princ "Done, boss."))
+	   (do ((x 0 (1+ x))
+		(lst1 lst (cdr lst1)))
+	       ((null lst1))
+	       (store (funcall uberarray x y)
+		      (car lst1)))))
+
+;prints out columns columns of the array array to the file outfile
+;starting at x-coordinate x.
+
+(defun print-columns (start array columns spacing outfile)
+       (do ((y 0 (1+ y))
+	    (last-y (caddr (arraydims array))))
+	   ((= y last-y) (terpri outfile)
+			 (tyo 12. outfile)
+			 (terpri outfile))
+	   (do ((x start (1+ x))
+		(n 0 (1+ n)))
+	       ((= n columns) (terpri outfile))
+	       (let ((out-atom (funcall array x y)))
+		    (princ out-atom outfile)
+		    (let ((extra
+			   (cond ((> (length (explode out-atom))
+				     spacing) 1)
+				 (t (- spacing
+				       (length (explode out-atom)))))))
+			   (out-space extra outfile))))))
+
+;print out n spaces to outfile.
+
+(defun out-space (n outfile)
+       (do ((n n (1- n)))
+	   ((= n 0))					;32. is ascii
+	   (tyo 32. outfile)))				;for space.
+
+;yes, it's gross and horrid. Write us a better one. Output any two-d
+;array in columns columns spaced to spacing width (with first radix
+;across, second down) to file outfile. Note we make NO fencepost
+;errors; i.e., this even works when an boss calls it with more
+;columns than there are along the file's x-axis.
+
+(defun out-columns (array columns spacing outfile)
+       (do ((x 0 (+ x columns))
+	    (declare (fixnum columns x last-x))
+	    (last-x (1- (cadr (arraydims array)))))
+	   ((cond ((= x last-x)
+		   (print-columns x array 1 spacing outfile) t)
+		  ((greaterp (+ x columns) last-x)
+		   (print-columns x array (- last-x x) spacing
+				  outfile) t))
+	    (terpri) (princ "All done, boss.") (terpri))
+	   (print-columns x array columns spacing outfile)))
+
+(defun indexit (column response)
+       (do ((y 1 (1+ y))
+	    (last-y (caddr (arraydims 'law)))
+	    (foo () (cond ((eq (funcall 'law
+				       column y) response)
+			   (cons (funcall 'law 0 y) foo))
+			  (t foo))))
+	   ((= y last-y) (list column response foo))))
+
+(defun corr3 (col1 col2 col3 resp1 resp2 resp3)
+       (do ((y 1 (1+ y))
+	    (last-y (caddr (arraydims 'law)))
+	    (foo ()
+		 (cond ((and (eq (law col1 y) resp1)
+			     (eq (law col2 y) resp2)
+			     (eq (law col3 y) resp3))
+			(cons (law 0 y) foo))
+		       (t foo))))
+	   ((= y last-y) foo)))
+
+(defun corr2 (col1 col2 resp1 resp2)
+       (do ((y 1 (1+ y))
+	    (last-y (caddr (arraydims 'law)))
+	    (foo ()
+		 (cond ((and (eq (law col1 y) resp1)
+			     (eq (law col2 y) resp2))
+			(cons (law 0 y) foo))
+		       (t foo))))
+	   ((= y last-y) (list col1 resp1 col2 resp2 foo))))
+
+(defun uberlist (col)
+       (do ((y 1 (1+ y))
+	    (last-y (caddr (arraydims 'law)))
+	    (foo ()
+		 (cond ((memq (law col y) foo) foo)
+		       (t (cons (law col y) foo)))))
+	   ((= y last-y) foo)))
+
+(defun printcorr ()
+       (let ((ncol1 (progn (print "What is the name of column1, boss?")
+			    (getcolfromkeyword (read))))
+	     (resp1 (progn (print "What is the name of response1, boss?")
+			   (read)))
+	     (ncol2 (progn (print "What is the name of column2, boss?")
+			    (getcolfromkeyword (read))))
+	     (resp2 (progn (print "What is the name of response2, boss?")
+			   (read))))
+	    (princ (law ncol1 0) out)
+	    (tyo 32. out)
+	    (print resp1 out)
+	    (princ (law ncol2 0) out)
+	    (tyo 32. out)
+	    (print resp2 out)
+	    (print (corr2 ncol1 resp1 ncol2 resp2) out)))
+
+(defun pc (col1 col2 resp1 resp2)
+       (terpri out)
+       (print (corr2 col1 col2 resp1 resp2) out))
+
+
+(defun getcolfromkeyword (keyword)
+       (do ((x 1 (1+ x)))
+	    ((eq (law x 0) keyword) x)))
+	 
+(defun pi (column response)
+       (terpri out)
+       (print (indexit column response) out)
+       (terpri out))
+
+;this function outputs to the outfile a list of lists of case numbers 
+(defun uberuber (col1 col2)
+       (do ((foo (uberlist col1) (cdr foo)))
+	   ((null foo))
+	   (do ((bar (uberlist col2) (cdr bar)))
+	       ((null bar))
+	       (pc col1 col2 (car foo) (car bar)))))

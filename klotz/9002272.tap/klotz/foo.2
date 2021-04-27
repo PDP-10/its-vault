@@ -1,0 +1,33 @@
+(defun thevenin-reduce (source-voltage branch-list)
+  (if (= (length branch-list) 1)
+      (// source-voltage (impedance (car branch-list)))
+      (norton-reduce (// source-voltage (impedance (car branch-list)))
+		     (cons (parallel (car branch-list)
+				     (cadr branch-list))
+			   (cddr branch-list)))))
+
+(defun norton-reduce (source-current branch-list)
+  (if (= (length branch-list) 1)
+      (// source-current (admittance (car branch-list)))
+      (thevenin-reduce (// source-current (admittance (car branch-list)))
+		     (cons (series (car branch-list)
+				     (cadr branch-list))
+			   (cddr branch-list)))))
+
+(defun resistor (r) (list 'impedance r))
+
+(defun series (b1 b2)
+  (list 'impedance (+ (impedance b1) (impedance b2))))
+
+(defun parallel (b1 b2)
+  (list 'admittance (+ (admittance b1) (admittance b2))))
+
+(defun admittance (part)
+  (cond ((eq (car part) 'admittance) (cadr part))
+	((eq (car part) 'impedance (// 1 (cadr part)))
+	(t (error "Unknown branch type -- ADMITTANCE"))))
+
+(defun impedance (part)
+  (cond ((eq (car part) 'impedance (cadr part))
+	((eq (car part) 'admittance (// 1 (cadr part)))
+	(t (error "Unknown branch type -- IMPEDANCE"))))

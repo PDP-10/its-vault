@@ -1,0 +1,89 @@
+Thanks for the mail on the proposals.  I'll take time to study them.
+Here are my remarks on Boxer's use of COMPILER-LET.
+
+Summary:
+	We use COMPILER-LET to create a new macro called CONSTANT-LET.
+	CONSTANT-LET temporarily creates what amount to compiled-in
+	lexical constants.  The constants are bound with LET as normally,
+	but are additionally placed in an alist stored in a special
+	variable.  Fixnum arithmetic macros (+&, -*, etc) examine this
+	list at macro expansion time and perform partial evaluation
+	when possible.
+
+	We need CONSTANT-LET because neither Lucid, Franz EXCL, nor Allegro is
+	capable of optimizing the uses of LET, +/-, and DEFCCONSTANT'd
+	constants we have in Boxer.  While the first two systems ostensibly
+	offer this kind of optimization automatically, they show unacceptable
+	compile-time performance.  Allegro performs none of the
+	optimizations that CONSTANT-LET affords.
+
+Implications for COMPILER-LET:
+
+Any proposed substitute for COMPILER-LET should allow a straightforward
+implementation of CONSTANT-LET.  We do not feel that using MACROLET
+to redefine all arithmetic functions is straightforward.
+
+We feel that this use of COMPILER-LET made use of a powerful tool for
+a novel solution to an unanticipated problem, and that any substitute
+command be able powerful enough to support such unanticipated use.
+
+Further Comments:
+
+			 WHY WE NEED CONSTANT-LET
+The Boxer redisplay algorithm has lots of arithmetic in it that can
+be optimized out.  Like, when it's setting up to draw a particular
+kind of box, there is this huge environment which is done with a number
+of different macros, each of which binds a different set of parameters.
+The particular kind of drawing function (draw, zoom, shift, etc.) determines
+what macros get wrapped around the definition.  There are font size macros,
+box type (data, procedure, graphiocs, etc.) macros which know about border inside
+widths and label heights and stuff (in terms of font size, etc.), and a couple
+of other levels of macros.
+
+The low level drawing functions are full of sums and differences of these
+variables used as offsets and lengths and things.  Now, since it all boils
+down to stuff like
+	 (let ((x 1)) ... 
+           (let ((y (+ x *mumble-defconstant*))) ...
+             (frob (+ x u))))
+you'd think that the compiler would just kinda figure it out.
+
+The trouble is, they don't.  The Lucid compiler conses about 40 megabytes and
+then chokes.  Presumably if we had infinite memory it wouldn't, because on
+some of these functions it manages to get by with only 30M.  Franz EXCL
+throws up its hands on sight and runs out of memory immediately.  The
+Mac Allegro compiler, we believe, will get through it fine; unfortunately,
+that compier won't even optimize (the fixnum (+ (the fixnum 2) (the fixnum 3)), so
+we can't count it as working right either, for our purposes.
+
+				HOW IT WORKS
+
+SOOO, what we did was define a CONSTANT-LET function.  It uses COMPILER-LET
+to push the constant values on an alist.   Since we don't have access
+to the compiler internals (and indeed, are doing this in part to circumvent
+those internals which are either too slow or too stupid to do the job), we
+confine our optimizations to fixnum arithmetic macros we have defined.
+
+Like many CL users, we avoid sprinkling (drowning?) our code with THE
+declarations, and instead use macros wtih names like +&, *&, etc. to
+indicate fixnum arithmetic.  I believe the book even tells you how to
+write them properly, some hack with multiple args.  Anyway, we simply
+modified our macros to perform partial evaluation of these arithmetic
+functions, using the contents of the special variable bound by
+COMPILER-LET to look up the values of any symbols that are args to the
+arithmetic functions.
+
+				RESULTS
+
+This hack finally allowed us to compile under Lucid CL.  Also, we
+imagine it will give us a performance improvement in systems like
+Allegro, which perform no such optimizations at all.
+
+BUGS:
+We sincerely hope that any forms the compiler compiles while lexically
+in the scope of the COMPILER-LET will also be lexically within the
+scope of the user's CONSTANT-LET invocation, but if pushed I could probably come
+up with some example where PCL compiles some code on the fly, but
+in practice it's not a problem because they are not using our functions.
+
+

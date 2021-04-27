@@ -1,0 +1,149 @@
+;;;-*-LISP-*-
+
+(setq ibase 10. base 10. *nopoint t)
+(defvar *standard-output* t)
+
+;;(defun scalar-add (a b) (+ a b))
+;;(defun scalar-sub (a b) (- a b))
+;;(defun scalar-mul (a b) (* a b))
+;;(defun scalar-quo (a b) (quotient a b))
+(defun scalar-add (a b) (boole 6 a b)) ;XOR
+(defun scalar-sub (a b) (boole 6 a b)) ;XOR
+(defun scalar-mul (a b) (boole 1 a b)) ;AND
+(defun scalar-quo (a b) (quotient a b))
+
+(defvar zero-poly '(0))
+(defun poly-zero? (poly) (equal poly zero-poly))
+
+(defun degree (poly)
+  (if (poly-zero? poly) 'UNDEFINED
+      (1- (length poly))))
+
+(defun poly-raise (poly n)
+  (if (= n 0) poly
+      (append (list 0) (poly-raise poly (- n 1)))))
+
+(defun poly-sub (poly1 poly2)
+  (if (equal poly1 poly2) zero-poly
+      (poly-sub-1 poly1 poly2)))
+
+(defun poly-sub-1 (poly1 poly2)
+  (cond ((equal poly1 poly2) '())
+	((null poly1) poly2)
+	((null poly2) poly1)
+	(t (cons (scalar-sub (car poly1) (car poly2))
+		 (poly-sub-1 (cdr poly1) (cdr poly2))))))
+
+;doesn't fix leading 0's yet
+(defun poly-add (poly1 poly2)
+  (poly-add-1 poly1 poly2)))
+
+(defun poly-add-1 (poly1 poly2)
+  (cond ((equal poly1 poly2) '())
+	((null poly1) poly2)
+	((null poly2) poly1)
+	(t (cons (scalar-add (car poly1) (car poly2))
+		 (poly-add-1 (cdr poly1) (cdr poly2))))))
+
+(defun scale-poly (poly n)
+  (mapcar #'(lambda (x) (scalar-mul n x)) poly))
+
+(defun leading-coefficient (poly)
+  (car (last poly)))
+
+(defun poly-remainder (numerator denominator)
+  (if (or (poly-zero? numerator)
+	  (< (degree numerator) (degree denominator)))
+      numerator
+      (let ((partial-product (poly-raise denominator
+			       (- (degree numerator)
+				  (degree denominator)))))
+	(poly-remainder
+	 (poly-sub
+	  numerator
+	  (scale-poly partial-product
+		      (scalar-quo (leading-coefficient numerator)
+				  (leading-coefficient denominator))))
+	 denominator))))
+
+
+(defun poly-ev (poly x)
+  (if (null poly) 0
+      (scalar-add (car poly)
+		  (scalar-mul x (poly-ev (cdr poly) x)))))
+
+;;;
+(defun n->2-poly (degree n)
+  (if (zerop n) zero-poly
+      (n->2-poly-1 n (^ 2 degree))))
+
+(defun n->2-poly-1 (number this-one)
+  (cond ((zerop number) nil)
+	((< number this-one)
+	 (cons 0 (n->2-poly-1 number (// this-one 2))))
+	(t (cons 1 (n->2-poly-1 (- number this-one) (// this-one 2))))))
+
+  
+;;;
+(defun map-over-polys (degree function)
+  (do ((end (^ 2 (1+ degree)))
+       (n 0 (1+ n))
+       (list nil (nconc (funcall function (n->2-poly degree n)) list)))
+      ((= n end) list)))
+
+;;;
+(defvar *irreducible-polys-4*
+  '((0 1) (1 1)
+    (1 1 1)
+    (1 0 1 1) (1 1 0 1)
+    (1 1 0 0 1) (1 0 0 1 1)))
+
+
+(defvar *factor-print?* nil)
+
+(defun irreducible-8? (poly)
+  (cond ((zerop (poly-ev poly 1))
+	 (and *factor-print?* (format *standard-output*
+				      "~%~S divisible by ~S" poly '(1)))
+	 nil)
+	(t (do ((test-polys *irreducible-polys-4* (cdr test-polys)))
+	       ((null test-polys) t)
+	     (cond ((poly-zero? (poly-remainder poly (car test-polys)))
+		    (and *factor-print?*
+			 (format
+			  *standard-output*
+			  "~%~S divisible by ~S" poly (car test-polys)))
+		    (return nil)))))))
+
+
+(defun find-factors-8 (poly)
+  (do ((test-polys *irreducible-polys-4* (cdr test-polys)))
+      ((null test-polys))
+    (if (poly-zero? (poly-remainder poly (car test-polys)))
+	(format *standard-output*
+		"~%~S divisible by ~S" poly (car test-polys)))))
+    
+(defun test-polys-8 ()
+  (map-over-polys 8
+		  #'(lambda (poly)
+		      (cond ((or (member poly *irreducible-polys-4*)
+				 (irreducible-8? poly))
+			     (format *standard-output* "~%~S" poly)
+			     (list poly))
+			    (t nil)))))
+
+(defmacro with-open-output-file (stream filename &body body)
+  (let ((value (gensym)))
+    `(let ((,stream (open ,filename 'out))
+	   (,value nil))
+       (unwind-protect
+	(setq ,value (progn .,body)))
+       (close ,stream)
+       ,value)))
+    
+
+(defun glob ()
+  (with-open-output-file *standard-output* "klotz;polys >"
+     (format *standard-output* "Irreducible polynomials of degree <= 8~%")
+     (test-polys-8)))
+

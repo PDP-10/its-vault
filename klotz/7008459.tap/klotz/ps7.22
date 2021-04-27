@@ -1,0 +1,349 @@
+                                                        Leigh Klotz
+                                                        6.032
+                                                        Pasieka 1
+
+Problem 1A.
+
+Two possible 32-bit values for NOVAL come to mind immediately:  One would
+be the most negative number, represented (assuming two's complement
+arithmetic) as a string of 32 1's.  Valid arithmetic would then be limited
+to the range (-2^31)-1 to (2^31)-1.  Presumably the low-level arithmetic
+primitives could be modified not to produce this number, but it could lead
+to subtle bugs where a number from the machine internals ``leaks'' into a
+place where it could be stored into a variable.
+
+Another possibility would be to use the MSB as a flag.  This approach,
+although simpler since all arithmetic is limited to 31 bits, has the
+disadvantage associated with that limitation.  Note, in particular, that
+the address space of the machine is 32 bits.  
+
+Our problem comes from trying to prohibit every number in the machine from
+taking on the ``NOVALU'' value.  We really want only the local variables to
+have this property. It would be better to extend the storage associated
+with each local variable to contain the DEFINED/UNDEFINED information.
+This is in essence what problem 2b does.
+
+Problem 2b.
+Use of a flag byte to indicate uninitialized variables.
+
+We must modify all instructions which create local variables or reference
+them. We'll use a whole byte instead of a bit because it's easier and we
+might want to use the other 7 bits for something useful later.
+
+                                   NOTE
+We must have a type byte associated with each local object.  Since local
+objects can be of any size from 1 to 8 bytes, we must either have a type
+byte for possible local datum (each byte of local storage), or know in
+advance how the local storage is structured.
+
+The first use of ALLOC in the notes allocates a chunk of 112 bytes, called
+"Local storage".  Thus, it seems that we have to have 112 bytes of types
+for these, to work in the worst case that 112 1-byte local variables are
+used.  It still remains to determine the relation between the variables and
+the type bytes.  The problem suggests that the last byte after the storage
+for the variable be used for the type.  This is fine for the various load
+and store instructions, but the ALLOC instruction must know how many
+additional bytes to allocate for the types.  It could be as many as N or as
+few as N/8.
+
+There are two solutions to the dilemma: (1) Use the ALLOC instruction once per
+local variable, or (2), have ALLOC allocate the maximum space possibly
+needed.  I'm taking solution 2 here since there already seems to be a body
+of code in the notes which uses ALLOC in this manner.
+
+This solution requires an additional kludge: Since ALLOC doesn't know which
+locations are types and which are data, the initial value for data and the
+flag for un-initialized data must be the same.  We'll pick 0.
+
+
+
+;The ALLOC instruction in Logo:
+
+;TO ALLOCATE :NBYTES
+; IF NEGATIVE? :NBYTES DEALLOCATE :NBYTES STOP
+; ALLOCATE.INTERNAL :NBYTES
+;END
+
+;TO ALLOCATE.INTERNAL :NBYTES
+; IF :NBYTES=0 STOP
+; MEM.WRITE.2 :SP :UNINITIALIZED
+; MAKE "SP :SP+2
+; ALLOCATE.INTERNAL :NBYTES-1
+;END
+;
+
+;TO DEALLOCATE :NBYTES
+; MAKE "SP :SP-:NBYTES*2
+;END
+
+;MAKE "UNINITIALIZED 0 
+
+Label   ALU     L Field Dest    Branch          Comments
+========================================================================
+ALLOC   ALLOC_1         STACK   FETCH2          get signed, two-byte N.
+ALLOC_1 <R1>            R4      LT:DEALLOC      If negative, deallocate
+ALLOC.L <R4>                    EQ:ALCXIT       exit if done
+        <R14>           R0                      put 0 in location (SP).
+        0               R1
+        ALLOC_2         STACK   PUT2            write both data and type
+ALLOC_2 <SP>+1          SP                      point to next variable/type
+        <R4>-1          R4      ALLOC.L         decrement byte count
+ALCXIT                          <STACK>
+
+DEALLOC <R4>+<R4>       R4                      total size, bytes and types
+        <SP>-<R4>       SP      <STACK>
+
+
+;The L a instruction loads the a bytes at the address specified by the
+;pointer on the S machine stack, and pushes the value onto the stack.
+;If the type byte corresponding to the address indicates the variable has
+;never been set, go to an error handler instead.
+;Note that the use of the wrong byte-count instruction with a local variable
+;can result in erroneous or missing errors.
+
+;In L2, the constant 1 below will be 2, etc.
+
+;TO L1 :ADDRESS
+; IF NOT (GET.MEM :ADDRESS+1)=:INITIALIZED  ERROR :ADDRESS
+; OUTPUT GET.MEM :ADDRESS
+;END
+
+INITLZD=1
+Label   ALU     L Field Dest    Branch          Comments
+========================================================================
+L1      L1_1            STACK   POP4            get address of item to load
+L1_1    <R1>            R4                      save away
+        <R4>+1          R0                      read type byte
+        LL_2            STACK   GET1
+LL_2    <R1>-INITLZD            NE:ERROR        OOPS!  Uninitialized variable.
+        <R4>            R0                      Variable OK, read data
+        PUSH1           STACK   GET1            Read, push, return.
+
+;S a instruction.
+;This instruction performs the normal store and sets the type byte associated
+;with the location to indicate it is defined.
+
+;TO S1 :ADDRESS :DATUM
+; PUT.MEM :ADDRESS :DATUM
+; PUT.MEM :ADDRESS+1 :INITIALIZED
+;END
+
+INITIALIZED=1
+Label   ALU     L Field Dest    Branch          Comments
+========================================================================
+S1      S1_1            STACK   POP1            what to store
+S1_1    <R1>            R4                      save in R4
+        S1_2            STACK   POP4            where to store it
+S1_2    <R1>            <R0>                    address to write to
+        <R4>            R1                      write data
+        S1_3            STACK   PUT1            write type
+S1_3    INITIALIZED             R1              
+        <R0>+1          R0      PUT1            write to type address, return.
+
+
+Problem 2C
+Suppose some function calls F and secretes away the value (pointer to F's
+local a), and then subsequently passes this pointer to another procedure.
+If this procedure allocates enough space to make the current stack pointer
+be greater than the pointer value for the old a, then the simple
+SP-comparison test will not catch the illegal reference.
+
+Problem 2D.
+We'll assume that 8 bits is enough of a timestamp.  The concept can easily
+be extended, but it's simpler to show here if we use just one byte.
+
+Note that we can use the same byte for the timestamp as we did for the
+initlized/uninitialized flag.  We'll declare that zero is not a valid
+timestamp, and never open a stack frame putting zero as its timestamp.
+This lets us automagically trap un-initialized variables by our timestamp
+disagreement!  The error routine can determine which error happened by
+looking at the bad timestamp.
+
+Thus, the ALLOC code would remain the same as above.
+
+The Sa instruction microcode given above needs to take the timestamp from
+the current stack frame and store it in the type byte instead of just using
+the constant INITIALIZED.  The timestamp would be loaded from the stack as
+an index off the B register.  We'd have to change the CALL instruction to
+put in a new byte slot and initialize it properly, via a changing global
+counter.  We DON'T want to base it on the counter of the calling procedure!
+
+Similarly, the La instruction above compares against the constant
+INITIALIZED, and needs to get the timestamp from the current frame.
+
+;TO S1 :ADDRESS :DATUM
+; PUT.MEM :ADDRESS :DATUM
+; PUT.MEM :ADDRESS+1 (GET.TIMESTAMP :B)
+;END
+
+;TO GET.TIMESTAMP :B
+; OUTPUT GET.MEM :B+:TIMESTAMP.OFFSET
+;END
+
+Label   ALU     L Field Dest    Branch          Comments
+========================================================================
+S1      S1_1            STACK   POP1            what to store
+S1_1    <R1>            R4                      save in R4
+        S1_2            STACK   POP4            where to store it
+S1_2    <R1>            R0                      address to write to
+        <R4>            R1                      write data
+        S1_3            STACK   PUT1            write type
+S1_3    <R0>            R4                      save address    
+        <B>+TIMSTMP     R0                      current timestamp address
+        S1_4            STACK   GET1            find it out ->R1.
+S1_4    <R4>+1          R0      PUT1            write to var. address, return.  
+
+
+;TO L1 :ADDRESS
+; IF NOT (GET.MEM :ADDRESS+1)=(GET.TIMESTAMP :B)  ERROR :ADDRESS
+; OUTPUT GET.MEM :ADDRESS
+;END
+
+INITLZD=1
+Label   ALU     L Field Dest    Branch          Comments
+========================================================================
+L1      L1_1            STACK   POP4            get address of item to load
+L1_1    <R1>            R4                      save away
+        <R4>+1          R0                      read type byte
+        L1_2            STACK   GET1
+L1_2    <R1>            R5                      save away var's timestamp
+        <B>+TIMSTMP     R0                      read frame's timestamp standard
+        L1_3            STACK   GET1
+L1_3    <R1>-<R5>       NE:ERROR                OOPS!  Uninitialized variable.
+        <R4>            R0                      Variable OK, read data
+        PUSH1           STACK   GET1            Read, push, return.
+
+Problem 2A.
+The procedure F has been called three times, with arguments 11, 9, and 7.
+
+Problem 2B.
+All calls to F have 100 as the static link pointer, which is copid from the
+stack frame address in F's procedure descriptor object, located at location
+104.
+
+Problem 2C.
+The first time Y=1 is executed is the first invocation of the function F,
+so B=132.
+
+Problem 2D.
+Given that the recursive call within the body of F is compiled as
+        LA 1 4
+        PDCALL
+what is the address of the first instruction of F?
+1033.
+
+Problem 2E.
+168 is the location of the local variable Y for the third invocation of F.
+It contains 1 because it was set to 1 and the recursive call to F
+hasn't returned yet to give another value to store into it.
+
+When that F(N-2) recursive call returns, the program will compute the sum
+
+          Y=A*N + F(N-2)
+
+and store that into Y.  (Location 176 in the call frame under discussion
+contains the current A*N=18).  Before recursively calling F, the compiled
+program pushed a pointer to the place where the result of the above
+expression should be stored, namely the current local variable Y, at
+location 168.  Presumably, after a recursive call to F returns and the sum
+is calculated, the next instruction will be STORE4, causing the address of
+the local Y (168, here) to get the result of the sum.
+
+Problem 2F.
+Location 1090 is the PC to return to for the recursive invocations of F.
+It is the next instruction after the
+        LA 1 4
+        PDCALL
+sequence which recursively calls F.
+
+The very next thing after a recursive call to F, as pointed out above,
+should be the completion of the SUM of A*N and the returned result of F.
+So, it would be an ADD4 instruction, adding the just-pushed returned result
+of F and the temporary value A*N.
+
+Problem 2G.
+Since the temporary value A*N is 22 when N is 11, A=2.
+Note that A*N=18 when N=11-2=9, confirming that A=2.
+
+Problem 2H.
+After one more recursive call, the stack from 204 on looks like this:
+
+204     200             <- Y
+208     14              A*N
+212     5               N (ARG0)
+216     212             OLD SP
+220     1090            OLD PC
+224     196             OLD B
+228     100             STATIC LINK
+232     1               Y
+
+B=228
+SP=236
+
+Problem 3A.
+
+a+b/c*d-e/f
+
+in postfix is
+
+a b c / d * + e f / -
+
+(- (+ a (* (/ b c) d)) (/ e f))
+(- (/ f e) (+ (* d (/ c b)) a))
+             
+
+                 -
+
+             +       /
+
+           a   *   e  f
+
+             /  d
+
+            b c
+
+Problem 2B.
+a+b*(c/d-e)
+
+a b c d / e - * +
+
+
+        LA A
+        L2
+        LA B
+        L2
+        LA C
+        L2
+        LA D
+        L2
+        DIV2
+        LA E
+        L2
+        SUB2
+        MULT2
+        ADD2
+
+Problem 3C.
+Note that the first arg is pushed first, etc.
+
+AGB = a * G(x + z/13) + b
+
+      a x z 13 / + (G) * b +
+
+
+        LA AGB
+        LA A
+        L2
+        LA X
+        L2
+        LA Z
+        L2
+        C2 13
+        DIV2
+        ADD2
+        LA PDG
+        CALL 1
+        MULT2
+        LA B
+        L2
+        ADD2

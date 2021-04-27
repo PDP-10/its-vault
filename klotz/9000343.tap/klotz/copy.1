@@ -1,0 +1,111 @@
+To: ehl
+s: copying
+--Text follows this line--
+I think I've told you all this, but here goes for continuity:
+
+I've been using boxer to read my mail.  I wrote this function
+called make-text-box that takes a list of strings and then
+makes a box.  It's quite fast.
+
+Unfortunately, when the read-mail function returns this box the
+evaluator encases it in an eval-doit box.  Then doit-print-returned-value
+sees that and says, "Oh, I must needs copy ALL the interior boxes because
+they're actual DOIT boxes."
+
+So, there goes my speed improvement.
+
+So, I wrote a thing called FAST-COPY-BOX.  On a box of just text that
+COPY-BOX took .92 seconds to copy, FAST-COPY-BOX took .04 seconds, roughly
+20 times faster.
+
+Now, this might make you happy, but then when you think about it it
+doesn't yet.  That's still a zillion times slower than the
+TOP-LEVEL-COPY-FOR-EVAL function, unless the box has lots of top level
+text in it.  That's fine for my mail, though.
+
+BUT THE FUNCTION DOESN'T GET CALLED.  That's because
+DOIT-PRINT-RETURNED-VALUE calls MAKE-BOX-FROM-EVBOX, which just calls
+MAKE-BOX on the guts of the evbox.  So I have to write yet another
+function called FAST-MAKE-BOX-FROM-EVBOX that uses the FAST-COPY-BOX
+instead of the stream stuff.  There's still no way I can avoid the copy.
+
+Until now I had not actually understood the full role of evboxes.  As I
+see it, the evbox is a copy of the upper-level glue in a box.  When you
+use a data accessor to get ahold of a substituent of the evbox, that
+element is converted to an evbox.
+
+It also seems to be the case that all returned values from procedures and
+primitives are copied in this manner, and that the final returned value is
+copied and made back into a real DATA box.
+
+It seems to me that we ought to be able to get by without the copying on
+function return.  I have this idea about making "encapsulations" that
+signify copy-on-modification.  Primitives would have to handle these
+things themselves, with a separate case for eval-data objects and
+encapsulated objects.  The difference is that one would never copy an
+encapsulated object on function return or function entry.  When you try to
+alter an encapsualated object, then you put a copy of the actual data back
+where it came from inside the encapsulation object.  That automatically
+makes a copy of the encapsulation.  Of course, you have to make a new
+encapsulation to the same data for each procedure call, but this can be
+simply a single CONS, rather than copying all the toplevel glue we know
+have when making an evdata object.  That's one difference between these
+objects and evdata objects.  Another difference is that the side-effect
+primitives would do this little dance instead of simply side-effecting.
+Do you see what I mean here?  It's like we pass around little value cells
+all the time, and when we actually want need a copy, we break the link.
+Each procedure invocation has its own value cell.
+
+Now that I say this it seems similar to the stack-copying hack I did
+for variable scoping, so it will have some affect on that too.
+
+Currently, on entry to a procedure all the locals and all the static
+variables are ev-copied and a (name . value) cons is pushed onto the
+dynamic binding stack.  When a side-effect occurs, it happens to that
+private copy in the value cell that is the cdr of the slot on the dynamic
+variables stack.  That's how we currently avoid smashing the values that
+are inputs to a procedure.
+
+In the new proposal:
+(1) that ev-copy wouldn't take place; we would put the object inside
+a cons into the stack slot.
+
+(2) Side-effecting PRIMITIVES when they got one of these frobs as input
+would then copy and put the copy back into the value slot of the structure
+before operating on the object.
+
+We type 
+  FRED [[1 2][3 4]]
+where fred is
+  FRED->|------------------------
+        |INPUT FOO              |
+        |CHANGE FOO BUTSTART FOO|
+        |ZOO->[]                |
+        |-----------------------|
+
+We create a copy-encapsulation/variable-binding for FOO like this:
+ (FOO . (COPY-ENCAPSULATION #<DATA-BOX 1 2 ...>)
+and push that on the dynamic binding stack.  We have now bound FOO to a
+data box which will be copied on demand.  Note that the object in there is
+an editor box, a flavor object.
+
+We start evaluating the lines of FRED.  So we're munching along evaluating
+a procedure we've called with our new mechanism here and we see
+ CHANGE FOO BUTSTART FOO
+
+We accumulate a port to FOO for CHANGE because of the port-flavored input.
+We see BUTSTART and it's plain input, and so we give it the value of FOO.
+That's a list that's on the dynamic binding stack, and it still looks like
+this:
+ (FOO . (COPY-ENCAPSULATION #<DATA-BOX 1 2 ...>))
+
+But we're about to call a primitive now, so we do what amounts to the following
+
+(funcall bu:butstart (boxer-symeval 'bu:foo))
+
+We do no copy and no encapsulation.  Since it's a primitive, it will take
+care of teh copying IF IT IS GOING TO DO SIDE EFFECTS.  If not, it won't
+need a copy anyway.
+
+Thus, we have given the list 
+	

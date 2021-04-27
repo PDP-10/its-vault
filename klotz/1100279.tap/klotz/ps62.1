@@ -1,0 +1,455 @@
+% -*- Mode: TeX -*-
+% This is 6821 Fall '87 Handout #62.
+% Problem Set 8.
+\documentstyle[11pt,6821]{article}
+
+\handout{62}{24 November 1987}
+\ps{8}{4 December 1987}
+
+\input{6821-macros}
+\input{6821-commands}
+
+\begin{body}
+
+
+\section{A type inference system}
+
+Implement Milner's type inference algorithm (handout~58) as a
+Scheme program.
+
+The grammar for the input language (expressions whose types are to be
+inferred):
+
+\begin{verbatim}
+   E ::= v | K | (E E*) | (LAMBDA (v*) E) | (IF E E E)
+       | (LET ((v E)*) E) | (LETREC ((v E)*) E)
+
+   K ::= number | boolean | 'symbol | '()
+\end{verbatim}
+
+The grammar for the output language (the inferred type expressions):
+
+\begin{verbatim}
+   T ::= (? t) | B | (PROC (T*) T) | (LIST T) | (PAIR T T)
+
+   B ::= NUM | BOOL | SYMBOL
+\end{verbatim}
+
+{\tt(?~t)} denotes a type variable (notated ``{\tt ?t}'' in handout~58).
+
+Your program should take an expression and a type environment (mapping
+variables to types) as arguments, and return either a type for the
+expression or some distinguished value, for example false ({\tt \#f}),
+if it fails to infer a type for the expression.
+
+Write your program in functional style.  The algorithm of handout~58 is
+written in an imperative form, since it implicitly updates a set of type
+variable bindings; you should make the propagation of this information
+explicit in your program (analogous to the treatment of a store in
+denotational semantics).  The only side-effects should be for the
+purpose of generating unique new variable names.
+
+We represent type variables as {\tt(?~t)}, where {\tt t} is some identifier, in
+order to interface properly to the supplied unification module.
+
+\newpage
+
+\section{Using your type inference system}
+
+Use the program of part~1 to infer the types of the following
+expressions:
+
+\begin{verbatim}
+[a]    (letrec ((fact (lambda (n)
+                        (if (= n 0) 1 (* n (fact (- n 1)))))))
+         fact)
+
+[b]    (lambda (g)
+         (let ((f (lambda (x) x)))
+           (g (f 1) (f (not #t)))))
+
+[c]    (letrec ((map (lambda (p l)
+                       (if (null? l)
+                           '()
+                           (cons (p (car l))
+                                 (map p (cdr l)))))))
+         map)
+
+[d]    (letrec ((^ (lambda (p n)
+                     (if (= n 0)
+                         (lambda (x) x)
+                         (lambda (x)
+                           (p ((^ p (- n 1)) x)))))))
+         ^)
+\end{verbatim}
+
+
+Ensure that your algorithm does {\em not} find a type for the following
+expression:
+
+\begin{verbatim}
+[e]  (lambda (f)
+       (let ((g (lambda (x) (f x))))
+         (cons (g 1) (cons (g #f) '()))))
+\end{verbatim}
+
+Use an initial type environment which has appropriate bindings for the
+variables {\tt =}, {\tt not}, {\tt cons}, etc.  Note that {\tt cons}
+will be polymorphic, but in this framework a polymorphic type is simply
+one which has free type variables --- there are no explicit {\tt forall}
+types.
+
+In order to make example [c] to work, {\tt cons}, {\tt car}, {\tt cdr},
+and {\tt null?} will have to be typed to work on homogeneous lists
+rather than on pairs.  And be careful about the inferred type of the
+empty list, {\tt '()}.
+
+\newpage
+
+\section{Adding optional declarations}
+
+Once you have your inference system working, extend it to handle two new
+syntatic forms:
+
+\begin{verbatim}
+   E ::= ... |
+         (LAMBDA ((v T)*) E) | (THE T E)
+\end{verbatim}
+
+The optional type declarations in {\tt LAMBDA} permit the type of formal
+variables to be described, and {\tt THE} permits the type of an
+expression to be described.   Note that {\tt T} can be a polytype.
+Within the declaration part of a single {\tt LAMBDA} or {\tt THE}
+expression, type variables with the same name are constrained to be the
+same type.  However, type variables with the same name in different
+declarations must be independent.  Thus, you should alpha rename type
+variables as appropriate.   In the first example that follows, both
+instances of {\tt (?~t)} must refer to the same type, while in the
+second example, the two instances of {\tt (?~t)} can refer to different
+types:
+
+\begin{verbatim}
+[1]  (lambda ((x (? t)) (y (? t))) (cons x y))
+
+[2]  (lambda ((x (? t))) (lambda ((y (? t))) (cons x y)))
+\end{verbatim}
+
+The test cases for your implementation should include the following:
+
+\begin{verbatim}
+[a]  (lambda ((x int)) x)
+
+[b]  (the (proc ((? t)) (? t)) (lambda (x) x))
+
+[c]  (letrec ((map (lambda ((p (proc ((? t1)) (? t2)))
+                            (l (list (? t1))))
+                       (if (null? l)
+                           '()
+                           (cons (p (car l))
+                                 (map p (cdr l)))))))
+         map)
+\end{verbatim}
+
+\section{Declaring polymorphic procedures}
+
+Can you use optional declarations to pass polymorphic procedures as
+suggested in the example that follows?  Why or why not?
+
+\begin{verbatim}
+
+(lambda ((p (proc ((? t)) (? t))))
+  (let ((x (p 1)) (y (p #t)))
+     1))
+
+\end{verbatim}
+
+\newpage
+
+Following are some utilities that you may find useful in developing your
+solution.  These can be found in the file\\
+   \hspace*{.5in} {\tt Zermatt:>6821>fall-87>6821-ps8.scm},\\
+which is available in the 6.001 lab with\\
+   \hspace*{.5in} $\langle\hbox{extend}\rangle$
+                  {\tt Load Problem Set}
+                  $\langle\hbox{enter}\rangle$
+                  {\tt 6821-ps8}
+                  $\langle\hbox{enter}\rangle$.
+
+\begin{verbatim}
+
+;;; Environments
+
+;;; In these routines, ``pvar'' and ``pbinding'' refer to LAMBDA
+;;; (and LET and LETREC) variables, and ``var'' and ``binding''
+;;; refer to type variables.
+
+(define (bind pvar val poly? env)
+  (cons (list pvar val poly? (if poly? (generic-vars val env)))
+        env))
+
+(define pbinding-value cadr)
+(define pbinding-polymorphic? caddr)
+(define pbinding-generic-vars cadddr)
+
+(define (lookup pvar env return)
+  (let ((probe (assq pvar env)))
+    (if probe
+        (return (pbinding-value probe)
+                (pbinding-polymorphic? probe)
+                (pbinding-generic-vars probe))
+        (error "unbound variable" pvar))))
+
+(define (bind-pvars pvars vals poly? env)
+  (if (null? pvars)
+      env
+      (bind-pvars (cdr pvars)
+                  (cdr vals)
+                  poly?
+                  (bind (car pvars) (car vals) poly? env))))
+
+(define (rename-generic-vars-in pat generic-vars)
+  (let ((id (unique-id)))
+    (letrec ((copy
+              (lambda (pat)
+                (cond ((constant? pat) pat)
+                      ((var? pat)
+                       (if (member pat generic-vars)
+                           (make-new-var (cadr pat) id)
+                           pat))
+                      (else (cons (copy (car pat))
+        (copy (cdr pat))))))))
+      (copy pat))))
+
+(define (generic-vars pat env)
+  (cond ((constant? pat) '())
+        ((var? pat) (if (generic-var? pat env) (list pat) '()))
+        (else (union (generic-vars (car pat) env)
+                     (generic-vars (cdr pat) env)))))
+
+;;; A type variable is generic iff it doesn't occur in the type 
+;;; of any program variable bound by LAMBDA or LETREC.
+
+(define (generic-var? var env)
+  (cond ((null? env) #t)
+        ((and (not (pbinding-polymorphic? (car env)))
+              (occurs-in? var (pbinding-value (car env))))
+         #f)
+        (else (generic-var? var (cdr env)))))
+
+(define (occurs-in? var pat)
+  (cond ((constant? pat) #f)
+        ((var? pat) (equal? var pat))
+        (else (or (occurs-in? var (car pat))
+                  (occurs-in? var (cdr pat))))))
+
+;;; Utility
+
+(define (union l1 l2)
+  (cond ((null? l1) l2)
+        ((null? l2) l1)
+        ((member (car l1) l2) (union (cdr l1) l2))
+        (else (cons (car l1) (union (cdr l1) l2)))))
+\end{verbatim}
+\newpage
+\begin{verbatim}
+;;; Unifier (from Abelson & Sussman "Structure and 
+;;; Interpretation of Computer Programs", with a bug fix)
+
+;;; Given two terms (patterns), UNIFY finds the most general
+;;; substitution that makes the two terms equal.
+;;; Substitutions are represented by environment-like
+;;; structures called "frames".
+
+;;; See the book for a complete exposition.
+
+(define (unify p1 p2 frame)
+  (internal-unify p1 p2 frame))
+
+(define (internal-unify p1 p2 frame)
+  (cond ((eq? frame 'failed) 'failed)
+        ((var? p1)
+         (if (var? p2)
+             (var-var-match p1 p2 frame)
+             (extend-if-possible p1 p2 frame)))
+        ((var? p2) (extend-if-possible p2 p1 frame))
+        ((constant? p1)
+         (if (constant? p2)
+             (if (same-constant? p1 p2)
+                 frame
+                 'failed)
+             'failed))
+        ((constant? p2) 'failed)
+        (else (internal-unify (cdr p1)
+                              (cdr p2)
+                              (internal-unify (car p1)
+                                              (car p2)
+                                              frame)))))
+
+;;; Extend FRAME with a substitution of VAL for VAR,
+;;; if this is consistent with the substitution already 
+;;; given by FRAME.
+
+(define (extend-if-possible var val frame)
+  (let ((value-cell (binding-in-frame var frame)))
+    (if (null? value-cell)
+        (if (freefor? var val frame)
+            (extend var val frame)
+            'failed)
+        (internal-unify (binding-value value-cell)
+                        val
+                        frame))))
+
+;;; If we substitute VAL for VAR, VAR must not occur in VAL.
+
+(define (freefor? var exp frame)
+  (define (freewalk e)
+    (cond ((constant? e) #t)
+          ((var? e)
+           (if (equal? var e)
+               #f
+               (let ((b (binding-in-frame e frame)))
+                 (if (null? b)
+                     #t
+                     (freewalk (binding-value b))))))
+          ((freewalk (car e)) (freewalk (cdr e)))
+          (else #f)))
+  (freewalk exp))
+\end{verbatim}
+\newpage
+\begin{verbatim}
+(define (var-var-match v1 v2 frame)
+  (if (equal? v1 v2)
+      frame
+      (let ((b1 (binding-in-frame v1 frame))
+            (b2 (binding-in-frame v2 frame)))
+        (if (null? b1)
+            (if (null? b2)
+                (extend v1 v2 frame)
+                (internal-unify v1
+                                (binding-value b2)
+                                frame))
+            (if (null? b2)
+                (internal-unify (binding-value b1)
+                                v2
+                                frame)
+                (internal-unify (binding-value b1)
+                                (binding-value b2)
+                                frame))))))
+
+;;; INSTANTIATE takes a pattern and a frame and performs the
+;;; substitution represented by frame.
+;;; E.g.  (instantiate '(a (? b))
+;;;                    (extend '(? b) '(c . (? d))
+;;;                            (extend '(? d) '((? e) f)
+;;;                                    the-empty-frame)))
+;;;   yields   (a (c (? e) f))
+
+(define (instantiate pat frame)
+  (letrec ((copy
+            (lambda (pat)
+              (cond ((constant? pat) pat)
+                    ((var? pat)
+                     (let ((vcell (binding-in-frame pat frame)))
+                       (if (null? vcell)
+                           pat
+                           (copy (binding-value vcell)))))
+                    (else
+                     (cons (copy (car pat))
+                           (copy (cdr pat))))))))
+    (copy pat)))
+\end{verbatim}
+\newpage
+\begin{verbatim}
+;;; Utilities
+
+(define (var? x)
+  (and (pair? x) (eq? (car x) '?)))
+
+(define (constant? x)
+  (not (pair? x)))
+
+(define same-constant? equal?)
+
+(define (make-binding var value)
+  (cons var value))
+
+(define binding-var car)
+(define binding-value cdr)
+(define binding-in-frame assoc)
+
+(define (extend var val frame)
+  (cons (make-binding var val) frame))
+
+(define (lookup-in-frame var frame)
+  (binding-value (binding-in-frame var frame)))
+
+(define the-empty-frame '())
+
+(define unique-id
+  (let ((n 0))
+    (lambda () (set! n (+ n 1)) n)))
+
+(define (make-new-var prefix id)
+  (list '?
+        (string->symbol
+          (string-append (symbol->string prefix)
+                         "-"
+                         (number->string id '(heur))))))
+
+
+;;; Expression abstraction
+
+(define (eq-car? keyword)
+  (lambda (exp) (and (pair? exp) (eq? (car exp) keyword))))
+
+(define keywords '(quote if lambda let letrec))
+(define (pvariable? exp)
+  (and (symbol? exp) (not (memq exp keywords))))
+
+(define (combination? exp)
+  (and (pair? exp) (not (memq (car exp) keywords))))
+(define operator car)
+(define operands cdr)
+
+(define (literal? exp)
+  (or (number? exp) (char? exp) (string? exp) (boolean? exp)))
+
+(define quotation? (eq-car? 'quote))
+(define quotation-value cadr)
+
+(define lambda-form? (eq-car? 'lambda))
+(define lambda-parameters cadr)
+(define lambda-body caddr)
+
+(define if-form? (eq-car? 'if))
+(define if-test cadr)
+(define if-consequent caddr)
+(define if-alternate cadddr)
+
+(define let-form? (eq-car? 'let))
+(define let-bindings cadr)
+(define let-body caddr)
+
+(define letrec-form? (eq-car? 'letrec))
+(define letrec-bindings cadr)
+(define letrec-body caddr)
+
+;;; Type-expression abstraction
+
+(define (base-type? type)
+  (memq type '(num bool symbol)))
+
+(define (make-proc-type domain-list range)
+  `(proc ,domain-list ,range))
+(define proc-type? (eq-car? 'proc))
+(define domain-types cadr)
+(define range-type caddr)
+
+(define (make-list-type type)
+  `(list ,type))
+(define list-type? (eq-car? 'list))
+(define list-element-type cadr)
+
+\end{verbatim}
+
+\end{body}

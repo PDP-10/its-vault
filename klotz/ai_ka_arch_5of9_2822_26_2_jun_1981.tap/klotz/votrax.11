@@ -1,0 +1,305 @@
+; -*- MODE:LISP; BASE:8 -*-
+
+; HARDWARE PINOUTS
+; Bit	Lispm J-8	Votrax	Function	COMMENT
+; 
+; 0	1		A	D-0		DATA-IN
+; 1	2		B	D-1
+; 2	3		C	D-2
+; 3	4		D	D-3
+; 4	5		E	D-4
+; 5	6		F	D-5
+; 6	7		H	D-6
+; 7	8		J	D-7
+; 8	9		14	D-8		REQUIRES ROM EXAPANSION
+; 9	10		K	I1		INFLECTION (NORMALLY 0)
+; 10	11		L	I2		INFLECTION (NORMALLY 0)
+; 11	12		12	SEL		WORD=0 PHONEME=1
+; 12	13		6	LOAD		HIGH LOADS WORD
+; 13	14		10	STB		HIGH LOADS PHONEME
+; 14	15
+; 15	16
+; 
+; INPUT LINES
+; 0	17		9	-A/R		1 INDICATES READY FOR PHONEME
+; 1	18		7	-EOM		0 INDICATES WORD IS OVER
+
+(DEFVAR VOTRAX-UNIBUS-ADDRESS 764126)
+(DEFVAR VOTRAX-CURRENT-STATE 0)	;LAST WORD SENT TO VOTRAX PORT
+
+(DEFUN STUFF-WORD (NUM)
+  (OUT-TO-VOTRAX 0   1303)			;SEL = 0, LOAD=0, STB=0
+  (OUT-TO-VOTRAX NUM 0010)			;WORD NUM
+  (OUT-TO-VOTRAX 1   1401)			;LOAD=1
+  (OUT-TO-VOTRAX 0   1401)			;LOAD=0
+  )
+
+(DEFUN STUFF-PHONEME (NUM)
+  (OUT-TO-VOTRAX 1   1303)			;SEL = 1, LOAD= 0, STB=0
+  (OUT-TO-VOTRAX NUM 0006)
+  (OUT-TO-VOTRAX 1   1501)
+  (OUT-TO-VOTRAX 0   1501)			;STB=1
+  )
+	
+(DEFUN STUFF-PHONEME-AND-TONE (NUM TON)
+  (OUT-TO-VOTRAX 1   1303)
+  (OUT-TO-VOTRAX NUM 0006)
+  (OUT-TO-VOTRAX TON 1102)
+  (OUT-TO-VOTRAX 1   1501)
+  (OUT-TO-VOTRAX 0   1501))
+
+(DEFUN OUT-TO-VOTRAX (VAL PPSS)
+  (SETQ VOTRAX-CURRENT-STATE (DPB VAL PPSS VOTRAX-CURRENT-STATE))
+  (%UNIBUS-WRITE VOTRAX-UNIBUS-ADDRESS VOTRAX-CURRENT-STATE))
+
+(DEFUN WORD-READY? ()
+  (NOT (BIT-TEST 2 (%UNIBUS-READ VOTRAX-UNIBUS-ADDRESS))))
+
+(DEFUN PHONEME-READY? ()
+  (BIT-TEST 1 (%UNIBUS-READ VOTRAX-UNIBUS-ADDRESS)))
+
+(defun r-stuff ()
+  (do i 0 (1+ i) (= i -1) (stuff-word (\ i 256.)) (do nil ((word-ready?) (process-sleep 30)) )))
+
+(defun test-word (i &optional (p 30.))
+  (do nil ((kbd-tyi-no-hang))
+    (stuff-word (\ i 256.))
+    (do nil ((word-ready?) (process-sleep p)))))
+
+;;; The words in the ROM and the Phonemes have all been symbolically identified below.
+;;; The (not completely implemented) idea is this:
+;;;    Functions which expect phonemes deal either with the numeric value, the symbolic
+;;;    value, or a list of values on the PHONEME-LIST property of a symbol.
+;;;    Functions which expect words take internal ROM numbers, word symbols which match
+;;;    an internally (ROM) provided word, or a symbol which has a PHONEME-LIST property
+;;;    which gets used as a set of phonemes.
+
+(defconst *word-list*
+ '(a abort accept add address adjust alert all ampere and ask automatic
+   b back basic board break button by byte
+   c call cancel carpenter case cent centi change check clear clock close colon
+     comma command connect control crane cease cycle
+   d danger day degree device direction display dollar 	door down
+   e east eight eighty eleven end enter equal er exit
+   f facility fail pause farad fast feet fifteen fifty fire five flow foreman
+     forty four from full function
+   g gauge gate get glitch go great green
+   h have help henry hertz high hold hour how hundred
+   i inch initial insert inspect intrude is
+   j jog
+   k
+   l left less light line low
+   m machine make manual mark measure mega meter micro mill milli minus minute
+     mistake module motor move much
+   n name nine ninty no noise north number
+   o object of off ohm omit on one open operate ounce out over
+   p paren part pass past pause percent pice please plus point position pound
+     power press pressure price probe process program pull push put
+   q quote
+   r range read ready red repair repeat replace request return right
+   s sss safe seconf semi service set seven seventy shut six sixty slash slow smoke
+     south space speed star start stop swap switch
+   t teen ten test than the thirteen thirty thousand three time tone tool total
+     turn twelve twenty two
+   u under unit up
+   v value valve volt
+   w weight ward what welder west
+   x
+   y yellow yes
+   z zero
+   ))
+
+(defvar VOTRAX-INTERACTIVE-MODEP nil)
+;T means say word when it is defined.
+
+(defconst *phoneme-list*
+	  '(eh3 eh2 eh1 pa0 dt a2 a1 zh ah2 i3 i2 i1 m n b v ch sh z aw1 ng ah1 oo1
+		oo l k j h g f d s a ay y1 uh3 ah p o i u y t r e w ae ae1 aw2 uh2
+		uh1 uh o2 o1 iu u1 thv th er eh e1 aw pa1 stop))
+
+(defun setup-words ()
+  (loop for word in *word-list*
+	and i upfrom 0
+      doing
+      (putprop word i 'word-code)))
+
+(defun playback-words (&optional (by-word-list t) (start-index 0))
+  (if by-word-list 
+      (loop for word in *word-list*
+	    for index = (get word 'word-code)
+	  doing
+	    (word index 60.))
+      (loop for index upfrom start-index
+	  doing
+	    (word index 60.))))
+
+(defun setup-phonemes ()
+  (loop for phoneme in *phoneme-list*
+	and i upfrom 0
+      doing
+      (putprop phoneme i 'phoneme-code)))
+
+(defmacro stuff-and-say-word (word &optional p)
+  `(do nil ((stuff-word (\ ,word 256.)) (word-ready?) (if ,p (process-sleep ,p)))))
+
+(defun say-word (word &optional p)
+  (cond ((numberp word) (stuff-and-say-word word p))
+	(t (let ((word-code (get word 'phoneme-list)))
+	     (cond (word-code (say-phonemes word-code))
+		   (t (setq word-code (get word 'word-code))
+		      (cond (word-code (stuff-and-say-word word-code p))
+			    (t (format t "~%I didn't know how to say ~A~%" word)))))))))
+
+(defun say-phoneme (phoneme &optional p)
+  (if (not (numberp phoneme)) (setq phoneme (get phoneme 'phoneme-code)))
+  (stuff-phoneme phoneme)
+  (if p (process-sleep p))
+  (do nil ((phoneme-ready?))))
+
+(defun say-phoneme-2 (phoneme &optional pitch p)
+  (if (not (numberp phoneme)) (setq phoneme (get phoneme 'phoneme-code)))
+  (stuff-phoneme-and-tone phoneme pitch )
+  (if p (process-sleep p))
+  (do nil ((phoneme-ready?))))
+
+(defun say-words (words &optional (p 45.))
+  (dolist (word words)
+    (cond ((listp word) (say-words word 5.))
+	  (word (say-word word p)))))
+
+(defun say-phonemes (phonemes &optional (p 5.))
+  (if (atom phonemes) (setq phonemes (get phonemes 'phoneme-list)))
+  (dolist (phoneme phonemes) (if phoneme (say-phoneme phoneme p)))
+  (sp-stop))
+
+(defmacro sp (l &rest args)
+  `(say-phonemes ,l . ,args))
+
+(defun sp-stop ()
+  (stuff-phoneme (get 'stop 'phoneme-code)))
+
+(defmacro defword (word phoneme-list)
+  (cond (votrax-interactive-modep (say-phonemes (eval phoneme-list))))
+  `(putprop ',word
+	    (mapcar #'(lambda (ph) (if (not (numberp ph))
+				       (get ph 'phoneme-code)
+				       ph))
+		    ,phoneme-list)
+	    'phoneme-list))
+
+(setup-words)
+(setup-phonemes)
+
+(defmacro append-words (&rest words)
+  `(loop for word in ',words
+      appending (get word 'phoneme-list)))
+
+(defword /, '(pa1))
+
+(defword am '(ae m))
+(defword batali '(b uh2 t ae1 l y))
+(defword blows '(b l oo  w s))
+(defword bull '(b oo l l))
+(defword car '(k h ah r))
+(defword cdr '(k h oo1 d r r))
+(defword cond '(k ah n n d h))
+(defword defun '(d y f uh1 n n))
+(defword danny '(d ae n n y y))
+(defword dead '(d eh1 d))
+(defword eq '(y y k y u1))
+(defword else '(eh1 l s z))
+(defword fact '(f ae k t h))
+(defword fuck '(f uh k h))
+(defword fu '(f uh h t k pa1 pa1 y iu u1 u1))
+(defword gjs '(j h eh1 r r y y))
+(defword kaka '(k k ah k h ah))
+(defword goats '(g o t s))
+(defword hello '(h eh3 l o w))
+(defword hungry '(h uh1 n g r y))
+(defword shit '(sh sh sh i2 t t))
+(defword then '(thv eh n n))
+(defword times '(t ah1 eh3 y m z))
+(defword you '(y1 u1))
+
+(defword bs (append-words bull shit))
+
+(setq fact '(defun fact n /, cond eq n zero then one else n times fact of n minus one))
+
+;acw's
+(defword jabber '(t w uh2 z b r i3  l i1 g pa0 ae n d thv uh s l ah2 y1 thv y t h o v z
+		    d i d g ah2 y1 r pa0 ae n d g i1 m b l pa0 i2 n thv uh w a y1 b
+		    aw l m i2 m z y w er thv uh2 b o r o g o v z
+		    ae n d thv uh m o m r ah th s ah2 oo1 t g r a y1 b))
+;klotz's
+(defword dorshka '(d o r sh k uh))
+(defword process '(p r ah2 s eh1 s))
+(defword supdup '(s u p d u p h))
+(defword wants '(w ah2 n t s z))
+(defword to '(t iu u1))
+(defword type '(t ah2 y p))
+(setq foo '(process supdup one wants to type /, out))
+(defword poobah '(p p u u b ah ah))
+(defword euuh '(e u u))
+(defword blecky '(b l eh1 k k e))
+(defword giant '(d j uh3 ah2 y uh1 n t h))
+(defword dont '(d o n t h))
+(defword die '(d ah1 ah2 y))
+(defword dogbr '(d aw g PA1 b r eh1 thv))
+(defword animal '(ae n y m ah l))
+(defword janine '(d j uh1 n y y y n))
+(defword ms '(m i1 s i3 s i p y y))
+(defword funway '(f uh n w a y))
+(defword state '(s t a t h))
+(defword your '(y1 o2 r))
+(defword first '(f r z t h))
+(defword hgbaker '(a t ch PA0 d j e PA0 b a k er))
+(defword dot '(d ah2 t h))
+(defword symbolics '(s i2 m b ah l i3 k s))
+(defword at '(ae t h))
+(defword mit '(eh m m PA0 ah y PA0 t e1 e1))
+(defword multics '(m uh1 l t i1 k s))
+(defword sd '(s eh3 l f d e1 s t r uh2 k t h))
+(defword will '(h w i3 l l))
+(defword begin '(b e1 g eh n))
+(defword in '(i n))
+(defword seconds '(s eh1 k uh2 n d z))
+(defword has '(h ae z h))
+(defword been '(b i n))
+(defword cancelled '(k h ae n s uh2 l d h))
+(defword ai '(a y PA0 ah1 eh3 y))
+(defword its '(ah eh3 y PA0 t e1 e1 PA0 eh1 s))
+(defword going '(g o i1 ng h))
+(defword soup '(s u p h))
+(defword tourists '(t o r i z t z h))
+(defword logout '(l aw g h))
+(defword unhappy '(uh n h ae p e))
+(defword maknam '(m ae k PA0 n ae m))
+(defword just '(d j uh z t h))
+(defword do '(d iu u1 h))
+(defword gposn '(d j e e PA0 p ah z i n))
+(defword if '(i f f h))
+(defword pen '(p i n h))
+(defword alt '(ah l t h))
+(defword farhn '(f ah n))
+(defword auf '(aw1 f))
+(defword de '(d e1))
+(defword autobahn '(aw t o b ah n))
+
+
+;phrases
+(say-words '(please state your first name))
+(say-words '(process supdup one wants to type out))
+(say-words '(exit left funway))
+(say-words '(euuh blecky))
+(say-words '(hello giant dorshka))
+(say-words '(dont die))
+(say-words '(hgbaker dot symbolics at mit multics))
+(say-words '(sd will begin /, in five seconds))
+(say-words '(sd has been cancelled))
+(say-words '(ai its /, twelve fifteen going down in zero zero /, zero zero /, zero two))
+(say-words '(two much soup))
+(say-words '(tourists /, please log out))
+(say-words '(unhappy maknam))
+(say-words '(just do a gposn if pen is up))
+(say-words '(h k alt alt))
+(say-words '(farhn farhn farhn auf de autobahn))

@@ -1,0 +1,8 @@
+;;;-*-LISP-*-
+
+(COMMENT)
+
+(SETQ BASE 10. IBASE 10.)
+
+(DEFUN L ()
+  (LOAD "FOO"))

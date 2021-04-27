@@ -1,0 +1,62 @@
+;-*-MIDAS-*-
+.ENABL LC
+.NLIST SEQ
+.TITLE Apple Ascii Loader
+
+;This code downloads $7000 (28672.) of ascii text from the
+;serial interface card and stores it in memory beginning
+;from $2000-$9000.
+
+;Exits when about to write in $9000, or when it reveices a null (ascii 0).
+
+STATUS=$C0AE			;Slot 3
+DATA=$C0AF			;Slot 3
+
+BUFFER=$2000
+BUFEND=$9000
+
+;Page zero locations.
+LOCPT=0				;Two bytes. Current location to store it.
+
+.=$1BF0				;Right beneath the buffer.
+INIT:	LDA #$03
+	STA STATUS		;INIT ACIA
+	LDA #$11
+	STA STATUS		;SET BAUD RATE TO HIGH
+
+	LDA #BUFFER&$FF		;Initialize pointer.
+	STA LOCPT
+	LDA #BUFFER^
+	STA LOCPT+1
+	LDY #'~
+
+SLOAD:	JSR GCHAR
+	CMP #$00
+	BEQ EXIT
+	STA (LOCPT),Y
+	INC LOCPT
+	BNE SLOAD
+	INC LOCPT+1
+	LDA LOCPT+1
+	CMP #BUFEND^
+	BCC SLOAD
+EXIT:	RTS			;Done.
+
+;Returns with a character in A.  Doesn't trash Y.
+GCHAR:	LDA STATUS
+	LSR A
+	BCC GCHAR
+	LDA DATA
+	AND #$7F
+	RTS
+
+.IFNE 0	
+;This code sends characters.
+SENDC:	LDX #$0D
+TLOOP:	LDA STATUS
+	AND #$02
+	BEQ TLOOP
+	STX DATA
+	RTS
+.ENDC
+.END

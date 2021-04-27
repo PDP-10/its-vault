@@ -1,0 +1,388 @@
+% -*- Mode: TeX -*-
+% 6821 Handout 48.
+\documentstyle[11pt,6821]{article}
+
+\handout{48}{5 November 1987}
+\handouttitle{Types III: Subtyping, Bounded Quantification, Abstract
+Types, and Kinds}
+
+\input{6821-macros}
+\input{6821-commands}
+\newcommand{\ts}{\mbox{$\:\vdash\:$}}                   % turnstyle and space
+\newcommand{\tag}{\mbox{\it tag}}
+\newcommand{\rulename}[1]{\mbox{[{\it#1}\/]}}
+
+\newcommand{\BNFor}{\mbox{$\mid$}}      % a `|' for use in BNF grammars
+
+\begin{body}
+
+(The following discussion draws on Cardelli and Wegner's article
+``On Understanding Types, Data Abstraction, and Polymorphism.'')
+
+\section*{Subtyping}
+
+We say that a type $T_{1}$ is {\em a subtype of\/} a type $T_{2}$
+(written $T_{1} \sqsubseteq T_{2}$),
+when all values of $T_{1}$ are also values of $T_{2}$.
+We also say that $T_{1}$ is {\em compatible with\/} $T_{2}$ or that
+$T_{1}$ is {\em included in\/} $T_{2}$.
+
+To formalize this, we give a set of inference rules for type inclusion.
+We use a set of inclusion constraints, $C$, that give inclusions between types.
+Instead of assuming that there is a
+global set of inclusion constraints,
+we state as axioms the inclusion constraints on the built-in types.
+
+The following are a set of rules for type inclusion,
+stated in a format compatible with Handout 45.
+To make the rules more lucid, we use as metavariables both $T$ and $S$
+(with subscripts) to stand for type expressions and metavariables $t$ and $s$
+to stand for type variables.
+
+\begin{description}
+\item[\rulename{var-$\sqsubseteq$}]
+\[    {\hbox{$C$ states that $t_{1} \sqsubseteq t_{2}$}}
+\over {C \ts t_{1} \sqsubseteq t_{2}} \]
+
+\item[\rulename{reflex-$\sqsubseteq$}]
+The {\em reflex\/} rule simply states that a type is included in itself,
+even under the empty set of constraints:
+${ \ts T \sqsubseteq T}$.
+
+\item[\rulename{reci-$\sqsubseteq$}]
+The {\em reci\/} rule states compatability for record types.  Note that the
+subtype may have {\em more\/} fields than the supertype.
+\[ C \ts \code{(recordof $\ldots$ (${\tag}_{n}$ $T_{n}$)
+                        $\ldots$ (${\tag}_{m}$ $T_{m}$))}
+        \sqsubseteq
+        \code{(recordof $\ldots$ (${\tag}_{n}$ $T_{n}$))}
+        \]
+
+For example, $\code{(recordof (x num) (y num))} \sqsubseteq \code{(recordof (x num))}$.
+
+\item[\rulename{oneofi-$\sqsubseteq$}]
+You have seen the compatability rule for oneof types before.
+This version allows the types associated with corresponding tags to be in the
+$\sqsubseteq$ relation, since oneofs are assumed to be immutable.
+\[    {C \ts S_{1} \sqsubseteq T_{1}, \ldots, C \ts S_{n} \sqsubseteq T_{n}}
+\over {C \ts \vtop{\hbox{\code{(oneof (${\tag}_{1}$ $S_{1}$) $\ldots$ (${\tag}_{n}$ $S_{n}$))}}
+        \hbox{$\sqsubseteq$~
+        \code{(oneof (${\tag}_{1}$ $T_{1}$) $\ldots$ (${\tag}_{n}$ $T_{n}$)
+                        $\ldots$ (${\tag}_{m}$ $T_{m}$))}}}
+        } \]
+
+For example: $\code{(oneof (x num))} \sqsubseteq \code{(oneof (x num) (y num))}$.
+
+\item[\rulename{mutable oneofs}]
+For mutable {\tt oneof} types, there are no non-trivial type inclusions!
+
+\item[\rulename{proc-$\sqsubseteq$}]
+The {\em proc\/} rule is as before.
+\[    {C \ts S\ \sqsubseteq\ T ~~;~~ \forall i~(S_i\ \sqsubseteq\ T_i)}
+\over {      C \ts \code{(proc ($T_1$ $\ldots$ $T_n$) $S$)}
+       \sqsubseteq \code{(proc ($S_1$ $\ldots$ $S_n$) $T$)}}
+\]
+
+For example:
+\begin{eqnarray*}
+             \code{(proc} & \code{((oneof (x num) (y num)))} & \code{(recordof (x num) (y num)))} \\
+ \sqsubseteq \code{(proc} & \code{((oneof (x num)))}         & \code{(recordof (x num)))}
+\end{eqnarray*}
+\end{description}
+
+\section*{Bounded Quantification}
+
+As an example of why bounded quantification is needed, consider
+the procedure:
+\begin{verbatim}
+(the (proc ((recordof (x num))) (recordof (x num)))
+  (lambda ((r (recordof (x num))))
+    (record-set! r x (+ 1 (select r x)))
+    r))
+\end{verbatim}
+If this procedure is applied to a value of type
+{\tt (recordof (x num) (y num))}
+then the result does not have a {\tt y} field.
+Bounded quantification solves this problem.
+We change the syntax of expressions and types to allow bounded quantification
+as follows.
+\begin{tabbing}
+{\tt E ::= (plambda (($s_{1}$ <= $T_{1}$) $\ldots$ ($s_{n}$ <= $T_{n}$)) E)} \\
+{\tt T ::= (poly (($s_{1}$ <= $T_{1}$) $\ldots$ ($s_{n}$ <= $T_{n}$)) T)} \\
+\end{tabbing}
+
+\begin{description}
+\item[\rulename{top}]
+So that old-style {\tt plambda} expressions and {\tt poly} types still have
+meaning, we introduce the type {\tt Top} as the top of the type lattice.
+Every type is included in {\tt Top}.
+\[    C \ts T \sqsubseteq \code{Top}  \]
+\end{description}
+
+We interpret a {\tt plambda} expression of the form
+{\tt (plambda ($t_{1} \ldots t_{n}$) E)}
+as shorthand for:
+\begin{center}
+{\tt (plambda (($t_{1}$ <= Top) $\ldots$ ($t_{n}$ <= Top)) E)}
+\end{center}
+
+\begin{description}
+\item[\rulename{proj}]
+We also change the type inference rule for {\tt proj}.
+\begin{displaymath}
+{A \ts E: \code{(poly (($s_1$ <= $T_{1}$) $\ldots$ ($s_{n}$ <= $T_{n}$))
+                                $T$)};
+       C \ts S_1 \sqsubseteq T_1, \ldots, C \ts S_n \sqsubseteq T_n
+                                }
+\over
+{A,C \ts \code{(proj $E$ $S_1$ $\ldots$ $S_n$)}: [S_1/s_1,\ldots S_n/s_n]T}
+\end{displaymath}
+Note that the type environment and the set of inclusion constraints are both
+involved in this rule.
+
+\item[\rulename{plambda}]
+The {\em plambda\/} rule of Handout 45
+must also be changed to reflect the changed syntax
+for {\tt plambda} expressions and {\tt poly} types.
+\end{description}
+
+% This must appear after the \end{description} otherwise the end of the
+% denominator is lost (due to margin constraints...i.e.,LaTeX sucks!
+\begin{displaymath}
+{s_1 \sqsubseteq T_1, \ldots, s_n \sqsubseteq T_n, C,A \ts E: T}
+\over
+{A \ts \code{(plambda (($s_1$ <= $T_1$) $\ldots$ ($s_n$ <= $T_n$)) $E$)}: 
+       \code{(poly    (($s_1$ <= $T_1$) $\ldots$ ($s_n$ <= $T_n$)) $T$)}}
+\end{displaymath}
+
+We can now write our previous example as follows:
+\begin{verbatim}
+(plambda ((t <= (recordof (x num))))
+  (lambda ((r t))
+    (record-set! r x (+ 1 (select r x)))
+    r))
+\end{verbatim}
+This expression has the type:
+\begin{verbatim}
+(poly ((t <= (recordof (x num)))) (proc (t) t))  .
+\end{verbatim}
+It can be applied to a subtype without forgetting record fields.
+
+\begin{description}
+\item[\rulename{fai}]
+We can define compatability of {\tt poly} types as well.
+A simple definition is the following.
+\[   { s_1 \sqsubseteq T_1, \ldots, s_n \sqsubseteq T_n, C \ts S \sqsubseteq T;
+        \: \hbox{$s_i$ not free in $C$} }
+\over
+     { \code{(poly (($s_1$ <= $T_1$) $\ldots$ ($s_n$ <= $T_n$)) $S$)}
+     \sqsubseteq
+       \code{(poly (($s_1$ <= $T_1$) $\ldots$ ($s_n$ <= $T_n$)) $T$)}
+     }  \]
+\end{description}
+
+\section*{Abstract Types}
+
+Thus far we have introduced procedural abstraction (\code{lambda}),
+which allows us to abstract an algorithm from the values on which it
+operates.  We would now like to abstract
+certain behavioral properties of data from the particular data
+structures and algorithms used to implement that behavior.
+
+Recall that the only thing that one can do with a procedure in Scheme
+is to apply it; its internal state (environment) and its code are
+completely hidden from its clients.  We would like to have a mechanism
+that would allow us to hide data structures and the operations that
+manipulate them from clients of the data structure.  Such a mechanism
+is called a {\em data abstraction\/} mechanism.
+
+Unfortunately, in the type system we have defined so far, there is no
+way to hide the implementation of a data structure from its clients.
+For example, a type definition such as the following:
+\begin{verbatim}
+(define-type complex (pair num num))
+\end{verbatim}
+merely defines an abbreviation.  Thus there is no distinction between
+the type {\tt complex} and the type {\tt (pair num num)}.  Students of
+MIT's 6.001 will recall that it is possible to achieve data
+abstraction through the use of procedures, but a more natural way to
+achieve data abstraction in a typed language is through type checking.
+
+\newpage
+
+To address this problem, we introduce new expressions
+\begin{tabbing}
+{\tt E ::}\={\tt = (package $t$ $T_{\it rep}$ $T_{\it interf}$ $E$)} \\
+          \>{\tt | (open $E_{\it impl}$ $v_{\it interf}$ $t_{\it abs}$ $E$)}
+\end{tabbing}
+and a new type expression
+\begin{tabbing}
+{\tt T ::= (exists $t$ $T$)}
+\end{tabbing}
+into our language.
+%An expression of the form
+%\code{(package $t$ $T_{\it rep}$ $T_{\it interf}$ $E$)}
+%returns the result of $E$, which is a value of type $T_{\it interf}
+%(usually a record of procedures) that provides access to this
+%implementation of an abstract type.
+%[---]
+
+As an example of creating a value of an \code{exists} type, consider the
+following.
+\begin{verbatim}
+(define complex-impl
+  (package complex           ; the name of the hidden type
+           (pair num num)    ; the rep. of the hidden type
+           (recordof         ; the type of the interface
+             (create (proc (num num) complex))
+             (add (proc (complex complex) complex))
+             (minus (proc (complex) complex))
+             (real-part (proc (complex) num))
+             (imag-part (proc (complex) num)))
+    (record
+      (create (lambda ((x num) (y num)) (cons x y)))
+      (add (lambda ((x (pair num num)) (y (pair num num)))
+              (cons (+ (car x) (car y)) (+ (cdr x) (cdr y)))))
+      (minus (lambda ((x (pair num num)))
+                (cons (- (car x)) (- (car x)))))
+      (real-part (lambda ((x (pair num num))) (car x)))
+      (imag-part (lambda ((x (pair num num))) (cdr x))))))
+\end{verbatim}
+This defines an implementation of a data abstraction for complex numbers.
+A pair whose {\tt car} is $a$ and whose {\tt cdr}
+is $b$ represents the complex number $a+bi$.
+
+The value of {\tt complex-impl} has the following type:
+\begin{verbatim}
+(exists complex
+  (recordof
+    (create (proc (num num) complex))
+    (add (proc (complex complex) complex))
+    (minus (proc (complex) complex))
+    (real-part (proc (complex) num))
+    (imag-part (proc (complex) num))))
+\end{verbatim}
+
+\newpage
+
+The value {\tt complex-impl} can be used in an {\tt open} expression.
+For example:
+\begin{verbatim}
+(open complex-impl c-ops c-type
+   ((select c-ops real-part) ((select c-ops create) 1 2)))
+\end{verbatim}
+Here the variable \code{c-ops} is bound to the interface record
+and the type variable \code{c-type} is bound to the hidden
+type.  These variables are in scope in the body,
+which is a call to the implementation of the
+\code{real-part} procedure.
+
+In a legal {\tt open} expression, the type name ({\tt c-type} in this
+example) cannot appear free in the type of the expression.
+For example: 
+\begin{verbatim}
+(open complex-impl c-ops c-type
+    ((select create c-ops) 1 2))
+\end{verbatim}
+is illegal because then the type of the expression would be {\tt c-type}.
+
+We can state the type inference rules for \code{package}
+and \code{open} expressions as follows.
+
+\begin{description}
+\item[\rulename{pack}]
+\[  { A \ts E : [T_{\it rep}/t]T_{\it interf}}
+\over {A \ts \code{(package $t$ $T_{\it rep}$ $T_{\it interf}$ $E$)}:
+        \code{(exists $t$ $T_{\it interf}$)}
+        } \]
+
+\item[\rulename{open}]
+\[  { A \ts E_{\it impl}: \code{(exists $t$ $T_{\it interf}$)};\;
+        v_{\it interf}: [t_{\it abs}/t]T_{\it interf}, A \ts E : T;\;
+        \hbox{$t_{\it abs}$ not free in $T$}}
+\over {A \ts \code{(open $E_{\it impl}$ $v_{\it interf}$ $t_{\it abs}$ $E$)}:
+           T } \]
+\end{description}
+
+\section*{Kinds}
+
+Kind-checking is like type-checking for types:
+we want well-formed type expressions to have a kind.
+A grammar for kind expressions is as follows:
+\begin{tabbing}
+K ::=  {\tt type} \BNFor\ \code{(tproc $(K^{*})$ K)}
+\end{tabbing}
+For example, {\tt list} has kind {\tt (tproc (type) type)},
+which says that list is a {\tt tproc} that takes a type as its argument and
+returns a type as its result.
+
+Every well-formed type expression will be of kind \code{type}.
+A type expression is kind checked
+with respect to a particular kind environment.
+We assume that there is a
+global kind environment $G_{k}$ that assigns kinds to the Scheme
+types and type constructors that are
+available in the global environment:
+  \[G_{k} = \{\vtop{\hbox{$\code{list} ::  \code{(tproc (type) type)},$}
+          \hbox{$\code{pair} :: \code{(tproc (type type) type)},$}
+          \hbox{$\code{num} :: \code{type}, \ldots\}$ }}\]
+When we say that a type expression is well-kinded without specifying a
+type environment, $G_{k}$ will be implied.
+
+When a type expression $T$ can be demonstrated to have kind $K$ with respect to
+a kind environment $B$, we will call such a conclusion a {\em kinding} and write
+it as:  $B \ts T :: K$.
+The following are a set of kind inference rules, similar (in kind) to the type
+inference rules given in Handout 45.
+
+\begin{description}
+\item[\rulename{kv}]
+\[
+{\hbox{kind environment $B$ assigns kind $K$ to type $t$}}
+\over
+{B \ts t :: K}
+\]
+
+\item[\rulename{proc}]
+\[    {B \ts T_{1} :: \code{type}, \ldots, B \ts T_{n} :: \code{type}}
+\over {B \ts \code{(proc ($T_{1}$ $\ldots$ $T_{n-1}$) $T_{n}$)} :: \code{type}} \]
+
+\item[\rulename{poly}]
+\[    {(t_{1} :: K_{1}, \ldots, t_{n} :: K_{n}, B) \ts T :: \code{type}}
+\over {B \ts \code{(poly
+         (($t_{1}$ $K_{1}$) $\ldots$ ($t_{n}$ $K_{n}$)) $T$)} ::
+         \code{type}
+         } \]
+
+\item[\rulename{tlambda}]
+\[    {(t_{1} :: K_{1}, \ldots, t_{n} :: K_{n}, B) \ts T :: K}
+\over {B \ts \code{(tlambda
+         (($t_{1}$ $K_{1}$) $\ldots$ ($t_{n}$ $K_{n}$)) $T$)} ::
+         \code{(tproc ($K_{1}$ $\ldots$ $K_{n}$) $K$)}
+         } \]
+         
+\item[\rulename{kap}]
+\[    {B \ts T :: \code{(tproc ($K_{1}$ $\ldots$ $K_{n}$) $K$)};
+        B \ts T_{1} :: K_{1}, \ldots, B \ts T_{n} :: K_{n}}
+\over {B \ts \code{($T$ $T_{1} \ldots T_{n}$)}  :: K
+        } \]
+
+\item[\rulename{rectype}]
+\[    {t :: \code{type}, B \ts T :: \code{type}}
+\over {B \ts \code{(rectype $t$ $T$)} :: \code{type}
+        } \]
+
+\item[\rulename{oneof}]
+\[    {B \ts T_{1} :: \code{type}, \ldots, B \ts T_{n} :: \code{type}}
+\over {B \ts \code{(oneof ($\tag_{1}$ $T_{1}$) $\ldots$ ($\tag_{n}$ $T_{n}$))}
+         :: \code{type}
+        } \]
+
+\item[\rulename{recordof}]
+\[    {B \ts T_{1} :: \code{type}, \ldots, B \ts T_{n} :: \code{type}}
+\over {B \ts \code{(recordof ($\tag_{1}$ $T_{1}$) $\ldots$ ($\tag_{n}$ $T_{n}$))}
+         :: \code{type}
+        } \]
+\end{description}
+
+\end{body}

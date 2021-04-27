@@ -1,0 +1,116 @@
+;;; -*- Package: TV -*-
+
+#+Symbolics
+(defun array-initialize (array initial-contents)
+  (fillarray array (list initial-contents)))
+
+#+Symbolics
+(defsubst ceiling (a b)
+  (if (zerop (remainder a b)) (quotient a b)
+      (1+ (quotient a b))))
+
+#+Symbolics
+(defsubst truncate (a b)
+  (quotient a b))
+
+#+Symbolics
+;Make a pixel array of WIDTH by HEIGHT.  You must specify :TYPE as in MAKE-ARRAY.
+(DEFUN MAKE-PIXEL-ARRAY (WIDTH HEIGHT &REST OPTIONS)
+  (LEXPR-FUNCALL 'MAKE-ARRAY
+		 (LIST WIDTH HEIGHT)
+		 ':initial-value 0
+		 OPTIONS))
+#+Symbolics
+(DEFSUBST PIXEL-ARRAY-WIDTH (ARRAY)
+  (ARRAY-DIMENSION-N 1 ARRAY))
+
+#+Symbolics
+(DEFSUBST PIXEL-ARRAY-HEIGHT (ARRAY)
+  (ARRAY-DIMENSION-N 2 ARRAY))
+
+
+(defun magnify-pixel-array-portion (screen-array x-pos y-pos magnification
+			      width height
+			      &optional (x-offset 0) (y-offset 0))
+    (LET* ((SWIDTH (PIXEL-ARRAY-WIDTH SCREEN-ARRAY))
+	   (SHEIGHT (PIXEL-ARRAY-HEIGHT SCREEN-ARRAY))
+	   (array
+	     (MAKE-PIXEL-ARRAY (* 32.  (CEILING WIDTH 32.)) HEIGHT
+			       ':TYPE (ARRAY-TYPE SCREEN-ARRAY))))
+      (WHEN SCREEN-ARRAY
+	(DO ((I (+ (TRUNCATE (- X-OFFSET) MAGNIFICATION) X-OFFSET X-POS) (1+ I))
+	     (I1 0 (+ I1 MAGNIFICATION)))
+	    (( I1 WIDTH))
+	  (DO ((J (+ (TRUNCATE (- Y-OFFSET) MAGNIFICATION) Y-OFFSET Y-POS) (1+ J))
+	       (J1 0 (+ J1 MAGNIFICATION))
+	       TEM)
+	      (( J1 HEIGHT))
+	    (WHEN (AND ( I 0) (< I SWIDTH)
+		       ( J 0) (< J SHEIGHT)
+		       (NOT (ZEROP (SETQ TEM (AR-2 SCREEN-ARRAY I J)))))
+	      (DOTIMES (I2 MAGNIFICATION)
+		(DOTIMES (J2 MAGNIFICATION)
+		  (AS-2 TEM ARRAY (+ I1 I2) (+ J1 J2))))))))
+      array))
+
+
+(defun magnify-window-portion (window magnification width height
+			       &optional
+			       (at-x tv:mouse-last-x)
+			       (at-y tv:mouse-last-y))
+  (tv:prepare-sheet ((send window ':superior))
+    (magnify-pixel-array-portion
+      (send window ':screen-array)
+      at-x
+      at-y
+      magnification
+      width
+      height)))
+
+(defun store-window-portion (array window x y &optional width height)
+  (tv:prepare-sheet ((send window ':superior))
+    (or width (setq width (pixel-array-width array)))
+    (or height (setq height (pixel-array-height array)))
+    (bitblt alu-seta width height
+	    array
+	    0 0
+	    (send window ':screen-array)
+	    x y)))
+
+(defun xor-window-portion (array window x y &optional width height)
+  (tv:prepare-sheet ((send window ':superior))
+    (or array (setq array (make-pixel-array width height ':type
+					    (array-type (send window ':screen-array)))))
+    (or height (setq height (pixel-array-height array)))
+    (bitblt alu-xor width height
+	    array
+	    0 0
+	    (send window ':screen-array)
+	    x y)))
+
+(defun copy-window-portion (window x y width height &optional array)
+  (or array (setq array (make-pixel-array width height ':type
+					  (array-type (send window ':screen-array)))))
+  (tv:prepare-sheet ((send window ':superior))
+    (bitblt alu-seta width height
+	    (send window ':screen-array)
+	    x y
+	    array
+	    0 0)
+    array))
+
+(defun mag (window x y times width height WAIT-FUNCTION)
+  (let ((old-array))
+    (setq old-array  (copy-window-portion window
+					  x y
+					  width height))
+    (store-window-portion (magnify-window-portion window times width height x y)
+			window
+			x y
+			width height)
+    (funcall wait-function)
+    (store-window-portion old-array window x y width height)))
+
+(defun test ()
+  (do () (())
+  (tv:mag (tv:window-under-mouse) tv:mouse-last-x tv:mouse-last-y 4. 128. 128.)))

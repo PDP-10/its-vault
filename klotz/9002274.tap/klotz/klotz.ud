@@ -1,0 +1,31 @@
+To:bug-emacs
+cc: hal@sri-nic.arpa
+s: C-Y M-Y C-K
+--Text follows this line--
+Hal Huntley complains that there is a bug causing recently killed
+things disappear from the kill ring.
+
+I'm not saying that this behavior is particularly useful in the
+present circumstances, but I figured I might as well point out what's
+going on here.  You can use M-X View Q-Register..K to see the kill
+ring and follow what's going on here.
+
+When you do C-Y, the text in kill buffer position 0 gets inserted into
+the buffer.
+
+When you do M-Y, that text gets deleted; the copy of the
+text that was in slot 0 gets moved to slot 8, and everything else
+moves down one, resulting in the previously-killed text moving from
+slot 1 to slot 0; then EMACS inserts the new slot 0 text.
+
+When you do C-K, the deleted text goes from the buffer to slot zero,
+and bumps everything else up by one slot.  The thing which was in slot
+8 is lost.
+
+In Huntley's example, the thing in slot 8 which gets lost is the very
+thing which was in slot 0 just before the M-Y.  C-Y M-Y C-K causes the
+thing you C-Y'd to disappear forever.
+
+
+GNU Emacs avoids this problem by keeping the kill ring in a list.  If
+the list length is less than the maximum kill ring length, then moving the item to the end of the list doesn't make it a candidate for expunging on the next

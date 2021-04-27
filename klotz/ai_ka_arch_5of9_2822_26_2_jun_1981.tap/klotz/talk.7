@@ -1,0 +1,167 @@
+;;;-*-MIDAS-*-
+;(C) 1981 MIT Logo Lab.
+;This is part of the Atari Logo interpreter.  This code handles echo
+;negotiation and line drawing.
+;
+;On startup, it downloads a file of code to the Logo machine device,
+;and starts it executing the interpreter.
+;It then waits for commands to come from the Logo device.
+;
+;Any characters typed are buffered up for the Logo machine to
+;get when it asks for them.  They are not echoed.
+;
+;Here are the commands that this code understands:
+;
+;TYI
+;  Returns a character if there is one available.  If not,
+;  waits until one is.
+
+;TYI-NOHANG
+;  Like TYI, but returns 0 if no character is available.
+
+;ECHO
+;  Reads a byte from the Logo Device, and echoes it at the next
+;  cursor position.  Does housekeeping things like scrolling/wrapping.
+
+;CLEAR-SCREEN
+;  Clears the screen and positions the cursor in the upper-left-hand corner.
+
+;TEXT
+;  Reselects the text page, but does not clear it.
+
+;GRAPHICS
+;  Reads a byte and sets the graphics mode accordingly.
+
+;PUTCHAR
+;  Reads a character and prints it at the current cursor position.
+;  {Worry about scrolling?}
+
+;PRINT
+;  Prints characters successively on the screen, ending with
+;  EOL.  Does not automatically supply CRLF.
+
+;SETCURSOR
+;  Reads two bytes and puts the cursor there.
+
+;FORWARD
+;  Reads a floating-point number and a line from the current X,Y
+;  in the current heading that distance.  The line is not actually
+;  drawn unless the pen is down.
+
+;BACK
+;  Reads a floating-point number, and draws in 180-heading.
+
+;SETXY
+;  Reads two floating-point numbers, and draws a line to there
+;  if the pen is down, otherwise moves there.  Does not affect
+;  heading.
+
+;SETHEADING
+;  Reads two bytes, and sets the heading to that amount, which
+;  must be between 0 and 360.
+
+;PENUP
+;  Makes all FORWARD, BACK, etc. commands not draw, but just move the
+;  turtle.
+
+PENDOWN
+;  Makes them draw, too.
+
+
+;HIDETURTLE
+;  Makes the turtle shape disappear.
+
+;SHOWTURTLE
+;  Makes it appear.
+
+;--------------------
+;The KBD itself is opened on device 1.  The Logo host is opened
+;on device 2. The screen is device 6.
+;
+;----------
+START:	JSR OPENH		;open the host.
+	JSR DWNLOD		;download the logo machine
+	JSR OPENK		;open the KBD directly on IOCB0 (nonstandard)
+	JSR TEXT		;select the text screen
+;----------
+OPENK:	STX TYCHRX
+	STY TYCHRY
+	LDX #ICONE
+	LDA #OPEN
+	STA ICCOM,X
+	LDA #KBDNAM^
+	STA ICBAL,X
+	LDA #KBDNAM&$FF
+	STA ICBAH,X
+	JSR CIOV
+	BPL KBDON
+	  JSR SYSBUG
+KBDON:	RTS	
+KBDNAM:	.BYTE "K",EOL
+;
+	
+OPENH:	STX TYCHRX
+	STY TYCHRY
+	LDX #ICTWO
+	LDA #OPEN
+;;;;;	
+KTYI:	STX TYCHRX
+	STY TYCHRY
+KTYIR:	LDX #ICONE
+	LDA #GETCHR
+	STA ICCOM,X		;command byte.
+	LDA #0			;buffer length of 0 means return in A.
+	STA ICBLL,X
+	STA ICBLH,X
+	JSR CIOV
+	BMI TYIEXC		;break or ctrl-3.
+	LDX TYCHRX
+	LDY TYCHRY
+	RTS
+TIEXC:	CPY #$80
+	BNE KTYIR		;ignore c-3
+	JMP BREAK		;inform host that break key is pressed.
+;
+HTYI:	STX TYCHRX
+	STY TYCHRY
+	LDX #ICTWO
+	LDA #GETCHR
+	STA ICCOM,X
+	LDA #0
+	STA ICBLL,X
+	STA ICBHH,X
+	JSR CIOV
+	BMI HTYIEXC
+	LDX TYCHRX
+	LDY TYCHRY
+	RTS
+HTYEXC:	JSR ERROR
+;
+;This is the place to jump to when an interrupt indicating that
+;the host has something to say has been received.
+;(How does sending lots of stuff over the serial line interact
+;with vblank and kbd interrupts?)
+;
+CMD:	JSR HTYI
+	STA HCMD
+	CMP #HICMD+1
+	BCS BADCMD	;let logo know bad request received.
+	ASL A
+	TAY		;get table index
+	LDA CMDTBL,Y
+	TAX
+	LDA CMDTBL+1,Y
+	STA TEMP0+1	;get table entry
+	STX TEMP0
+	JMP (TEMP0)	;jump to it
+
+TYPBUG:	JSR ERROR
+;
+;----------
+;Here is the table of requests which are honored from the host.
+;they should leave <some indicator> set to return a byte in A
+;to the host. <some other indicator> indicates the <some pz location>
+;points to a bunch of bytes to be sent to the host.  If the host
+;doesn't want them, <an error of some sort or another> occurs.
+;
+CMDTBL:	

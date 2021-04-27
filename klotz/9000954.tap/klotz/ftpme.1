@@ -1,0 +1,185 @@
+Date: Sat, 14 Jan 89 15:42:09 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901142342.AA06730@dewey.soe.berkeley.edu>
+To: klotz%SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: thesis
+
+I just finished a first pass through it.  I haven't read the important
+parts in detail yet.  Some low level comments...
+
+On dates, when I started my thesis, there was a parser running and it
+was September of 1982.  Andy left MIT in Spetember of 1985 and we didn't
+get running here until about MArch of 1986.
+
+You might mention the general form off various tradeoffs.  Mostly space for
+time (in the form of caches) and amortization of expensive run time operations
+into the editor (like port link caching and other things currently hung on
+the insert-self/delete-self methods)  I think there is some point about
+only being able to do this because of the integration of the system to be 
+made here.
+
+Another point which I may have missed is the hacks we made so that the
+evaluator only sees VC's (except in symeval) 
+
+
+I plan to read in more detail either today or tomorrow
+more later...
+
+ed
+
+
+
+Date: Sun, 15 Jan 89 22:50:07 EST
+From: "Leigh L. Klotz" <KLOTZ@AI.AI.MIT.EDU>
+To: bug-boxer%DEWEY.SOE.Berkeley.EDU@jade.berkeley.edu
+Message-Id: <520518.890115.KLOTZ@AI.AI.MIT.EDU>
+
+    Date: Sat, 14 Jan 89 18:13:40 PST
+    From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+    Message-Id: <8901150213.AA07148@dewey.soe.berkeley.edu>
+    To: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+    Subject: executing ports
+
+
+    Currently, RUN doesn't work on ports.  I'm not sure where the right place
+    to fix it is.  RUN simply calls convert-data-to-function.  Now I could
+    extend convert-data-to-function but where do I hack the environment ?
+    SHould RUN be like TELL when the arg is a port toa data box ?
+
+My understanding of RUN on ports was that it should be just
+like a RUN of the object itself in the current environment, but with
+data boxes inside treated as ports to that data.  That is, it should
+act like a selector on a port.
+
+Now, I figured that just executing the target box, uncopied as it was,
+was another way of doing almost the same thing, and arguably more
+correct.  That's what I had intended it to do, so RUN should do
+(convert-data-to-function (box-or-port-target box)).
+
+An argument for the strict port interpretation of paragraph one
+is that it is like my idea for @ on ports.
+
+I figure that @ on ports (currently unimplemented, I think) should
+throw up into the input stream a bunch of words, numbers, and ports to
+boxes.  If flat-copy-port-box-for-atsign is defined to do that, then @
+on ports should just work.
+
+Are there any consistent explanations for why RUN of a data box should
+run the data box in the data box's environment, instead of the environment
+where the RUN is?
+
+    I also discovered a bug in executing ports to doit boxes.  The
+    function object seems to have a LEXICAL-CALL-P slot.  If you run
+    the DOIT box before you run any ports to the doit box, then a
+    function object with the LEXICAL-CALL-P slot set to NIL gets
+    cached on the editor object.  Subsequent calls to get the cached
+    code (via a port) end up with the wrong value for LEXICAL_CALL-P.
+    I temporarily hacked ports to doit boxes to bypass the cache but
+    we may have to rethink how to cache function objects (an ALIST of
+    them ?)
+
+    ed
+    ^_
+I remember worrying about this as an efficiency issue.  I think the
+problem here is that the wrong function is being called on a port.
+
+The function object with a LEXICAL-CALL-P of T should be cached in the
+PORT object.  The evaluator knows what kind of function to call on a
+PORT to get its cached function object.  It's something like
+CACHED-CODE-PORT (as opposed to CACHED-CODE-DOIT-BOX).  I got rid of
+the CACHED-CODE generic function because the generic method lookup was
+slow, and the caller already knew what kind of box it had anyway.
+
+The problem I remember was with the MODIFIED message and the
+interpreted function object on the port not being flushed when the box
+itself was modified.  It would be nice to avoid a (dolist (port
+ports)...) in modified.
+
+I'm on AI reading my mail now and can't look at the code, but I will
+look at it tomorrow or Tuesday, after I finish my thesis.
+
+
+Date: Mon, 16 Jan 89 03:42:49 EST
+From: klotz@wheaties.ai.mit.edu (Leigh L. Klotz)
+Message-Id: <8901160842.AA03028@total.ai.mit.edu>
+To: klotz@wheaties.ai.mit.edu
+
+names, used as doc, underbars
+renaming
+
+Date: Sun, 15 Jan 89 20:22:19-0800
+From: disessa@cogsci.berkeley.edu (Andy diSessa)
+Message-Id: <8901160422.AA08341@cogsci.berkeley.edu>
+To: klotz@orion.ai.mit.edu
+Subject: more questions to distract you from your work
+
+
+Member and atoms:
+
+Leigh, I can't really remember who exactly said what to whom, when.  The main
+thing I remember was that Hal said at one time that there were some things
+that couldn't be done, and we eventually figured out that they all could be
+done (I remember doing home one night and writing a bunch of programs), except
+some of them were not quite as convenient as Lisp, or done in the same way as
+one does in Lisp.  The key insight to explain what Boxer was doing is that you
+have a choice of how to model lists and atoms (if you think that way) in
+Boxer.  And Boxer leads you on to model them at the same level of hierarchy --
+i.e., [a] and [a b].  But sometimes you just don't want to do that, it gets
+you into trouble.  Now what saves the day is that you CAN, if you decide to,
+model atoms as level one boxes and lists as level two boxes [a] = "atom",
+[[a][b]] = "list".  So everything will go thru (you just have an "extra
+datatype" -- "compound atoms as in [a b c] that you don't have in Lisp - but
+you don't need to use it), though code will not be quite so simple as boxer
+separates hierarchy reducing operations from cdring selector.  I.e., the
+equivalent of first doesn't reduce hierarchy, so you have to use two
+operations (START and UNBOX; or alternatively the packaged FIRSTBOX = UNBOX
+START).
+
+Boxer thus just does single and compound data differently.  But you can model
+lists and atoms, so there is no problem with completeness.  Lisp hackers will
+be unhappy to have to learn to do things a new way, Boxer hackers will have to
+learn an ever so slightly more complicated stereotype for cdring, but the
+judgement was that getting rid of the distinction between lists and words
+would simplify the lives of beginners enough to be worth it.
+
+(Actually, I think I remember the ital as quote proposal, but can't remember
+why it didn't work.  Maybe just too inconvenient??)
+
+Date: Sun, 15 Jan 89 20:23:53-0800
+From: disessa@cogsci.berkeley.edu (Andy diSessa)
+Message-Id: <8901160423.AA08342@cogsci.berkeley.edu>
+To: ehl@dewey.soe.berkeley.edu, klotz@ai.ai.mit.edu
+Subject: a quick question
+
+
+START, BUTSTART, et al:
+
+I really prefer reusing FIRST and BUTFIRST as names for START and BUTSTART.  I
+don't think the uncompatibility in how to use them is as bad as giving up
+FIRST/LAST compatability (otherwise it should be START and END, which doesn't
+have as good a ring and introduces another incompatibility of its own), but
+hate to argue such minor things and would certainly defer to gross comunity
+outcry.  I also advocate having a redundant primative FIRSTBOX (abbrev. FB) so
+that you can cdr with FB and BF.
+
+Yes, UNBOX must error on non-sigleton boxes and "words"
+
+Yeah, I know @ is different, and wish we didn't need both @ and UNBOX.  You
+just can't have everything.
+
+Frankly, I have never thought hard about @foo@bar, so can't offer an opinion
+right now.
+
+Date: Sun, 15 Jan 89 20:18:49-0800
+From: disessa%cogsci.Berkeley.EDU@jade.berkeley.edu (Andy diSessa)
+Message-Id: <8901160418.AA08292@cogsci.berkeley.edu>
+To: ehl%SOE.Berkeley.EDU@jade.berkeley.edu
+Cc: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: executing ports
+
+
+As far as I can see, there's only one semantic issue here.  And that seems
+fairly clear --- RUN on a port should use the enviroment of the target for
+scoping.  That's a useful functionality and if you want the other
+functionality, you can always call some version of COPY.
+

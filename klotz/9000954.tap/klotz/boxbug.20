@@ -1,0 +1,648 @@
+Date: Wed, 23 Nov 88 01:16:17 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8811230916.AA28014@dewey.soe.berkeley.edu>
+To: disessa%cogsci.Berkeley.EDU@jade.berkeley.edu
+Subject: Re:  changing yourself
+Cc: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+
+	Date: Mon, 21 Nov 88 10:23:28 PST
+	From: disessa@cogsci.berkeley.edu (Andy diSessa)
+	Subject: changing yourself
+	
+	If you make a box named foo and as the first item of that box, make a
+	box that contains the expression "change-item 1 foo {apples}".  Then
+	executing the change-item changes the box to "apples" alright, but the
+	cursor seems to lose place of where it is, and errors out.  Not
+	terribly surprising.  Although it's pretty clear that you'd want the
+	cursor to appear in the place where it was, up the level that got
+	bashed, I'm not sure how easy it would be to make it do that.
+
+I put support for this in the new version.  There is a macro wrapped around
+top level calls to the evaluator that records row and character position and
+then tries to restore it if possible otherwise it will try and back off 
+gracefully.  If the box you were originally in has been cut out of the 
+hierarchy then it will walk up the (old) hierarchy until it finds a box
+that is still there and move you into that box.  There are some problems with
+issueing this as a patch because of some changes to macros (the cause of
+the recent redisplay lossage with changed boxes).  If I figure out what
+is going on in the old version I'll make the patch.
+
+
+ed
+
+Date: Mon, 21 Nov 88 21:55:25 PST
+From: disessa@cogsci.berkeley.edu (Andy diSessa)
+Message-Id: <8811220555.AA22225@cogsci.berkeley.edu>
+To: klotz@ai.ai.mit.edu
+In-Reply-To: Edward Lay's message of Mon, 21 Nov 88 20:05:15 PST <8811220405.AA24546@dewey.soe.berkeley.edu>
+Subject:  telling input parameters
+
+In case you have trouble figuring out what's up with this bug (sounds
+to me like Ed has it pinned, though), here's the code as I remember
+it:
+
+move:
+input vars from to
+if empty? vars [to] [tell to [change @[start vars] [ask from @[start vars]]]
+                        move butstart vars from to]
+
+--Andy
+
+Date: Mon, 21 Nov 88 21:55:25 PST
+From: disessa@cogsci.berkeley.edu (Andy diSessa)
+Message-Id: <8811220555.AA22225@cogsci.berkeley.edu>
+To: klotz@ai.ai.mit.edu
+In-Reply-To: Edward Lay's message of Mon, 21 Nov 88 20:05:15 PST <8811220405.AA24546@dewey.soe.berkeley.edu>
+Subject:  telling input parameters
+
+In case you have trouble figuring out what's up with this bug (sounds
+to me like Ed has it pinned, though), here's the code as I remember
+it:
+
+move:
+input vars from to
+if empty? vars [to] [tell to [change @[start vars] [ask from @[start vars]]]
+                        move butstart vars from to]
+
+--Andy
+
+Received: from jade.berkeley.edu (TCP 20010104011) by AI.AI.MIT.EDU 21 Nov 88 23:15:49 EST
+Received: from dewey.soe.berkeley.edu
+	by jade.berkeley.edu (5.54 (CFC 4.22.3)/1.16.18B)
+	id AA19442; Mon, 21 Nov 88 20:07:11 PST
+Received: by dewey.soe.berkeley.edu (5.51/SMI-3.0DEV3.8)
+	id AA24546; Mon, 21 Nov 88 20:05:15 PST
+Date: Mon, 21 Nov 88 20:05:15 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8811220405.AA24546@dewey.soe.berkeley.edu>
+To: disessa%cogsci.Berkeley.EDU@jade.berkeley.edu
+Subject: Re:  telling input parameters
+Cc: klotz@ai.ai.mit.edu
+
+Leigh, the background is that Andy wants a procedure (called move) that
+transfers the bindings of one box into another box and he can't because 
+we aren't looking up variables inside of virtual copies
+
+	Date: Mon, 21 Nov 88 19:56:36 PST
+	From: disessa@cogsci.berkeley.edu (Andy diSessa)
+	Subject:  telling input parameters
+	
+		you need port flavored input to move or else the "to" variable
+		referred to in the else clause of the "if" line will be
+		referring to a COPY of "to" and will refer to separate copies
+		for each frame in the recursion.
+	
+	Yes, but I don't care if it is a copy.  The MUTATED copy gets passed
+	on to the next recursion of move, Right?  The thing that gets returned
+	is a mutated copy of a mutate copy of ..., and that's what I intended.
+	I know the bug you mean (I think) and I don't think this is an
+	instance of it.  I am not intending to mutate the thing that supplied
+	input, only the input that I get before I pass it on for more mutation.
+
+ok, I see.  The problem is that binding information inside of
+virtual copies is not implemented because we couldn;t figure out
+a good way to do it without slowing other things down.  Perhaps the
+lisp error is something Leigh put in.  We sent mail about another aspect 
+of this problem last week.  The bug was that named subprocedures inside
+a shape were not available.  I think the easiest work around is to
+mutate the original (it is likely to be much faster than the variable
+lookup inside of virtual copy).  The initial implementation (not curently
+installed apparently) for looking up variables inside of VC's loops
+through the items of each row of the VC looking for named boxes.
+
+ed
+
+Date: Tue, 13 Dec 88 16:15:21 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8812140015.AA07640@dewey.soe.berkeley.edu>
+To: klotz@ai.ai.mit.edu
+
+I just remembered what Andy was complaining about that I had
+forgotten to tell you.  He didn't like having to type
+tell Joe @!stuff .  He thought that tell Joe @stuff should
+be sufficient.
+
+ed
+
+Date: Tue, 13 Dec 88 18:02:51 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8812140202.AA08016@dewey.soe.berkeley.edu>
+To: KLOTZ@ai.ai.mit.edu
+
+	Date: Tue, 13 Dec 88 20:02:24 EST
+	From: "Leigh L. Klotz" <KLOTZ@AI.AI.MIT.EDU>
+	
+	Presumably in
+	 tell joe @stuff
+	
+	stuff is a data box whose contents he wants executed by joe?
+
+Yes but he wants the "!" behavior of eval BEFORE tell. 
+	
+	Hmm, right now atsign is a primitive (macro).  I'll have to
+	think about this.
+	
+	
+
+Date: Wed, 28 Dec 88 12:35:21 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8812282035.AA14735@dewey.soe.berkeley.edu>
+To: klotz@ai.ai.mit.edu
+Subject: fonts and strings
+
+
+Here's the story,
+The name and label fonts were added recently for the new borders.  The
+font map extemsion stuff is only in the new version.  Adding fonts to the
+list ought to be sufficient but you have to do it BEFORE you create the
+window because the font map inits are inside of window-system-specific-startup-boxer.
+
+ed
+
+Date: Wed, 28 Dec 88 12:25:07 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8812282025.AA14710@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  lossage
+
+I think the appropriate window startup code in boxwin-x is supposed
+to simulate the 3600 behavior of extending the last font.
+
+I think that Xkeymap files are the right thing also.  The sun function
+keys used to send these escape sequences also until I made a keymap file.
+
+Date: Sat, 31 Dec 88 16:18:42 EST
+From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+Message-Id: <8812312118.AA03193@murren.ai.mit.edu>
+To: klotz@murren.ai.mit.edu
+Subject: boxerlisp
+
+ctrl-j is misbound
+no prompt on escape, why?
+com-step on meta-f1?
+
+Date: Mon, 2 Jan 89 17:34:51 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030134.AA21381@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  keyboard-interrupt?
+
+this is more version skew.  The right thing is to crock one up for
+boxwin-x.lisp  I think it used to check the input queue directly
+inside of poll-internal and I put keyboard-interrupt in so that
+the error.lisp file would not be window system dependent.
+
+In fact, here is the old def:
+
+(defun poll-internal ()
+  (cond ((eq (bw::queue-valid-input-no-hang boxer::*boxer-pane*) 'bw::interrupt)
+         (setq *last-interrupt-char* (bw::get-boxer-input))
+         t)
+        (t nil)))
+
+
+Date: Mon, 2 Jan 89 17:18:58 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030118.AA21242@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  mouse
+
+	Date: Fri, 30 Dec 88 23:25:29 EST
+	From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+	To: ehl@dewey.SOE.Berkeley.Edu
+	Subject: mouse
+	
+	The mouse stuff isn't working right.  There seem to be
+	multiple how-did-it-evers.
+	
+	QUEUE-MOUSE-EVENT should check *BOXER-EVENT-QUEUE* for NIL
+	before calling BOXER-MOUSE-BLIP-P on (CAR *BOXER-EVENT-QUEUE*).
+	Not doing so makes it depend on the implementation of boxer mouse blips.
+
+This works only because the defstruct generated predicate recognizes that NIL
+is not the right kind of struct.  This is all changed in the new version anyway.
+	
+	When a mouse event does get queued, we put in a MAKE-BOXER-MOUSE-BLIP object,
+	which is a structure.  But BOXER-COMMAND-LOOP, which gets its input from
+	GET-BOXER-INPUT, calls MOUSE-EVENT? on the input object.  MOUSE-EVENT?
+	is designed to work on X event C Structs, not on #S Lisp structures.  So
+	it errors out.  I don't see how this ever worked, unless some other level
+	function is snarfing the input in teh Sun in some way I can't see here
+	because of some incompatibility with the HP.
+
+GET-BOXER-INPUT seems innoucous enough.  Are you talking about HANDLE-BOXER-INPUT 
+calling MOUSE-EVENT? ?.  This is some sort of version skew.  In an old version 
+of this file, HANDLE-BOXER-INPUT calls BW::BOXER-MOUSE-BLIP-P instead.  I think
+it is currently doing this on the SUN but its hard to tell since the compiler
+inline'd it.
+	
+	Now, once we get past this, the mouse-click-boxer-input-handler also
+	expects X events, but below that level things are OK.
+	
+	Also, when the *record-keystrokes* option is set, handle-boxer-input
+	merely pushes the fixnum address of the lucid cstruct containing the
+	mouse blip onto the keystrokes list.
+	
+This never worked.  I think there is some comment in the code that this won't
+work in the X implementation but I can't find it.  Oh wel, I certainly remember
+thinking it which is why *record-keystrokes* is NIL for #-lispm.
+
+	Now I doubt we ever tested that part.  But what I'm confused about
+	is how the mouse stuff was working.  Maybe they never got queued?
+	
+
+Date: Mon, 2 Jan 89 17:30:44 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030130.AA21352@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Cc: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+
+	Date: Sun, 1 Jan 89 07:40:41 EST
+	From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+	
+	change @start port-to [] 3
+	 loses because @ doesn't like the box it gets.
+	
+Is this chunker lossage ?  What's the difference between @ and
+unbox. I thought they were the same.
+
+Date: Mon, 2 Jan 89 17:28:51 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030128.AA21319@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  fix to stepper
+
+	Date: Sun, 1 Jan 89 04:15:30 EST
+	From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+	Subject: fix to stepper
+	
+	Ed, please add this to vars.lisp:
+		(defvar *stepper-initial-poll-count* 1)
+	
+	and this to the LET in STEP-POINT-ROW in stepper.lisp:
+			...
+		(*initial-poll-count* *stepper-initial-poll-count*)
+		(*poll-count* *stepper-initial-poll-count*)
+	
+	This makes ABORT work during stepping.
+	
+done. Or should I say "fixed in the next release" ?
+
+
+Date: Mon, 2 Jan 89 17:27:15 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030127.AA21288@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  this is on the Bobcat in Hal's office
+
+isn't this better than the best SUN times ?
+
+Date: Mon, 2 Jan 89 17:20:48 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030120.AA21260@dewey.soe.berkeley.edu>
+To: ehl%dewey.SOE.Berkeley.EDU@jade.berkeley.edu, klotz@murren.ai.mit.edu
+Subject: Re:  handle-boxer-input
+
+	Date: Sat, 31 Dec 88 00:27:14 EST
+	From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+	Subject: handle-boxer-input
+	
+	Also, handle-boxer-input should check for SYMBOLP
+	for things like BW::ABORT so it doesn't call
+	mouse-blip functions on the symbol.
+	
+OK, but how does it work now ?  Is it handled by the evaluator and the
+editor top level just beeps because it doesn't understand what to do ?
+
+
+Date: Mon, 2 Jan 89 17:34:51 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030134.AA21381@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  keyboard-interrupt?
+
+this is more version skew.  The right thing is to crock one up for
+boxwin-x.lisp  I think it used to check the input queue directly
+inside of poll-internal and I put keyboard-interrupt in so that
+the error.lisp file would not be window system dependent.
+
+In fact, here is the old def:
+
+(defun poll-internal ()
+  (cond ((eq (bw::queue-valid-input-no-hang boxer::*boxer-pane*) 'bw::interrupt)
+         (setq *last-interrupt-char* (bw::get-boxer-input))
+         t)
+        (t nil)))
+
+
+Date: Mon, 2 Jan 89 17:18:58 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030118.AA21242@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  mouse
+
+	Date: Fri, 30 Dec 88 23:25:29 EST
+	From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+	To: ehl@dewey.SOE.Berkeley.Edu
+	Subject: mouse
+	
+	The mouse stuff isn't working right.  There seem to be
+	multiple how-did-it-evers.
+	
+	QUEUE-MOUSE-EVENT should check *BOXER-EVENT-QUEUE* for NIL
+	before calling BOXER-MOUSE-BLIP-P on (CAR *BOXER-EVENT-QUEUE*).
+	Not doing so makes it depend on the implementation of boxer mouse blips.
+
+This works only because the defstruct generated predicate recognizes that NIL
+is not the right kind of struct.  This is all changed in the new version anyway.
+	
+	When a mouse event does get queued, we put in a MAKE-BOXER-MOUSE-BLIP object,
+	which is a structure.  But BOXER-COMMAND-LOOP, which gets its input from
+	GET-BOXER-INPUT, calls MOUSE-EVENT? on the input object.  MOUSE-EVENT?
+	is designed to work on X event C Structs, not on #S Lisp structures.  So
+	it errors out.  I don't see how this ever worked, unless some other level
+	function is snarfing the input in teh Sun in some way I can't see here
+	because of some incompatibility with the HP.
+
+GET-BOXER-INPUT seems innoucous enough.  Are you talking about HANDLE-BOXER-INPUT 
+calling MOUSE-EVENT? ?.  This is some sort of version skew.  In an old version 
+of this file, HANDLE-BOXER-INPUT calls BW::BOXER-MOUSE-BLIP-P instead.  I think
+it is currently doing this on the SUN but its hard to tell since the compiler
+inline'd it.
+	
+	Now, once we get past this, the mouse-click-boxer-input-handler also
+	expects X events, but below that level things are OK.
+	
+	Also, when the *record-keystrokes* option is set, handle-boxer-input
+	merely pushes the fixnum address of the lucid cstruct containing the
+	mouse blip onto the keystrokes list.
+	
+This never worked.  I think there is some comment in the code that this won't
+work in the X implementation but I can't find it.  Oh wel, I certainly remember
+thinking it which is why *record-keystrokes* is NIL for #-lispm.
+
+	Now I doubt we ever tested that part.  But what I'm confused about
+	is how the mouse stuff was working.  Maybe they never got queued?
+	
+
+Date: Mon, 2 Jan 89 17:18:58 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901030118.AA21242@dewey.soe.berkeley.edu>
+To: klotz@murren.ai.mit.edu
+Subject: Re:  mouse
+
+	Date: Fri, 30 Dec 88 23:25:29 EST
+	From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+	To: ehl@dewey.SOE.Berkeley.Edu
+	Subject: mouse
+	
+	The mouse stuff isn't working right.  There seem to be
+	multiple how-did-it-evers.
+	
+	QUEUE-MOUSE-EVENT should check *BOXER-EVENT-QUEUE* for NIL
+	before calling BOXER-MOUSE-BLIP-P on (CAR *BOXER-EVENT-QUEUE*).
+	Not doing so makes it depend on the implementation of boxer mouse blips.
+
+This works only because the defstruct generated predicate recognizes that NIL
+is not the right kind of struct.  This is all changed in the new version anyway.
+	
+	When a mouse event does get queued, we put in a MAKE-BOXER-MOUSE-BLIP object,
+	which is a structure.  But BOXER-COMMAND-LOOP, which gets its input from
+	GET-BOXER-INPUT, calls MOUSE-EVENT? on the input object.  MOUSE-EVENT?
+	is designed to work on X event C Structs, not on #S Lisp structures.  So
+	it errors out.  I don't see how this ever worked, unless some other level
+	function is snarfing the input in teh Sun in some way I can't see here
+	because of some incompatibility with the HP.
+
+GET-BOXER-INPUT seems innoucous enough.  Are you talking about HANDLE-BOXER-INPUT 
+calling MOUSE-EVENT? ?.  This is some sort of version skew.  In an old version 
+of this file, HANDLE-BOXER-INPUT calls BW::BOXER-MOUSE-BLIP-P instead.  I think
+it is currently doing this on the SUN but its hard to tell since the compiler
+inline'd it.
+	
+	Now, once we get past this, the mouse-click-boxer-input-handler also
+	expects X events, but below that level things are OK.
+	
+	Also, when the *record-keystrokes* option is set, handle-boxer-input
+	merely pushes the fixnum address of the lucid cstruct containing the
+	mouse blip onto the keystrokes list.
+	
+This never worked.  I think there is some comment in the code that this won't
+work in the X implementation but I can't find it.  Oh wel, I certainly remember
+thinking it which is why *record-keystrokes* is NIL for #-lispm.
+
+	Now I doubt we ever tested that part.  But what I'm confused about
+	is how the mouse stuff was working.  Maybe they never got queued?
+	
+
+Date: Sun, 1 Jan 89 07:41:58 EST
+From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+Message-Id: <8901011241.AA03727@murren.ai.mit.edu>
+Apparently-To: bug-boxer@dewey.soe.berkeley.edu
+
+change unbox start port-to [] 3
+  works by the way
+
+Date: Sun, 1 Jan 89 07:40:41 EST
+From: klotz@murren.ai.mit.edu (Leigh L. Klotz)
+Message-Id: <8901011240.AA03723@murren.ai.mit.edu>
+Apparently-To: bug-boxer@dewey.soe.berkeley.edu
+
+change @start port-to [] 3
+ loses because @ doesn't like the box it gets.
+
+Date: Fri, 25 Sep 87 01:20:16 PDT
+From: ehl%dewey.SOE.Berkeley.EDU@jade.berkeley.edu (Ed Lay)
+Message-Id: <8709250820.AA11110@dewey.soe.berkeley.edu>
+To: boxer-port%dewey.soe.Berkeley.EDU@jade.berkeley.edu
+Subject: profiling
+
+
+I just profiled the boxer equivalent of CDR'ing down a list (recursively)
+and found that the evaluator is chewing up 22 % of the time and that
+stack-frame consing is taking up another large chunk of time.  Wasn't there
+some sort of stack frame allocator ?  Or am I losing cause IF needs to
+cons special kinds of stack frames ?
+
+ed
+
+Date: Wed, 26 Oct 88 22:58:08 PDT
+From: MAILER-DAEMON%hurricane.SOE.Berkeley.EDU@jade.berkeley.edu (Mail Delivery Subsystem)
+Subject: Returned mail: User unknown
+Message-Id: <8810270558.AB01115@hurricane.soe.berkeley.edu.soe.berkeley.edu>
+To: klotz%hurricane.SOE.Berkeley.EDU@jade.berkeley.edu
+
+   ----- Transcript of session follows -----
+>>> RCPT To:<bug-boxerW@dewey>
+<<< 550 <bug-boxerW@dewey>... User unknown
+550 bug-boxerW@dewey... User unknown
+
+   ----- Unsent message follows -----
+Return-Path: <klotz>
+Received: by hurricane.soe.berkeley.edu.soe.berkeley.edu (3.2/SMI-3.2)
+	id AA01112; Wed, 26 Oct 88 22:58:08 PDT
+Date: Wed, 26 Oct 88 22:58:08 PDT
+From: klotz (Leigh Klotz)
+Message-Id: <8810270558.AA01112@hurricane.soe.berkeley.edu.soe.berkeley.edu>
+To: bug-boxerW@dewey
+
+bad continuation from sfuncall, :undefined
+when doing ctrl-j when ctrl-j-key was a doit box containing "line-key"
+on "save" with no yarguments.  continuing gave me an error box
+
+Date: Thu, 20 Oct 88 20:08:42 PDT
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8810210308.AA15109@dewey.soe.berkeley.edu>
+To: klotz@ai.ai.mit.edu
+Subject: eval fix
+
+
+I added some stepper clauses to the (eq *returned-value* *novalue*)
+branch of SFUNCALL-RETURN  to fix the stepper bug with change.  
+
+ed
+
+Date: Tue, 18 Oct 88 21:25:20 PDT
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8810190425.AA07612@dewey.soe.berkeley.edu>
+To: KLOTZ@ai.ai.mit.edu
+Subject: stuff to do in boxer
+
+
+I can't think of any other evaluator bugs besides stop.  I'm pretty
+sure that the problem with CHANGE in the stepper is just a matter of the wrong
+things being erased like maybe there's an implicit assumption somewhere
+about inputs.  I DID notice that when the change form was stepped, a "PORT-TO"
+appeared in the inputs line which may have thrown things off.
+
+You might want to consider hacking HANDLE-INPUT which should pretty much force
+the resolution of problems with recursive invocations of the evaluator.  Don
+asked me about it last week and I basically said "forever"
+
+ed
+
+Date: Sat, 7 Jan 89 15:48:19 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901072348.AA03172@dewey.soe.berkeley.edu>
+To: bug-boxer%SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: build bug
+
+
+named boxes in build templates become unnamed if there are any
+@'s in the template.
+
+Date: Sun, 8 Jan 89 12:41:54 PST
+From: disessa@cogsci.berkeley.edu (Andy diSessa)
+Message-Id: <8901082041.AA22841@cogsci.berkeley.edu>
+To: klotz@ai.ai.mit.edu
+Cc: bug-boxer@dewey.soe.berkeley.edu
+In-Reply-To: Leigh L. Klotz's message of Sun, 8 Jan 89 01:16:09 est <8901080616.AA09881@orion>
+Subject: (XLIB::XFLUSH KLOTZ)
+
+I will try to keep up on some of these, but have to defer on many
+because of all the other junk I need to keep up on.
+
+	This reminds me of a similar issue.
+
+	Suppose you do:
+	  CHANGE FOO BUTSTART PORT-TO FOO
+	FOO now has a bunch of ports to nowhere in it.  Do they show up
+	as cracked ports now that we have an indication of them?  (They
+	should; I remember leaving explicitly that recursive tree walk
+	in kill-rows-to-end-of-box when I re-wrote it to stop copying the
+	box twice before throwing it away.)
+
+	My suggestion, for lack of a better one, has been that if a box is
+	going away and there are ports to it, one of the ports gets converted
+	into the real box, which is sort of magically plooped out of where it
+	about to be deleted from.
+
+Sounds roughly right, but how to decide which one in and implement
+that efficiently?
+
+	Now, in the example, if there are other ports to the boxes in FOO
+	(as there very likely are if you're explicitly keeping from
+	copying FOO by doing BS PORT-TO FOO), then it would be nice if the
+	ports that get put into FOO get converted to the original boxes, rather
+	than the ports which happen to be elsewhere.
+
+Right.  Would be nice.
+	
+	Maybe now that there is code for cracked ports we put this in.
+	Presumably it should be added to the editor mutation queue rather than
+	done directly.  There might be some lossage about where the boxes live
+	(in terms of the boxer hierarchy) after they've been flushed and
+	before they get replaced.
+
+Similar situation is when a port to an input variable is returned to
+top level.  By the way, how do cracked ports behave in the evaluator?
+As errorful objects, or are they treated as data boxes?
+The latter would implement in this case Leigh's conversion to data,
+with the reminder (cracked port marking) that it was converted.
+
+	Alternatively, we could declare this example illegal and tell people
+	to use DELETE-ITEM, but I think the same thing can happen in other
+	ways that we can't recognize beforehand.
+
+Would rather not do this.  But frankly, I think how we settle these
+kind of things is not the most serious affair we have to work on.  So
+I'd vote for almost any reasonable, implementable solution.  Take
+another pass in the future if we see something better might be done.
+
+	Leigh.
+
+Andy
+
+Date: Mon, 9 Jan 89 00:09:03 PST
+From: ehl%SOE.Berkeley.EDU@jade.berkeley.edu (Edward Lay)
+Message-Id: <8901090809.AA05552@dewey.soe.berkeley.edu>
+To: KLOTZ@ai.ai.mit.edu
+Subject: Re:  doit boxes on mouse keys
+
+there's no hurry. It's just that someone asked me about is
+a week or 2 ago but I'm pretty swamped with this borders
+stuff anyway.
+
+Date: Mon,  9 Jan 89 02:52:22 EST
+From: "Leigh L. Klotz" <KLOTZ@ai.ai.mit.edu>
+To: bug-boxer%DEWEY.SOE.Berkeley.EDU@jade.berkeley.edu
+Message-Id: <515789.890109.KLOTZ@AI.AI.MIT.EDU>
+
+YOUR and MY is essentially how ! and no-! works now in TELL.
+IF I made @ work the same way insid eTELL, then it would indeed
+work the same way.  
+
+I believe that @ and ! can be made to work properly with the
+TELL/build-flavored-input model, but I'm not certain.  YOUR and
+MY are, as I pointed out, essentially implemented, modulo some
+details of their use outside of the TELL line.  (however, given
+the copy-and-execute model, I don't know if we can make a distinction
+between the tell line and not the tell line, right?)  If you wanted
+them, Ed could give them to you in essentially no time.
+
+My reluctance would be complicating the model, since we don't
+have any way to explain them.
+
+
+Date: Wed, 11 Jan 89 08:26:05 est
+From: klotz@orion.ai.mit.edu (Leigh L. Klotz)
+Message-Id: <8901111326.AA12480@orion>
+To: bug-boxer%dewey.SOE.Berkeley.EDU@jade.berkeley.edu
+Subject: conceptual bug in the implementation of tell
+
+The TELL/VC bug is a little more difficult than I had thought.
+Ed may have realized this, though.
+
+Suppose we have a large doit box which is executing.  It has several
+local variables; let's call them X, Y, and Z.
+
+One line of the doit box has in it 
+  TELL X Y
+
+This should return the _local_ Y, since the box X, currently a virtual
+copy, is within the scope of a (virtual copy of) doit box which has a variable Y,
+that Y being a copy of the Y in the original doit box.
+
+Right now it gives an error because of the TELL/VC bug, but when that's
+fixed it may give us the wrong Y.
+

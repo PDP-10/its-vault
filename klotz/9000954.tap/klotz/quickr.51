@@ -1,0 +1,99 @@
+!* -*- TECO -*- *!
+
+!~FILENAME~:! !Quick mail reader library for me.!
+QUICKR
+
+!<ENTRY>:! !^R Quick Read Mail:! !^R Set up for reading mail file.
+With an arg, uses the current buffer.!
+
+  
+  f-4"n fsuname:f6[u
+          fshsname:f6[h
+	  etDSK:h;u_MAIL
+	  1+4,fMail_File:[F
+	  FQF"E :IFDSK:h;U_MAIL'
+	  m(m.mFind_File)F'
+  m.mMake_Local_Q-Register[.Q
+  m.m^R_Next_Screenm.Q_
+  m.m^R_Quickr_Next_Messagem.QN
+  m.m^R_Quickr_Previous_Messagem.QP
+  m.m^R_Quickr_Save_Messagem.Q=
+  m.m^R_Quickr_Append_to_Filem.QO
+  m.m^R_Quickr_Send_Mailm.QM
+  m.m^R_Quickr_Goto_Beginningm.Q<
+  m.m^R_Quickr_Goto_Endm.Q>
+  m.m^R_Quickr_Quitm.QQ
+
+  0,0fsbound
+  m(m.m^R_Quickr_Next_Message)
+
+
+!^R Quickr Next Message:! !^R Move to next message!
+  z[z				    !* save the old end of message!
+  0,fszfsbound		    !* widen bounds!
+  qz+1:j
+  :s			    !* find end of message!
+  :S
+
+  qz,. fsbound			    !* Set bounds to be end of prev, new end!
+  bj				    !* go to beginning of message!
+  :s***_EOOH_***"n .+2,z fsbound  !* Go CRLF past babyl stuff if present!
+    bj'				    !* and set bounds to that!
+   <				    !* Cheaply flush some Recv'ds !
+    .,.+9f~Received:"E l .,z fs bound >'
+    .,.+11f~Message-id:"e l .,z fs bound >'
+    .,.+4f~__id"e l .,z fs bound >'
+    .,.+1f~	"e l .,z fs bound >'
+
+
+!^R Quickr Previous Message:! !^R Move to previous message!
+  bj				    !* go to beginning of this message!
+  0,fszfsbound		    !* widen bounds!
+  2<-:s"e bj 0;'>		    !* search for end of previous message!
+  :s
+
+  .,.fsbound
+  m(m.m^R_Quickr_Next_Message)
+  
+
+!^R Quickr Goto Beginning:! !^R Move to first message!
+  0,0fsbound
+  bj
+  m(m.m^R_Quickr_Next_Message)
+
+
+!^R Quickr Append to File:! !^R Append this message to a file!
+  5,fAppend_message_to_file[1
+  hm(m.mAppend_To_File)1
+
+
+!^R Quickr Goto End:! !^R Move to last message!
+  fsz,fszfsbound
+  zj
+  m(m.m^R_Quickr_Previous_Message)
+
+
+!^R Quickr Save Message:! !^R Copy message to *Saved Mail* buffer!
+  hx*[1
+  m(m.mSelect_Buffer)*Saved_Mail*
+  g1
+  m(M.mSelect_Buffer)
+
+
+
+!^R Quickr Quit:! !^R Quit Quickr.!
+  0,fszfsbound
+  m(m.mSelect_Buffer)		    !* either select *Saved Mail* or old buf!
+
+
+!^R Quickr Send Mail:! !^R Two-window send mail.
+Use  Exit to send. !
+
+    m(m.m^R_Two_Windows)
+    m(m.mSend_Mail)
+    m(m.m^R_One_Window)
+
+
+!* Local Modes:!
+!* Compile Command: M(m.mGenerate Library)QUICKRQUICKR!
+!* End:!

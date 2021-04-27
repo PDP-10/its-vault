@@ -1,0 +1,155 @@
+;;;-*-LISP-*-
+;;The main body of the assembler. Conses up a big list of
+;;the code, one line at a time. If there is no undefined reference on a a
+;;line, it is completely assembled at read-time. Otherwise, a notation is made of 
+;;undefined references. Later, when these references are resolved the code
+;;with the undefined reference is completed.
+;;See the file KLOTZ;PASS1 IDEAS for documentation.
+
+(herald pass1)
+
+(declare (special *input-filename* *assem-input-stream*)
+	 (fixsw t)
+	 (*lexpr aerror)
+	 (*expr gettok tokenize-rest-of-line eval-expression match)
+	 (setq defmacro-for-compiling nil))
+
+(eval-when (compile eval)
+	   (or (get 'commac 'version)
+	       (load "commac")))
+
+(defvar /.) ;Current address.
+(defvar assem-obase 16.)
+
+(defun assemble (*input-filename*)
+  (assem-set '/. 0)					;default.
+  (let ((*assem-input-stream* (open *input-filename* '(in ascii dsk block))))
+    (unwind-protect
+     (let ((the-code (assemble-code))
+	   (undef-ref-count (write-out-symbol-table)))
+       (setq *foo-code* the-code)
+       (write-out-code the-code)
+       (print (format nil "~A assembled. ~D undefined symbols."
+		      *input-filename* undef-ref-count)))
+     (close *assem-input-stream*))))
+
+
+(defun assemble-code (&aux (last-cons (ncons nil)))
+  (do ((line (assemble-code-line) (assemble-code-line))
+       (assembled-code-list last-cons))
+      ((eq line '*EOF*) (cdr assembled-code-list))	;I think we can afford the extra cons.
+    (cond ((not (null line)) 
+	   (rplacd last-cons line)
+	   (cond ((atom (cadr line)) (setq last-cons (last line)))
+		 (t (setq last-cons (ncons line))))))))
+
+(defun assemble-code-line ()
+  (let ((op? (gettok)) (dispatch) (token-save))
+    (cond ((setq dispatch (get op? 'ADDRESS-MODE-ALIST))	;LDA, etc. Mnemonics.
+	   (handle-instruction op? dispatch))
+	  ((setq dispatch (get op? 'ASSEM-PREFIX-OP))	;Assembler pseudo-ops.
+	   (funcall dispatch))
+	  ((setq token-save op?				;Infix pseudo-operators.
+		 op? (gettok)
+		 dispatch (get op? 'ASSEM-INFIX-OP))
+	   (funcall dispatch token-save))
+	  (t (aerror "Bad Op or Pseudo-Op" op? token-save (tokenize-rest-of-line))
+	     (increment-dot 2)		 ;Somebody goofed, but let's try to save the rest.
+	     (list 0 0))))) ;Put this where the code would have gone.
+
+
+;The AMODE-FORMS property comes from the DEFAMODE.
+;The body of the defamode is evaluated in an environment in which
+;the symbol OP is bound to the the opcode, and any symbols in
+;(> FOO) or (* FOO) forms of the pattern are bound to what matched
+;them.  These are the pattern-slot-values.  The pattern-slot-values
+;are in the same order as the function variables-in-pattern extracts
+;the symbols to bind from the pattern. This is a non-intuitive order.
+
+(defun handle-instruction (name modes)
+  (do ((modes modes (cdr modes))
+       (argl (tokenize-rest-of-line))
+       (this-mode)
+       (this-opcode)
+       (pattern-slot-values))
+      ((null modes) (aerror "Addressing mode not recognized" name argl))
+    (setq this-address-mode (caar modes)
+	  this-opcode (cadar modes))
+    (cond ((setq pattern-slot-values	  ;Nil means no match. T means match, but
+		 (match			  ;no values to return. A list is a list
+		  (get this-address-mode 'ADDRESS-MODE-PATTERN) ;of variable matches.
+		  argl))
+	   (increment-dot (get this-address-mode 'INSTRUCTION-LENGTH))
+	   (return
+	    (cond ((eq pattern-slot-values t)
+		   (funcall (get this-address-mode 'AMODE-FORMS)
+			    this-opcode))
+		  (t (lexpr-funcall (get this-address-mode 'AMODE-FORMS)
+		       	    this-opcode
+		       	    pattern-slot-values))))))))
+
+;When a label is defined, the following is run on it.
+;It goes down the list of forward-references associated with the
+;label, and evaluates them.  Evaluating an expression has a side
+;effect on the assembled-code-list, since they share pointers.
+
+(defun handle-forward-references-for (label)
+  (do ((refs (get label 'FORWARD-REF) (cdr refs)))
+      ((null refs) (remprop label 'FORWARD-REF))
+    (eval-expression (car refs)))) ;works by side effect.
+
+;;; I/O
+;This whole section is screwy and should be flushed soon.
+(defun write-out-symbol-table (&aux property)
+       (let* ((filename (namelist *input-filename*))
+	      (stream (open (progn (rplaca (last filename) 'SYMTAB) filename) 'out))
+	      (base assem-obase)
+	      (undefined-reference-count 0))
+	    (unwind-protect
+	     (mapatoms
+	      #'(lambda (sym)
+			(cond ((setq property (get sym 'ASSEM-SYMBOL-VALUE))
+			       (princ sym stream)
+			       (tyo #\tab stream)
+			       (princ property stream)
+			       (terpri stream))
+			      ((setq property (get sym 'FORWARD-REF))
+			       (princ sym stream)
+     			       (tyo #\tab stream)
+			       (princ (length property) stream)
+			       (princ " undefined references."
+				      stream)
+			       (terpri stream)
+			       (setq undefined-reference-count
+				     (1+ undefined-reference-count)))))))
+	    (close stream)
+	    undefined-reference-count))
+
+
+(defmacro hex-digit (num)
+	  `(cond ((< ,num 10.) (+ ,num #/0))
+		 (t (+ ,num #.(- #/A 10.)))))
+
+(defun twos-complement-hex-byte (byte)
+       (cond ((minusp byte) (hex-byte (+ 256. byte)))
+	     (t (hex-byte byte))))
+       
+(defun hex-byte (byte &aux (lst  '(nil nil)))	;Constant list used for implode.
+       (rplaca lst (hex-digit (// byte 16.)))
+       (rplaca (cdr lst) (hex-digit (logand byte 15.)))
+       (implode lst))
+
+(defun write-out-code (it)
+       (let* ((filename (namelist *input-filename*))
+	      (stream (open (progn (rplaca (last filename) 'PAPERT) filename) 'out)))
+	     (unwind-protect
+	      (do ((it it (cdr it))
+		   (bytes 1 (1+ bytes)))
+		  ((null it) t)
+		  (princ (twos-complement-hex-byte (car it)) stream)
+		  (tyo #\space stream)
+		  (cond ((= 8. bytes)
+			 (terpri stream)
+			 (setq bytes 0)))))
+	     (close stream))
+       t)
