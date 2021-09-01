@@ -1,0 +1,921 @@
+
+title TELNET
+
+a=1
+b=2
+c=3
+d=4
+e=5
+tt=6
+i=7
+q=10
+j=11
+r=12
+w=13
+h=14
+p=15
+t=16
+u=17
+
+lsoc==1
+tyic==2
+tyoc==3
+ntic==4
+ntoc==5
+dkoc==6
+
+pat:
+loc	42
+	jsr tsint
+loc	pat
+patch:	block 100
+
+go:	.open tyic,[.uii,,'TTY]
+	 .LOSE
+	.open tyoc,[.uio#%TJSIO,,'TTY]
+	 .LOSE
+	move p,pdl
+	move a,[squoze 0,IMPUP]
+	.eval a,
+	 .LOSE
+	movei b,c
+	hrl b,a
+	.getloc b,
+	jumple c,gook
+	movei a,[asciz /
+Our NCP is down.
+/]
+	pushj p,type
+	JRST	DEATH
+gook:	.call ttygt
+	 .LOSE
+	movsi a,001000
+	andcam a,ttgt+1
+	.call ttyst
+	 .LOSE
+	.call rtermt
+	 .LOSE
+	skipn a
+	setom nlines			;printing terminal
+	setzm jclf
+	setzm jclb
+	move a,[jclb,,jclb+1]
+	blt a,jclb+4
+	.suset [.rxjname,,a]		;get my job name
+	.SUSET	[.RSUPPRO,,C]
+	AOJN	C,.+2
+	.SUSET	[.SJNAME,,[SIXBIT /HACTRN/]]
+	camn a,[sixbit/SA/]		;special hack: job SA
+	 move a,[sixbit/SAIL/]		; will always take you to SAIL
+	came a,['TELNET]		;is it TELNET
+	 camn a,[sixbit/TN/]		;or TN?
+	  jrst [.suset [.roption,,a]	;no, get option bits
+		tlne a,40000		;is there any jcl?
+		 jrst gotjcl		;yes, snarf it
+		movei a,[asciz /TELNET./];no, print telnet.<version>
+		pushj p,type
+		move a,[.fnam2]
+		pushj p,sixtyp
+		jrst nojcl]		;and continue
+	move c,[440700,,jclb]		;load bp to save "jcl" from jname
+jclgen:	setz b,				;prevent confusion
+	rotc a,6			;shove 1 sixbit character into b
+	addi b,40			;convert to ascii
+	idpb b,c			;and save it
+	jumpn a,jclgen			;and continue until snarfed it all
+	movei a,^M			;load a terminating <cr>
+	idpb a,c			;and save it
+	caia				;don't ask ddt for anything!
+gotjcl:	 .break 12,[5,,jclb]		;snarf jcl from ddt
+	move a,[440700,,jclb]		;load a byte pointer for jcl
+	movem a,jclp			;and save it
+	setom jclf			;and remember seeing it
+nojcl:	.suset [.smask,,[200000,,]]	;realt
+
+gogo:	movsi a,(setz)
+	.realt a,
+	 jfcl
+	.reset tyic,
+	setom ch1st
+	setom case			;upper case
+	setom echo			;local echo
+	setom cbc
+;;;	move a,ttgt+2			;get our TTYSTS variable
+;;;	tlnn a,%tsfre\%tsrol		;may not want to clear screen
+;;;	 setom clrscn			;clear screen before foreign host output starts
+	setzm retoin
+	movei a,3
+	movem a,icpdne
+go3:	movei a,1
+	movem a,frnisc			;foreign initial socket
+	.suset [.smsk2,,[0]]
+	skipe jclf
+	 skipa a,[[asciz/Connecting to /]]
+	  movei a,[asciz /
+Host = /]
+	pushj p,type
+go3a:	setzb b,c			;host #; b octal, c decimal
+	setzb tt,q			;(tt) -1 => mnemonic mode
+					;(q) -1 => have gotten dec pnt
+	move j,[360600,,hosttb(b)]
+	movsi i,-hstbl			;aobjn pointerinto hosttb
+	move u,[440700,,rcpbuf]		;ptr to spec string
+	move w,u			;ptr into collected string
+	setzm chrcnt'			;count of chars in string
+	move a,hosttb(i)
+	hrli a,440700
+	move h,a			;ptr into current host string
+
+go1:	pushj p,getchr			;get input char here
+	cain a,^X
+	 JRST	DEATH			;die immediately on ^X
+	jumpe a,go1			;ignore nulls.
+	cain a,177
+	 jrst go2			;rubout means flush, start over.
+	cain a,",
+	 jrst gocma			;comma means prev. typein was socket #.
+	caie a,^J
+	 cain a,^M
+	  jrst gotrm			;e-o-l means user done with spec.
+	caie a,"?
+	 cain a,33			;? or alt means list all possible hosts,
+	  jrst gotalt			;given typein thus far.
+	jumpl tt,gotc			;jump if parsing name
+	cail a,"0			;else parsing number?
+	 caile a,"9
+	  jrst notn			;hmmm..anomalous. only valid char is "."
+	lsh b,3
+	iori b,-"0(a)			;stuff number into octal value
+	imuli c,10.
+	addi c,-"0(a)			;and into decimal value. (parse 2 ways at once)
+
+goech:	.iot tyoc,a			;finally accepted, echo
+	jrst go1			;and get another char
+
+go2:	.iot tyoc,["?]			;foo, bad syntax
+	jrst go3
+
+gocma:	movem b,frnisc			;comma means previous value was socket #
+	.iot tyoc,a
+	trne b,1			;must be odd
+	 jrst go3a			;now get the host
+	jrst go2			;foo, can't icp to an even socket #.
+
+notn:	jumpe b,gotc			;if no # entered check this part of host spec.
+	caie a,".			;hmm, # entered. 
+	 jrst bad			;foo, only "." valid at this point
+	jumpl q,bad			;foo if already 'converted' # to decimal
+	movni q,1			;set flag for above check
+	move b,c			;'convert' to decimal. (substitute)
+	jrst goech			;continue
+
+bad1:	sub p,[1,,1]
+bad:	movei a,^G			;if bad char given, ding bell.
+	jrst goech
+
+
+getchr:	skipge jclf			;get a char from wherever
+	 jrst getjcl
+	.iot tyic,a
+	popj p,
+
+getjcl:	ildb a,jclp			;furnish jcl chars
+	cain a,^M
+	 setzm jclf
+	popj p,
+
+	;got a host-name char. store if it plus string thus far
+	;matches a name, don't store if not.
+gotc:	seto tt,			;indicate user gave at least one char
+	cail a,"a
+	 caile a,"z
+	  caia
+	subi a,40			;convert to uppercase
+	move r,w			;get a temp. pointer to storage string
+	idpb a,r			;deposit in string using temp. ptr
+	aos chrcnt			;increment count of chars in str.
+	move e,h			;get temp. pointer to name currently in favor
+	ildb d,e			;get next char from it
+	came a,d			;same as char typed in?
+	 jrst gotc1			;nope, must look for better match farther down
+gotcw:	ibp w				;aha! name still ok! increment real ptrs
+	ibp h				;to formally deposit char.
+	jrst goech			;and go get another.
+gotc1:	pushj p,hfind			;look for better match
+	 jrst gotc2			;ugh, none found.
+	move i,d			;found one! make it the one currently in favor
+	move h,e			;by using its returned args.
+	ibp w				;and formally deposit char typed in
+	jrst goech			;and get another.
+gotc2:	sos chrcnt			;bah, no match at all, take it back
+	jrst bad			;and ding bell without echoing.
+
+	;got a e-o-l, see if have enough of name to render it
+	;unique.
+gotrm:	jumpge tt,go4			;just numerical value? if so, win.
+	skipg chrcnt			;hmmm, anything in string stored?
+	 jrst bad			;no, ding...
+	setzm swit'			;yep. clear 'ambiguous' switch
+	hlrz b,hosttb(i)		;get favored host # into b
+	move d,h			;get temp ptr into favored name
+	ildb d,d			;get next char, and
+	jumpe d,go4			;win if it's null=end of string.
+					;nope, only partial match. must check
+	push p,i			;rest of table to make sure 'tis unique.
+gotrm1:	pushj p,hfind			;find a match
+	 jrst gotrm3			;hmmm, none left.
+	move i,d			;found one. get index
+	ildb a,e			;and check to see if a full match.
+	jumpn a,gotrm9			;nope, next char not null.
+	hlrz b,hosttb(d)		;ah, complete match!
+	sub p,[1,,1]			;have the unique name, win.
+	jrst go4
+
+gotrm9:	hlrz a,hosttb(d)		;partial match. get its host #
+	camn a,b
+	 jrst gotrm1			;and ignore this one if for same host.
+gotrm4:	setom swit			;hmmm, found different-site patial match
+	jrst gotrm1			;set ambiguous switch and continue.
+					;(may find complete match farther on)
+
+gotrm3:	pop p,i				;gone thru whole table without complete match.
+	skipn swit			;was ambiguity detected?
+	 jrst gotrm8			;no, just one partial match, win!
+	jrst bad			;ugh, yes. fail and ding.
+
+gotrm2:	.iot tyoc,a			;winning partial match..output rest
+gotrm8:	ildb a,h			;of the name matched to.
+	jumpn a,gotrm2
+	jrst go4
+
+	;got ? or alt, list all names possible at this stage.
+	;i.e. complete string (if any) typed in, for all
+	;possibilities.
+gotalt:	push p,j
+	.call rcpos
+	 .LOSE
+	hlrzs vpos
+	pushj p,crlf
+	push p,i
+	sub i,[1,,1]
+	movsi b,-hstbl
+gotal2:	skipn chrcnt
+	 jrst gotal6
+	pushj p,hfind
+	 jrst gotal5
+	move i,d
+	skipa a,hosttb(i)
+gotal6:	 move a,hosttb(b)
+	pushj p,type
+	aos vpos
+gotal1:	pushj p,crlf
+	aobjn b,gotal2
+gotal5:	pop p,i
+	pop p,j
+	movei a,[asciz /Host=/]
+	pushj p,type
+	skipg e,chrcnt
+	 jrst altrtn
+	move d,u
+gotal7:	ildb a,d
+	.iot tyoc,a
+	sojg e,gotal7
+altrtn:	setz b,
+	jrst go1
+
+; Takes I,H,U as arguments and looks for the next
+;match in the table... skips if wins.
+;Loses if table string counts out before input string,
+;or if strings aren't identical up to countout of input
+;string.  Wins if identical up to countout of input string.
+;when wins, returns in D and E the new I and H.
+
+hfind:	skipn chrcnt'
+	 popj p,
+	push p,i
+	push p,h
+	push p,w
+hfnd1:	aobjp i,hfndl
+	move h,hosttb(i)
+	hrli h,440700
+	move w,u
+	move t,chrcnt
+hfnd2:	ildb d,h
+	ildb e,w
+	jumpe d,hfnd1
+	came d,e
+	 jrst hfnd1
+	sojg t,hfnd2
+	move d,i
+	move e,h
+	aos -3(p)
+hfndl:	pop p,w
+	pop p,h
+	pop p,i
+	popj p,
+
+
+crlf:	.iot tyoc,[^M]
+	.iot tyoc,[^J]
+	popj p,
+
+go4:	jumpe b,go3
+	pushj p,crlf
+	movem b,net1+3
+	movem b,net4+3
+	movem b,net5+3
+go5:	.suset [.smsk2,,[1_tyic+1_lsoc+1_ntic+1_ntoc]]
+	move j,[600000,,[60.*60.]]
+	.realt j,
+	 jfcl
+	.open lsoc,net1
+	 jrst anal1
+	skipe ch1st
+	 .hang
+	move j,locsoc
+	addi j,2			;receive
+	movem j,net4+1
+	addi j,1
+	movem j,net5+1
+	.iot lsoc,j			;foreign receive socket
+	movem j,net5+2
+	addi j,1
+	movem j,net4+2
+	.open ntic,net4			;receive
+	 jrst anal4
+	.open ntoc,net5			;send
+	 jrst anal5
+	.close lsoc,
+	hrloi j,377777
+	.sleep j,
+	jrst .-2
+
+anal1:	.status lsoc,j
+	jrst analy
+anal4:	.status ntic,j
+	jrst analy
+anal5:	.status ntoc,j
+analy:	hlrzs j
+	andi j,77
+	caie j,20
+	 jrst analy1
+	movei a,[asciz /
+Destination host dead
+/]
+	jrst analy2
+
+analy1:	caie j,6
+	 .LOSE
+	movei a,[asciz /
+All sockets in use
+/]
+analy2:	pushj p,type
+	movsi j,(setz)
+	.realt j,
+	 jfcl
+	move j,xreset
+	.suset j
+	.close lsoc,
+	.close ntic,
+	.close ntoc,
+	JRST	DEATH
+
+tsint:	0
+	0
+	skipl u,tsint
+	 jrst tsfw
+	tlz u,400000
+tsint1:	trze u,11
+	 .value				;ch 0 or 3
+	trze u,2
+	 jrst ch1
+	trze u,4
+	 jrst ch2
+	trze u,20
+	 jrst ch4
+	trze u,40
+	 jrst ch5
+	.LOSE
+
+tsret:	skipl retoin
+	 jrst tsret1
+	setzm retoin
+	jrst ch4s
+
+tsret1:	jumpn u,tsint1
+	.dismiss tsint+1
+
+tsfw:	movei a,[asciz /Timeout...host probably dead
+/]
+	pushj p,type
+	jrst retry
+
+type:	SKIPE	SILENT
+	POPJ	P,
+	hrli a,440700
+	push p,b
+	caia
+type1:	 .iot tyoc,b
+	ildb b,a
+	jumpn b,type1
+	pop p,b
+	popj p,
+
+ntype:	SKIPE	SILENT
+	POPJ	P,
+	idivi a,10
+	hrlm b,(p)
+	skipe a
+	 pushj p,ntype
+	hlrz b,(p)
+	.iot tyoc,"0(b)
+cpopj:	popj p,
+
+sixtyp:	move b,[440600,,a]
+sixty1:	ildb c,b
+	jumpe c,cpopj
+	addi c,40
+	.iot tyoc,c
+	tlne b,770000
+	 jrst sixty1
+	popj p,
+
+ch1:	skipl ch1st
+	 jrst ch1b
+	move a,[lsoc,,rch]
+	.rchst a,
+	move a,rch+1
+	movem a,locsoc
+	hrre a,rch+4			;state
+	cain a,10
+	 jrst ch1a
+	caie a,11			;input availalbe
+	 cain a,5			;connection open
+	  jrst ch1a
+	jumpn a,ch1v1
+	.close lsoc,
+	move a,rch+5
+	caie a,2			;clsed by foreign host
+	 jrst ch1c
+	movei a,[asciz /
+Connection refused by foreign host
+/]
+	pushj p,type
+retry:	movsi a,(setz)
+	.realt a,
+	 jfcl
+	move a,xreset
+	.suset a
+	.close lsoc,
+	.close ntic,
+	.close ntoc,
+	JRST	DEATH
+
+ch1c:	caie a,5
+	 cain a,4
+	  jrst ch1ca			;host dead or incomplete transmission
+	.LOSE
+ch1ca:	move a,messtb-4(a)
+	pushj p,type
+	jrst retry
+
+messtb:	[asciz /
+Host died since last connection
+/]
+	[asciz /
+Incomplete transmission...host probably died
+/]
+
+ch1a:	setzm ch1st
+	jrst tsret1
+
+ch1v1:	.LOSE
+
+ch1b:	move a,[lsoc,,rch]
+	.rchst a,
+	hrre a,rch+4
+	jumpl a,ch1v2
+	jumpn a,tsret1
+	move b,rch+5
+	caie b,2
+	 .LOSE
+	.close lsoc,
+	jrst tsret1
+
+ch1v2:	.LOSE
+
+ch2:	movei a,tyic
+	.ityic a,
+	 jrst tsret
+ch2z:	.iot tyic,a
+	skipl cbc
+	 jrst ch2g
+	cain a,^^
+	 jrst ch2f
+	jrst ch2a
+ch2k:	move a,[ntic,,rch]
+	.rchst a,
+	hrre a,rch+4
+	cain a,5
+	 jrst tsret
+	caie a,10
+	 cain a,11
+	  jrst ch2j
+	jrst tsret
+
+ch2j:	.iot ntic,a
+	jrst ch2k
+
+ch2a:	cail a,"A
+	 caile a,"Z
+	  jrst ch2b
+	skipl case			;skip if upper case
+	 tro a,40			;make lower case
+ch2b:	skipe icpdne
+	 jrst tsret
+	.iot ntoc,a
+	cain a,^M
+	 .iot ntoc,[^J]
+	.nets ntoc,
+	skipge echo			;skip if not local echo
+	 pushj p,ch2ec
+	jrst tsret
+ch2cs:	.reset tyoc,
+	skipe icpdne
+	 jrst tsret
+	jrst ch2k
+ch2bs:	setcmm case
+	jrst tsret
+
+ch2f:	push p,a
+	movei a,[asciz/
+Cmnd->/]
+	pushj p,type
+	pop p,a
+	setzm cbc
+	pushj p,ch2ec
+	jrst tsret
+
+ch2g:	setom cbc
+	movsi b,-ncbcch
+	cail a,140
+	 caile a,172
+	  jrst .+2
+	subi a,40
+	came a,cbctbl(b)
+	 aobjn b,.-1
+	jumpge b,ch2a
+	pushj p,ch2ec
+	jrst @cbcdtb(b)
+
+ch2cl:	.close ntic,
+	.close ntoc,
+	.suset [.sifpir,,[0]]
+	.suset [.spirqc,,[0]]
+	.suset [.smsk2,,[0]]
+	.dismiss [gogo]
+
+cbctbl:	"U		;you echo
+	"I		;I echo
+	"G		;restart
+	"D		;DDT
+	"C		;close connection (disconnect)
+	"Q		;quit
+	"B		;open disk file and begin output
+	"E		;close disk file
+	"W		;silence output
+	"V		;make output verbose again
+	^P		;proceed giving DDT TTY
+	^S		;silence
+	"\		;change case
+	"R		;REATTACH TO T07
+	177		;send nothing
+ncbcch==.-cbctbl
+
+cbcdtb:	ch2u
+	ch2i
+	go
+	ch2pro
+	ch2cl
+	DEATH
+	ch2bb
+	ch2ee
+	ch2w
+	ch2v
+	ch2pro
+	ch2cs
+	ch2bs
+	CH2R
+	ch2ro
+
+ch2u:	skipe icpdne
+	 jrst tsret
+	.iot ntoc,[204]
+	.nets ntoc,
+	setzm echo
+	jrst tsret
+
+ch2i:	skipe icpdne
+	 jrst tsret
+	.iot ntoc,[203]
+	.nets ntoc,
+	setom echo
+	jrst tsret
+
+ch2bb:	.open dkoc,dkop
+	 .LOSE
+	setom dkosw
+	jrst tsret
+
+ch2ee:	.close dkoc,
+	setzm dkosw
+	jrst tsret
+
+ch2w:	setom silnce
+	.reset tyoc,
+	jrst tsret
+
+ch2v:	setzm silnce
+	jrst tsret
+
+ch2pro:	.value [asciz /:VK /]
+	jrst tsret
+
+ch2ro:	.iot tyoc,["?]
+	jrst tsret
+
+CH2R:	.CALL [	SETZ
+		SIXBIT	/STYGET/
+		1000,,400007
+		2000,,A
+		SETZM	A]
+	.LOSE
+	AOJE	A,CH2R1
+	.IOT	TYOC,["?]
+	JRST	TSRET
+CH2R1:	MOVEI	A,[ASCIZ /
+Reattaching to HP2649 (T07)/]
+	PUSHJ	P,TYPE
+	.CALL [	SETZ
+		SIXBIT	/DETACH/
+		SETZI	-1]
+	.LOSE
+	.CALL [	SETZ
+		SIXBIT	/ATTACH/
+		5000,,400000
+		1000,,-1
+		SETZI	400007]
+	.LOSE
+	SETOM	SILENT
+	.CALL	CNSGET
+	JRST	TSRET
+	MOVSI	A,10000
+	IORM	A,CNSBLK+3
+	.CALL	CNSSET
+	JFCL
+	JRST	TSRET
+
+
+ch2ec:	cain a,^M
+	 jrst ch2ec2
+	cain a,^I
+	 jrst ch2ecs
+	caie a,^J
+	 cail a,40
+ch2ecs:	  .iot tyoc,a
+	popj p,
+
+ch2ec2:	.iot tyoc,a
+	movei a,^J
+	jrst ch2ecs
+
+ch4:	skipn icpdne
+	 jrst ch4a01
+	movei a,2
+	andcab a,icpdne
+	jumpn a,ch4a01
+	movsi a,(setz)
+	.realt a,
+	 jfcl
+ch4a01:	setom retoin
+	movei a,tyic
+	.ityic a,
+	 jrst ch4sa
+	jrst ch2z
+ch4sa:	setzm retoin
+ch4s:	move a,[ntic,,rch]
+	.rchst a,
+	hrre a,rch+4			;state
+	jumpl a,ch4v1
+	jumpe a,ch4cl
+	cain a,5
+	 jrst tsret
+ch4a:	caie a,10
+	 cain a,11
+	  jrst ch4b
+	jrst tsret
+ch4b:	.iot ntic,a
+;;;	jumpe a,ch4			;CRETINOUS
+	trze a,200
+	 jrst ch4c
+	skipe silnce
+	 jrst ch4b1
+	skipn clrscn
+	 jrst ch4b2
+	.iot tyoc,[^P]
+	.iot tyoc,["C]			;clear screen
+	setzm clrscn			;and never ever do it again!
+ch4b2:	.iot tyoc,a
+	cain a,^P
+	 .iot tyoc,["P]			;echo the ^P
+ch4b1:	skipge dkosw
+	.iot dkoc,a
+	jrst ch4
+
+ch4c:	caie a,2
+	 cain a,40
+	  jrst ch4			;ignore data type or nop
+	caie a,3			;don't echo
+	 jrst ch4d
+	setzm echo
+	jrst ch4
+ch4d:	caie a,4			;echo
+	 jrst ch4e
+	setom echo
+	jrst ch4
+ch4e:	caie a,5			;hide input
+	 jrst ch4			;ignore if not anything
+	setzm echo
+	jrst ch4
+
+ch4v1:	.LOSE
+
+ch4cl:	movei a,[asciz /
+Connection closed
+/]
+	pushj p,type
+	move a,rch+5
+	cain a,2
+	 jrst retry
+	caie a,5
+	 cain a,4
+	  jrst ch1ca
+	movei a,[asciz /Reason = /]
+	pushj p,type
+	hrrz a,rch+5
+	cail a,7
+	 jrst ch4cl1
+	movei a,ch4clt(a)
+	pushj p,type
+	jrst ch4cl2
+
+ch4cl1:	addi a,"0
+	.iot tyoc,a
+ch4cl2:	.iot tyoc,[^M]
+	.iot tyoc,[^J]
+	JRST	DEATH
+
+ch4clt:	asciz /0  Never opened connection/
+	asciz /1  Closed by user/
+	asciz /2  Closed by foreign host/
+	asciz /3  Reset from foreign host (dead)/
+	asciz /4  Foreign host dead/
+	asciz /5  Incomplete transmission/
+	asciz /6  Byte size mismatch/
+
+ch5:	skipn icpdne
+	 jrst ch5a
+	movei a,1
+	andcab a,icpdne
+	movsi a,(setz)
+	.realt a,
+	 jfcl
+ch5a:	move a,[ntoc,,rch]
+	.rchst a,
+	hrre a,rch+4
+	jumpl a,ch5v1
+	caie a,5
+	 cain a,6
+	  jrst tsret
+	skipe a
+	 .LOSE
+	jrst ch4cl
+
+ch5v1:	.LOSE
+
+DEATH:	SKIPN	SILENT
+	JRST	DEATH1
+	.CALL [	SETZ
+		SIXBIT	/DETACH/
+		5000,,20
+		SETZI	-1]
+	CAIA
+DEATH1:	.LOGOUT
+	.BREAK	16,124000
+
+
+rcpbuf:	block 6
+
+define 	host name,numo,status,type,MACHI,NICNMS
+ ifsn status,TIP,[
+  irp nic,,[name,nicnms]
+   ifsn nic,,	numo,,[asciz\nic\]î  termin
+ ]
+termin
+
+hosttb:
+.insrt DSK:syseng;hstinf >
+hstbl==.-hosttb	;# of host names in table
+
+net1:	40054,,'NET		;image in, gensoc, 32 bits
+	-1
+frnisc:	1			;initial foreign socket
+	-1
+
+net4:	140,,'NET		;receive 8 bit ascii, USE 1K BUFFER
+	-1
+	-1
+	-1
+
+net5:	41,,'NET
+	-1
+	-1
+	-1
+
+ttyst:	setz
+	'TTYSET
+	movei tyoc
+repeat 2,move ttgt+.rpcnt
+	setz ttgt+2
+
+ttygt:	setz
+	'TTYGET
+	movei tyoc
+repeat 2,movem ttgt+.rpcnt
+	setzm ttgt+2
+
+CNSGET:	SETZ
+	SIXBIT	/CNSGET/
+	2000,,CNSBLK
+	2000,,CNSBLK+1
+	2000,,CNSBLK+2
+	2000,,CNSBLK+3
+	SETZI	TYOC
+
+CNSSET:	SETZ
+	SIXBIT	/CNSSET/
+	1000,,TYOC
+	CNSBLK
+	CNSBLK+1
+	CNSBLK+2
+	SETZ	CNSBLK+3
+
+ttgt:	block 3
+
+rcpos:	setz
+	sixbit /RCPOS/
+	movei tyoc
+	setzm vpos
+
+rtermt:	setz
+	'RSSIZE
+	movei tyoc
+	movem nlines
+	movem a
+	setzm a				;console type
+
+xreset:	-4,,.+1
+	.smask,,[0]
+	.smsk2,,[0]
+	.spirq,,[0]
+	.sifpi,,[0]
+
+dkop:	1,,'DSK
+	'NETOUT
+	sixbit />/
+
+nlines:	0				;number of vertical lines on screen
+					;-1 => printing terminal
+vpos:	0
+ch1st:	-1				;-1 => just opened
+locsoc:	0
+case:	-1				;-1 => upper case
+echo:	-1				;-1 => local echo
+cbc:	-1				;0 => next char is ^_ command
+retoin:	0				;-1 => return to ch4 input routine
+icpdne:	3				;0 => ICP done
+clrscn:	0				;-1 => clear screen before outputting anything
+jclf:	0				;-1 => get cmd from jclb
+jclb:	block 5
+jclp:	0				;byte pointer to jclb
+dkosw:	0				;-1 => output to disk
+silnce:	0				;-1 => silence output
+rch:	block 10
+lpdl==20
+pdl:	-lpdl,,apdl-1
+apdl:	block lpdl
+SILENT:	0
+CNSBLK:	BLOCK	4
+
+end go
+
