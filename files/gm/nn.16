@@ -1,0 +1,174 @@
+
+TITLE MEW-SICK
+
+A=1
+B=2
+C=3
+D=4
+P=5
+T=6
+T1=7
+T2=10
+S1=11
+S2=12
+
+INC==1
+OUTC==2
+NVS==10
+TBL2L==10000
+NOD==6
+NOU==4
+NHARM==5
+OBUFL==400
+
+BEG:	MOVEI P,PDL-1
+	.OPEN INC,[SIXBIT \  "DSKSINE  WAVE\]
+FNF:	.VALUE
+BEG1:	PUSHJ P,RD1
+	CAME A,[JRST 1]
+	JRST BEG1
+	MOVEI D,TBL+1
+BEG2:	PUSHJ P,RD1
+	JUMPGE A,BEG4
+	MOVE B,A
+	HRR A,D
+	HLRE C,A
+	SUB D,C
+	MOVE C,A
+	.IOT INC,A
+	JUMPL A,EOF
+	MOVE A,C
+BEG3:	ROT B,1
+	ADD B,(A)
+	AOBJN A,BEG3
+	PUSHJ P,RD1
+	CAME A,B
+CKS:	.VALUE
+	JRST BEG2
+EOF:	.VALUE
+BEG4:	.CLOSE INC,
+	MOVEI D,<NOU+NOD>*12.
+	MOVEI A,325637
+BEG4.5:	MOVEM A,SCALE(D)
+	ADDI A,1
+	LSH A,-1
+	SUBI D,12.
+	JUMPGE D,BEG4.5
+	MOVSI D,-<NOU+NOD>
+BEG4.6:	HRRZ C,D
+	IMULI C,12.
+	HRLI C,-11.
+	MOVE A,SCALE(C)
+	MOVEI B,0
+BEG4.7:	MUL A,[103634371133]	;2^-12.
+	ASHC A,3
+	ADDI A,1
+	ASH A,-1
+	MOVEM A,SCALE+1(C)
+	AOBJN C,BEG4.7
+	AOBJN D,BEG4.6
+	.VALUE	;TABLES NOW SET UP
+	MOVSI T,-NVS
+LUP0:	MOVEI A,0
+	MOVE D,[440600+T,,HARMM]
+LUP0.1:	ILDB B,D
+	ADD A,B
+	TLNE D,770000
+	JRST LUP0.1
+	MOVEI C,1
+	MOVEI D,0
+	DIV C,A
+	MOVE D,[440600+T,,HARMM]
+LUP0.2:	ILDB A,D
+	MUL A,C
+	ASHC A,6
+	TRNE A,100
+	MOVEI A,77
+	DPB A,D
+	TLNE D,770000
+	JRST LUP0.2
+	AOBJN T,LUP0
+	.VALUE	;HARM. MULTS. NORMALIZED
+	.OPEN OUTC,[SIXBIT \  'PTP\]
+	.VALUE
+	MOVEI S1,100.
+LUP0.9:	MOVE A,[441400,,OBUF]
+	MOVEM A,OBPTR
+	MOVEI A,OBUFL*3
+	MOVEM A,OBUFCT
+LUP:	CLEARM TOTAL'
+	MOVSI T,-NVS
+LUP1:	SKIPN MULT(T)
+	JRST LUP1.2
+	HRRZ S2,T
+	MOVE T1,[530700+T,,HARM]
+	MOVE T2,[440600+T,,HARMM]
+	MOVEI A,0
+LUP1.1:	ILDB B,T1
+	ADD B,FREQ(T)
+	MOVE C,LAST(S2)
+	ADD C,SCALE(B)
+	JUMPN S2,LUP11A
+	TLNE C,1
+	SUBI S1,1
+LUP11A:	HRRZM C,LAST(S2)
+	LDB C,[71300,,C]
+	MOVE C,TBL(C)
+	ILDB B,T2
+	IMUL C,B
+	ADD A,C
+	ADDI S2,NVS
+	TLNE T2,770000
+	JRST LUP1.1
+	IMUL A,MULT(T)
+	ADDB A,TOTAL
+LUP1.2:	AOBJN T,LUP1
+	HLRES A
+	ADDI A,2000
+	CAIL A,4000
+	MOVEI A,3777
+	SKIPGE A
+	MOVEI A,0
+	IDPB A,OBPTR
+	JUMPE S1,LUP1.3
+	SOSLE OBUFCT
+	JRST LUP
+	MOVE A,[-OBUFL,,OBUF]
+	.IOT OUTC,A
+	JRST LUP0.9
+LUP1.3:	MOVEI A,0
+	MOVE B,OBPTR
+LUP1.5:	TLNN B,770000
+	JRST LUP1.4
+	IDPB A,OBPTR
+	JRST LUP1.5
+LUP1.4:	MOVNI A,-OBUF(B)
+	HRLZS A
+	HRRI A,OBUF
+	.IOT OUTC,A
+	.CLOSE OUTC,
+	.VALUE
+RD1:	HRROI C,A
+	.IOT INC,C
+	JUMPL C,EOF
+	POPJ P,
+;VARIOUS TABLES				;# OF BITS FROM BINARY POINT TO END OF DATUM
+FREQ:	BLOCK NVS	;INDEX TO SCALE	;0
+LAST:	BLOCK NVS*<NHARM+1>		;7
+;SAVED PTRS INTO TBL FOR FUNDAMENTAL AND EACH HARMONIC
+MULT:	BLOCK NVS			;5
+HARM:	BLOCK NVS	;5 7-BIT FIELDS	;0
+;DISTANCE IN HALFTONES BETWEEN FUNDAMENTAL AND HARMONIC
+HARMM:	BLOCK NVS	;6 6-BIT FIELDS	;6
+;RELATIVE LEVEL OF FUNDAMENTAL AND HARMONICS
+SCALE:	BLOCK NOD*12.			;7
+MIDDC:	15272	;522. HZ MAGIC NUMBER
+	BLOCK NOU*12.
+OBPTR:	0
+OBUFCT:	0
+OBUF:	BLOCK OBUFL
+PDL:	BLOCK 10
+TBL:	BLOCK 4000+2	;SLOP		;6
+TBL2:	BLOCK TBL2L
+END BEG
+ð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒð0`Áƒ

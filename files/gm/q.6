@@ -1,0 +1,233 @@
+
+TITLE FOO
+
+CH1A=0
+CH1B=1
+CH2A=2
+CH2B=3
+CH3A=4
+CH3B=5
+A=6
+B=7
+C=10
+D=11
+P=12
+T=13
+T1=14
+T2=15
+X=16
+TYIC==1
+TYOC==2
+MMM==10
+
+BEG:	.OPEN TYIC,[SIXBIT \   TTY\]
+	.VALUE
+	.OPEN TYOC,[SIXBIT \  !TTY\]
+	.VALUE
+	MOVEI P,PDL-1
+	MOVE T1,[10700,,CBUF-1]
+ST1:	PUSHJ P,CR
+ST2:	.IOT TYIC,A
+	CAIN A,177
+	JRST STR
+	IDPB A,T1
+	CAIE A,15
+	JRST ST2
+
+STR:	CAMN T1,[10700,,CBUF-1]
+	JRST ST1
+	LDB A,T1
+	.IOT TYOC,A
+	ADD T1,[70000,,]
+	JUMPGE T1,ST2
+	SUB T1,[430000,,1]
+	JRST ST2
+
+CR:	.IOT TYOC,[15]
+	.IOT TYOC,[12]
+	POPJ P,
+
+;HOW SIMILAR ARE WORDS POINTED TO BY A AND B?
+;RETURNS IN T A VALUE FROM 0 (WORDS IDENTICAL)
+;TO 69 (69 DIFFERENCES BETWEEN WORDS), OR
+;INFINTY IF 3 CONSEC LETTERS IN ONE WORD
+;DON'T ANY MATCH ANY OF 3 CONSEC IN OTHER WORD
+HOWSIM:	MOVEI T,0	;POSITION
+	MOVSI T1,-MMM
+	MOVSI T2,-MMM	;PTRS TO ABUF, BBUF
+	PUSH P,A
+	PUSH P,B
+	ILDB CH1A,A
+	ILDB CH2A,A
+	ILDB CH3A,A
+	ILDB CH1B,B
+	ILDB CH2B,B
+	ILDB CH3B,B
+HOW0:	CAME CH1A,CH1B
+	JRST HOW1
+	JUMPE CH1A,HOWX
+HOW2:	MOVSI C,CH2A	;MOVE C,[CH1A,,CH2A]
+	BLT C,CH2B
+	ILDB CH3A,A
+	ILDB CH3B,B
+	AOJA T,HOW0
+HOW1:	CAMN CH1A,CH2B
+	JRST H1A2B
+	CAMN CH1B,CH2A
+	JRST H1B2A
+	CAMN CH1A,CH3B
+	JRST H1A3B
+	CAMN CH1B,CH3A
+	JRST H1B3A
+	CAMN CH2A,CH2B
+	JRST H2A2B
+	CAMN CH2A,CH3B
+	JRST H2A3B
+	CAMN CH2B,CH3A
+	JRST H2B3A
+	CAMN CH3A,CH3B
+	JRST H3A3B
+HOWX1A:	HRLOI T,377777	;GIVE UP, RETURN INFINITY
+HOWX1:	POP P,B
+	POP P,A
+	POPJ P,
+H1A3B:	JSP X,S1B
+	MOVE CH1B,CH2B
+	MOVE CH2B,CH3B
+	ILDB CH3B,B
+H1A2B:	JSP X,S1B
+	JUMPE CH1A,HOWX
+	MOVE CH2B,CH3B
+	ILDB CH3B,B
+	JRST HOW2
+H1B3A:	JSP X,S1A
+	MOVE CH1A,CH2A
+	MOVE CH2A,CH3A
+	ILDB CH3A,A
+H1B2A:	JSP X,S1A
+	JUMPE CH1B,HOWX
+	MOVE CH2A,CH3A
+	ILDB CH3A,A
+	JRST HOW2
+H3A3B:	JSP X,S1A
+	JSP X,S1B
+	MOVSI C,CH2A
+	BLT C,CH2B
+	ILDB CH3A,A
+	ILDB CH3B,B
+H2A2B:	JSP X,S1A
+	JSP X,S1B
+	JUMPE CH2A,HOWX
+	SOJA T,HOW2
+H2A3B:	JSP X,S1B
+	MOVE CH1B,CH2B
+	MOVE CH2B,CH3B
+	ILDB CH3B,B
+	JRST H2A2B
+H2B3A:	JSP X,S1A
+	MOVE CH1A,CH2A
+	MOVE CH2A,CH3A
+	ILDB CH3A,A
+	JRST H2A2B
+S1A:	MOVEM CH1A,ABUF(T1)
+	HRLM T,ABUF(T1)
+	AOBJN T1,(X)
+	JRST HOWX1A
+S1B:	MOVEM CH1B,BBUF(T2)
+	HRLM T,BBUF(T2)
+	AOBJN T2,(X)
+	JRST HOWX1A
+HOWX:	MOVEI T,0	;INITIALIZE ANSWER
+	HRRZS T1
+	HRRZS T2
+	JUMPE T1,HOWX2
+	JUMPE T2,HOWX6A
+	IMUL T1,[-1,,]
+HOWX4:	IMUL T2,[-1,,]
+HOWX5:	HRRZ CH1A,ABUF(T1)
+	HRRZ CH1B,BBUF(T2)
+	CAME CH1A,CH1B
+	JRST HOWX6
+	HLRZ CH1A,ABUF(T1)
+	HLRZ CH1B,BBUF(T2)
+	SUB CH1B,CH1A
+	MOVMS CH1B
+	CAIG CH1B,2
+	ADDI T,-4(CH1B)
+HOWX6:	AOBJN T2,HOWX5
+	AOBJN T1,HOWX4
+HOWX6A:	ADD T1,T2
+	IMULI T1,3
+	HRRES T
+	ADD T,T1
+	JRST HOWX1
+HOWX2:	JUMPE T2,HOWX1
+	JRST HOWX6A
+AANTHE:	IRP A,,[A,AN,THE,AND,OF,FOR]
+ASCII \A\
+TERMIN
+ABUF:	BLOCK MMM
+BBUF:	BLOCK MMM
+CBUF:	BLOCK 40
+TBUF:	BLOCK 20
+PDL:	BLOCK 10
+SBUF:	BLOCK 1000
+STAB:	BLOCK 1000
+STOP:	STAB
+NTAB:	BLOCK 200
+END BEG
+ true, but I don't accept the Hypothetical'?"
+	"Certainly there might.  He, also, had better take
+to football."
+	"And neither of these readers," the Tortoise continued,
+"is as yet under any logical necessity to accept Z as true?"
+	"Quite so," Achilles assented.
+	"Well, now, I want you to consider me as a reader of the
+second kind, and to force me, logically, to accept Z
+as true."
+	"A tortoise playing football would be--" Achilles was beginning.
+	"--an anomaly, of course," the Tortoise hastily interrupted.
+"dont't wander from the point.
+Let's have Z first, and football afterwards!"
+	"I'm to force you to accept Z, am I?" Achilles said
+musingly.
+"And your present position is that you accept
+A and B, but you dont accept the Hypothetical--"
+	"Let's call it C," said the Tortoise.
+	"--but you dont accept:
+.space
+	(C) If A and B are true, Z must be true."
+.space
+	"That is my present positon," said the Tortoise.
+	"Then I must ask you to accept C."
+	"I'll do so," said the Tortoise, "as soon as you've entered it
+in that note-book of yours.  What else have
+you got in it?"
+	"Only a few memoranda," said Achilles, nervously fluttering the leaves:
+"a few memoranda of--of the battles in which I have distinguished myself!"
+	"Plenty of blank leaves, I see!" the Tortoise cheerily remarked.
+"We shall need them all!" (Achilles shuddered.) 
+"Now write as I dictate:
+.space
+	(A) Things that are equal to the 
+same are equal each other.
+	(B) The two sides of this triangle are things that are equal 
+to the same.
+	(C) If A and B are true, Z must be true.
+	(Z) The two sides of this Triangle are equal to each other."
+.space
+	"You should call it D, not Z," said Achilles.
+"It comes next to the other three.  If you accept A and B and C,
+you must accept Z."
+	"And why must I?"
+	"Because it follows logically from them.
+If A and B and C are true, Z must be true.
+You don't dispute that, I imagine?"
+	"If A and B and C are true, Z must be true," the 
+Tortoise thoughtfully repeated.
+"That's another Hypothetical isn't it?
+And, if I failed to see its truth, I might 
+accept A and B and C, and still not accept Z,
+mightn't I?"
+	"You might," the candid hero admitted; "though such obtuseness would
+certainly be pheno
